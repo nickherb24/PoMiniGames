@@ -46,6 +46,7 @@ import { NewsDesk } from './news.js';
 import { KoClipRecorder } from './clip.js';
 import { NetController, Netplay } from './netplay.js';
 import { Commentary } from './commentary.js';
+import { Spectacle, REWIND_SEC } from './spectacle.js';
 
 const MAX_FRAME_DT = 0.05;
 
@@ -424,6 +425,8 @@ export class BrawlGame {
 
     // Pooled shock rings + the flat-silhouette / speedline / smear timers (#3).
     this._initImpactFrames();
+    // Shockwave, comic KO, pyro, light kick, rewind, shatter (spectacle.js).
+    this._initSpectacle();
 
     // Impact light pool: reused PointLights flashed at hit points. A fixed
     // pool keeps the scene's light count constant (adding/removing lights at
@@ -662,7 +665,7 @@ export class BrawlGame {
       this._updateFx(dt);
       this._updateLighting(dt);
       this.atmoT += dt;
-      updateAtmosphere(this.arena, dt, this.atmoT, this.excited);
+      updateAtmosphere(this.arena, dt, this.atmoT, this.excited, this._phoneLevel);
       updateRopes(this.arena, dt, this.fighters, this.atmoT);
       updateBanners(this.arena.backdrop, this.atmoT);
       if (this.props) updateProps(this.props, dt, this.fighters, this._propHooks);
@@ -686,6 +689,8 @@ export class BrawlGame {
       this.composer.render();
       // #10 — same task as the render, or the WebGL canvas is already cleared.
       if (this.clip) this.clip.mirror(now);
+      // The result shatter snapshots the frame, so it has the same constraint.
+      if (this._shatterPending) this._shatterNow();
     };
     this.raf = requestAnimationFrame(loop);
   }
@@ -1218,6 +1223,7 @@ export class BrawlGame {
     if (this.props) resetProps(this.props);
     // Drop the previous round's floating numbers and combo badges.
     this._clearFx();
+    this._clearSpectacle();
     // Land the previous match's celebrant before the fresh countdown.
     if (this.celebrant) this.celebrant.rig.root.position.y = 0;
     this.celebrant = null;
@@ -1343,6 +1349,9 @@ export class BrawlGame {
     // match's physics + arena are ready under it, so the transition reads
     // as "next round" rather than "page reload".
     this._showSplash(p1, p2, SPLASH_HOLD_MS);
+    // The tape rewinds into the next fight under the splash (spectacle.js).
+    this._rewindT = REWIND_SEC;
+    this.audio?.rewind(REWIND_SEC);
     const hold = this._introHold();
     // Guarded: a navigation inside the hold used to fire this on a disposed game.
     clearTimeout(this._splashTimer);
@@ -1645,6 +1654,8 @@ export class BrawlGame {
         f.animator.applyLean(0, rawX > 0 ? 0.4 : -0.4);
         f.animator.applyReaction('torso', -3, 0, 0);
         twangRope(this.arena, 'x', rawX > 0 ? 1 : -1, power);
+        this.audio.prop({ material: 'rope', power, worldPos: pos });
+        if (power > 1.8) this._kickRig(0.25, pos.x, pos.z);
       }
       if (pos.z !== rawZ && Math.abs(f.knockback.z) > 1.2) {
         const speed = Math.abs(f.knockback.z);
@@ -1654,6 +1665,8 @@ export class BrawlGame {
         f.animator.applyLean(rawZ > 0 ? -0.4 : 0.4, 0);
         f.animator.applyReaction('torso', -3, 0, 0);
         twangRope(this.arena, 'z', rawZ > 0 ? 1 : -1, power);
+        this.audio.prop({ material: 'rope', power, worldPos: pos });
+        if (power > 1.8) this._kickRig(0.25, pos.x, pos.z);
       }
 
       // Turnbuckle hazard (#9): a fighter knocked into a CORNER takes bonus
@@ -1673,6 +1686,8 @@ export class BrawlGame {
         const pv = new THREE.Vector3(sx * (RING_HALF + 0.1), 1.0, sz * (RING_HALF + 0.1));
         this._spawnSparks(pv, sx < 0 ? 0xff5a4a : 0x4a7dff, 10, 2.2);
         this.audio.impact({ power: 1.3, worldPos: pv });
+        this.audio.prop({ material: 'steel', power: 1.2, worldPos: pv });
+        this._kickRig(0.6, pv.x, pv.z);
       }
 
       // ── Ground reaction: skids and landings ────────────────────────
@@ -1810,6 +1825,7 @@ export class BrawlGame {
           f.knockback.multiplyScalar(-0.3);
           this._spawnSparks(post.position, 0xc8a060, 8, 1.5);
           this.audio.impact({ power: 1.0, worldPos: post.position });
+          this.audio.prop({ material: 'steel', power: 1.0, worldPos: post.position });
         }
       }
     }
@@ -2239,6 +2255,7 @@ export class BrawlGame {
     // reads as earned bonus power rather than lighting up every tap.
     if (f.trail) f.trail.color.setHex(chargeAmt > 0.65 ? 0xffd257 : 0xcfe0ff);
     this.audio.whoosh();
+    if (name === 'kick' || chargeAmt > 0.65) this.audio.effort(f.charId, chargeAmt);
     // Attack lunge: a real step into the strike, scaled by charge. This is
     // where the "reach" lives now that the hitboxes track the actual limb —
     // a charged release lunges dramatically further.
@@ -2306,6 +2323,7 @@ export class BrawlGame {
     this._speedPulse = (this._speedPulse || 0) * Math.exp(-dt * 6.5);
     if (this._speedPulse < 0.002 || this._calm()) this._speedPulse = 0;
     this._updateImpactFrames(dt);
+    this._updateSpectacle(dt);
 
     // #5 — the room drops out for the length of the freeze. Driven from the
     // renderer rather than from _hitFeedback so it tracks the ACTUAL pause
@@ -2394,6 +2412,7 @@ export class BrawlGame {
   _updateDanger(dt) {
     const side = [0, 0];
     let worst = 0;
+    let worstF = null;
     if (this.phase === 'fighting' && !this.training && this.fighters && this.combat) {
       for (const f of this.fighters) {
         const hp = this._hp(f) / MAX_HP;
@@ -2403,7 +2422,7 @@ export class BrawlGame {
         _dmgProj.copy(f.rig.root.position).project(this.camera);
         const s = _dmgProj.x < 0 ? 0 : 1;
         side[s] = Math.max(side[s], d);
-        worst = Math.max(worst, d);
+        if (d > worst) { worst = d; worstF = f; }
       }
     }
     const k = 1 - Math.exp(-dt * 3);
@@ -2418,6 +2437,9 @@ export class BrawlGame {
         this._heartT = 0;
         this._heartAge = 0;
         this.audio?.heartbeat(0.45 + 0.55 * worst);
+        // Every other beat the fighter in the red sucks wind, in their own voice.
+        this._breathBeat = !this._breathBeat;
+        if (this._breathBeat && worstF) this.audio?.breath(worstF.charId, worst);
       }
     } else {
       this._heartT = undefined;
@@ -2495,6 +2517,7 @@ export class BrawlGame {
           if (Math.abs(_blobPos.x) < MAT_HALF && Math.abs(_blobPos.z) < MAT_HALF) {
             this._spawnDust(_blobPos.x, _blobPos.z, 1.3);
             this.matWear.bodyfall(_blobPos.x, _blobPos.z, 1);
+            this._kickRig(1, _blobPos.x, _blobPos.z);
           }
         }
       }
@@ -2505,6 +2528,11 @@ export class BrawlGame {
   // Called from _reportResult once the winner is known.
   _presentResult() {
     const [f1, f2] = this.fighters;
+    // A KO breaks the glass into the result, and the winner gets the pyro.
+    if (this.fighters.some((f) => f.state === 'ko')) {
+      this._shatterPending = true;
+      if (this.winner) this._startPyro();
+    }
     if (this.news) {
       const ko = this.fighters.some((f) => f.state === 'ko');
       this.news.show({
@@ -2649,10 +2677,11 @@ export class BrawlGame {
     // feel like a strobe.
     this._houseT = (this._houseT || 0) + dt;
     const orbit = this._houseT * HOUSE_LIGHT_SPEED;
+    // Plus the pendulum a heavy landing knocks into it (spectacle.js _kickRig).
     L.spot.position.set(
-      Math.cos(orbit) * HOUSE_LIGHT_RADIUS_X,
+      Math.cos(orbit) * HOUSE_LIGHT_RADIUS_X + (this._rigKick?.x || 0),
       HOUSE_LIGHT_HEIGHT + Math.sin(orbit * 1.4) * HOUSE_LIGHT_BOB,
-      Math.sin(orbit) * HOUSE_LIGHT_RADIUS);
+      Math.sin(orbit) * HOUSE_LIGHT_RADIUS + (this._rigKick?.z || 0));
 
     // Spotlight target: the midpoint between the fighters normally, the loser
     // during the KO.
@@ -2865,9 +2894,14 @@ export class BrawlGame {
   _makePropHooks() {
     return {
       onChip: (f, dmg, dx, dz) => this._propChip(f, dmg, dx, dz),
-      onImpactFx: (pos, power) => {
+      onImpactFx: (pos, power, kind) => {
         this._spawnSparks(pos, 0xc8a060, 8, 1.6);
-        this.audio.impact({ power: power ?? 1, worldPos: pos });
+        if (kind === 'wood') {
+          this.audio.prop({ material: 'wood', power: power ?? 1, worldPos: pos });
+          this._kickRig(0.35, pos.x, pos.z);
+        } else {
+          this.audio.impact({ power: power ?? 1, worldPos: pos });
+        }
       },
     };
   }
@@ -2888,7 +2922,7 @@ export class BrawlGame {
     this._commentate('crate', f);
     const p = f.rig.root.position;
     this._spawnSparks(new THREE.Vector3(p.x, 1.0, p.z), 0xffd0a0, 5, 1.2);
-    this.audio.grunt({ power: 0.6 });
+    this.audio.grunt({ power: 0.6, charId: f.charId });
     setExpression(f.rig, 'hurt');
     f.expressionT = Math.max(f.expressionT, 0.4);
   }
@@ -3068,6 +3102,11 @@ export class BrawlGame {
 
   _updateCrowd(dt) {
     animateCrowd(this.arena.crowd, dt, this.clock, this.excited);
+    // Phones come up for the last ten seconds, a fighter in the red, and the result.
+    const phonesWanted = this.phase === 'result' ? 0.8
+      : this.phase === 'fighting' && !this.training
+        && (TIME_LIMIT - (this.clock || 0) <= 10 || (this._dangerPushed || 0) > 0.3) ? 1 : 0;
+    this._phoneLevel += (phonesWanted - this._phoneLevel) * (1 - Math.exp(-dt * 1.5));
     this.excited = Math.max(0, this.excited - dt * 0.4);
     // #10 — the reactive hall shares the crowd's clock because it is driven by
     // the same two signals (excitement and the audio envelope).
@@ -3315,6 +3354,7 @@ export class BrawlGame {
     this._disposeTraining();
     this._disposeNet();
     this._disposeCommentary();
+    this._clearSpectacle();
     if (this.touchEl) this.touchEl.remove();
     if (this.fighters) for (const f of this.fighters) f.controller.dispose();
     if (this.audio) this.audio.close();
@@ -3377,4 +3417,4 @@ export class BrawlGame {
 // Must run at module scope, after the class declaration and before any instance
 // is constructed. index.js only ever imports BrawlGame from here, so by the time
 // `new BrawlGame()` can be reached these methods are already on the prototype.
-mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary);
+mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary, Spectacle);

@@ -253,6 +253,10 @@ class PersonalityEffectsMethods {
     // first frame of THIS super, rather than reusing the previous one's arc.
     this._superAngle = undefined;
     this._camVel.set(0, 0, 0);
+    // 2026-09-29: a shockwave off the chest and a burst from the press row.
+    const rp = f.rig.root.position;
+    this._shockwave(new THREE.Vector3(rp.x, rp.y + 1.2, rp.z), 0.9);
+    this._pressBurst(5);
     if (this.audio) {
       this.audio.superStinger();
       // Suit the announcement to the fighter rather than a generic call.

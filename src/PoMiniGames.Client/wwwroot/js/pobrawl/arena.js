@@ -347,9 +347,11 @@ export function buildArena(scene, quality = {}) {
 
   // Camera-flash sprites sparkle in the crowd (a storm of them on KO).
   const flashes = buildCrowdFlashes(scene);
+  // Phone screens held up in the stands for the last ten seconds and the result.
+  const phones = buildPhoneLights(scene, crowd.userData.spots);
 
   return {
-    posts, crowd, atmo, flashes, ropes, backdrop,
+    posts, crowd, atmo, flashes, phones, ropes, backdrop,
     // The ring-mat material, so the engine can inject its knockdown ripple
     // (GFX/SOUND #10). Returned rather than looked up by traversal: `top` is
     // one of three boxes stacked at the ring and picking the right one from
@@ -641,9 +643,21 @@ function buildAtmosphere(scene) {
 function buildCrowdFlashes(scene) {
   const group = new THREE.Group();
   const pool = [];
+  // Soft round glow. Without a map a sprite is a hard square — invisible at the
+  // crowd's 0.14 m, obvious at the press row's 0.4 m (pressBurst).
+  const c = document.createElement('canvas');
+  c.width = c.height = 32;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(16, 16, 0, 16, 16, 16);
+  grad.addColorStop(0, 'rgba(255,255,255,1)');
+  grad.addColorStop(0.25, 'rgba(255,255,255,0.8)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 32, 32);
+  const glow = new THREE.CanvasTexture(c);
   for (let i = 0; i < 20; i++) {
     const s = new THREE.Sprite(new THREE.SpriteMaterial({
-      color: 0xffffff, transparent: true, opacity: 0,
+      map: glow, color: 0xffffff, transparent: true, opacity: 0,
       depthWrite: false, fog: false,
     }));
     s.scale.setScalar(0.14);
@@ -655,14 +669,61 @@ function buildCrowdFlashes(scene) {
   return pool;
 }
 
+// Phone lights (2026-09-29): small cool-white sprites a little above random
+// heads. One pool, faded as a group by the `phones` level updateAtmosphere gets;
+// each sways on its own phase so the stands look held, not pinned.
+function buildPhoneLights(scene, spots) {
+  const group = new THREE.Group();
+  const pool = [];
+  const mat = new THREE.SpriteMaterial({
+    color: 0xdfe8ff, transparent: true, opacity: 0, depthWrite: false, fog: false,
+  });
+  for (let i = 0; i < 36 && spots.length; i++) {
+    const m = spots[(Math.random() * spots.length) | 0];
+    const s = new THREE.Sprite(mat);
+    s.scale.set(0.06, 0.1, 1);
+    s.userData.base = new THREE.Vector3(m.x, m.y + 0.32 + Math.random() * 0.12, m.z);
+    s.userData.phase = Math.random() * Math.PI * 2;
+    s.position.copy(s.userData.base);
+    group.add(s);
+    pool.push(s);
+  }
+  group.visible = false;
+  scene.add(group);
+  return { group, pool, mat };
+}
+
+// Press row (2026-09-29): a burst of bigger, HDR-bright flashes at ringside —
+// heavy hits, supers and the KO. Borrows the crowd-flash pool; `delay` staggers
+// the pops so a burst reads as several photographers, not one strobe.
+const PRESS_R = 6.6;
+export function pressBurst(arena, n) {
+  const flashes = arena?.flashes;
+  if (!flashes) return;
+  for (let i = 0; i < n; i++) {
+    const free = flashes.find((f) => f.life <= 0 && !(f.delay > 0));
+    if (!free) return;
+    const a = Math.random() * Math.PI * 2;
+    const r = PRESS_R + Math.random() * 0.5;
+    free.sprite.position.set(Math.sin(a) * r, 0.9 + Math.random() * 0.7, Math.cos(a) * r);
+    free.sprite.scale.setScalar(0.34 + Math.random() * 0.12);
+    // > 1 is deliberate: the composer is HDR, so the bloom pass flares these.
+    free.sprite.material.color.setScalar(2.4);
+    free.dur = free.life = 0.12;
+    free.delay = i === 0 ? 0.0001 : Math.random() * 0.35;
+    free.sprite.visible = false;
+  }
+}
+
 // Per-frame atmosphere update: dust drifts down the beam and wraps; crowd
-// flashes fire occasionally at rest and in a storm while `excited` > 0.
-export function updateAtmosphere(arena, dt, t, excited) {
+// flashes fire occasionally at rest and in a storm while `excited` > 0; phone
+// lights fade with `phones` (0..1).
+export function updateAtmosphere(arena, dt, t, excited, phones = 0) {
   const { flashes, crowd } = arena;
   if (flashes && crowd) {
     const rate = 1.2 + excited * 22; // expected flashes per second
     if (Math.random() < rate * dt) {
-      const free = flashes.find((f) => f.life <= 0);
+      const free = flashes.find((f) => f.life <= 0 && !(f.delay > 0));
       const spots = crowd.userData.spots;
       if (free && spots && spots.length) {
         const m = spots[(Math.random() * spots.length) | 0];
@@ -671,15 +732,33 @@ export function updateAtmosphere(arena, dt, t, excited) {
           m.y + 0.15 + Math.random() * 0.25,
           m.z + (Math.random() - 0.5) * 0.3
         );
-        free.life = 0.09;
+        free.sprite.scale.setScalar(0.14);
+        free.sprite.material.color.setScalar(1);
+        free.dur = free.life = 0.09;
         free.sprite.visible = true;
       }
     }
     for (const f of flashes) {
+      if (f.delay > 0) {
+        f.delay -= dt;
+        if (f.delay > 0) continue;
+        f.sprite.visible = true;
+      }
       if (f.life > 0) {
         f.life -= dt;
-        f.sprite.material.opacity = Math.max(0, f.life / 0.09);
+        f.sprite.material.opacity = Math.max(0, f.life / (f.dur || 0.09));
         if (f.life <= 0) f.sprite.visible = false;
+      }
+    }
+  }
+  const ph = arena.phones;
+  if (ph) {
+    ph.group.visible = phones > 0.01;
+    if (ph.group.visible) {
+      ph.mat.opacity = Math.min(1, phones) * 0.9;
+      for (const s of ph.pool) {
+        const b = s.userData.base, q = s.userData.phase + t * 0.9;
+        s.position.set(b.x + Math.sin(q) * 0.06, b.y + Math.sin(q * 1.3) * 0.03, b.z);
       }
     }
   }

@@ -736,6 +736,8 @@ class HitResolutionMethods {
         (attack.name === 'kick' ? 6 : 4) * (1 + 0.4 * (chargeMul - 1))),
       hitColor, flashDur);
     this._hitFeedback(attack, true, chargeMul);
+    // A (near) fully charged connect bends the frame. chargeMul runs 1..4.
+    if (chargeMul >= 3.4) this._shockwave(hit.point, 0.8);
     // Directional camera kick: the boom takes the hit's impulse and the
     // spring settles it — the camera is knocked the way the fighter is.
     // Not in calm mode (app-wide reduced motion) — it swings the whole frame.
@@ -745,7 +747,7 @@ class HitResolutionMethods {
       this._camVel.y += 0.35 * chargeMul;
     }
     this.audio.impact({ power: Math.min(2, baseDmg / 3), worldPos: hit.point, kind: attack.name });
-    this.audio.grunt({ power: Math.min(2, baseDmg / 3) });
+    this.audio.grunt({ power: Math.min(2, baseDmg / 3), charId: defender.charId });
     this.hudDirty = true;
   }
 
@@ -844,6 +846,11 @@ class HitResolutionMethods {
           new THREE.Vector3(dpos.x, dpos.y + 1.0, dpos.z), 22, 0xfff0d0, 0.4);
         this.excited = 1;
         this._spawnConfetti();
+        // 2026-09-29: the comic-book panel (freeze, halftone, a word), a
+        // shockwave out of the contact point and every camera at ringside.
+        this._comicKO(hit.point, attack.name);
+        this._shockwave(hit.point, 1.1);
+        this._pressBurst(10);
         // GFX/SOUND top-10 (2026-09-23):
         //  #7 — the body reaches the mat ~0.55 s into the slow-mo fall; game.js
         //       _updateMatWear spends this on dust and a scrape where it lands.
@@ -876,6 +883,8 @@ class HitResolutionMethods {
       // A near-drop dishevels the hair for the rest of the match.
       if (defender.rig.refs) defender.rig.refs.hairPivot.rotation.y = 0.3;
       this.excited = Math.max(this.excited, 0.6);
+      // The press row catches it.
+      this._pressBurst(3);
       // Sweat spray whips off the rocked head.
       defender.rig.joints.head.getWorldPosition(_sweatPos);
       this._spawnSweat(_sweatPos);

@@ -133,9 +133,11 @@ These apply on top of the conventions above. They are intentionally short and ab
 - **Never push without an explicit ask.** Local commits and merges are fine; `git push` (to any remote) requires the user to say so first — the one standing exception is the `git sync` phrase below.
 - **`git sync` is a standing push authorization.** When the user types `git sync`: stage and commit *everything* outstanding first (no leftover dirty tree), then push `master`. One commit, short subject, American slang, reads like a person wrote it.
 - **Commit message style.** Keep commits short, casual, American-English, and human-sounding (e.g. "wires the kiosk reel into the post-match handler", not "Implement MarkFinished integration"). Avoid emoji, ticket IDs, and 50-word subject lines.
-- **Don't hand the user commands to type.** If you can run it yourself (build, format, git, scripts, starting the host), run it. Only ask the user to type something when it genuinely needs their machine, their credentials, or their decision.
+- **Don't hand the user commands to type.** If you can run it yourself (build, format, git, scripts, starting the host, clicking through a web GUI), run it. Only ask the user to type something when it genuinely needs their machine, their credentials, or their decision.
 - **Targeted tests only.** Do not run all tests after code changes. Only run the tests related to the code change, or run no tests at all if the change is simple. Never run full test suites unprompted.
 - **Treat warnings as errors.** Treat compile warnings as errors and make sure they are fixed.
+- **Flag big deletions.** If a prompt removes more than 100 lines of code overall, say so in the reply.
+- **Annotated UI screenshots.** After a UI change, take an annotated old-vs-new screenshot marking what changed, save it under `SCREENSHOTS/` at the repo root, and give its full path.
 - **TL;DR on long replies.** Any response longer than 100 words ends with a `**TL;DR** …` line of roughly 20 words.
 
 

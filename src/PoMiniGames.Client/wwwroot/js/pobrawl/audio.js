@@ -130,6 +130,31 @@ function pickAnnouncerVoice() {
   return _announcerVoice;
 }
 
+// ── Presidential voices (2026-09-29) ──────────────────────────────────────
+// grunt() used to be one voice for all fifteen fighters. Each now has a pitch
+// (f0), two vowel formants (f1/f2 — what makes a voice sound like a particular
+// throat rather than a synth) and a rasp amount (breath noise through the upper
+// formant). Nixon and LBJ sit low and gravelly, Truman and Bush Sr. reedy,
+// Clinton and Biden breathy. Unknown ids fall back to the middle of the table.
+const VOICES = {
+  trump:      { f0: 105, f1: 650, f2: 1100, rasp: 0.35 },
+  biden:      { f0: 118, f1: 600, f2: 1300, rasp: 0.45 },
+  obama:      { f0: 98,  f1: 560, f2: 1050, rasp: 0.15 },
+  bush:       { f0: 112, f1: 700, f2: 1250, rasp: 0.25 },
+  clinton:    { f0: 120, f1: 620, f2: 1350, rasp: 0.6 },
+  bushsr:     { f0: 130, f1: 580, f2: 1450, rasp: 0.2 },
+  reagan:     { f0: 108, f1: 540, f2: 1150, rasp: 0.5 },
+  carter:     { f0: 125, f1: 660, f2: 1500, rasp: 0.15 },
+  ford:       { f0: 110, f1: 600, f2: 1200, rasp: 0.2 },
+  nixon:      { f0: 100, f1: 520, f2: 1000, rasp: 0.3 },
+  lbj:        { f0: 95,  f1: 640, f2: 1080, rasp: 0.4 },
+  jfk:        { f0: 122, f1: 700, f2: 1400, rasp: 0.2 },
+  eisenhower: { f0: 115, f1: 560, f2: 1250, rasp: 0.25 },
+  truman:     { f0: 128, f1: 620, f2: 1550, rasp: 0.15 },
+  fdr:        { f0: 104, f1: 580, f2: 1150, rasp: 0.2 },
+};
+const DEFAULT_VOICE = { f0: 112, f1: 600, f2: 1250, rasp: 0.25 };
+
 // Note name → MIDI semitone offset (C4 = 60 → freq 261.63 Hz).
 // Supports sharps (#) and flats (b); octave is parsed from the digits.
 const NOTE_NAMES = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4,
@@ -693,31 +718,297 @@ class AudioBus {
     autoDisconnect(crash, [crash, lp, cG]);
   }
 
-  // Short vocal grunt on swing / windup. Random pitch so it doesn't loop.
-  // Short vocal grunt on swing / windup. Random pitch so it doesn't loop.
-  grunt({ power = 1, blocked = false } = {}) {
+  // Pain grunt when a hit lands. `charId` picks the president's voice (VOICES).
+  grunt({ power = 1, blocked = false, charId = null } = {}) {
     if (!this._ensure() || this.muted) return;
     this._pulse(0.15 + power * 0.1);
+    const v = VOICES[charId] || DEFAULT_VOICE;
+    // Wider per-call spread than a fixed pitch: a grunt repeats far more often
+    // than an impact, so it goes "robotic" fastest without variation.
+    const f0 = v.f0 * (blocked ? 1.35 : 0.95 + power * 0.25) * rand(0.9, 1.12);
+    this._voice(v, f0, f0 * rand(0.5, 0.62), rand(0.18, 0.24), 0.08, 1);
+  }
+
+  // Effort "hup" on a kick or a charged swing: shorter, higher, a more open vowel.
+  effort(charId, power = 1) {
+    if (!this._ensure() || this.muted) return;
+    const v = VOICES[charId] || DEFAULT_VOICE;
+    const f0 = v.f0 * (1.15 + 0.2 * power) * rand(0.94, 1.06);
+    this._voice(v, f0, f0 * 0.8, 0.13, 0.05 + 0.02 * power, 1.25);
+  }
+
+  // One exhausted exhale — game.js breathes the fighter in the red between heartbeats.
+  breath(charId, strength = 1) {
+    if (!this._ensure() || this.muted) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
-    // Wider per-call spread than the old fixed pitch: a grunt repeats far more
-    // often than an impact, so it goes "robotic" fastest without variation.
-    const baseHz = (blocked ? 150 : 110 + power * 30) * rand(0.82, 1.22);
-    const o = ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(baseHz, now);
-    o.frequency.exponentialRampToValueAtTime(baseHz * rand(0.5, 0.62), now + rand(0.14, 0.22));
+    const v = VOICES[charId] || DEFAULT_VOICE;
+    const src = this._noiseSource(0.7);
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
-    bp.frequency.value = baseHz * rand(1.7, 2.4);
-    bp.Q.value = rand(4, 6.5);
+    bp.frequency.value = v.f2 * rand(0.95, 1.1);
+    bp.Q.value = 1.4;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(0.08, now + 0.01);
-    g.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
-    o.connect(bp).connect(g).connect(this.sfxGain);
-    o.start(now); o.stop(now + 0.25);
-    autoDisconnect(o, [o, bp, g]);
+    g.gain.linearRampToValueAtTime(0.035 * clamp(strength, 0, 1), now + 0.18);
+    g.gain.exponentialRampToValueAtTime(0.0008, now + 0.6);
+    src.connect(bp).connect(g).connect(this.sfxGain);
+    src.start(now, src._offset); src.stop(now + 0.65);
+    autoDisconnect(src, [src, bp, g]);
+  }
+
+  // Shared vocal tract: a sawtooth glottis sliding fromHz → toHz, through two
+  // formant bandpasses in parallel, plus breath noise through the upper formant.
+  // `open` scales F1 (a wider mouth raises it — "ha" versus "uh").
+  _voice(v, fromHz, toHz, dur, peak, open) {
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(fromHz, now);
+    o.frequency.exponentialRampToValueAtTime(toHz, now + dur * 0.85);
+    const out = ctx.createGain();
+    out.gain.setValueAtTime(0.0001, now);
+    out.gain.linearRampToValueAtTime(peak, now + 0.012);
+    out.gain.exponentialRampToValueAtTime(0.001, now + dur);
+    const f1 = ctx.createBiquadFilter();
+    f1.type = 'bandpass';
+    f1.frequency.value = v.f1 * open * rand(0.94, 1.06);
+    f1.Q.value = 5;
+    const f2 = ctx.createBiquadFilter();
+    f2.type = 'bandpass';
+    f2.frequency.value = v.f2 * rand(0.94, 1.06);
+    f2.Q.value = 7;
+    const f2g = ctx.createGain();
+    f2g.gain.value = 0.6;
+    o.connect(f1).connect(out);
+    o.connect(f2).connect(f2g).connect(out);
+    const nodes = [o, f1, f2, f2g, out];
+    if (v.rasp > 0.05) {
+      const n = this._noiseSource(dur + 0.05);
+      const ng = ctx.createGain();
+      ng.gain.value = v.rasp * 0.9;
+      n.connect(ng).connect(f2);
+      n.start(now, n._offset); n.stop(now + dur + 0.02);
+      autoDisconnect(n, [n, ng]);
+    }
+    out.connect(this.sfxGain);
+    o.start(now); o.stop(now + dur + 0.03);
+    autoDisconnect(o, nodes);
+  }
+
+  // ══ Prop materials (2026-09-29) ═══════════════════════════════════════
+  // Crates, ropes and turnbuckles all used to play impact() — a body blow.
+  //   wood  — a knock plus a three-mode crack (a plank's resonances ring for
+  //           ~0.1 s, not a note), then a patter of splinters landing
+  //   rope  — a low twang with a vibrato wobble: a cable under tension, not a string
+  //   steel — inharmonic bar partials (1 : 2.76 : 5.4 : 8.93), a turnbuckle clang
+  prop({ material = 'wood', power = 1, worldPos = null } = {}) {
+    if (!this._ensure() || this.muted) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const p = clamp(power, 0.2, 2.6);
+    const spat = this._connectSpat(this._spatializer(worldPos));
+    const nodes = [];
+    let end = now;
+
+    const tone = (type, hz, t0, peak, decay, toHz = 0) => {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.setValueAtTime(hz, t0);
+      if (toHz) o.frequency.exponentialRampToValueAtTime(toHz, t0 + decay);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0008, t0 + decay);
+      o.connect(g).connect(spat);
+      o.start(t0); o.stop(t0 + decay + 0.02);
+      autoDisconnect(o, [o, g]);
+      nodes.push(o);
+      end = Math.max(end, t0 + decay + 0.02);
+      return o;
+    };
+    const noise = (hz, q, t0, peak, decay) => {
+      const src = this._noiseSource(decay + 0.02);
+      const bp = ctx.createBiquadFilter();
+      bp.type = 'bandpass';
+      bp.frequency.value = hz;
+      bp.Q.value = q;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + 0.003);
+      g.gain.exponentialRampToValueAtTime(0.0008, t0 + decay);
+      src.connect(bp).connect(g).connect(spat);
+      src.start(t0, src._offset); src.stop(t0 + decay + 0.02);
+      autoDisconnect(src, [src, bp, g]);
+      end = Math.max(end, t0 + decay + 0.02);
+    };
+
+    if (material === 'rope') {
+      this._pulse(0.2 + p * 0.1);
+      const hz = rand(62, 80) + p * 8;
+      const o = tone('triangle', hz, now, 0.1 + p * 0.05, 0.55 + p * 0.1, hz * 0.86);
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = rand(6, 8);
+      const depth = ctx.createGain();
+      depth.gain.value = hz * 0.05;
+      lfo.connect(depth).connect(o.frequency);
+      lfo.start(now); lfo.stop(now + 0.7);
+      autoDisconnect(lfo, [lfo, depth]);
+      tone('sine', hz * 2.01, now, 0.04, 0.35);
+      noise(900, 0.8, now, 0.03 + p * 0.02, 0.12);             // fibre creak
+    } else if (material === 'steel') {
+      this._pulse(0.5);
+      const base = rand(200, 240);
+      [1, 2.76, 5.4, 8.93].forEach((m, i) =>
+        tone('sine', base * m, now, (0.09 - i * 0.018) * p, 1.1 - i * 0.22));
+      noise(4200, 1.2, now, 0.08, 0.04);                        // strike click
+    } else {
+      this._pulse(0.35 + p * 0.2);
+      tone('sine', rand(150, 190), now, 0.26 * Math.min(1.4, p), 0.12, 70);   // knock
+      for (const hz of [420, 950, 2100]) noise(hz * rand(0.9, 1.1), 9, now, 0.12 * p, rand(0.08, 0.16));
+      // Splinters: clicks thinning out as the pieces settle.
+      const n = 4 + Math.round(p * 3);
+      for (let i = 0; i < n; i++) {
+        const t = now + 0.12 + Math.pow(i / n, 1.4) * 0.6 + rand(0, 0.04);
+        noise(rand(1800, 4200), 3, t, 0.05 * (1 - i / n) + 0.01, 0.03);
+      }
+    }
+    // Tear the shared spatializer down once every layer is done.
+    const k = ctx.createConstantSource();
+    k.start(now); k.stop(end + 0.05);
+    autoDisconnect(k, [k, spat, spat.output].filter(Boolean));
+  }
+
+  // Press-row shutters: a mechanical click pair (curtain open, curtain close) per camera.
+  shutter(count = 1) {
+    if (!this._ensure() || this.muted) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    for (let i = 0; i < count; i++) {
+      const t0 = now + i * rand(0.03, 0.09) + rand(0, 0.02);
+      const pan = ctx.createStereoPanner ? ctx.createStereoPanner() : ctx.createGain();
+      if (pan.pan) pan.pan.value = rand(-0.8, 0.8);
+      pan.connect(this.sfxGain);
+      for (const [dt, hz] of [[0, rand(3000, 3800)], [rand(0.02, 0.035), rand(2200, 2800)]]) {
+        const src = this._noiseSource(0.03);
+        const bp = ctx.createBiquadFilter();
+        bp.type = 'bandpass';
+        bp.frequency.value = hz;
+        bp.Q.value = 2.5;
+        const g = ctx.createGain();
+        g.gain.setValueAtTime(0.0001, t0 + dt);
+        g.gain.linearRampToValueAtTime(0.035, t0 + dt + 0.002);
+        g.gain.exponentialRampToValueAtTime(0.0008, t0 + dt + 0.02);
+        src.connect(bp).connect(g).connect(pan);
+        src.start(t0 + dt, src._offset); src.stop(t0 + dt + 0.03);
+        autoDisconnect(src, dt ? [src, bp, g, pan] : [src, bp, g]);
+      }
+    }
+  }
+
+  // Victory pyro: a CO2 jet's hiss sweeping down, over a low whump.
+  pyro(worldPos = null) {
+    if (!this._ensure() || this.muted) return;
+    this._pulse(0.5);
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const spat = this._connectSpat(this._spatializer(worldPos));
+    const src = this._noiseSource(1.3);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 0.9;
+    bp.frequency.setValueAtTime(3200, now);
+    bp.frequency.exponentialRampToValueAtTime(700, now + 1.1);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.14, now + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0008, now + 1.2);
+    src.connect(bp).connect(g).connect(spat);
+    src.start(now, src._offset); src.stop(now + 1.25);
+    const o = ctx.createOscillator();
+    o.frequency.setValueAtTime(90, now);
+    o.frequency.exponentialRampToValueAtTime(40, now + 0.25);
+    const og = ctx.createGain();
+    og.gain.setValueAtTime(0.0001, now);
+    og.gain.linearRampToValueAtTime(0.22, now + 0.01);
+    og.gain.exponentialRampToValueAtTime(0.0008, now + 0.3);
+    o.connect(og).connect(spat);
+    o.start(now); o.stop(now + 0.32);
+    autoDisconnect(o, [o, og]);
+    autoDisconnect(src, [src, bp, g, spat, spat.output].filter(Boolean));
+  }
+
+  // Tape rewind into the next match: warbling chatter climbing in pitch, then the
+  // transport's stop-clunk.
+  rewind(dur = 0.75) {
+    if (!this._ensure() || this.muted) return;
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const src = this._noiseSource(dur + 0.05);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 6;
+    bp.frequency.setValueAtTime(900, now);
+    bp.frequency.exponentialRampToValueAtTime(4200, now + dur);
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 17;
+    const depth = ctx.createGain();
+    depth.gain.value = 500;
+    lfo.connect(depth).connect(bp.frequency);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.linearRampToValueAtTime(0.09, now + 0.06);
+    g.gain.setValueAtTime(0.09, now + dur - 0.05);
+    g.gain.exponentialRampToValueAtTime(0.0008, now + dur);
+    src.connect(bp).connect(g).connect(this.sfxGain);
+    src.start(now, src._offset); src.stop(now + dur + 0.02);
+    lfo.start(now); lfo.stop(now + dur + 0.02);
+    autoDisconnect(lfo, [lfo, depth]);
+    autoDisconnect(src, [src, bp, g]);
+    const clunk = ctx.createOscillator();
+    clunk.type = 'triangle';
+    clunk.frequency.setValueAtTime(160, now + dur);
+    clunk.frequency.exponentialRampToValueAtTime(60, now + dur + 0.08);
+    const cg = ctx.createGain();
+    cg.gain.setValueAtTime(0.0001, now + dur);
+    cg.gain.linearRampToValueAtTime(0.16, now + dur + 0.004);
+    cg.gain.exponentialRampToValueAtTime(0.0008, now + dur + 0.12);
+    clunk.connect(cg).connect(this.sfxGain);
+    clunk.start(now + dur); clunk.stop(now + dur + 0.14);
+    autoDisconnect(clunk, [clunk, cg]);
+  }
+
+  // Glass giving way: a crack, then high inharmonic tinkles scattering as the
+  // shards fall (the result-screen shatter).
+  shatter() {
+    if (!this._ensure() || this.muted) return;
+    this._pulse(0.6);
+    const ctx = this.ctx;
+    const now = ctx.currentTime;
+    const crack = this._noiseSource(0.2);
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 2500;
+    const cg = ctx.createGain();
+    cg.gain.setValueAtTime(0.0001, now);
+    cg.gain.linearRampToValueAtTime(0.22, now + 0.003);
+    cg.gain.exponentialRampToValueAtTime(0.0008, now + 0.18);
+    crack.connect(hp).connect(cg).connect(this.sfxGain);
+    crack.start(now, crack._offset); crack.stop(now + 0.2);
+    autoDisconnect(crack, [crack, hp, cg]);
+    for (let i = 0; i < 14; i++) {
+      const t0 = now + 0.05 + Math.pow(Math.random(), 1.6) * 0.9;
+      const o = ctx.createOscillator();
+      o.frequency.value = rand(2800, 7200);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.linearRampToValueAtTime(rand(0.012, 0.03), t0 + 0.002);
+      g.gain.exponentialRampToValueAtTime(0.0005, t0 + rand(0.08, 0.2));
+      o.connect(g).connect(this.sfxGain);
+      o.start(t0); o.stop(t0 + 0.22);
+      autoDisconnect(o, [o, g]);
+    }
   }
 
   whoosh() {

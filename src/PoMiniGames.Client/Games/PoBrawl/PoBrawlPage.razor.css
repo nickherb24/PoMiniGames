@@ -32,6 +32,16 @@
     height: 100% !important;
 }
 
+/* KO → result glass shatter (spectacle.js). Laid over the 3D view for ~1.3 s,
+   under the banner and the news desk, never taking a click. No z-index on
+   purpose: it is inserted straight after the WebGL canvas, so DOM order keeps
+   every later overlay (the banner has no z-index either) on top of it. */
+.pb-canvas-host ::deep .pb-shatter {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+}
+
 /* Countdown / KO banner created by the JS engine inside the container.
    Anchored to the strip just below the top nav bar (viewport-fixed) so the
    K.O. / "X WINS!" text never covers the fighters in the ring. */
