@@ -151,6 +151,57 @@ public class PoBrawlMatchServiceTests
         accepted.Should().BeFalse();
     }
 
+    /// <summary>
+    /// The 2026-09-29 lifecycle in one fact (Unit ceiling): the pre-roll holds the fight, each tick
+    /// reports what each corner's swing did (the 3D view lands exactly that), a corner that stays
+    /// away forfeits, and the rematch needs both corners' votes.
+    /// </summary>
+    [Fact]
+    public void Lifecycle_PreRoll_SwingReport_Forfeit_AndRematchVotes()
+    {
+        // Pre-roll: nothing moves and a press made during the count is dropped.
+        var alice = NewPlayer("conn-1", "alice", "Alice", PoBrawlRoster.Bob);
+        var bob = NewPlayer("conn-2", "bob", "Bob", PoBrawlRoster.Bob);
+        var counted = new PoBrawlMatchService("count", "ROOM1", new[] { alice, bob }, countdownSeconds: 1);
+        counted.RegisterConnection("conn-1", PoBrawlSide.Player1);
+        counted.RegisterConnection("conn-2", PoBrawlSide.Player2);
+        Send(counted, "conn-1", PoBrawlMatchAction.MoveForward);
+        Send(counted, "conn-1", PoBrawlMatchAction.Kick);
+        var pre = counted.Tick()!;
+        pre.ElapsedSeconds.Should().BeLessThan(0);
+        pre.Player1X.Should().Be(-1.6, "the count holds everyone on their marks");
+        for (var i = 0; i < 10; i++) counted.Tick();
+        var live = counted.Tick()!;
+        live.Player1X.Should().BeGreaterThan(-1.6, "a key held through the count walks on the bell");
+        live.Player1Swing.Should().BeNull("the kick pressed during the count was dropped");
+
+        // Swing report: the corner, the attack, the outcome and the exact damage dealt.
+        var match = StartedMatch("report");
+        CloseIn(match, "conn-1");
+        Send(match, "conn-1", PoBrawlMatchAction.Punch);
+        var hit = match.Tick()!;
+        hit.Player1Swing.Should().Be(PoBrawlMatchAction.Punch);
+        hit.Player1Outcome.Should().Be("hit");
+        hit.Player1Damage.Should().Be(100 - hit.Player2Hp);
+        hit.Player2Swing.Should().BeNull();
+
+        // Forfeit: P2 drops and never comes back.
+        match.UnregisterConnection("conn-2");
+        PoBrawlMatchState? end = null;
+        for (var i = 0; i < (PoBrawlMatchService.ReconnectGraceSeconds + 1) * PoBrawlMatchService.TickHz && end is not { Finished: true }; i++)
+            end = match.Tick();
+        end!.Finished.Should().BeTrue();
+        end.LastEvent.Should().Be("forfeit");
+        end.Winner.Should().Be(PoBrawlSide.Player1);
+        match.BuildResultFor("conn-1").Forfeit.Should().BeTrue();
+
+        // Rematch: P2 comes back after the bell; one vote is not enough, two start it.
+        match.RegisterConnection("conn-2", PoBrawlSide.Player2);
+        match.VoteRematch("conn-1").Should().BeFalse();
+        match.Snapshot().RematchVotes.Should().Be(1);
+        match.VoteRematch("conn-2").Should().BeTrue();
+    }
+
     [Fact]
     public void BuildResultFor_ShapesOutcomePerConnection()
     {

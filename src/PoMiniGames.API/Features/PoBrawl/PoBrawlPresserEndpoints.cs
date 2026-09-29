@@ -28,6 +28,22 @@ public static class PoBrawlPresserEndpoints
             .Produces<PoBrawlPresserReply>()
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .RequireRateLimiting("ai-generation");
+
+        // The ring introduction the PA reads under the VS splash (2026-09-29). Same deployment,
+        // budget, cache and canned fallback as the press line; one cached line per pairing.
+        app.MapGroup("/pobrawl").WithTags("PoBrawl")
+            .MapPost("/intro", async (PoBrawlIntroRequest request, IPoBrawlPresserService presser, CancellationToken ct) =>
+            {
+                var reply = await presser.IntroAsync(request, ct);
+                return reply is null
+                    ? Results.BadRequest(new { error = "Both fighters must be on the PoBrawl roster." })
+                    : Results.Ok(reply);
+            })
+            .WithName("PoBrawlIntro")
+            .WithSummary("The ring announcer's introduction for a pairing")
+            .Produces<PoBrawlPresserReply>()
+            .ProducesProblem(StatusCodes.Status400BadRequest)
+            .RequireRateLimiting("ai-generation");
         return app;
     }
 }

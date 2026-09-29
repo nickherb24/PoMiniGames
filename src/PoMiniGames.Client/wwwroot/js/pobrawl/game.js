@@ -44,6 +44,8 @@ import { GamepadBridge } from './gamepad.js';
 import { MatWear } from './matWear.js';
 import { NewsDesk } from './news.js';
 import { KoClipRecorder } from './clip.js';
+import { NetController, Netplay } from './netplay.js';
+import { Commentary } from './commentary.js';
 
 const MAX_FRAME_DT = 0.05;
 
@@ -303,6 +305,9 @@ export class BrawlGame {
     // durations in step with the simulation that consumes them — hitstop pauses
     // both together instead of letting buffs bleed out during a frozen frame.
     this.t = 0;
+    // The PA's ring introduction for the next splash (PoBrawlPage fetches it; PoBrawl.next
+    // hands in the next rung's). One-shot: _introHold speaks it and clears it.
+    this._introLine = (options && options.introLine) || null;
     // Cinematic state: KO zoom + replay buffer.
     this.cameraMode = 'normal'; // 'normal' | 'ko' | 'replay'
     this.cameraModeT = 0;
@@ -311,8 +316,10 @@ export class BrawlGame {
     this.excited = 0; // crowd excitement
     this.audio = new AudioBus();
     this.replay = new ReplayBuffer();
-    // Seeded RNG so a demo/kiosk replay is reproducible.
-    this.rng = new RandomGenerator((options && options.seed) || 1337);
+    // Seeded RNG: pass options.seed to reproduce a match. Without one, every page load
+    // used to fall back to the same 1337, so the "random" news headlines, KO shots and
+    // demo pairings replayed identically on every visit (2026-09-29).
+    this.rng = new RandomGenerator((options && options.seed) || (1 + Math.floor(Math.random() * 0x7ffffffe)));
     // The training room (training.js). A demo rolls its drills per match in
     // start()/resetMatch. The comfort switches went with their panel — gore is
     // always on and calm follows motionReduced() above.
@@ -484,13 +491,16 @@ export class BrawlGame {
       this.fx.querySelector('.pb-combo--p2'),
     ];
     this._dmgNodes = [];
+    // Ringside commentary + the caption bar every spoken line goes through (commentary.js).
+    this._initCommentary();
 
     // Virtual touch controls for coarse-pointer / portrait-mobile layouts
     // (CSS decides visibility). Buttons dispatch synthetic KeyboardEvents,
     // so the P1 KeyboardController — including hold-to-charge and the
     // tap-vs-hold block key — works unchanged. Demo mode is CPU vs CPU,
     // so no controls there.
-    if (this.options.mode !== 'demo') this._buildTouchControls();
+    const spectating = this.options.mode === 'online' && !this.options.localSide;
+    if (this.options.mode !== 'demo' && !spectating) this._buildTouchControls();
 
     // #2 — controllers drive the same key codes as the keyboard (gamepad.js).
     // 1P: the first pad is player 1. 2P: first pad P1, second P2. Demo: none.
@@ -506,7 +516,7 @@ export class BrawlGame {
 
     // #10 — rolling KO clip (clip.js). Not in demo (nobody to hand it to), not
     // in the training room (no KO), not on the low tier (encoding costs frames).
-    if ((this.options.mode === '1p' || this.options.mode === '2p') && !this.training
+    if ((this.options.mode === '1p' || this.options.mode === '2p' || this.options.mode === 'online') && !this.training
         && Quality.tier() !== 'low') {
       this.clip = new KoClipRecorder(this.renderer.domElement, () => this.audio.tapStream());
       if (this.clip.ok) this.clip.start(); else this.clip = null;
@@ -578,6 +588,7 @@ export class BrawlGame {
     if (this.options.mode === 'demo') this.training = this._rollDemoDrill();
     this._spawnFighters(this.options.p1Character, this.options.p2Character);
     this._initTraining();
+    if (this.options.mode === 'online') this._initNet();
     // Textures are built by arena.js/fighters.js as module-level cached
     // singletons with no renderer handle, so none of them could set anisotropy
     // themselves — every map was sampling at 1x. Apply it once here, after the
@@ -596,7 +607,10 @@ export class BrawlGame {
     } else {
       this._warmupRender();
       this._beginWithSplash(this.fighters[0].charId, this.fighters[1].charId,
-        this.options.mode === '2p' ? 'ONE ROUND · 60 SECONDS' : this.options.mode === 'demo' ? 'EXHIBITION' : 'MAIN EVENT');
+        this.options.mode === '2p' ? 'ONE ROUND · 60 SECONDS'
+          : this.options.mode === 'demo' ? 'EXHIBITION'
+          : this.options.mode === 'online' ? (spectating ? 'LIVE · SPECTATING' : 'ONLINE · 60 SECONDS')
+          : 'MAIN EVENT');
     }
 
     // Kick the audio context the first time the user interacts with the page —
@@ -613,13 +627,26 @@ export class BrawlGame {
     };
     window.addEventListener('pointerdown', resumeAudio);
     window.addEventListener('keydown', resumeAudio);
+    // M mutes the fight. No binding in any layout uses M, and a focused text field keeps it.
+    this._onMuteKey = (e) => {
+      if (e.code !== 'KeyM' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+      const tag = (e.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'textarea' || e.target?.isContentEditable) return;
+      this.setMuted(!this.muted);
+      this._caption(this.muted ? '🔇 Muted (M)' : '🔊 Sound on (M)');
+    };
+    window.addEventListener('keydown', this._onMuteKey);
 
     this.lastFrame = performance.now();
     const loop = (now) => {
       if (this.disposed) return;
       this.raf = requestAnimationFrame(loop);
       const rawDt = (now - this.lastFrame) / 1000;
-      let dt = Math.min(rawDt, MAX_FRAME_DT);
+      // Floored at 0: a rAF timestamp can predate `lastFrame` when _warmupRender stamped it from
+      // performance.now() after a long shader compile (or a background tab delivers a stale frame
+      // time). A negative dt drove the accumulator seconds below zero and froze the sim until it
+      // climbed back — measured at 11 s on a software-GL client, with the online fight running on.
+      let dt = Math.max(0, Math.min(rawDt, MAX_FRAME_DT));
       this.lastFrame = now;
 
       // #2 — sample the pads before the sim so a press lands on this frame's tick.
@@ -908,6 +935,8 @@ export class BrawlGame {
     // drill the drilling president's too. Null means "not a training slot".
     const trainingController = this._trainingController(playerIndex, charIdForIndex);
     if (trainingController) return trainingController;
+    // Online both corners are puppets of the server's snapshots (netplay.js).
+    if (mode === 'online') return new NetController(playerIndex === this.options.localSide);
     const keys = (layout) => new KeyboardController(layout);
     if (mode === 'demo') return new AiController(difficulty, this.rng, charIdForIndex);
     if (mode === '2p') return keys(playerIndex);
@@ -1125,7 +1154,9 @@ export class BrawlGame {
         // ── Personality state (per-president Punch-Out!! pattern) ──────
         // Runtime counters that personalities data above refer to. Reset on
         // match restart via _resetPersonalities below.
-        personality: makePersonalityState(resolvedId),
+        // Off online: every personality effect that moves HP (reflect, flourishes, supers) would
+        // move HP the server never moved. BOB has none either way.
+        personality: makePersonalityState(this.options.mode === 'online' ? null : resolvedId),
         // Slow effect (Biden charge hit): applies a moveMul to the body for
         // a few seconds. Read in the _tickFighting mobility pass.
         slowUntil: 0,
@@ -1202,6 +1233,7 @@ export class BrawlGame {
     // Re-arm the PA count (#7); without this the new round's "3" matches the
     // remembered value and the announcer sits out the whole countdown.
     this._lastCount = null;
+    this._resetCommentary();
     // Snap the boom back to the canonical +Z side before the round starts.
     // The KO cinematic swings the camera around to the −Z side of the ring
     // (see _updateCamera 'ko' branch), and the normal spring camera's
@@ -1246,11 +1278,28 @@ export class BrawlGame {
     this._snapCameraToFraming();
     this._roundLabel = label;
     this._showSplash(p1Char, p2Char, SPLASH_HOLD_MS);
+    const hold = this._introHold();
+    // Online the server's pre-roll starts the count (netplay.js applyNet), so both screens say
+    // "FIGHT!" on the same tick.
+    if (this.options.mode === 'online') return;
     this._splashTimer = setTimeout(() => {
       if (this.disposed) return;
       this._hideSplash();
       this._startCountdown();
-    }, SPLASH_HOLD_MS);
+    }, hold);
+  }
+
+  /**
+   * Speak the ring introduction, if one is waiting, and return how long the VS splash should
+   * hold so the line finishes before "3" (the count cancels whatever the PA is saying).
+   */
+  _introHold() {
+    const line = this._introLine;
+    this._introLine = null;
+    if (!line || this.training || this.options.mode === 'demo') return SPLASH_HOLD_MS;
+    this.audio?.announce(line, { rate: 1.02, pitch: 0.7, duckSec: 4 });
+    const words = String(line).split(/\s+/).length;
+    return Math.min(7000, Math.max(SPLASH_HOLD_MS, 600 + words * 360));
   }
 
   // Compile every GPU program the current scene needs, then reset the frame
@@ -1294,13 +1343,14 @@ export class BrawlGame {
     // match's physics + arena are ready under it, so the transition reads
     // as "next round" rather than "page reload".
     this._showSplash(p1, p2, SPLASH_HOLD_MS);
+    const hold = this._introHold();
     // Guarded: a navigation inside the hold used to fire this on a disposed game.
     clearTimeout(this._splashTimer);
     this._splashTimer = setTimeout(() => {
       if (this.disposed) return;
       this._hideSplash();
       this._startCountdown();
-    }, SPLASH_HOLD_MS);
+    }, hold);
   }
 
   _showSplash(p1Char, p2Char, holdMs) {
@@ -1399,9 +1449,11 @@ export class BrawlGame {
       this.clock += dt;
       this._tickFighting(dt);
       this._tickCombos();
+      this._tickCommentary();
       // The training room has no clock (a drill ends itself inside _tickTraining).
       if (this.training) this._tickTraining();
-      if (!this.training && this.clock >= TIME_LIMIT && this.phase === 'fighting') {
+      // Online the server rings the bell (netplay.js _tickNet), on its own clock.
+      if (!this.training && !this.online && this.clock >= TIME_LIMIT && this.phase === 'fighting') {
         const h1 = this._hp(this.fighters[0]), h2 = this._hp(this.fighters[1]);
         // Decision on health. A clear health lead wins; bars within DRAW_HP_BAND
         // of each other is a DRAW.
@@ -1563,10 +1615,13 @@ export class BrawlGame {
         intent = { ...intent, punch: false, kick: false, side: 0 };
       }
       this._tickFighter(f, opp, intent, dt);
+      if (this.online) this._netDeadline(f, opp);
       // Super meter fills passively by taking damage (see _tickSuperMeter).
       // Drain any activated super state, decay swing-counted supers.
       this._tickSuperMeter(f, opp, dt);
     }
+
+    if (this.online) this._tickNet(dt);
 
     // ── Ring clamp + cannon-es physics step ────────────────────────
     // 1. Clamp each fighter inside the ring (still the engine's job — cannon
@@ -2827,8 +2882,10 @@ export class BrawlGame {
     if (!player) return;
     const capped = Math.min(dmg, Math.max(0, player.health - 5));
     if (capped <= 0.1) return;
-    this.combat.damage({ playerId: f.playerId, amount: capped, sourceId: f.playerId });
+    // Online the server owns every point of HP — the crate still flies, it just costs nothing.
+    if (!this.online) this.combat.damage({ playerId: f.playerId, amount: capped, sourceId: f.playerId });
     this.hudDirty = true;
+    this._commentate('crate', f);
     const p = f.rig.root.position;
     this._spawnSparks(new THREE.Vector3(p.x, 1.0, p.z), 0xffd0a0, 5, 1.2);
     this.audio.grunt({ power: 0.6 });
@@ -2879,7 +2936,9 @@ export class BrawlGame {
         try {
           const onKiosk = (location.search || '').indexOf('kiosk=') >= 0
             || /\/demo(\b|\/|$)/i.test(location.pathname || '');
-          if (!onKiosk && (localStorage.getItem('pomini_muted') || '').indexOf('1') === -1 && navigator.vibrate) {
+          // The Profile haptics opt-out, not mute ("sound off, buzz on" is a real choice) —
+          // this read pomini_muted until 2026-09-29, so the haptics toggle did nothing here.
+          if (!onKiosk && localStorage.getItem('pomini_haptics') !== '0' && navigator.vibrate) {
             navigator.vibrate((code === 'KeyF' || code === 'KeyG') ? 16 : 8);
           }
         } catch { }
@@ -2911,6 +2970,8 @@ export class BrawlGame {
     // guard, with no way to block at all.
     right.append(mk('KeyR', '🛡', true),
       mk('KeyF', '👊'), mk('KeyG', '🦵'));
+    // Online has a special (full energy); the local modes fire theirs by themselves.
+    if (this.options.mode === 'online') right.append(mk('KeyH', '⚡', true));
     panel.append(left, right);
     this.container.appendChild(panel);
     this.touchEl = panel;
@@ -3064,6 +3125,7 @@ export class BrawlGame {
     this._spawnDamageNumber(point, dmg, region);
     // #3 — the run rings up the scale in the music's key.
     if (attacker.comboN >= 2) this.audio?.comboNote(attacker.comboN, point);
+    this._commentOnHit(attacker, defender, dmg);
 
     // ── Reaction layer (GFX/SOUND #3, #5, #6) ─────────────────────────
     // Every landed hit already had a sound; what it did not have was a mix and
@@ -3249,7 +3311,10 @@ export class BrawlGame {
     // nothing reads.
     try { VisualRuntime.enableAudioReactive(false); } catch { /* */ }
     window.removeEventListener('resize', this._onResize);
+    window.removeEventListener('keydown', this._onMuteKey);
     this._disposeTraining();
+    this._disposeNet();
+    this._disposeCommentary();
     if (this.touchEl) this.touchEl.remove();
     if (this.fighters) for (const f of this.fighters) f.controller.dispose();
     if (this.audio) this.audio.close();
@@ -3312,4 +3377,4 @@ export class BrawlGame {
 // Must run at module scope, after the class declaration and before any instance
 // is constructed. index.js only ever imports BrawlGame from here, so by the time
 // `new BrawlGame()` can be reached these methods are already on the prototype.
-mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training);
+mixin(BrawlGame.prototype, SceneSetup, PersonalityEffects, Vfx, Cinematics, HitResolution, Training, Netplay, Commentary);

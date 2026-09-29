@@ -7,8 +7,9 @@ let initGeneration = 0;
 
 window.PoBrawl = {
   /**
-   * options: { mode: '1p'|'2p'|'demo', p1Character, p2Character, difficulty,
-   *            training?: { dummy, hitboxes, infiniteEnergy } (1P only) }
+   * options: { mode: '1p'|'2p'|'demo'|'online', p1Character, p2Character, difficulty,
+   *            training?: { dummy, hitboxes, infiniteEnergy } (1P only),
+   *            localSide?: 1|2 (online; 0 or absent = spectating), seed? }
    */
   async init(containerId, dotnetRef, options) {
     const generation = ++initGeneration;
@@ -46,15 +47,19 @@ window.PoBrawl = {
    * @param {string|null} p2Character  new opponent, or null to keep the current one
    * @param {number|string|null} difficulty  new CPU level, or null to keep it
    * @param {string|null} roundLabel  one-shot splash heading (e.g. "ROUND 2")
+   * @param {string|null} introLine  the PA's ring introduction, read under the splash
    */
-  next(p2Character, difficulty, roundLabel) {
+  next(p2Character, difficulty, roundLabel, introLine) {
     if (!game) return;
     if (p2Character) game.options.p2Character = p2Character;
     if (difficulty !== undefined && difficulty !== null) game.options.difficulty = difficulty;
     game._roundLabel = roundLabel || null;
+    game._introLine = introLine || null;
     game.resetMatch(false);
   },
   setMuted(muted) { if (game) game.setMuted(muted); },
+  /** Online: one server snapshot (PoBrawlMatchState) for the puppet fight (netplay.js). */
+  net(state) { if (game) game.applyNet(state); },
   /** Save or share the last KO clip (GFX/SOUND #10). Resolves false when there is none. */
   saveClip() { return game ? game.saveClip() : Promise.resolve(false); },
   /**

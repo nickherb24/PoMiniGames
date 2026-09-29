@@ -282,6 +282,8 @@ class HitResolutionMethods {
     // A KO'd body is invulnerable — wailing on a ragdoll would read as
     // unfair and looks broken.
     if (defender.state === 'ko') return;
+    // Online the server already decided this swing (netplay.js): land its verdict instead.
+    if (this.online) return this._tryHitNet(attacker, defender, attack, contact);
 
     // Phase detection honors per-fighter swing timing multipliers (Eisenhower
     // "Overlord" stretches windup and compresses active). windup and active
@@ -441,6 +443,7 @@ class HitResolutionMethods {
         this._spawnSparks(hit.point, 0xffd257, 14, 1.8);
         this._flashImpactLight(hit.point, 6, 0xffd257, 0.16);
         this._spawnCallout(hit.point, 'PERFECT!');
+        this._commentate('perfect', defender, attacker);
         if (this.audio) {
           this.audio.block(hit.point);
           this.audio.whoosh();
@@ -589,6 +592,7 @@ class HitResolutionMethods {
       attacker.counterUntil = -99;
       baseDmg *= COUNTER_ATK_MUL;
       this._spawnCallout(hit.point, 'COUNTER!');
+      this._commentate('counter', attacker, defender);
     }
 
     // Super meter fill on damage taken. Pure damage ratio: a hit that costs

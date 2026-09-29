@@ -48,7 +48,7 @@ public class OnlineModesUiTests
     }
 
     [Theory]
-    [InlineData("/pobrawl/multi", "Start Fight", "/pobrawl/online", ".pobrawl-online__header")]
+    [InlineData("/pobrawl/multi", "Start Fight", "/pobrawl/online", "#pobrawl-container canvas")]
     [InlineData("/poracer/multi", "Start Race", "/poracer", ".racer-hud")]
     [InlineData("/povoxelstrike/multi", "Start the Run", "/povoxelstrike/multi/", "#povoxelstrike-container canvas")]
     public async Task LobbyGame_TwoPlayersReady_HostStarts_AndBothReachTheMatch(string lobby, string startLabel, string matchPath, string marker)
@@ -86,7 +86,7 @@ public class OnlineModesUiTests
             await page.WaitForURLAsync(url => url.Contains(matchPath, StringComparison.Ordinal), new() { Timeout = 30_000 });
             // The race/run pages open on their own intro card; Brawl's match page does not.
             await DismissIntroIfShownAsync(page, 15_000);
-            // The live match: Brawl's HP header, Racer's in-race HUD, Voxel Strike's engine canvas.
+            // The live match: Brawl's arena canvas, Racer's in-race HUD, Voxel Strike's engine canvas.
             await WaitForMarkerAsync(page, marker, 90_000);
         }
     }

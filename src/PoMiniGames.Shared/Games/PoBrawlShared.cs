@@ -96,3 +96,25 @@ public sealed record PoBrawlPresserRequest(
 
 /// <summary>The line, and who said it. <paramref name="Mock"/> marks a canned fallback.</summary>
 public sealed record PoBrawlPresserReply(string Speaker, string Text, bool Mock);
+
+/// <summary>
+/// The ring introduction the PA reads under the VS splash (POST /api/pobrawl/intro). Roster ids
+/// only — the server writes every word the model sees. Answered with a <see cref="PoBrawlPresserReply"/>.
+/// </summary>
+public sealed record PoBrawlIntroRequest(string P1Id, string P2Id);
+
+/// <summary>
+/// A player's 1P ladder progress (GET/PUT /api/pobrawl/progress), so a run follows them across
+/// devices. The client keeps the same numbers in localStorage and the newer copy wins the rung.
+/// </summary>
+public sealed class PoBrawlProgressDto
+{
+    /// <summary>0-based rung: the president the next fight is against.</summary>
+    public int Rung { get; set; }
+    /// <summary>Fastest KO ever, seconds; 0 for none.</summary>
+    public double BestKoSeconds { get; set; }
+    /// <summary>Full ladder clears, all time.</summary>
+    public int Clears { get; set; }
+    /// <summary>When the rung was written, Unix ms — the tiebreak between two devices.</summary>
+    public long UpdatedAtUnixMs { get; set; }
+}

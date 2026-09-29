@@ -45,6 +45,19 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// result depends on — HP, energy, spacing — plus enough of the engine's numbers (walk
 /// speeds, separation, ring size) that the two feel alike.
 /// </para>
+/// <para>
+/// <b>2026-09-29: the page plays this fight in the 3D arena.</b> The engine runs as a puppet
+/// of the snapshots (game.js online mode): it walks each fighter to the server's X, throws the
+/// swing the server fired, and lands the damage the server rolled at the moment the limb
+/// connects. So each tick now reports each corner's held state, swing, outcome and damage.
+/// The fight opens on a <see cref="CountdownSeconds"/> pre-roll (negative elapsed; inputs held
+/// but not applied) so both browsers finish loading and play the same "3, 2, 1, FIGHT!".
+/// </para>
+/// <para>
+/// <b>Presence.</b> A corner is present while any match-hub connection is pinned to it. One
+/// that drops (or never arrives) gets a grace window, and then forfeits — before this a
+/// disconnect left the other player punching an empty corner until the bell.
+/// </para>
 /// </remarks>
 public sealed class PoBrawlMatchService : IAsyncDisposable
 {
@@ -56,6 +69,18 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
 
     /// <summary>Round length, seconds. Matches the 2P local round.</summary>
     public const double MatchDurationSeconds = 60.0;
+
+    /// <summary>
+    /// Pre-roll before the bell: long enough for both pages to load the arena and play the
+    /// engine's 3.7 s countdown in step with it. The lobby's matches use this; tests start at 0.
+    /// </summary>
+    public const double CountdownSeconds = 5.0;
+
+    /// <summary>How long a corner that dropped mid-fight has to reconnect before it forfeits.</summary>
+    public const double ReconnectGraceSeconds = 15.0;
+
+    /// <summary>How long a corner has to arrive at all (page load included) before it forfeits.</summary>
+    public const double ArrivalGraceSeconds = 25.0;
 
     /// <summary>Punch base damage. Varied per hit by ±20%.</summary>
     public const int PunchBaseDamage = 6;
@@ -117,14 +142,28 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         public PoBrawlMatchAction? Pending;
         public int Cooldown;
         public long LastSequence = long.MinValue;
+        // ── This tick's swing, for the 3D view (reset every tick) ──
+        public PoBrawlMatchAction? Swing;
+        public string Outcome = "";
+        public int Damage;
+        // ── Presence ──
+        public bool EverConnected;
+        /// <summary>Seconds this corner has had no connection (reset on arrival).</summary>
+        public double AbsentFor;
+        public bool WantsRematch;
     }
 
     private readonly Corner _c1 = new(-SpawnX);
     private readonly Corner _c2 = new(SpawnX);
     private double _elapsedSeconds;
+    private long _tick;
     private bool _finished;
+    private bool _forfeit;
     private string _lastEvent = "";
     private PoBrawlSide? _winner;
+
+    /// <summary>When the bell rang, or null while the fight is on. The registry drops a match a while after this.</summary>
+    public DateTimeOffset? FinishedAtUtc { get; private set; }
 
     // RNG seeded deterministically from match id so a given input script always
     // produces the same damage rolls. Random.Shared would diverge between hosts in a
@@ -135,7 +174,8 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
     /// <summary>Connection-id keyed map. Set by the match hub at JoinMatch.</summary>
     private readonly ConcurrentDictionary<string, PoBrawlSide> _connections = new();
 
-    public PoBrawlMatchService(string matchId, string gameCode, IReadOnlyList<PoBrawlLobbyPlayer> roster)
+    /// <param name="countdownSeconds">Pre-roll before the bell (see <see cref="CountdownSeconds"/>); 0 starts the fight at once.</param>
+    public PoBrawlMatchService(string matchId, string gameCode, IReadOnlyList<PoBrawlLobbyPlayer> roster, double countdownSeconds = 0)
     {
         MatchId = matchId;
         GameCode = gameCode;
@@ -146,6 +186,7 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         _p1 = Roster[0];
         _p2 = Roster[1];
         _rng = new Random(StableSeed(matchId));
+        _elapsedSeconds = -Math.Max(0, countdownSeconds);
     }
 
     private static int StableSeed(string matchId)
@@ -164,8 +205,23 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
     public PoBrawlSide SideFor(string connectionId) =>
         _connections.TryGetValue(connectionId, out var side) ? side : PoBrawlSide.Player1;
 
-    public void RegisterConnection(string connectionId, PoBrawlSide side) =>
-        _connections[connectionId] = side;
+    /// <summary>True when this connection is pinned to a corner (false for a spectator).</summary>
+    public bool IsSeated(string connectionId) => _connections.ContainsKey(connectionId);
+
+    public void RegisterConnection(string connectionId, PoBrawlSide side)
+    {
+        lock (_stateLock)
+        {
+            _connections[connectionId] = side;
+            var corner = CornerOf(side);
+            corner.EverConnected = true;
+            corner.AbsentFor = 0;
+        }
+    }
+
+    private Corner CornerOf(PoBrawlSide side) => side == PoBrawlSide.Player1 ? _c1 : _c2;
+
+    private bool IsPresentLocked(PoBrawlSide side) => _connections.Values.Any(s => s == side);
 
     /// <summary>
     /// Every match-hub connection pinned to a side. The pump sends each its own result
@@ -186,7 +242,9 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         // Roster[0] is Player1, Roster[1] is Player2 (host-first, matches the lobby).
         for (var i = 0; i < Roster.Count; i++)
         {
-            if (string.Equals(Roster[i].PrincipalId, principalId, StringComparison.Ordinal))
+            // Ignore-case: the lobby lower-cases the principal it seats (it doubles as a table
+            // row key), while the claim id arrives as issued.
+            if (string.Equals(Roster[i].PrincipalId, principalId, StringComparison.OrdinalIgnoreCase))
             {
                 var side = i == 0 ? PoBrawlSide.Player1 : PoBrawlSide.Player2;
                 RegisterConnection(connectionId, side);
@@ -196,7 +254,41 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         return false;
     }
 
-    public void UnregisterConnection(string connectionId) => _connections.TryRemove(connectionId, out _);
+    /// <summary>
+    /// Forget a connection. When it was the corner's last one, the corner lets go of whatever it
+    /// was holding — a player who dropped mid-walk must not march into the ropes for the whole
+    /// grace window — and its absence clock starts.
+    /// </summary>
+    public void UnregisterConnection(string connectionId)
+    {
+        lock (_stateLock)
+        {
+            if (!_connections.TryRemove(connectionId, out var side) || IsPresentLocked(side)) return;
+            var corner = CornerOf(side);
+            corner.Held = PoBrawlMatchAction.Idle;
+            corner.Pending = null;
+        }
+    }
+
+    /// <summary>
+    /// A seated corner asks for the rematch. True once both have asked — the caller then starts
+    /// the next fight with the same roster and code. Spectators and a fight still running get false.
+    /// </summary>
+    public bool VoteRematch(string connectionId)
+    {
+        lock (_stateLock)
+        {
+            if (!_finished || !_connections.TryGetValue(connectionId, out var side)) return false;
+            CornerOf(side).WantsRematch = true;
+            return _c1.WantsRematch && _c2.WantsRematch;
+        }
+    }
+
+    /// <summary>The current snapshot, for a caller who needs it outside the tick (a join, a rematch vote).</summary>
+    public PoBrawlMatchState Snapshot()
+    {
+        lock (_stateLock) return SnapshotLocked();
+    }
 
     private static bool IsAttack(PoBrawlMatchAction a) =>
         a is PoBrawlMatchAction.Punch or PoBrawlMatchAction.Kick or PoBrawlMatchAction.Special;
@@ -235,10 +327,32 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         lock (_stateLock)
         {
             if (_finished) return null;
+            _tick++;
             _elapsedSeconds += 1.0 / TickHz;
-            ApplyTickLocked();
+            foreach (var c in new[] { _c1, _c2 })
+            {
+                c.Swing = null;
+                c.Outcome = "";
+                c.Damage = 0;
+            }
+            // The pre-roll: held keys are remembered (so a player already holding forward walks
+            // on the bell), but nothing moves and a press made during the count is dropped.
+            if (_elapsedSeconds <= 0)
+            {
+                _c1.Pending = null;
+                _c2.Pending = null;
+            }
+            else
+            {
+                ApplyTickLocked();
+            }
+            TickPresenceLocked();
             // Timer-end: tie goes to the higher-HP side; exact tie is a draw.
-            if (_c1.Hp <= 0)
+            if (_finished)
+            {
+                // A forfeit (TickPresenceLocked) — already decided.
+            }
+            else if (_c1.Hp <= 0)
             {
                 _finished = true; _winner = PoBrawlSide.Player2; _lastEvent = "ko";
             }
@@ -254,6 +368,7 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
                     : (PoBrawlSide?)null;
                 _lastEvent = _winner is null ? "time-up-draw" : "time-up";
             }
+            if (_finished) FinishedAtUtc = DateTimeOffset.UtcNow;
 
             snapshot = SnapshotLocked();
             // Clear last-event after one tick so the sound / shake on the client
@@ -261,6 +376,40 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
             _lastEvent = "";
         }
         return snapshot;
+    }
+
+    /// <summary>
+    /// Advance each corner's absence clock and forfeit one that stayed away past its grace. Only
+    /// the corner of a fight that has started to matter counts: both gone is an abandoned fight
+    /// with no winner, which the registry simply drops.
+    /// </summary>
+    private void TickPresenceLocked()
+    {
+        foreach (var (corner, side) in new[] { (_c1, PoBrawlSide.Player1), (_c2, PoBrawlSide.Player2) })
+        {
+            if (IsPresentLocked(side)) corner.AbsentFor = 0;
+            else corner.AbsentFor += 1.0 / TickHz;
+        }
+        var gone1 = _c1.AbsentFor >= GraceFor(_c1);
+        var gone2 = _c2.AbsentFor >= GraceFor(_c2);
+        if (!gone1 && !gone2) return;
+        _finished = true;
+        _forfeit = true;
+        _winner = gone1 && gone2 ? null : gone1 ? PoBrawlSide.Player2 : PoBrawlSide.Player1;
+        _lastEvent = _winner is null ? "abandoned" : "forfeit";
+    }
+
+    private static double GraceFor(Corner c) => c.EverConnected ? ReconnectGraceSeconds : ArrivalGraceSeconds;
+
+    private double? ForfeitInLocked()
+    {
+        if (_finished) return null;
+        var left = new[] { _c1, _c2 }
+            .Where(c => c.AbsentFor > 0)
+            .Select(c => GraceFor(c) - c.AbsentFor)
+            .DefaultIfEmpty(double.NaN)
+            .Min();
+        return double.IsNaN(left) ? null : Math.Max(0, Math.Round(left, 1));
     }
 
     private PoBrawlMatchState SnapshotLocked() => new()
@@ -276,6 +425,21 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         LastEvent = _lastEvent,
         Finished = _finished,
         Winner = _winner,
+        Tick = _tick,
+        Player1Held = _c1.Held,
+        Player2Held = _c2.Held,
+        Player1Swing = _c1.Swing,
+        Player2Swing = _c2.Swing,
+        Player1Outcome = _c1.Outcome,
+        Player2Outcome = _c2.Outcome,
+        Player1Damage = _c1.Damage,
+        Player2Damage = _c2.Damage,
+        Player1Connected = IsPresentLocked(PoBrawlSide.Player1),
+        Player2Connected = IsPresentLocked(PoBrawlSide.Player2),
+        // Only while a corner is actually away: an arriving corner's clock runs from the start
+        // but is not news until someone else is waiting on it.
+        ForfeitInSeconds = ForfeitInLocked() is { } left && (_c1.AbsentFor > 1 || _c2.AbsentFor > 1) ? left : null,
+        RematchVotes = (_c1.WantsRematch ? 1 : 0) + (_c2.WantsRematch ? 1 : 0),
     };
 
     private void ApplyTickLocked()
@@ -339,9 +503,11 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
             _ => (SpecialBaseDamage, SpecialReach, SpecialKnockback),
         };
         var tag = isP1 ? "p1" : "p2";
+        attacker.Swing = swing;
         if (gap > reach)
         {
             _lastEvent = $"{tag}-whiff";
+            attacker.Outcome = "whiff";
             return;
         }
 
@@ -366,12 +532,16 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         defender.X += isP1 ? knockback : -knockback;
         EnforceSpacing();
 
+        // A guarded kick still chips, but it reads as a block on screen — the guard held.
+        attacker.Outcome = guarded ? "blocked" : "hit";
         if (damage <= 0)
         {
             _lastEvent = $"{tag}-blocked";
             return;
         }
-        defender.Hp = Math.Max(0, defender.Hp - damage);
+        var dealt = Math.Min(defender.Hp, damage);
+        defender.Hp -= dealt;
+        attacker.Damage = dealt;
         attacker.Energy = Math.Min(100, attacker.Energy + EnergyOnLandHit);
         _lastEvent = swing == PoBrawlMatchAction.Special ? $"{tag}-special" : $"{tag}-hit";
     }
@@ -432,6 +602,7 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
             Player2Hp = snapshot.Player2Hp,
             OpponentId = opponent.PrincipalId,
             OpponentDisplayName = opponent.DisplayName,
+            Forfeit = _forfeit,
         };
     }
 

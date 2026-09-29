@@ -107,6 +107,9 @@ namespace PoMiniGamesClient.Services.Http;
 // PoBrawl post-fight press conference (2026-09-23).
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlPresserRequest))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlPresserReply))]
+// PoBrawl ring introduction + cross-device ladder progress (2026-09-29).
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlIntroRequest))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlProgressDto))]
 // Player Card & Online MMR
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.PlayerCardDto))]
 internal partial class ApiJsonContext : JsonSerializerContext

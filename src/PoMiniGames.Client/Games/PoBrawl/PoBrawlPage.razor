@@ -16,19 +16,23 @@
 @inject KioskCoordinator Kiosk
 @inject SettingsService Settings
 @inject AuthStateService Auth
+@inject ApiEndpoints Endpoints
+@inject NavigationManager Nav
+@inject ToastService Toasts
 
 <PageTitle>Brawl · PoMiniGames</PageTitle>
 
 <GameShell Title=@TitleContent
            Player="@_playerName"
            Elo="@(_mode == "1p" ? _rating.Elo : (int?)null)"
-           BackTo="/"
+           BackTo="@(_mode == "online" ? LobbyUrl : "/")"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
            GameKey="@(_mode == "1p" ? "pobrawlko" : null)"
            Outcome="@OutcomeForCue"
            RequiresWebGl="true"
            GameSummary="@GameSummaryContent"
+           PlayAgain="@PlayAgainCallback"
            Announcement="@_announcement">
     @if (!_introDone)
     {
@@ -64,7 +68,7 @@
                    hit shows how much it took. Pure CSS (a delayed width transition on the same
                    --hp); the 4×/sec OnHud pump needs no extra data. InDanger cracks the plate. *@
                 <div class="pb-hp-side @(InDanger(_p1Hp) ? "pb-hp-side--danger" : "")">
-                    <span class="pb-hp-name">@CharName(_p1Char)</span>
+                    <span class="pb-hp-name">@HudName(1)</span>
                     @* Review #5: the tracks are real meters now — a screen reader can
                        query either bar on demand (role=meter carries the value range)
                        without waiting for the sparse live-region milestones. *@
@@ -86,7 +90,7 @@
                 </div>
                 @BodyDiagram(_p2Regions)
                 <div class="pb-hp-side pb-hp-right @(InDanger(_p2Hp) ? "pb-hp-side--danger" : "")">
-                    <span class="pb-hp-name">@CharName(_p2Char)</span>
+                    <span class="pb-hp-name">@HudName(2)</span>
                     <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
                          aria-valuenow="@_p2Hp" aria-label="@CharName(_p2Char) — health">
                         <div class="pb-hp-ghost" style="--hp: @(_p2Hp)%;"></div><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div>
@@ -124,6 +128,36 @@
         @if (_demo)
         {
             <div class="pb-demo-badge">@(_drill ? "🥋 Demo — training drill" : "🎮 Demo — CPU vs CPU")</div>
+        }
+
+        @* Online: the room, your corner, and anything the network is doing to the fight. *@
+        @if (_mode == "online")
+        {
+            @if (_netMissing)
+            {
+                <div class="pb-net-missing" role="status">
+                    <h2>No fight in room @_code</h2>
+                    <p>It already ended, or it never started. The lobby has the room.</p>
+                    <a class="pb-net-btn" href="@LobbyUrl">Back to the lobby</a>
+                </div>
+            }
+            else if (_net?.Snapshot is { } snap)
+            {
+                <div class="pb-net-status" role="status">
+                    <span class="pb-net-pill">Room @_code</span>
+                    <span class="pb-net-pill @(snap.IsSpectator ? "pb-net-pill--watch" : "")">
+                        @(snap.IsSpectator ? "👀 Spectating" : $"You: {(snap.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? "left" : "right")} corner")
+                    </span>
+                    @if (NetNotice is { } notice)
+                    {
+                        <span class="pb-net-pill pb-net-pill--warn">@notice</span>
+                    }
+                </div>
+            }
+            else
+            {
+                <div class="pb-net-status" role="status"><span class="pb-net-pill">Joining room @_code…</span></div>
+            }
         }
 
         @* Training (1P). The OPTION lives on the intro card ("Training first",
@@ -171,6 +205,8 @@
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
+    /// <summary>Online: the room code of the fight (from the lobby, a shared link, or a refresh).</summary>
+    [SupplyParameterFromQuery(Name = "code")] public string? CodeQuery { get; set; }
 
     // 1-player ladder: PoBrawlRoster.Fighters in ladder order — most recent president first,
     // marching back in time to FDR. Rung index doubles as the CPU difficulty level (index + 1
@@ -200,7 +236,15 @@
     // Outcome for the end-of-game cue. _winner is 1 for the local player and 2
     // for the opponent; only the 1P ladder has a "you" to win, so 2-player and
     // demo stay Unknown (see GameOverModal.Outcome).
-    private GameResult OutcomeForCue => _mode != "1p"
+    private GameResult OutcomeForCue => _mode == "online"
+        ? _netResult?.Outcome switch
+        {
+            PoMiniGames.Shared.Games.PoBrawlOutcome.Win => GameResult.Win,
+            PoMiniGames.Shared.Games.PoBrawlOutcome.Loss => GameResult.Loss,
+            PoMiniGames.Shared.Games.PoBrawlOutcome.Draw => GameResult.Draw,
+            _ => GameResult.InProgress,
+        }
+        : _mode != "1p"
         ? GameResult.InProgress
         : _winner == 1 ? GameResult.Win
         : _winner == 2 ? GameResult.Loss
@@ -284,7 +328,6 @@
     private double _lastKo;
     private double _bestKo;
     private bool _newRecord;
-    private bool _muted;
 
     // Review #5: the shell's polite live region. Sparse milestones only — round
     // start, the first reading of each fighter in the red, training toggles and
@@ -308,6 +351,13 @@
     private AdaptiveRating _rating = new();
     private int _lastEloDelta;
     private string LadderKey => $"pobrawl_ladder_{_playerName}";
+    // When the rung was last written here, so a newer server copy (another device) can win.
+    private string LadderAtKey => $"pobrawl_ladder_at_{_playerName}";
+    // The fastest KO used to live only in _bestKo, which reset on every page load — so "Best KO"
+    // in the stats panel read 0s on every visit and every KO counted as a new record.
+    private string BestKoKey => $"pobrawl_bestko_{_playerName}";
+    private string ClearsKey => $"pobrawl_clears_{_playerName}";
+    private int _clears;                 // full ladder clears, all time
 
     // ── 2-player: one round ───────────────────────────────────────────────
     // Best-of-three is gone (2026-08-11, by request): every mode is now a single
@@ -370,6 +420,51 @@
     private PoMiniGames.Shared.Games.PoBrawlPresserReply? _presser;
     private bool _presserLoading;
     private int _presserGeneration;
+
+    // ── Ring introduction (POST /api/pobrawl/intro) ──────────────────────
+    // The one model line a local fight gets: the PA introduces the pair under the VS splash.
+    // Fetched early (the 1P intro card is up for a while) and handed to the engine, which
+    // speaks and captions it and holds the splash for it.
+    private Task<string?>? _introLine;
+    private string? _introLineFor;
+
+    // ── Online (PoBrawlNetSession; the arena is a puppet of the server's fight) ──
+    private PoBrawlNetSession? _net;
+    private string _code = "";
+    private string? _engineMatchId;   // the fight the running engine is showing
+    private bool _netMissing;         // JoinMatch answered null: no fight on this code
+    private PoMiniGames.Shared.Games.PoBrawlMatchResult? _netResult;
+    private string? _netSubmittedFor; // match id whose result already went to the Elo board
+    private bool _rematchRequested;
+    private int _rematchVotes;
+    private string? _netNoticeShown;
+    private string _p1Player = "";
+    private string _p2Player = "";
+
+    private string LobbyUrl => string.IsNullOrEmpty(_code) ? "/pobrawl/multi" : $"/pobrawl/multi?code={Uri.EscapeDataString(_code)}";
+    private bool IsSpectator => _net?.Snapshot?.IsSpectator == true;
+
+    /// <summary>What the network is doing to the fight, or null when nothing worth saying.</summary>
+    private string? NetNotice
+    {
+        get
+        {
+            if (_net is null) return null;
+            if (_net.ConnectionState == Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Reconnecting) return "Reconnecting…";
+            if (_net.ConnectionState == Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Disconnected) return "Disconnected";
+            if (_net.State is { Finished: false, ForfeitInSeconds: { } left } s)
+            {
+                var who = !s.Player1Connected ? _p1Player : _p2Player;
+                return $"{who} dropped — forfeit in {Math.Ceiling(left):0}s";
+            }
+            return null;
+        }
+    }
+
+    // Play Again: a fresh 1P run from the current rung, the same 2P pairing, or an online rematch
+    // vote. A spectator has nothing to replay, so the modal shows its plain "Back" instead.
+    private EventCallback PlayAgainCallback =>
+        _demo || IsSpectator || _netMissing ? default : EventCallback.Factory.Create(this, PlayAgainAsync);
 
     /// <summary>
     /// Per-round scorecard reported by the engine alongside the result.
@@ -602,9 +697,9 @@
     </text>;
 
     // The legacy in-canvas Controls fragment was unreachable (the Settings
-    // drawer was removed 2026-07-06) and is intentionally gone. Mute toggle +
-    // character select are reachable via Play Again ("REMATCH") / Next Match
-    // on the unified end-of-game modal; mute is a JS `keydown` on `M`.
+    // drawer was removed 2026-07-06) and is intentionally gone. M mutes the fight
+    // (game.js `_onMuteKey`, 2026-09-29 — this comment claimed it for months before
+    // it existed), and the result modal's Play again restarts the fight.
 
     // Two-player fighter select shown in the intro's Options slot. Each player
     // drives their own column with their in-game keys (see OnIntroKey); locking
@@ -671,12 +766,25 @@
         {
             <div>KO in @_lastKo.ToString("0.00")s@(_newRecord ? " — 🏆 New record!" : "")</div>
         }
+        @if (_mode == "online" && !IsSpectator)
+        {
+            @* Both corners have to ask; the server starts the next fight on the same code with the
+               same fighters the moment the second one does. *@
+            @if (_rematchRequested || _rematchVotes > 0)
+            {
+                <div class="pb-rematch" role="status">🔁 Rematch @_rematchVotes/2 — @(_rematchRequested ? $"waiting for {OpponentPlayer}…" : $"{OpponentPlayer} wants a rematch! Press Play again.")</div>
+            }
+            else
+            {
+                <div>Play again asks @OpponentPlayer for a rematch — same fighters, same room.</div>
+            }
+        }
         @if (_mode == "1p")
         {
             <div>Elo @_rating.Elo (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</div>
             @if (_champion)
             {
-                <div>🏆 Ladder complete — every president is down! Starting over at @Roster[0].Name.</div>
+                @EndingCard
             }
             else
             {
@@ -702,10 +810,10 @@
                 <thead>
                     <tr>
                         <th scope="col" class="pb-recap-stat">Stat</th>
-                        <th scope="col">@CharName(_p1Char)</th>
+                        <th scope="col">@HudName(1)</th>
                         @* In 1P the run walks several presidents, so the right-hand
                            column is every opponent it faced, not the last one. *@
-                        <th scope="col">@(_mode == "1p" ? "Presidents" : CharName(_p2Char))</th>
+                        <th scope="col">@(_mode == "1p" ? "Presidents" : HudName(2))</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -759,6 +867,31 @@
            applies, whichever board the panel is showing. *@
     </div>;
 
+    // The ladder's ending (2026-09-29): a full clear used to be one line of text in the modal.
+    // Now it is a card — the roll of fifteen KOs, the run's numbers, and the belt going back
+    // on the line at rung 1.
+    private RenderFragment EndingCard => @<section class="pb-ending" aria-label="Ladder complete">
+        <div class="pb-ending-seal" aria-hidden="true">🏆</div>
+        <h3 class="pb-ending-title">Commander-in-Chief of the Ring</h3>
+        <p class="pb-ending-line">Fifteen presidents, fifteen trips to the canvas. BOB loosens his tie, clocks back in at the office, and never mentions it again.</p>
+        <ol class="pb-ending-roll">
+            @foreach (var f in Roster)
+            {
+                <li><span class="pb-ending-ko">KO</span> @f.Name</li>
+            }
+        </ol>
+        <dl class="pb-ending-stats">
+            <div><dt>Elo</dt><dd>@_rating.Elo</dd></div>
+            <div><dt>Fastest KO</dt><dd>@(_bestKo > 0 ? $"{_bestKo:0.00}s" : "—")</dd></div>
+            <div><dt>Ladder clears</dt><dd>@_clears</dd></div>
+            @if (_recap is { } run)
+            {
+                <div><dt>Hits this run</dt><dd>@run.P1Hits</dd></div>
+            }
+        </dl>
+        <p class="pb-ending-next">The belt goes back on the line — @Roster[0].Name is waiting at rung 1.</p>
+    </section>;
+
     protected override void OnInitialized()
     {
         var routeMode = GameModes.Parse(Mode, ModeQuery, DemoQuery);
@@ -766,17 +899,21 @@
         _mode = _demo ? "demo"
               : routeMode == GameMode.TwoPlayer ? "2p"
               : "1p";
-        _playerName = PlayerNameService.GetPlayerName();
-        _stats = _gameStats.GetStats("pobrawl", _playerName);
-
-        if (_mode == "1p")
+        // /pobrawl/online?code=… — the lobby's fight. Not a GameModes slug: it is not a way to
+        // START a game (that is /pobrawl/multi), only where a started one is played or watched.
+        // The lobby already showed the intro card, so there is none here.
+        if (string.Equals(Mode, "online", StringComparison.OrdinalIgnoreCase))
         {
-            _rating = _gameStats.GetAdaptiveRating("pobrawl", _playerName);
-            _ladder = LoadLadder();
-            _p1Char = Bob.Id;
-            _p2Char = Roster[_ladder].Id;
+            _mode = "online";
+            _introDone = true;
+            _code = (CodeQuery ?? "").Trim().ToUpperInvariant();
         }
-        else if (_mode == "2p")
+        LoadLocalProgress();
+        // The name can still be settling (localStorage read, then the signed-in display name) —
+        // and everything above is keyed by it. See OnPlayerNameChanged.
+        PlayerNameService.StateChanged += OnPlayerNameChanged;
+
+        if (_mode == "2p")
         {
             // Seed the HUD from the select cursors so the nameplates behind the
             // intro card match what the two columns are pointing at.
@@ -788,10 +925,28 @@
         if (_demo) Kiosk.SetCurrent("pobrawl-demo");
     }
 
+    /// <summary>
+    /// 1P: pick up ladder progress saved from another device (GET /api/pobrawl/progress). The
+    /// newer of the two copies wins the rung; the fastest KO and the clear count take the best.
+    /// Never blocks the page — offline or signed out, the local copy simply stands.
+    /// </summary>
     protected override async Task OnInitializedAsync()
     {
-        if (!_demo) return;
-
+        if (_mode != "1p" || !Auth.IsAuthenticated) return;
+        var remote = await ApiService.GetPoBrawlProgressAsync();
+        if (remote is null) return;
+        var localAt = long.TryParse(LocalStorageService.GetItem<string>(LadderAtKey), out var at) ? at : 0;
+        if (remote.UpdatedAtUnixMs > localAt && !_introDone)
+        {
+            _ladder = Math.Clamp(remote.Rung, 0, Roster.Length - 1);
+            _p2Char = Roster[_ladder].Id;
+            LocalStorageService.SetItem(LadderKey, _ladder.ToString());
+            LocalStorageService.SetItem(LadderAtKey, remote.UpdatedAtUnixMs.ToString());
+            OnOpponentKnown();
+        }
+        if (remote.BestKoSeconds > 0 && (_bestKo == 0 || remote.BestKoSeconds < _bestKo)) SaveBestKo(remote.BestKoSeconds);
+        _clears = Math.Max(_clears, remote.Clears);
+        UpdateStats();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -802,8 +957,54 @@
         // so the fight never runs behind the welcome card. Just create the interop
         // handle here — InitEngine needs it.
         _ref = DotNetObjectReference.Create(this);
-        // The scouting card is up now; its portrait can arrive whenever it arrives.
+        if (_mode == "online")
+        {
+            await StartOnlineAsync();
+            return;
+        }
+        // The scouting card is up now; its portrait (and the ring introduction) can arrive
+        // whenever they arrive.
+        OnOpponentKnown();
+    }
+
+    /// <summary>Everything this page keeps per player name: stats, Elo, the rung, the fastest KO, the clears.</summary>
+    private void LoadLocalProgress()
+    {
+        _playerName = PlayerNameService.GetPlayerName();
+        _stats = _gameStats.GetStats("pobrawl", _playerName);
+        _bestKo = double.TryParse(LocalStorageService.GetItem<string>(BestKoKey), System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture, out var ko) ? ko : 0;
+        _clears = int.TryParse(LocalStorageService.GetItem<string>(ClearsKey), out var c) ? c : 0;
+        if (_mode != "1p") return;
+        _rating = _gameStats.GetAdaptiveRating("pobrawl", _playerName);
+        _ladder = LoadLadder();
+        _p1Char = Bob.Id;
+        _p2Char = Roster[_ladder].Id;
+    }
+
+    /// <summary>
+    /// The player name settled after OnInitialized read it. On a reload the page can initialise
+    /// before the stored name (and then the signed-in display name) arrives, so the rung was read
+    /// under the wrong key and the run looked reset (2026-09-29). Re-read it — until the fight
+    /// starts; after that the running match owns the numbers.
+    /// </summary>
+    private void OnPlayerNameChanged()
+    {
+        if (_introDone || _demo || PlayerNameService.GetPlayerName() == _playerName) return;
+        _ = InvokeAsync(() =>
+        {
+            LoadLocalProgress();
+            UpdateStats();
+            if (_mode == "1p") OnOpponentKnown();
+            StateHasChanged();
+        });
+    }
+
+    /// <summary>The 1P opponent is settled (page load, or a rung restored from the server): fetch its card and introduction.</summary>
+    private void OnOpponentKnown()
+    {
         _ = LoadTapeAsync();
+        PrefetchIntro();
     }
 
     // Routes the intro's key events to each player's selection column. Physical
@@ -876,6 +1077,7 @@
             // still starts a legal, mirror-free fight.
             _p1Char = PickableRoster[_p1Sel].Id;
             _p2Char = PickableRoster[_p2Sel].Id;
+            PrefetchIntro();
         }
         // 1P keeps the ladder matchup chosen in OnInitialized (BOB vs the rung).
         // "Training first" boots the room instead of the fight — the ladder is
@@ -919,7 +1121,13 @@
         ResetRoundHud();
         // 1P difficulty is the ladder rung (1 = pushover Trump … 15 = brutal
         // FDR); demo keeps the balanced mid-tier CPU-vs-CPU fight.
-                object difficulty = _mode == "1p" ? _ladder + 1 : "medium";
+        object difficulty = _mode == "1p" ? _ladder + 1 : "medium";
+        // Online: which corner is ours (0 = watching). The engine drives both as puppets of the
+        // server's snapshots and only reads the local keys for corner `localSide`.
+        var localSide = _net?.Snapshot is { IsSpectator: false } snap
+            ? (snap.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? 1 : 2)
+            : 0;
+        var introLine = await TakeIntroAsync();
         try
         {
             // Route-gated engine load (see wwwroot/js/engineLoader.js). The engine is
@@ -941,9 +1149,11 @@
                     training = _training
                         ? new { dummy = _dummy, hitboxes = _hitboxes, infiniteEnergy = _infiniteEnergy }
                         : null,
+                    localSide,
+                    introLine,
                 });
             // Honour the global ⚙️ master-mute setting on every engine boot.
-            if (Settings.Muted || _muted)
+            if (Settings.Muted)
             {
                 await JSRuntime.InvokeVoidAsync("PoBrawl.setMuted", true);
             }
@@ -954,15 +1164,197 @@
         }
     }
 
-    // StartMatch / BackToSelect / NextMatch were removed with the pre-fight
-    // overlay and the modal's Play Again / Next Match buttons (2026-07-16). The
-    // ladder still advances in OnMatchEnd and is persisted by SaveLadder, so
-    // re-entering /pobrawl resumes at the next president.
-
-    private async Task ToggleMute()
+    /// <summary>
+    /// The result modal's Play again (2026-09-29 — it had no button since 2026-07-16, so a
+    /// finished fight's only way on was Back). 1P starts a fresh run from the current rung
+    /// (a loss never costs a rung, it only ends the run); 2P re-runs the same pairing; online
+    /// asks the other corner for a rematch, and the fight restarts when they ask too.
+    /// </summary>
+    private async Task PlayAgainAsync()
     {
-        _muted = !_muted;
-        try { await JSRuntime.InvokeVoidAsync("PoBrawl.setMuted", _muted); } catch { }
+        if (_mode == "online")
+        {
+            if (_net is null || _rematchRequested) return;
+            _rematchRequested = true;
+            _rematchVotes = Math.Max(_rematchVotes, 1);
+            StateHasChanged();
+            try { await _net.RequestRematchAsync(); }
+            catch { _rematchRequested = false; Toasts.Show("Couldn't reach the room — try again.", ToastType.Warning); }
+            return;
+        }
+        ++_presserGeneration; // a press line still in flight belongs to the fight that just ended
+        _presser = null;
+        _presserLoading = false;
+        _recap = null;
+        _lastRecap = null;
+        _champion = false;
+        _newRecord = false;
+        _winner = 0;
+        if (_mode == "1p") _p2Char = Roster[_ladder].Id;
+        _phase = "fighting";
+        _announcement = $"Rematch — {CharName(_p1Char)} versus {CharName(_p2Char)}.";
+        PrefetchIntro();
+        StateHasChanged();
+        await InitEngine();
+    }
+
+    // ── Online ───────────────────────────────────────────────────────────
+    private async Task StartOnlineAsync()
+    {
+        if (string.IsNullOrEmpty(_code))
+        {
+            Nav.NavigateTo("/pobrawl/multi");
+            return;
+        }
+        _net = new PoBrawlNetSession(Endpoints);
+        _net.Joined += snap => InvokeAsync(() => OnNetJoinedAsync(snap));
+        _net.StateReceived += OnNetState;
+        _net.Finished += r => InvokeAsync(() => OnNetFinishedAsync(r));
+        _net.RematchStarted += () => InvokeAsync(async () =>
+        {
+            try { if (_net is not null) await _net.JoinAsync(); } catch { /* the Joined handler never fires; the modal stays */ }
+        });
+        _net.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
+        try
+        {
+            await _net.ConnectAsync(_code);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoBrawl] online connect failed: {ex.Message}");
+            _netMissing = true;
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// A (re-)join answered. A new fight (the first join, or a rematch) boots the arena on its
+    /// fighters; a reconnect to the fight already on screen just carries on.
+    /// </summary>
+    private async Task OnNetJoinedAsync(PoMiniGames.Shared.Games.PoBrawlMatchSnapshot? snap)
+    {
+        if (snap is null)
+        {
+            // A reconnect after the fight was swept is not "missing" — the result is already up.
+            if (_engineMatchId is null) _netMissing = true;
+            StateHasChanged();
+            return;
+        }
+        _netMissing = false;
+        _p1Player = snap.Player1.DisplayName;
+        _p2Player = snap.Player2.DisplayName;
+        if (snap.MatchId == _engineMatchId) { StateHasChanged(); return; }
+
+        _engineMatchId = snap.MatchId;
+        _p1Char = snap.Player1.FighterId;
+        _p2Char = snap.Player2.FighterId;
+        _netResult = null;
+        _rematchRequested = false;
+        _rematchVotes = 0;
+        _recap = null;
+        _lastRecap = null;
+        _presser = null;
+        _presserLoading = false;
+        ++_presserGeneration;
+        _winner = 0;
+        _phase = "fighting";
+        _announcement = snap.IsSpectator
+            ? $"Watching {_p1Player} versus {_p2Player}."
+            : $"Online fight — you are the {(snap.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? "left" : "right")} corner against {OpponentPlayer}.";
+        StateHasChanged();
+        await InitEngine();
+    }
+
+    /// <summary>Every server tick: straight to the arena, off the render path.</summary>
+    private void OnNetState(PoMiniGames.Shared.Games.PoBrawlMatchState s)
+    {
+        _ = JSRuntime.InvokeVoidAsync("PoBrawl.net", s).AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
+        // Re-render only when something the page shows changed: the network notice, the votes.
+        var notice = NetNotice;
+        if (notice != _netNoticeShown || s.RematchVotes != _rematchVotes)
+        {
+            _netNoticeShown = notice;
+            _rematchVotes = Math.Max(s.RematchVotes, _rematchRequested ? 1 : 0);
+            InvokeAsync(StateHasChanged);
+        }
+    }
+
+    /// <summary>The server's result for our corner: the outcome the modal names, and the Elo write (once per fight).</summary>
+    private async Task OnNetFinishedAsync(PoMiniGames.Shared.Games.PoBrawlMatchResult r)
+    {
+        _netResult = r;
+        StateHasChanged();
+        if (_netSubmittedFor == r.MatchId || _net?.Snapshot is not { } snap) return;
+        _netSubmittedFor = r.MatchId;
+        var dto = new PoMiniGames.Shared.Games.PoBrawlMatchResultDto
+        {
+            MatchId = r.MatchId,
+            OwnerId = Auth.User?.UserId ?? "",
+            OwnerDisplayName = Auth.User?.DisplayName ?? "Player",
+            OpponentId = r.OpponentId,
+            OpponentDisplayName = r.OpponentDisplayName,
+            OwnerFighter = FighterOf(r.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? snap.Player1 : snap.Player2),
+            OpponentFighter = FighterOf(r.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? snap.Player2 : snap.Player1),
+            Outcome = r.Outcome,
+            // The ingest wants a positive duration; a forfeit before the bell has none.
+            DurationSeconds = Math.Max(0.1, r.DurationSeconds),
+        };
+        if (await ApiService.SubmitPoBrawlOnlineMatchAsync(dto) is null)
+        {
+            Toasts.Show("Couldn't record the match — Elo didn't update.", ToastType.Warning);
+        }
+    }
+
+    private static PoBrawlFighter FighterOf(PoMiniGames.Shared.Games.PoBrawlMatchPlayerInfo info) =>
+        string.IsNullOrWhiteSpace(info.FighterId) || string.Equals(info.FighterId, Bob.Id, StringComparison.OrdinalIgnoreCase)
+            ? Bob
+            : new PoBrawlFighter(info.FighterId, PoBrawlRoster.DisplayName(info.FighterId));
+
+    /// <summary>netplay.js → the local corner's held keys changed ('left' | 'right' | 'block' | 'idle').</summary>
+    [JSInvokable]
+    public Task OnNetHeld(string state) => _net?.SendHeldAsync(state) ?? Task.CompletedTask;
+
+    /// <summary>netplay.js → an attack key ('punch' | 'kick' | 'special').</summary>
+    [JSInvokable]
+    public Task OnNetPress(string attack) => _net?.SendPressAsync(attack) ?? Task.CompletedTask;
+
+    private string OpponentPlayer => _net?.Snapshot?.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player2 ? _p1Player : _p2Player;
+
+    /// <summary>The HUD nameplate: the president, and online the person driving them too.</summary>
+    private string HudName(int side)
+    {
+        var fighter = CharName(side == 1 ? _p1Char : _p2Char);
+        if (_mode != "online") return fighter;
+        var player = side == 1 ? _p1Player : _p2Player;
+        return string.IsNullOrEmpty(player) ? fighter : $"{player} · {fighter}";
+    }
+
+    // ── Ring introduction ────────────────────────────────────────────────
+    private void PrefetchIntro()
+    {
+        if (_demo || _mode == "online" || !Auth.IsAuthenticated) return;
+        var key = $"{_p1Char}|{_p2Char}";
+        if (_introLineFor == key && _introLine is not null) return;
+        _introLineFor = key;
+        _introLine = FetchIntroAsync(_p1Char, _p2Char);
+    }
+
+    private async Task<string?> FetchIntroAsync(string p1, string p2) =>
+        (await ApiService.GetPoBrawlIntroAsync(new PoMiniGames.Shared.Games.PoBrawlIntroRequest(p1, p2)))?.Text;
+
+    /// <summary>
+    /// The introduction for the fight about to start, if it is ready within a beat. Consumed —
+    /// the next fight fetches its own. A slow model costs the fight its introduction, never its start.
+    /// </summary>
+    private async Task<string?> TakeIntroAsync()
+    {
+        if (_training || _demo || _mode == "online") return null;
+        PrefetchIntro();
+        if (_introLine is not { } task) return null;
+        _introLine = null;
+        _introLineFor = null;
+        var done = await Task.WhenAny(task, Task.Delay(1200));
+        return done == task ? await task : null;
     }
 
     // ── Training room (1P) ───────────────────────────────────────────────
@@ -1066,7 +1458,7 @@
         _presserLoading = false;
         _presser = reply;
         await InvokeAsync(StateHasChanged);
-        if (reply is not null && !(Settings.Muted || _muted))
+        if (reply is not null && !Settings.Muted)
         {
             try { await JSRuntime.InvokeVoidAsync("PoBrawl.say", $"{reply.Speaker}: {reply.Text}"); } catch { }
         }
@@ -1295,6 +1687,20 @@
         // PoBrawl.next for the next one, stop at two wins or three rounds) is
         // gone. One round decides it — by KO, by health decision at 60 s, or as
         // a draw when the bars are within the engine's DRAW_HP_BAND.
+        // ── Online: the engine only presents the server's result (netplay.js ends the fight
+        // when the server does). The outcome that counts — and the Elo write — arrive
+        // separately as matchFinished (OnNetFinishedAsync).
+        if (_mode == "online")
+        {
+            _phase = "result";
+            _announcement = winner == 0
+                ? "The bell — a draw."
+                : $"{(winner == 1 ? _p1Player : _p2Player)} takes it with {CharName(winner == 1 ? _p1Char : _p2Char)}.";
+            await InvokeAsync(StateHasChanged);
+            if (!IsSpectator) _ = StartPresserAsync();
+            return;
+        }
+
         if (_mode == "2p")
         {
             _phase = "result";
@@ -1314,9 +1720,10 @@
         PoBrawlHighScore? best = null;
         _newRecord = false;
         var won = winner == 1;
-        if (won && elapsedSeconds > 0 && (_bestKo == 0 || elapsedSeconds < _bestKo))
+        // A KO, not a decision at the bell: a time-up win is not a "KO in 60.00s" record.
+        if (won && elapsedSeconds > 0 && elapsedSeconds < 59.9 && (_bestKo == 0 || elapsedSeconds < _bestKo))
         {
-            _bestKo = elapsedSeconds;
+            SaveBestKo(elapsedSeconds);
             _newRecord = true;
             best = new PoBrawlHighScore
             {
@@ -1346,6 +1753,8 @@
             {
                 _champion = true;   // cleared the last rung → triumphant end, show the modal
                 _ladder = 0;
+                _clears++;
+                LocalStorageService.SetItem(ClearsKey, _clears.ToString());
             }
             else
             {
@@ -1387,17 +1796,22 @@
             // navigation inside the hold supersedes this roll: the generation moves on a
             // toggle, and a disposed engine makes PoBrawl.next a no-op anyway.
             var generation = _presserGeneration;
+            // The next president's ring introduction is fetched under the hold.
+            var nextP2 = Roster[_ladder].Id;
+            _p2Char = nextP2;
+            PrefetchIntro();
             await Task.Delay(LadderResultHoldMs);
             if (generation != _presserGeneration || _training) return;
 
             // Stay in the fight: reset the HUD to the fresh match and tell the
             // engine to roll into the next president (NEXT ROUND splash →
             // countdown). GameOver stays false, so no modal is shown.
-            _p2Char = Roster[_ladder].Id;
+            _p2Char = nextP2;
             _phase = "fighting";
             ResetRoundHud();
             await InvokeAsync(StateHasChanged);
-            try { await JSRuntime.InvokeVoidAsync("PoBrawl.next", _p2Char, _ladder + 1, null); }
+            var introLine = await TakeIntroAsync();
+            try { await JSRuntime.InvokeVoidAsync("PoBrawl.next", _p2Char, _ladder + 1, null, introLine); }
             catch (Exception ex) { Console.Error.WriteLine($"[PoBrawl] next-match failed: {ex.Message}"); }
             return;
         }
@@ -1459,6 +1873,24 @@
 
     private string ResultLine()
     {
+        if (_mode == "online")
+        {
+            var how = _netResult?.Forfeit == true ? " by forfeit"
+                : _net?.State?.LastEvent == "ko" ? " by knockout"
+                : " on the cards";
+            if (_netResult is { } r && !IsSpectator)
+            {
+                return r.Outcome switch
+                {
+                    PoMiniGames.Shared.Games.PoBrawlOutcome.Win => $"🏆 You beat {OpponentPlayer}{how}!",
+                    PoMiniGames.Shared.Games.PoBrawlOutcome.Loss => $"💀 {OpponentPlayer} beat you{how}.",
+                    _ => "🤝 Dead even at the bell — a draw.",
+                };
+            }
+            if (_winner == 0) return "🤝 Dead even at the bell — a draw.";
+            return $"🏆 {(_winner == 1 ? _p1Player : _p2Player)} wins{how} with {CharName(_winner == 1 ? _p1Char : _p2Char)}!";
+        }
+
         // 2P is one round now, so the round winner IS the match winner — the old
         // "takes the match 2–1" tallying has nothing left to count.
         if (_mode == "2p")
@@ -1490,7 +1922,30 @@
         return int.TryParse(raw, out var i) ? Math.Clamp(i, 0, Roster.Length - 1) : 0;
     }
 
-    private void SaveLadder() => LocalStorageService.SetItem(LadderKey, _ladder.ToString());
+    /// <summary>
+    /// Persist the rung here and, signed in, on the server (PUT /api/pobrawl/progress) so the run
+    /// follows the player to another device. The timestamp is what lets the newer copy win on load.
+    /// </summary>
+    private void SaveLadder()
+    {
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        LocalStorageService.SetItem(LadderKey, _ladder.ToString());
+        LocalStorageService.SetItem(LadderAtKey, now.ToString());
+        if (!Auth.IsAuthenticated) return;
+        _ = ApiService.SavePoBrawlProgressAsync(new PoMiniGames.Shared.Games.PoBrawlProgressDto
+        {
+            Rung = _ladder,
+            BestKoSeconds = _bestKo,
+            Clears = _clears,
+            UpdatedAtUnixMs = now,
+        });
+    }
+
+    private void SaveBestKo(double seconds)
+    {
+        _bestKo = Math.Round(seconds, 2);
+        LocalStorageService.SetItem(BestKoKey, _bestKo.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    }
 
     private static string Initials(string name)
     {
@@ -1502,7 +1957,10 @@
 
     public async ValueTask DisposeAsync()
     {
+        PlayerNameService.StateChanged -= OnPlayerNameChanged;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
+        // Leaving the page mid-fight is a drop: the server's reconnect grace starts now.
+        if (_net is not null) await _net.DisposeAsync();
         if (_tapeModule is not null)
         {
             try { await _tapeModule.DisposeAsync(); } catch { }

@@ -114,6 +114,8 @@ internal static class EndpointRouteExtensions
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlLeaderboardEndpoints();
         gameApi.MapPoBrawlPresserEndpoints();
+        // The 1P ladder run per claim identity, so it follows a player across devices.
+        gameApi.MapPoBrawlProgressEndpoints();
         gameApi.MapMatchHistoryEndpoints();
         // MapCoupleQuizEndpoints removed 2026-09-11: it mapped no routes at all. Its last
         // one (GET /runtime/status) went on 2026-08-31, leaving a method that built an

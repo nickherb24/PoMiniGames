@@ -93,6 +93,9 @@ public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILo
 
         // The ladder keeps one row per player keyed by sanitised name (see StorageService).
         new("PoBrawlLadder", ["pobrawlladder"], ["PlayerName", "PlayerInitials"], RowKeyIsName: true),
+
+        // The 1P ladder run (PoBrawlProgressStore): one row per claim identity, matched on UserId.
+        new("PoBrawlProgress", ["p"], []),
     ];
 
     /// <summary>Assembles the full export document.</summary>

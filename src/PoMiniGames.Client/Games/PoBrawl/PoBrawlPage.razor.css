@@ -57,6 +57,52 @@
     text-shadow: 0 4px 24px rgba(0, 0, 0, 0.7), 0 0 12px rgba(255, 209, 102, 0.25);
 }
 
+/* Caption bar (commentary.js): every line the PA speaks, written out — ringside commentary,
+   the count, the KO call, the press conference. Sits low over the ring floor, never over the
+   fighters' heads, and shows while muted, which is when it matters most. Canvas chrome, so
+   scheme-invariant like the banner above. */
+.pb-canvas-host ::deep .pb-caption {
+    position: absolute;
+    left: 50%;
+    bottom: 5%;
+    transform: translate(-50%, 6px);
+    max-width: min(92%, 46rem);
+    padding: 0.35rem 0.85rem;
+    border-radius: 0.5rem;
+    background: rgba(8, 10, 20, 0.72);
+    color: #f4f6ff;
+    font-size: clamp(0.85rem, 1.9vw, 1.05rem);
+    line-height: 1.35;
+    text-align: center;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out;
+    z-index: 4;
+}
+
+.pb-canvas-host ::deep .pb-caption:empty {
+    display: none;
+}
+
+.pb-canvas-host ::deep .pb-caption--on {
+    opacity: 1;
+    transform: translate(-50%, 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pb-canvas-host ::deep .pb-caption {
+        transition: none;
+        transform: translate(-50%, 0);
+    }
+}
+
+@media (hover: none) and (pointer: coarse), (max-width: 640px) and (orientation: portrait) {
+    /* Clear the thumb pad. */
+    .pb-canvas-host ::deep .pb-caption {
+        bottom: 18%;
+    }
+}
+
 /* Virtual touch controls created by the JS engine — hidden on desktop,
    shown on coarse-pointer devices and narrow portrait windows, pinned in
    the empty strip at the bottom of the viewport below the canvas. */
@@ -835,6 +881,173 @@
     background: rgba(0, 0, 0, 0.5);
     border-radius: 8px;
     padding: 2px 6px;
+}
+
+/* ── Online (2026-09-29): room + corner pills over the arena, and the "no fight here" card.
+   Canvas chrome like the demo badge — scheme-invariant. */
+.pb-net-status {
+    position: absolute;
+    top: 64px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    pointer-events: none;
+    z-index: 5;
+}
+
+.pb-net-pill {
+    background: rgba(0, 0, 0, 0.6);
+    color: #cbd5e1;
+    font-size: 0.78rem;
+    padding: 3px 10px;
+    border-radius: var(--radius-pill);
+    white-space: nowrap;
+}
+
+.pb-net-pill--watch {
+    color: #bfdbfe;
+}
+
+.pb-net-pill--warn {
+    background: rgba(146, 64, 14, 0.85);
+    color: #fff7ed;
+}
+
+.pb-net-missing {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    background: rgba(8, 10, 20, 0.82);
+    color: #e2e8f0;
+    text-align: center;
+    padding: 1rem;
+    z-index: 6;
+}
+
+.pb-net-missing h2 {
+    margin: 0;
+    font-size: 1.3rem;
+}
+
+.pb-net-missing p {
+    margin: 0;
+    color: #94a3b8;
+}
+
+.pb-net-btn {
+    margin-top: 0.5rem;
+    padding: 0.5rem 1rem;
+    border-radius: var(--radius-pill);
+    background: #6366f1;
+    color: #fff;
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.pb-net-btn:focus-visible {
+    outline: 2px solid #c7d2fe;
+    outline-offset: 2px;
+}
+
+/* In the result modal (theme surface — tokens). */
+.pb-rematch {
+    margin: 8px auto 0;
+    max-width: 26rem;
+    padding: 6px 10px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--accent);
+    background: var(--accent-soft);
+    color: var(--color-text-primary);
+}
+
+/* ── The ladder's ending card (full clear) — result modal, tokens. ── */
+.pb-ending {
+    margin: 12px auto 0;
+    max-width: 28rem;
+    padding: 12px 14px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--accent-warning);
+    background: var(--accent-warning-soft);
+    color: var(--color-text-primary);
+    text-align: center;
+}
+
+.pb-ending-seal {
+    font-size: 2.2rem;
+    line-height: 1;
+}
+
+.pb-ending-title {
+    margin: 4px 0 2px;
+    font-size: 1.15rem;
+    color: var(--accent-warning-ink);
+}
+
+.pb-ending-line,
+.pb-ending-next {
+    margin: 4px 0;
+    font-size: var(--text-sm);
+    color: var(--color-text-secondary);
+}
+
+.pb-ending-roll {
+    list-style: none;
+    margin: 8px 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+}
+
+.pb-ending-roll li {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-2);
+    border: 1px solid var(--color-border);
+    font-size: 0.78rem;
+}
+
+.pb-ending-ko {
+    font-size: 0.6rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: var(--accent-danger-ink, var(--accent-warning-ink));
+}
+
+.pb-ending-stats {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px 16px;
+    margin: 8px 0 4px;
+}
+
+.pb-ending-stats div {
+    display: flex;
+    flex-direction: column;
+}
+
+.pb-ending-stats dt {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--color-text-secondary);
+}
+
+.pb-ending-stats dd {
+    margin: 0;
+    font-weight: 700;
 }
 
 .pb-demo-badge {

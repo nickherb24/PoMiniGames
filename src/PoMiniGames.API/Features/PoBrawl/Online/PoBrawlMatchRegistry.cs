@@ -4,88 +4,60 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoBrawl.Online;
 
 /// <summary>
-/// Process-local registry of running PoBrawl 1v1 matches. Single-lobby mode
-/// means at most one match at a time, but the registry keeps the abstraction
-/// in case rooms come back.
+/// Process-local registry of running PoBrawl 1v1 matches, one per room code.
 /// </summary>
-public sealed class PoBrawlMatchRegistry : IAsyncDisposable
+/// <remarks>
+/// <para>
+/// 2026-09-29: rooms came back. This held one match for the one global "BRAWL" room, so a
+/// second pair could not fight until the first finished, and a start threw away whatever was
+/// running. Now each lobby room's code owns at most one match, and a start only replaces the
+/// match on its own code.
+/// </para>
+/// <para>
+/// A finished match lingers for <see cref="FinishedLinger"/> so both corners can vote for the
+/// rematch and a player who reconnects after the bell still gets their result. The pump
+/// sweeps it after that.
+/// </para>
+/// </remarks>
+public sealed class PoBrawlMatchRegistry
 {
-    private readonly PoBrawlLobbyService _lobby;
-    private readonly ILoggerFactory _loggerFactory;
-    private PoBrawlMatchService? _currentMatch;
-    private readonly ConcurrentDictionary<string, string> _connectionToMatchId = new();
-    private readonly object _createLock = new();
+    /// <summary>How long a finished match is kept for rematch votes and late result delivery.</summary>
+    public static readonly TimeSpan FinishedLinger = TimeSpan.FromSeconds(90);
 
-    public PoBrawlMatchRegistry(PoBrawlLobbyService lobby, ILoggerFactory loggerFactory)
+    private readonly ConcurrentDictionary<string, PoBrawlMatchService> _byCode = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, string> _connectionToCode = new(StringComparer.Ordinal);
+
+    /// <summary>Start a fresh match on <paramref name="code"/>, replacing any match that code held.</summary>
+    public PoBrawlMatchService Start(string code, IReadOnlyList<PoBrawlLobbyPlayer> roster)
     {
-        _lobby = lobby;
-        _loggerFactory = loggerFactory;
+        var match = new PoBrawlMatchService(Guid.NewGuid().ToString("N"), code, roster, PoBrawlMatchService.CountdownSeconds);
+        _byCode[code] = match;
+        return match;
     }
 
     /// <summary>
-    /// A lobby start (a full roster) ALWAYS creates a fresh match; a join (empty roster) only
-    /// ever finds the running one, or null when there is none.
+    /// Both corners asked for another round: the same roster (and fighters) on the same code. The
+    /// connections stay bound to the code, so the clients only have to call JoinMatch again.
     /// </summary>
-    /// <remarks>
-    /// 2026-09-23: a start used to return any running match with the same code, and every
-    /// lobby uses the one global code. So a pair who started within 60 s of an abandoned fight
-    /// were handed the GHOST: their principals were not on its roster, nothing pinned them to a
-    /// side, every input was refused, and they watched it time out as a draw. And a join with
-    /// no match running constructed one from the empty roster, which throws on Roster[0].
-    /// </remarks>
-    public async Task<PoBrawlMatchService?> GetOrCreateAsync(string code, IReadOnlyList<PoBrawlLobbyPlayer> roster)
-    {
-        var log = _loggerFactory.CreateLogger<PoBrawlMatchRegistry>();
-        log.LogInformation("GetOrCreateAsync code={Code} rosterSize={Size} current={Current}", code, roster.Count, _currentMatch?.MatchId ?? "null");
-        if (roster.Count < 2)
-        {
-            lock (_createLock)
-            {
-                return _currentMatch is { } existing && existing.GameCode == code ? existing : null;
-            }
-        }
-        var matchId = Guid.NewGuid().ToString("N");
-        var match = new PoBrawlMatchService(matchId, code, roster);
-        // Side pinning happens lazily inside the match hub (JoinMatch), keyed by
-        // the player principal, not the lobby connection id — the match hub
-        // and lobby hub have separate connection-id spaces, so re-pinning here
-        // with the lobby conn id would never be useful.
-        lock (_createLock) { _currentMatch = match; }
-        _connectionToMatchId.Clear();
-        // Reset lobby ready flags + end-match state so the next fight needs a fresh Ready round.
-        _lobby.End();
-        return await Task.FromResult(match);
-    }
+    public PoBrawlMatchService? Rematch(string code) =>
+        _byCode.TryGetValue(code, out var old) && old.FinishedAtUtc is not null ? Start(code, old.Roster) : null;
 
-    public PoBrawlMatchService? GetByMatchId(string matchId) =>
-        _currentMatch is { } m && string.Equals(m.MatchId, matchId, StringComparison.OrdinalIgnoreCase) ? m : null;
+    public PoBrawlMatchService? Get(string code) =>
+        !string.IsNullOrWhiteSpace(code) && _byCode.TryGetValue(code, out var m) ? m : null;
 
-    /// <summary>The currently running match, or null. The pump reads this every tick.</summary>
-    public PoBrawlMatchService? Current
-    {
-        get { lock (_createLock) return _currentMatch; }
-    }
+    /// <summary>Every match, running or lingering. The pump ticks the running ones.</summary>
+    public IReadOnlyCollection<PoBrawlMatchService> All => _byCode.Values.ToArray();
 
-    public void RegisterConnection(string matchId, string connectionId) => _connectionToMatchId[connectionId] = matchId;
+    /// <summary>Drop a match — only if it is still the one on that code (a rematch may have replaced it).</summary>
+    public void Remove(PoBrawlMatchService match) =>
+        _byCode.TryRemove(new KeyValuePair<string, PoBrawlMatchService>(match.GameCode, match));
 
-    public void UnregisterConnection(string connectionId) => _connectionToMatchId.TryRemove(connectionId, out _);
+    public void BindConnection(string connectionId, string code) => _connectionToCode[connectionId] = code;
 
-    public string? MatchIdFor(string connectionId) =>
-        _connectionToMatchId.TryGetValue(connectionId, out var m) ? m : null;
+    /// <summary>Forget a connection's binding; returns the code it was bound to.</summary>
+    public string? UnbindConnection(string connectionId) =>
+        _connectionToCode.TryRemove(connectionId, out var code) ? code : null;
 
-    public void ClearCurrent()
-    {
-        lock (_createLock)
-        {
-            _currentMatch = null;
-        }
-        _connectionToMatchId.Clear();
-    }
-
-    public async ValueTask DisposeAsync()
-    {
-        if (_currentMatch is not null) await _currentMatch.DisposeAsync();
-        _currentMatch = null;
-        _connectionToMatchId.Clear();
-    }
+    public PoBrawlMatchService? MatchFor(string connectionId) =>
+        _connectionToCode.TryGetValue(connectionId, out var code) ? Get(code) : null;
 }

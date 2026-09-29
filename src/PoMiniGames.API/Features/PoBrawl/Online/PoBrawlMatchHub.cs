@@ -5,11 +5,15 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoBrawl.Online;
 
 /// <summary>
-/// Match hub for live PoBrawl 1v1. Each connection joins a per-match group and
+/// Match hub for live PoBrawl 1v1. Each connection joins its room's group and
 /// streams <see cref="PoBrawlMatchInput"/>s to the server; the server broadcasts
 /// <see cref="PoBrawlMatchState"/>s from the pump and a single
-/// <see cref="PoBrawlMatchResult"/> on finish.
+/// <see cref="PoBrawlMatchResult"/> per corner on finish.
 /// </summary>
+/// <remarks>
+/// The group is keyed by the room CODE, not the match id, so a rematch (a new match on the same
+/// code) reaches everyone already watching — spectators included — without a re-subscribe.
+/// </remarks>
 public sealed class PoBrawlMatchHub : Hub
 {
     private readonly PoBrawlMatchRegistry _registry;
@@ -21,73 +25,90 @@ public sealed class PoBrawlMatchHub : Hub
         _log = log;
     }
 
+    public static string MatchGroup(string code) => $"pobrawl-match-{code.ToUpperInvariant()}";
+
+    /// <summary>
+    /// A drop starts the corner's reconnect grace (see <see cref="PoBrawlMatchService.ReconnectGraceSeconds"/>);
+    /// coming back — a SignalR auto-reconnect or a page refresh — is just another JoinMatch.
+    /// </summary>
     public override async Task OnDisconnectedAsync(Exception? ex)
     {
-        var matchId = _registry.MatchIdFor(Context.ConnectionId);
-        if (matchId is not null)
-        {
-            _registry.UnregisterConnection(Context.ConnectionId);
-            // No group removal needed — the pump clears the match when finished
-            // and the group dies with the connection. Mid-match disconnect leaves
-            // the other player to fight a ghost; the 60s timer will end the match
-            // and the result broadcast still fires to whoever is left.
-        }
+        _registry.MatchFor(Context.ConnectionId)?.UnregisterConnection(Context.ConnectionId);
+        _registry.UnbindConnection(Context.ConnectionId);
         await base.OnDisconnectedAsync(ex);
     }
 
     /// <summary>
-    /// Join a match by code. The lobby has already pinned both players to their
-    /// sides at StartGame time, so all this hub does is (a) make sure the match
-    /// exists, (b) add the connection to the per-match broadcast group, and
-    /// (c) return the snapshot the client uses to render the fighter portraits.
+    /// Join the fight on <paramref name="code"/>. A caller on the roster is pinned to their corner
+    /// by claim identity (the lobby and match hubs allocate separate connection ids, so the lobby's
+    /// id is no use here); anyone else spectates. Null when no fight is on that code. A seated
+    /// caller arriving after the bell gets their result straight away.
     /// </summary>
     public async Task<PoBrawlMatchSnapshot?> JoinMatch(string code)
     {
-        _log.LogInformation("PoBrawl match-hub JoinMatch conn={Conn} code={Code}", Context.ConnectionId, code);
         if (string.IsNullOrWhiteSpace(code)) return null;
-        // Calling GetOrCreateAsync with an empty roster is a no-op if the lobby
-        // already created the match — the registry returns the existing match.
-        var match = await _registry.GetOrCreateAsync(code, Array.Empty<PoBrawlLobbyPlayer>());
-        // No match running (it ended, or nobody started one): nothing to join.
+        var match = _registry.Get(code.Trim());
         if (match is null) return null;
-        // The lobby and match hubs allocate separate connection ids, so we
-        // pin THIS connection to a side by re-resolving its identity through
-        // the roster rather than trusting the lobby's connection id.
+
         var identity = RequestIdentity.Resolve(Context.User);
-        match.RegisterConnectionByPrincipal(identity.UserId, Context.ConnectionId);
-        _registry.RegisterConnection(match.MatchId, Context.ConnectionId);
-        await Groups.AddToGroupAsync(Context.ConnectionId, MatchGroup(match.MatchId));
-        var side = match.SideFor(Context.ConnectionId);
+        // A reconnect on a live socket (or a rematch) re-pins: drop the old binding first.
+        _registry.MatchFor(Context.ConnectionId)?.UnregisterConnection(Context.ConnectionId);
+        var seated = match.RegisterConnectionByPrincipal(identity.UserId, Context.ConnectionId);
+        _registry.BindConnection(Context.ConnectionId, match.GameCode);
+        await Groups.AddToGroupAsync(Context.ConnectionId, MatchGroup(match.GameCode));
+        _log.LogInformation("PoBrawl JoinMatch conn={Conn} code={Code} seated={Seated}", Context.ConnectionId, match.GameCode, seated);
+
+        if (seated && match.FinishedAtUtc is not null)
+        {
+            await Clients.Caller.SendAsync("matchFinished", match.BuildResultFor(Context.ConnectionId));
+        }
         return new PoBrawlMatchSnapshot
         {
             MatchId = match.MatchId,
+            GameCode = match.GameCode,
             Player1 = new PoBrawlMatchPlayerInfo(match.Player1.DisplayName, match.Player1.Fighter.Id),
             Player2 = new PoBrawlMatchPlayerInfo(match.Player2.DisplayName, match.Player2.Fighter.Id),
-            LocalSide = side,
+            LocalSide = seated ? match.SideFor(Context.ConnectionId) : PoBrawlSide.Player1,
+            IsSpectator = !seated,
         };
     }
 
-    public async Task SubmitInput(PoBrawlMatchInput input)
+    public Task SubmitInput(PoBrawlMatchInput input)
     {
-        _log.LogInformation("PoBrawl match-hub SubmitInput conn={Conn} action={Action} seq={Seq}", Context.ConnectionId, input.Action, input.Sequence);
-        var matchId = _registry.MatchIdFor(Context.ConnectionId);
-        if (matchId is null) return;
-        var match = _registry.GetByMatchId(matchId);
-        if (match is null) return;
-        match.SubmitInput(Context.ConnectionId, input);
-        await Task.CompletedTask;
-    }
-
-    /// <summary>
-    /// Explicit leave (client-initiated, not disconnect). The server forgets the
-    /// connection→match binding so the pump's broadcast no longer targets it; the
-    /// match keeps running until the timer or a KO ends it.
-    /// </summary>
-    public Task LeaveMatch()
-    {
-        _registry.UnregisterConnection(Context.ConnectionId);
+        // The match pins the connection's own corner; a spectator's input is refused there.
+        _registry.MatchFor(Context.ConnectionId)?.SubmitInput(Context.ConnectionId, input);
         return Task.CompletedTask;
     }
 
-    private static string MatchGroup(string matchId) => $"pobrawl-match-{matchId}";
+    /// <summary>
+    /// After the bell: this corner wants another round. The vote count goes out to the room, and
+    /// once both corners have asked, a fresh match starts on the same code with the same fighters
+    /// and everyone in the room is told to re-join it.
+    /// </summary>
+    public async Task RequestRematch()
+    {
+        var match = _registry.MatchFor(Context.ConnectionId);
+        if (match is null) return;
+        var agreed = match.VoteRematch(Context.ConnectionId);
+        var group = Clients.Group(MatchGroup(match.GameCode));
+        if (!agreed)
+        {
+            await group.SendAsync("matchState", match.Snapshot());
+            return;
+        }
+        var next = _registry.Rematch(match.GameCode);
+        if (next is not null) await group.SendAsync("rematch", next.GameCode);
+    }
+
+    /// <summary>
+    /// Explicit leave (client-initiated, not disconnect). Same as a drop: the corner's grace
+    /// clock starts, and it forfeits if it does not come back.
+    /// </summary>
+    public async Task LeaveMatch()
+    {
+        var match = _registry.MatchFor(Context.ConnectionId);
+        match?.UnregisterConnection(Context.ConnectionId);
+        var code = _registry.UnbindConnection(Context.ConnectionId);
+        if (code is not null) await Groups.RemoveFromGroupAsync(Context.ConnectionId, MatchGroup(code));
+    }
 }

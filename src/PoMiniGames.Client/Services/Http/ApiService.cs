@@ -555,6 +555,61 @@ public class ApiService
         }
     }
 
+    /// <summary>
+    /// The PA's ring introduction for a pairing, or null (signed out, rate-limited, offline, slow).
+    /// Flavour, like the press line: the fight starts without it.
+    /// </summary>
+    public async Task<PoMiniGames.Shared.Games.PoBrawlPresserReply?> GetPoBrawlIntroAsync(
+        PoMiniGames.Shared.Games.PoBrawlIntroRequest request)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "/api/pobrawl/intro", request, ApiJsonContext.Default.PoBrawlIntroRequest);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlPresserReply)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    // ─── PoBrawl 1P ladder progress (cross-device) ───────────────────────
+
+    /// <summary>The caller's saved ladder progress, or null (none saved, signed out, offline).</summary>
+    public async Task<PoMiniGames.Shared.Games.PoBrawlProgressDto?> GetPoBrawlProgressAsync()
+    {
+        try
+        {
+            var response = await _http.GetAsync("/api/pobrawl/progress");
+            return response.IsSuccessStatusCode && response.StatusCode != System.Net.HttpStatusCode.NoContent
+                ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlProgressDto)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Save the caller's ladder progress. Fire-and-forget from the page: localStorage already
+    /// holds the same numbers, so a failed write only costs the other device the newest rung.
+    /// </summary>
+    public async Task SavePoBrawlProgressAsync(PoMiniGames.Shared.Games.PoBrawlProgressDto progress)
+    {
+        try
+        {
+            await _http.PutAsJsonAsync("/api/pobrawl/progress", progress, ApiJsonContext.Default.PoBrawlProgressDto);
+        }
+        catch
+        {
+            // Offline: the local copy stands, and the next save carries the rung.
+        }
+    }
+
     // ─── PoBrawl demo-mode fighter Elo ───────────────────────────────────
 
 

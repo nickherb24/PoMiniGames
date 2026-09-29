@@ -4,85 +4,82 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoBrawl.Online;
 
 /// <summary>
-/// Drives the per-match simulation tick. Hosted as a singleton service so the
-/// tick survives the wiring hub connection leaving. When a match is finished
-/// the pump finalises the result, broadcasts it once, and clears the registry
-/// so the next lobby round can start cleanly.
+/// Drives every running match's simulation tick. Hosted as a singleton service so the
+/// tick survives the wiring hub connection leaving. When a match finishes the pump
+/// broadcasts each corner its own result once, then leaves the match in the registry for
+/// <see cref="PoBrawlMatchRegistry.FinishedLinger"/> (rematch votes, a late reconnect) before
+/// sweeping it.
 /// </summary>
 public sealed class PoBrawlMatchPump : BackgroundService
 {
     private readonly PoBrawlMatchRegistry _registry;
-    private readonly PoBrawlLobbyService _lobby;
     private readonly IHubContext<PoBrawlMatchHub> _hubContext;
     private readonly ILogger<PoBrawlMatchPump> _log;
 
     public PoBrawlMatchPump(
         PoBrawlMatchRegistry registry,
-        PoBrawlLobbyService lobby,
         IHubContext<PoBrawlMatchHub> hubContext,
         ILogger<PoBrawlMatchPump> log)
     {
         _registry = registry;
-        _lobby = lobby;
         _hubContext = hubContext;
         _log = log;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        var interval = TimeSpan.FromMilliseconds(1000 / PoBrawlMatchService.TickHz);
-        while (!stoppingToken.IsCancellationRequested)
+        // PeriodicTimer rather than Delay-then-work: the tick rate no longer drifts by however
+        // long the broadcasts took, which matters now that the client paces its puppets on it.
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(1000 / PoBrawlMatchService.TickHz));
+        try
         {
-            try
+            while (await timer.WaitForNextTickAsync(stoppingToken))
             {
-                await Task.Delay(interval, stoppingToken);
-                await TickOnceAsync(stoppingToken);
+                foreach (var match in _registry.All)
+                {
+                    try
+                    {
+                        await TickOnceAsync(match, stoppingToken);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _log.LogError(ex, "PoBrawl match pump tick failed for {Code}; continuing.", match.GameCode);
+                    }
+                }
             }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _log.LogError(ex, "PoBrawl match pump tick failed; continuing.");
-            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Shutdown.
         }
     }
 
-    private async Task TickOnceAsync(CancellationToken ct)
+    private async Task TickOnceAsync(PoBrawlMatchService match, CancellationToken ct)
     {
-        var match = _registry.Current;
-        if (match is null) return;
+        if (match.FinishedAtUtc is { } finishedAt)
+        {
+            if (DateTimeOffset.UtcNow - finishedAt > PoBrawlMatchRegistry.FinishedLinger) _registry.Remove(match);
+            return;
+        }
         var snap = match.Tick();
-        _log.LogDebug("Tick matchId={MatchId} p1hp={Hp1} p2hp={Hp2} p1e={E1} p2e={E2} finished={Finished}", match.MatchId, snap?.Player1Hp ?? -1, snap?.Player2Hp ?? -1, snap?.Player1Energy ?? -1, snap?.Player2Energy ?? -1, snap?.Finished ?? false);
-        if (snap is null) return; // already finished in a previous tick
-        await _hubContext.Clients.Group(MatchGroup(match.MatchId))
+        if (snap is null) return;
+        await _hubContext.Clients.Group(PoBrawlMatchHub.MatchGroup(match.GameCode))
             .SendAsync("matchState", snap, ct);
         if (snap.Finished)
         {
+            _log.LogInformation("PoBrawl match {Code} finished: {Event}, winner {Winner}", match.GameCode, snap.LastEvent, snap.Winner);
             await BroadcastFinalResultsAsync(match, ct);
-            _registry.ClearCurrent();
         }
     }
 
     /// <summary>
-    /// Broadcast a per-connection final result. The match result is shaped per
-    /// recipient (each client sees its own side as "local"), so this iterates the
-    /// lobby roster's connection ids. Connections that have already dropped
-    /// receive nothing — the result endpoint can still POST when they reconnect.
+    /// Send each seated match-hub connection its own result (each client sees its own side as
+    /// "local"). NOT the lobby roster's connection ids: those belong to the lobby hub and this
+    /// context cannot address them (2026-09-23 — every result used to go nowhere). A corner that
+    /// was away at the bell gets its copy from JoinMatch when it comes back.
     /// </summary>
     private async Task BroadcastFinalResultsAsync(PoBrawlMatchService match, CancellationToken ct)
     {
-        // Use the lobby roster as the source of truth for "who was in this match",
-        // because a connection might have dropped but the player is still entitled
-        // to see the result when they reconnect.
-        //
-        // 2026-09-23: that roster is the LOBBY's, and its ConnectionIds are lobby-hub
-        // connections. This hub context cannot address them, and BuildResultFor had no side
-        // pinned for them either (so both would have read as Player1). Every result went
-        // nowhere, the online page never received matchFinished, and no online match was
-        // ever submitted to the Elo board. Send to the match-hub connections the service
-        // actually pinned at JoinMatch instead.
         foreach (var connectionId in match.ConnectionIds)
         {
             var result = match.BuildResultFor(connectionId);
@@ -90,6 +87,4 @@ public sealed class PoBrawlMatchPump : BackgroundService
                 .SendAsync("matchFinished", result, ct);
         }
     }
-
-    private static string MatchGroup(string matchId) => $"pobrawl-match-{matchId}";
 }

@@ -15,6 +15,9 @@ public interface IPoBrawlPresserService
 {
     /// <summary>The line, or <c>null</c> when either fighter id is not on the roster.</summary>
     Task<PoBrawlPresserReply?> AskAsync(PoBrawlPresserRequest request, CancellationToken ct = default);
+
+    /// <summary>The PA's ring introduction for a pairing, or <c>null</c> when either id is not a fighter.</summary>
+    Task<PoBrawlPresserReply?> IntroAsync(PoBrawlIntroRequest request, CancellationToken ct = default);
 }
 
 /// <summary>
@@ -61,6 +64,17 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
         "real-world politics, policies, parties, elections, scandals, health, age or appearance, and never invent real events. " +
         "No profanity. Output only the line itself, with no quotation marks and no speaker label.";
 
+    /// <summary>Who reads the introduction — the reply's speaker.</summary>
+    public const string Announcer = "Ring announcer";
+
+    private const string IntroSystemPrompt =
+        "You are the ring announcer at PoBrawl, a slapstick cartoon boxing game where caricatures of U.S. presidents and " +
+        "an everyman named BOB trade punches. Write the one-breath introduction read over the arena PA before the bell. " +
+        "Rules: one or two sentences, at most 30 words; big, booming, old-school boxing-announcer energy; name both " +
+        "fighters, left corner first; playful and PG. Never mention real-world politics, policies, parties, elections, " +
+        "scandals, health, age or appearance. No profanity. Output only the announcement as it would be shouted over the PA, " +
+        "in flowing sentences with no labels, colons or lists, and no quotation marks.";
+
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;
     private readonly ILogger<PoBrawlPresserService> _logger;
@@ -94,21 +108,41 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
         string SpeakerName, string OpponentName, PoBrawlOutcome Outcome, bool Knockout,
         int Hits, int OpponentHits, int Blocks, int BestCombo, int BiggestHit, int Seconds);
 
-    public async Task<PoBrawlPresserReply?> AskAsync(PoBrawlPresserRequest request, CancellationToken ct = default)
+    public Task<PoBrawlPresserReply?> AskAsync(PoBrawlPresserRequest request, CancellationToken ct = default)
     {
         var bout = Resolve(request);
-        if (bout is null) return null;
+        return bout is null
+            ? Task.FromResult<PoBrawlPresserReply?>(null)
+            : GenerateAsync("pobrawl:presser:" + Fingerprint(bout), bout.SpeakerName, SystemPrompt, Describe(bout), () => Canned(bout), ct);
+    }
 
+    public Task<PoBrawlPresserReply?> IntroAsync(PoBrawlIntroRequest request, CancellationToken ct = default)
+    {
+        var left = NameFor(request.P1Id);
+        var right = NameFor(request.P2Id);
+        if (left is null || right is null) return Task.FromResult<PoBrawlPresserReply?>(null);
+        // One cached line per pairing: at most 16 x 16 of them, ever, for the whole platform.
+        var prompt = $"Introduce this bout. In the left corner is {Billing(left)}; in the right corner is {Billing(right)}. It is one round of sixty seconds.";
+        return GenerateAsync($"pobrawl:intro:v2:{left}|{right}", Announcer, IntroSystemPrompt, prompt, () => CannedIntro(left, right), ct);
+    }
+
+    /// <summary>
+    /// One bounded line from the cheap presser deployment, cached 24 h under <paramref name="cacheKey"/>.
+    /// Every failure — mock mode, no foundry, a timeout, an error — is the canned line instead.
+    /// </summary>
+    private async Task<PoBrawlPresserReply?> GenerateAsync(
+        string cacheKey, string speaker, string systemPrompt, string userPrompt, Func<PoBrawlPresserReply> canned, CancellationToken ct)
+    {
         var deployment = _clients.DeploymentFor(AIFoundryOptions.Tasks.PoBrawlPresser);
         if (UseMock)
         {
             _logger.PresserMockEnabled(_environment.EnvironmentName);
-            return Canned(bout);
+            return canned();
         }
         var client = _foundry.CurrentValue.IsConfigured
             ? _clients.ForDeployment(AIFoundryOptions.Tasks.PoBrawlPresser, deployment)
             : null;
-        if (client is null) return Canned(bout);
+        if (client is null) return canned();
 
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
         timeout.CancelAfter(CallTimeout);
@@ -118,12 +152,12 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
             // thread where the request's AsyncLocal budget identity is not flowing.
             var identity = AiUsageScope.CurrentIdentity;
             var text = await _cache.GetOrCreateAsync(
-                "pobrawl:presser:" + Fingerprint(bout),
-                (Service: this, Bout: bout, Client: client, Deployment: deployment, Identity: identity),
+                cacheKey,
+                (Service: this, Client: client, Deployment: deployment, Identity: identity, System: systemPrompt, User: userPrompt),
                 static async (state, token) =>
                 {
                     using var scope = AiUsageScope.Restore(state.Identity);
-                    return await state.Service.CallModelAsync(state.Client, state.Deployment, state.Bout, token);
+                    return await state.Service.CallModelAsync(state.Client, state.Deployment, state.System, state.User, token);
                 },
                 new HybridCacheEntryOptions
                 {
@@ -131,7 +165,7 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
                     LocalCacheExpiration = TimeSpan.FromHours(1),
                 },
                 cancellationToken: timeout.Token);
-            return new PoBrawlPresserReply(bout.SpeakerName, text, Mock: false);
+            return new PoBrawlPresserReply(speaker, text, Mock: false);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
@@ -140,21 +174,21 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
         catch (OperationCanceledException)
         {
             _logger.PresserFailed(new TimeoutException($"Presser call exceeded {CallTimeout.TotalSeconds:0} s."));
-            return Canned(bout);
+            return canned();
         }
         catch (Exception ex)
         {
             _logger.PresserFailed(ex);
-            return Canned(bout);
+            return canned();
         }
     }
 
-    private async Task<string> CallModelAsync(IChatClient client, string deployment, Bout bout, CancellationToken ct)
+    private async Task<string> CallModelAsync(IChatClient client, string deployment, string systemPrompt, string userPrompt, CancellationToken ct)
     {
         var messages = new List<ChatMessage>
         {
-            new(ChatRole.System, SystemPrompt),
-            new(ChatRole.User, Describe(bout)),
+            new(ChatRole.System, systemPrompt),
+            new(ChatRole.User, userPrompt),
         };
         var options = _options.GetOrBuildText(
             AIFoundryOptions.Tasks.PoBrawlPresser, deployment, _clients.CapabilityOverrides, MaxTokens,
@@ -214,6 +248,22 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
     {
         var text = $"{b.SpeakerName}|{b.OpponentName}|{b.Outcome}|{b.Knockout}|{b.Hits}|{b.OpponentHits}|{b.Blocks}|{b.BestCombo}|{b.BiggestHit}|{b.Seconds}";
         return Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..32];
+    }
+
+    private static string Billing(string name) =>
+        name == PoBrawlRoster.Bob.Name ? "BOB, a mild-mannered office worker who wandered into the ring" : $"{name}, the cartoon president";
+
+    /// <summary>The introduction's stand-in, picked by the pairing so it is stable for a pair.</summary>
+    private static PoBrawlPresserReply CannedIntro(string left, string right)
+    {
+        string[] lines =
+        [
+            $"In the left corner, {left}! In the right corner, {right}! Sixty seconds, one round — let's get ready to brawl!",
+            $"Ladies and gentlemen, from the left, {left}! And from the right, the one and only {right}! Touch gloves and come out swinging!",
+            $"Tonight's main event: {left} versus {right}! One round, no recounts. Fighters, to your marks!",
+        ];
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(left + "|" + right));
+        return new PoBrawlPresserReply(Announcer, lines[hash[0] % lines.Length], Mock: true);
     }
 
     /// <summary>Deterministic stand-in: mock mode, an unconfigured foundry, a timeout, or any failure.</summary>

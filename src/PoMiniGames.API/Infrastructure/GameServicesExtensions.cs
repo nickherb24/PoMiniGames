@@ -316,14 +316,15 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoCabinet.PoCabinetLobbyService>();
         services.AddSingleton<PoMiniGames.Features.PoCabinet.PoCabinetRaceRegistry>();
 
-        // PoBrawl online — 1v1 SignalR-driven combat. Same single-lobby shape as
-        // PoRacer: in-memory lobby, in-memory match registry owning the simulation
-        // timer, hosted pump driving the per-tick frame broadcast.
-        services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlLobbyService>();
+        // PoBrawl online — 1v1 SignalR-driven combat. In-memory rooms by code (quick match,
+        // private rooms, the open-room browser), an in-memory match per room code, and a
+        // hosted pump driving the per-tick frame broadcast for all of them.
+        services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlRooms>();
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchRegistry>();
         services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
         // The post-fight press-conference line (one cheap model call per shown result modal).
         services.AddSingleton<PoMiniGames.Features.PoBrawl.IPoBrawlPresserService, PoMiniGames.Features.PoBrawl.PoBrawlPresserService>();
+        services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlProgressStore>();
 
         // ConnectFive + TicTacToe online — turn-based 1v1 over SignalR. One shared
         // TurnMatchService<THub> per hub holds that game's quick-match queue and every

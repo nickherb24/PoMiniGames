@@ -104,10 +104,38 @@ public sealed class PoBrawlMatchState
     /// <c>p1-blocked</c>, <c>p1-whiff</c> (and the p2 forms), <c>ko</c>, <c>time-up</c>, <c>time-up-draw</c>.
     /// </summary>
     public string LastEvent { get; set; } = "";
-    /// <summary>True when the match is over (a side at 0 HP, or the timer ran out).</summary>
+    /// <summary>True when the match is over (a side at 0 HP, the timer ran out, or a forfeit).</summary>
     public bool Finished { get; set; }
     /// <summary>Winner side when <see cref="Finished"/> is true; otherwise null. Empty string on a draw.</summary>
     public PoBrawlSide? Winner { get; set; }
+
+    // ── Per-corner detail for the 3D view (2026-09-29) ──────────────────────
+    // The page used to draw two markers on a rail, which needed only HP and X. The arena
+    // engine now plays the fight as a puppet of these snapshots, so it needs what each
+    // corner is holding and what each swing did THIS tick — LastEvent carries one event,
+    // and both corners can swing on the same tick.
+
+    /// <summary>Monotonic tick number, so the client can drop a snapshot that arrived late.</summary>
+    public long Tick { get; set; }
+    /// <summary>What each corner is holding: Idle, MoveForward, MoveBack or Block.</summary>
+    public PoBrawlMatchAction Player1Held { get; set; }
+    public PoBrawlMatchAction Player2Held { get; set; }
+    /// <summary>The attack each corner threw this tick, or null.</summary>
+    public PoBrawlMatchAction? Player1Swing { get; set; }
+    public PoBrawlMatchAction? Player2Swing { get; set; }
+    /// <summary>What that swing did: <c>hit</c>, <c>blocked</c> or <c>whiff</c> ("" with no swing).</summary>
+    public string Player1Outcome { get; set; } = "";
+    public string Player2Outcome { get; set; } = "";
+    /// <summary>Damage that swing dealt (0 for a block or whiff).</summary>
+    public int Player1Damage { get; set; }
+    public int Player2Damage { get; set; }
+    /// <summary>Whether each corner has a live connection. A dropped corner has a grace window to come back.</summary>
+    public bool Player1Connected { get; set; } = true;
+    public bool Player2Connected { get; set; } = true;
+    /// <summary>Seconds until a dropped corner forfeits, or null when both are here.</summary>
+    public double? ForfeitInSeconds { get; set; }
+    /// <summary>How many corners have asked for a rematch since the bell (0–2).</summary>
+    public int RematchVotes { get; set; }
 }
 
 /// <summary>
@@ -117,10 +145,23 @@ public sealed class PoBrawlMatchState
 public sealed class PoBrawlMatchSnapshot
 {
     public string MatchId { get; set; } = "";
+    /// <summary>The room code — the rematch and the reconnect both find the fight by it.</summary>
+    public string GameCode { get; set; } = "";
     public PoBrawlMatchPlayerInfo Player1 { get; set; } = new("", "");
     public PoBrawlMatchPlayerInfo Player2 { get; set; } = new("", "");
     public PoBrawlSide LocalSide { get; set; }
+    /// <summary>True for a caller with no seat on this fight: they watch, and their inputs are ignored.</summary>
+    public bool IsSpectator { get; set; }
 }
+
+/// <summary>One row of the open-room browser: a public room with a free seat, or a public fight to watch.</summary>
+public sealed record PoBrawlRoomSummary(
+    string Code,
+    string HostName,
+    int Players,
+    int MaxPlayers,
+    bool InProgress,
+    IReadOnlyList<string> Fighters);
 
 public sealed record PoBrawlMatchPlayerInfo(string DisplayName, string FighterId);
 
@@ -145,4 +186,6 @@ public sealed class PoBrawlMatchResult
     /// second round-trip to /api/auth/handshake.</summary>
     public string OpponentId { get; set; } = "";
     public string OpponentDisplayName { get; set; } = "";
+    /// <summary>True when the fight ended because one corner never came back from a disconnect.</summary>
+    public bool Forfeit { get; set; }
 }

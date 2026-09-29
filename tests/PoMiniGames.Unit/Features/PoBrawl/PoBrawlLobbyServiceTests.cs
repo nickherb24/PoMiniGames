@@ -22,7 +22,7 @@ public class PoBrawlLobbyServiceTests
     [Fact]
     public void Open_AssignsFirstArrivalAsHost_AndBouncesThirdAtCap()
     {
-        var lobby = new PoBrawlLobbyService();
+        var lobby = new PoBrawlLobbyService("TEST", isPublic: true);
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
         lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
         lobby.State.HostConnectionId.Should().Be("conn-1");
@@ -36,7 +36,7 @@ public class PoBrawlLobbyServiceTests
     [Fact]
     public void RejoinSameConnection_RefreshesPlayerRow_PreservesHost()
     {
-        var lobby = new PoBrawlLobbyService();
+        var lobby = new PoBrawlLobbyService("TEST", isPublic: true);
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
         lobby.ToggleReady("conn-1");
         var (state, _) = lobby.Open("conn-1", "alice", "Alice2", isGuest: false, AnyFighter);
@@ -48,7 +48,7 @@ public class PoBrawlLobbyServiceTests
     [Fact]
     public void TryStart_RequiresHostAndAllReady_AndIsIdempotent()
     {
-        var lobby = new PoBrawlLobbyService();
+        var lobby = new PoBrawlLobbyService("TEST", isPublic: true);
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
         lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
         lobby.ToggleReady("conn-1");
@@ -59,10 +59,37 @@ public class PoBrawlLobbyServiceTests
         lobby.TryStart("conn-1").Should().BeFalse("a second start cannot re-enter the gate");
     }
 
+    /// <summary>
+    /// Rooms (2026-09-29): quick match still pairs two strangers, a private room is never handed
+    /// to quick match or listed, and the browser shows waiting public rooms and live fights.
+    /// </summary>
+    [Fact]
+    public void Rooms_QuickMatchPairs_PrivateStaysHidden_ListShowsWaitingAndLive()
+    {
+        var rooms = new PoBrawlRooms();
+        var matches = new PoBrawlMatchRegistry();
+
+        var hidden = rooms.Create(isPublic: false);
+        hidden.Open("conn-p", "carol", "Carol", isGuest: false, AnyFighter);
+
+        var first = rooms.QuickMatch();
+        first.Should().NotBeSameAs(hidden, "quick match never seats a stranger in a private room");
+        first.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
+        rooms.QuickMatch().Should().BeSameAs(first, "the second arrival is paired with the first");
+
+        rooms.ListOpen(matches).Should().ContainSingle(r => r.Code == first.GameCode && !r.InProgress)
+            .And.NotContain(r => r.Code == hidden.GameCode);
+        rooms.Get(hidden.GameCode.ToLowerInvariant()).Should().BeSameAs(hidden, "codes are case-insensitive");
+
+        first.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
+        matches.Start(first.GameCode, first.Players);
+        rooms.ListOpen(matches).Should().ContainSingle(r => r.Code == first.GameCode && r.InProgress, "a live public fight can be watched");
+    }
+
     [Fact]
     public void EndMatch_ResetsReadyFlags_AndClearsStaleMatch()
     {
-        var lobby = new PoBrawlLobbyService();
+        var lobby = new PoBrawlLobbyService("TEST", isPublic: true);
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
         lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
         lobby.ToggleReady("conn-1");
