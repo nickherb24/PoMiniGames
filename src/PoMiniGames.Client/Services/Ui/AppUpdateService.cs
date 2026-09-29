@@ -55,9 +55,34 @@ public sealed class AppUpdateService : IAsyncDisposable
     }
 
     [JSInvokable]
-    public void OnUpdateAvailable()
+    public void OnUpdateAvailable() => _ = EvaluateUpdateToastAsync();
+
+    /// <summary>
+    /// Decide whether this viewer may be nagged about the waiting worker. One JS call
+    /// (<c>poPwa.pageContext</c>) supplies the path/query/host — see pwa.js for why the
+    /// decision lives on that side of the interop boundary: the previous C# probes ran
+    /// through <c>eval</c> interop, which failed open and showed the toast to exactly the
+    /// developers and kiosks this service exists to keep quiet.
+    /// </summary>
+    private async Task EvaluateUpdateToastAsync()
     {
         if (UpdateAvailable) return;
+
+        string path = "/", query = "", host = "";
+        try
+        {
+            var ctx = await _js.InvokeAsync<PageContext>("poPwa.pageContext");
+            path = ctx.Path ?? "/";
+            query = ctx.Query ?? "";
+            host = ctx.Host ?? "";
+        }
+        catch
+        {
+            // Interop unavailable — the page is tearing down, or SW support is missing.
+            // Default the gates open (below) so a real visitor still gets the prompt;
+            // the toast on a dead page is invisible anyway.
+        }
+
         // Bug fix (2026-08-07): the update toast was surfacing to kiosk
         // spectators, where it competes for attention with the attract reel.
         // The reel cycles every 12-24s and never has a visitor who would
@@ -65,12 +90,24 @@ public sealed class AppUpdateService : IAsyncDisposable
         // page change is just visual noise. Detection is path-based: any
         // /{game}/demo or ?kiosk=N segment, which is the same shape
         // KioskCoordinator uses to identify its own navigations.
-        if (IsOnKioskRoute()) return;
+        if (query.Contains("kiosk=", StringComparison.OrdinalIgnoreCase)
+            || path.EndsWith("/demo", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         // 2026-08-10: silence the update nag during local dev. Every `dotnet build`
         // ships a fresh boot.json that the SW sees as "new", and a developer who
         // rebuilds twice in an hour gets the toast twice in an hour. Production
-        // users still see it — only the localhost/127.0.0.1 hosts are gated.
-        if (IsDevelopmentHost()) return;
+        // users still see it — only the localhost/lan hosts are gated.
+        if (host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
+            || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
+            || host.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase)
+            || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
         UpdateAvailable = true;
         StateChanged?.Invoke();
         // Deliberately an action, not "press F5": a waiting worker keeps waiting
@@ -80,53 +117,8 @@ public sealed class AppUpdateService : IAsyncDisposable
         _toast.ShowAction("A new version is ready.", "Update now", ApplyUpdateAsync, ToastType.Info);
     }
 
-    /// <summary>
-    /// True when the current URL is part of the auto-cycling attract reel
-    /// (any ?kiosk=N or /{game}/demo). Demo and kiosk share this surface.
-    /// </summary>
-    private bool IsOnKioskRoute()
-    {
-        try
-        {
-            var href = _js.InvokeAsync<string>("eval", "location.href").AsTask().GetAwaiter().GetResult();
-            var uri = new Uri(href);
-            if (uri.Query.Contains("kiosk=", StringComparison.OrdinalIgnoreCase)) return true;
-            return uri.AbsolutePath.EndsWith("/demo", StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            // JS interop can be unavailable during teardown; default to
-            // showing the toast so a real visitor still gets the prompt.
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// True when the page is being served from a local dev host. The
-    /// service worker fires onUpdateAvailable every time a fresh build
-    /// lands — fine for production, noisy for a developer who rebuilds
-    /// twice in an hour. Production URLs (the Azure host name) never
-    /// match localhost / 127.0.0.1, so the toast still surfaces there.
-    /// </summary>
-    private bool IsDevelopmentHost()
-    {
-        try
-        {
-            var href = _js.InvokeAsync<string>("eval", "location.href").AsTask().GetAwaiter().GetResult();
-            var host = new Uri(href).Host;
-            return host.Equals("localhost", StringComparison.OrdinalIgnoreCase)
-                || host.Equals("127.0.0.1", StringComparison.OrdinalIgnoreCase)
-                || host.StartsWith("192.168.", StringComparison.OrdinalIgnoreCase)
-                || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase)
-                || host.Contains("localhost", StringComparison.OrdinalIgnoreCase);
-        }
-        catch
-        {
-            // JS interop unavailable — assume non-dev so production
-            // visitors always get the update prompt.
-            return false;
-        }
-    }
+    /// <summary>Shapes <c>poPwa.pageContext</c> (pwa.js). Interop JSON is camelCase.</summary>
+    private sealed record PageContext(string? Path, string? Query, string? Host);
 
     /// <summary>Activate the waiting worker and reload onto the new build.</summary>
     public async Task ApplyUpdateAsync()

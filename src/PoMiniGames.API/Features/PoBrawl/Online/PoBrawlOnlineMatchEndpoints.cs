@@ -12,10 +12,23 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// <summary>
 /// Result ingest for live PoBrawl 1v1. The match service hands each client its
 /// own <see cref="PoBrawlMatchResult"/> when the fight ends; this endpoint is
-/// what the client POSTs that result to. The server validates identity from
-/// the auth cookie, dedupes by MatchId through MatchHistory's idempotency
-/// marker, increments both players' Elo, and returns the updated board.
+/// what the client POSTs that result to.
 /// </summary>
+/// <remarks>
+/// <para>
+/// <b>Everything the result depends on is server-derived (2026-09-29).</b> The request body
+/// is only consulted for the match id; outcome, opponent and duration come from the still-held
+/// <see cref="PoBrawlMatchService"/> via <see cref="PoBrawlMatchService.BuildResultForPrincipal"/>.
+/// An earlier revision priced Elo off the client's own claim of who won — a hand-crafted POST
+/// could mint arbitrary rating swings for, or against, any principal.
+/// </para>
+/// <para>
+/// <b>Both corners POST the same match, so the Elo increment is claimed once per MATCH</b>
+/// (<see cref="MatchHistoryRepository.TryClaimEloIncrementAsync"/>) — not per owner. The
+/// history dedup is per-owner and invisible to callers, so before this claim existed each
+/// fight's zero-sum rating pair-write ran twice: once per corner that reported it.
+/// </para>
+/// </remarks>
 public static class PoBrawlOnlineMatchEndpoints
 {
     public static IEndpointRouteBuilder MapPoBrawlOnlineMatchEndpoints(this IEndpointRouteBuilder app)
@@ -43,25 +56,14 @@ public static class PoBrawlOnlineMatchEndpoints
                 IStorageService storage,
                 IScoreIntegrityGuard integrity,
                 MatchHistoryRepository matchHistory,
+                PoBrawlMatchRegistry registry,
                 ILoggerFactory loggerFactory,
                 CancellationToken ct) =>
             {
-                var errors = new Dictionary<string, string[]>();
                 if (string.IsNullOrWhiteSpace(dto.MatchId))
-                    errors[nameof(dto.MatchId)] = ["MatchId is required."];
-                if (dto.DurationSeconds is <= 0 or > 600)
-                    errors[nameof(dto.DurationSeconds)] = ["Match duration must be between 0 and 600 seconds."];
-                // Any PICKABLE fighter, BOB included: the lobby offers him, and this board rates
-                // players, not fighters — the ids are only sanity-checked, never stored. Requiring
-                // a rateable president here rejected every match a BOB player finished (2026-09-23:
-                // it never surfaced before because the result broadcast never reached a client).
-                if (!IsPickable(dto.OwnerFighter.Id))
-                    errors[nameof(dto.OwnerFighter)] = ["OwnerFighter is not a PoBrawl fighter."];
-                if (!IsPickable(dto.OpponentFighter.Id))
-                    errors[nameof(dto.OpponentFighter)] = ["OpponentFighter is not a PoBrawl fighter."];
-                if (errors.Count > 0)
                 {
-                    return Results.ValidationProblem(errors);
+                    return Results.ValidationProblem(
+                        new Dictionary<string, string[]> { [nameof(dto.MatchId)] = ["MatchId is required."] });
                 }
 
                 // Authoritative identity — never trust the client-supplied owner id
@@ -76,84 +78,84 @@ public static class PoBrawlOnlineMatchEndpoints
                         statusCode: StatusCodes.Status401Unauthorized);
                 }
 
-                // Reject self-fights — the lobby already refuses them, but a
-                // hand-crafted POST is the kind of thing that has to be defended
-                // against anyway.
-                if (string.Equals(dto.OwnerId, userId, StringComparison.OrdinalIgnoreCase))
+                // The fight this id names must still be held, finished, and the caller must be
+                // one of its two corners. Anything else — a fabricated id, a replay past the
+                // FinishedLinger sweep, a spectator, a caller who is not in the fight — is a
+                // rejection, because the server, not the POST body, decides what happened.
+                var match = registry.FindByMatchId(dto.MatchId);
+                if (match is null)
                 {
-                    // The owner IS the authenticated caller — that's fine, owner IS self.
-                    // But the opponent cannot be self.
+                    return Results.Problem(
+                        title: "Match not held",
+                        detail: "No finished fight with that id is still held. Results must be reported before the room is swept.",
+                        statusCode: StatusCodes.Status404NotFound);
                 }
-                if (string.IsNullOrWhiteSpace(dto.OpponentDisplayName))
-                    errors[nameof(dto.OpponentDisplayName)] = ["OpponentDisplayName is required."];
-                if (errors.Count > 0)
+                if (match.FinishedAtUtc is null)
                 {
-                    return Results.ValidationProblem(errors);
+                    return Results.Problem(
+                        title: "Match not finished",
+                        detail: "That fight is still running — results arrive when the bell rings.",
+                        statusCode: StatusCodes.Status409Conflict);
+                }
+                var truth = match.BuildResultForPrincipal(userId);
+                if (truth is null)
+                {
+                    return Results.Problem(
+                        title: "Not a corner of this fight",
+                        detail: "Only the two players in the match may report its result.",
+                        statusCode: StatusCodes.Status403Forbidden);
                 }
 
                 var log = loggerFactory.CreateLogger("PoBrawlOnlineMatches");
                 log.LogInformation(
-                    "PoBrawl online match POST user={UserId} matchId={MatchId} outcome={Outcome} duration={Duration}s",
-                    userId, dto.MatchId, dto.Outcome, dto.DurationSeconds);
+                    "PoBrawl online match POST user={UserId} matchId={MatchId} outcome={Outcome} duration={Duration}s forfeit={Forfeit}",
+                    userId, dto.MatchId, truth.Outcome, truth.DurationSeconds, truth.Forfeit);
 
-                // MatchHistory write first — its idempotency layer dedupes retries
-                // by MatchId. A retried POST re-claims the same marker, returns
-                // 409 from the SDK, and we exit without re-incrementing Elo.
+                // History row per corner (per-owner idempotency inside). A retried POST lands
+                // here as a duplicate and just re-reads the board below.
                 await matchHistory.RecordAsync(new MatchRecordRequest(
                     Owner: integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
                     Game: GameKey.PoBrawl.Value,
                     Mode: "multiplayer",
-                    OpponentName: dto.OpponentDisplayName,
+                    OpponentName: truth.OpponentDisplayName,
                     OpponentType: "guest",
-                    Outcome: dto.Outcome.ToString().ToLowerInvariant(),
+                    Outcome: truth.Outcome.ToString().ToLowerInvariant(),
                     OwnerType: isGuest ? "guest" : "microsoft",
                     MatchId: dto.MatchId), ct);
 
-                // Elo increment. Map the owner-relative outcome to the absolute
-                // winner/loser pair the accumulator expects. The opponent's
-                // principal id is server-stamped into the match-result payload at
-                // broadcast time, so both sides can POST a complete record and the
-                // zero-sum write lands on the right pair of rows.
-                string winnerPid, loserPid, winnerName, loserName;
-                bool isDraw;
-                switch (dto.Outcome)
+                // The zero-sum Elo pair-write, exactly once per match. The winner/loser pair is
+                // mapped from the server's own result — the corner that happens to win the claim
+                // is irrelevant, both corners report the same outcome pair.
+                if (await matchHistory.TryClaimEloIncrementAsync(dto.MatchId, ct))
                 {
-                    case PoBrawlOutcome.Win:
-                        winnerPid = userId; loserPid = dto.OpponentId;
-                        winnerName = displayName; loserName = dto.OpponentDisplayName;
-                        isDraw = false;
-                        break;
-                    case PoBrawlOutcome.Loss:
-                        winnerPid = dto.OpponentId; loserPid = userId;
-                        winnerName = dto.OpponentDisplayName; loserName = displayName;
-                        isDraw = false;
-                        break;
-                    default: // Draw
-                        // The calculator's symmetric draw formula is order-independent
-                        // for the rating math, but the side we pass first still wins
-                        // ties — so pick the higher-rated (or the first-seen) side
-                        // as "winner". The board is unchanged either way: both rows
-                        // move by ±half-delta.
-                        winnerPid = userId; loserPid = dto.OpponentId;
-                        winnerName = displayName; loserName = dto.OpponentDisplayName;
-                        isDraw = true;
-                        break;
+                    var localLost = truth.Outcome == PoBrawlOutcome.Loss;
+                    var isDraw = truth.Outcome == PoBrawlOutcome.Draw;
+                    var winnerPid = localLost ? truth.OpponentId : userId;
+                    var loserPid = localLost ? userId : truth.OpponentId;
+                    var winnerName = localLost ? truth.OpponentDisplayName : displayName;
+                    var loserName = localLost ? displayName : truth.OpponentDisplayName;
+
+                    // Unreachable through the registry (a corner cannot fight itself), but a
+                    // hand-crafted payload naming the same principal on both sides is a 400,
+                    // not a 500.
+                    if (string.Equals(winnerPid, loserPid, StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Results.BadRequest(new { error = "opponent_is_self" });
+                    }
+
+                    var board = await storage.RecordPoBrawlOnlineMatchAsync(
+                        winnerPrincipalId: NormalisePrincipal(winnerPid),
+                        loserPrincipalId: NormalisePrincipal(loserPid),
+                        winnerDisplayName: winnerName,
+                        loserDisplayName: loserName,
+                        isDraw: isDraw);
+                    return Results.Ok(board);
                 }
 
-                // Self-fight guard: a hand-crafted payload naming the same
-                // principal on both sides is a 400, not a 500.
-                if (string.Equals(winnerPid, loserPid, StringComparison.OrdinalIgnoreCase))
-                {
-                    return Results.BadRequest(new { error = "opponent_is_self" });
-                }
-
-                var board = await storage.RecordPoBrawlOnlineMatchAsync(
-                    winnerPrincipalId: NormalisePrincipal(winnerPid),
-                    loserPrincipalId: NormalisePrincipal(loserPid),
-                    winnerDisplayName: winnerName,
-                    loserDisplayName: loserName,
-                    isDraw: isDraw);
-                return Results.Ok(board);
+                // The other corner (or a retry of ours) already applied the rating swing —
+                // still answer with the board so the caller's UI has fresh numbers.
+                var rows = await storage.GetPoBrawlPlayerRatingsAsync(10);
+                return Results.Ok(rows);
             })
             .RequireAuthorization()
             .RequireRateLimiting("highscores");
@@ -166,10 +168,6 @@ public static class PoBrawlOnlineMatchEndpoints
     /// (lowercased + trimmed) so a write at this endpoint lands on the same
     /// partition the lobby-side state machine wrote to.
     /// </summary>
-    private static bool IsPickable(string? fighterId) =>
-        PoBrawlRoster.IsRateable(fighterId)
-        || string.Equals(fighterId, PoBrawlRoster.Bob.Id, StringComparison.OrdinalIgnoreCase);
-
     private static string NormalisePrincipal(string raw) =>
         string.IsNullOrWhiteSpace(raw) ? "anon" : raw.Trim().ToLowerInvariant();
 }

@@ -236,9 +236,14 @@
     private static string DisplayName(string? raw)
     {
         var safe = raw ?? string.Empty;
-        return ShortHexName.IsMatch(safe)
-            ? $"Guest {safe[..Math.Min(4, safe.Length)].ToUpperInvariant()}"
-            : safe;
+        if (ShortHexName.IsMatch(safe))
+        {
+            return $"Guest {safe[..Math.Min(4, safe.Length)].ToUpperInvariant()}";
+        }
+        // Rotating guest identities ("Guest-1cd4098e-288240") trim to "Guest 1CD409" so the
+        // boards stop reading like a debugger trace. See LeaderboardNames for the split
+        // between display and identity: ranking and IsMe keep the raw name.
+        return LeaderboardNames.Pretty(safe);
     }
 
     private List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board, string groupKey, int take)

@@ -88,7 +88,13 @@ public sealed class PoBrawlMatchHub : Hub
     public async Task RequestRematch()
     {
         var match = _registry.MatchFor(Context.ConnectionId);
-        if (match is null) return;
+        // A swept room (FinishedLinger elapsed, or a rematch already replaced it) can never
+        // reach two votes. Throwing — instead of the old silent return — is what lets the
+        // caller's UI reset its "waiting for a rematch" state instead of showing it forever.
+        if (match is null)
+        {
+            throw new HubException("That fight has ended and the room is gone — start a new one from the lobby.");
+        }
         var agreed = match.VoteRematch(Context.ConnectionId);
         var group = Clients.Group(MatchGroup(match.GameCode));
         if (!agreed)

@@ -64,6 +64,21 @@ window.poPwa = (() => {
 
         setUpdateListener(dotNetRef) { updateListener = dotNetRef; },
 
+        // ── Update-toast routing (2026-09-29) ────────────────────────────
+        // One call handing .NET everything it needs to decide whether the "new
+        // version" toast may show: demo/kiosk pages stay silent (a reel has
+        // nobody to press Update) and localhost/lan dev hosts stay silent (a
+        // developer who rebuilds twice in an hour would be nagged twice an
+        // hour). This used to be probed from C# with `eval` interop, which
+        // failed open — dev hosts got the nag the code exists to prevent.
+        pageContext() {
+            return {
+                path: location.pathname,
+                query: location.search,
+                host: location.hostname,
+            };
+        },
+
         // Tell the waiting worker to activate, then reload onto it. Without the
         // controllerchange wait, the reload can race the activation and land back on
         // the old build, which reads to the user as "the update button did nothing".

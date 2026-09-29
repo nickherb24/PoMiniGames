@@ -579,14 +579,41 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
     /// Both clients receive their own copy with their own local side set, so the
     /// outcome maps to "did the local player win?".
     /// </summary>
-    public PoBrawlMatchResult BuildResultFor(string connectionId)
+    public PoBrawlMatchResult BuildResultFor(string connectionId) => BuildResultForSide(SideFor(connectionId));
+
+    /// <summary>
+    /// The roster side a principal id owns, or null when they are not one of the two fighters.
+    /// Same ignore-case walk as <see cref="RegisterConnectionByPrincipal"/>, minus the
+    /// connection — the result ingest authenticates by cookie, not by a live hub connection.
+    /// </summary>
+    public PoBrawlSide? SideForPrincipal(string principalId)
+    {
+        if (string.IsNullOrWhiteSpace(principalId)) return null;
+        for (var i = 0; i < Roster.Count; i++)
+        {
+            if (string.Equals(Roster[i].PrincipalId, principalId, StringComparison.OrdinalIgnoreCase))
+            {
+                return i == 0 ? PoBrawlSide.Player1 : PoBrawlSide.Player2;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Server-canonical result for one of the two fighters, by principal id — the ingest's
+    /// source of truth for outcome, opponent and duration. Null for anyone else (spectators,
+    /// a fabricated caller): a match may only be reported by its own corners.
+    /// </summary>
+    public PoBrawlMatchResult? BuildResultForPrincipal(string principalId) =>
+        SideForPrincipal(principalId) is { } side ? BuildResultForSide(side) : null;
+
+    private PoBrawlMatchResult BuildResultForSide(PoBrawlSide localSide)
     {
         PoBrawlMatchState snapshot;
         lock (_stateLock)
         {
             snapshot = SnapshotLocked();
         }
-        var localSide = SideFor(connectionId);
         var opponent = localSide == PoBrawlSide.Player1 ? _p2 : _p1;
         var outcome = !snapshot.Finished ? PoBrawlOutcome.Draw
             : snapshot.Winner is null ? PoBrawlOutcome.Draw

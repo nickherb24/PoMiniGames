@@ -58,6 +58,14 @@ window.PoBrawl = {
     game.resetMatch(false);
   },
   setMuted(muted) { if (game) game.setMuted(muted); },
+  /**
+   * Current engine phase ('intro' | 'countdown' | 'fighting' | 'ko' | 'result'), or null with
+   * no engine. Read-only. The 1P ladder's roll into the next president waits on this: the KO
+   * cinematic runs on the RENDER clock, which freezes in a backgrounded tab, while the page's
+   * hold delay is wall-clock — without the gate, returning to a hidden-then-restored tab could
+   * skip the ragdoll/replay it was owed.
+   */
+  phase() { return game ? game.phase : null; },
   /** Online: one server snapshot (PoBrawlMatchState) for the puppet fight (netplay.js). */
   net(state) { if (game) game.applyNet(state); },
   /** Save or share the last KO clip (GFX/SOUND #10). Resolves false when there is none. */

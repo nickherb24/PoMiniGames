@@ -77,6 +77,11 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
                 try { await JoinAsync(); } catch { /* surfaced on the next user action */ }
             };
             _hub.Closed += _ => { ConnectionChanged?.Invoke(HubConnectionState.Disconnected); return Task.CompletedTask; };
+        }
+        // Outside the create block: a first StartAsync that failed leaves _hub built but
+        // Disconnected, and a page's "Try again" has to start it rather than join on a dead hub.
+        if (_hub.State == HubConnectionState.Disconnected)
+        {
             await _hub.StartAsync();
             ConnectionChanged?.Invoke(_hub.State);
         }

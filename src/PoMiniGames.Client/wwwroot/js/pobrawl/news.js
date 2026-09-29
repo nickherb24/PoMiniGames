@@ -18,8 +18,8 @@ export class NewsDesk {
   constructor(container, { onSaveClip, demo = false } = {}) {
     const el = document.createElement('div');
     el.className = demo ? 'pb-news pb-news--demo' : 'pb-news';
-    el.setAttribute('role', 'status');
-    el.setAttribute('aria-live', 'polite');
+    // Not a live region: the page's shell already announces every result, and a second
+    // polite region read the same KO twice (2026-09-29 UI review #9).
     el.innerHTML = `
       <div class="pb-news__bug"><span class="pb-news__live">LIVE</span><span class="pb-news__net">PBN</span></div>
       <div class="pb-news__vote" aria-hidden="true">

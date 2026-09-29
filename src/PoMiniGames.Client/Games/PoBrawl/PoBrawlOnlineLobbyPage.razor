@@ -23,6 +23,16 @@
                Mode="GameIntro.IntroMode.OnePlayer"
                OnStart="OnIntroStartAsync" />
 }
+else if (_failed is { } why)
+{
+    @* The lobby used to stop on "Finding you a room…" for good when the server was down or
+       the hub refused the connection — no retry, and a connect failure with no room code
+       escaped to Blazor's error bar. *@
+    <div class="pbl-failed" role="alert">
+        <p>@why</p>
+        <button type="button" class="pbl-btn" @onclick="OnIntroStartAsync">Try again</button>
+    </div>
+}
 else
 {
     @* 1v1: both seats ready up, host included, so the shared card shows the host a
@@ -50,7 +60,7 @@ else
                private one, join a friend's by code or link, or watch a fight in progress. *@
             <div class="pbl-room">
                 <span class="pbl-room__code">Room <b>@(Code ?? "…")</b></span>
-                @if (_private)
+                @if (_private == true)
                 {
                     <span class="lobby-pill lobby-pill--accent">private</span>
                 }
@@ -105,12 +115,11 @@ else
                     var mine = f.Id == MyFighterId;
                     <button type="button"
                             class="lobby-pick-card @(mine ? "lobby-pick-card--mine" : "")"
+                            aria-pressed="@(mine ? "true" : "false")"
                             @onclick="() => PickAsync(f.Id)">
-                        <span class="lobby-pick-card__name">@f.Name</span>
-                        @if (mine)
-                        {
-                            <span class="lobby-pill lobby-pill--accent">selected</span>
-                        }
+                        @* The "selected" pill made every card two rows tall (and was 10px text);
+                           the accent border plus aria-pressed already say it. *@
+                        <span class="lobby-pick-card__name">@(mine ? "✓ " : "")@f.Name</span>
                     </button>
                 }
             </div>
@@ -129,7 +138,12 @@ else
 
     private LobbyClient<PoBrawlLobbyPlayer> _lobby = null!;
     private bool _introDone;
-    private bool _private;
+    // Whether this room is private: known when we made it or quick-matched into it, null when
+    // we came in by a code or link (the lobby state doesn't carry it). The hint used to call a
+    // friend's private room "public: quick match can seat a stranger".
+    private bool? _private;
+    private string? _failed;   // why the lobby could not be reached; the retry card shows it
+    private bool _wired;       // lobby events subscribed (once — a retry must not double them)
     private string _joinCode = "";
     private IReadOnlyList<PoBrawlRoomSummary> _rooms = [];
     private CancellationTokenSource? _refreshCts;
@@ -163,7 +177,12 @@ else
     private string MyFighterId => _lobby.Me?.Fighter.Id ?? "";
     private string HintText => Code is null
         ? "Finding you a room…"
-        : $"Room {Code} — {(_private ? "private: only people with the code or link can join" : "public: quick match can seat a stranger here")}. 1v1, both players ready up, the host starts.";
+        : $"Room {Code} — {_private switch
+        {
+            true => "private: only people with the code or link can join. ",
+            false => "public: quick match can seat a stranger here. ",
+            null => "",
+        }}1v1, both players ready up, the host starts.";
     private IReadOnlyList<PoBrawlRoomSummary> OtherRooms => [.. _rooms.Where(r => r.Code != Code)];
 
     private bool EveryoneReady =>
@@ -172,33 +191,49 @@ else
     private async Task OnIntroStartAsync()
     {
         _introDone = true;
+        _failed = null;
         StateHasChanged();
         if (!await Api.IsAvailableAsync())
         {
-            ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
+            _failed = "The server isn't answering right now, so there's no lobby to join.";
             return;
         }
-        _lobby.StateChanged += _ => InvokeAsync(StateHasChanged);
-        _lobby.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
-        _lobby.EventReceived += ev => ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
-        _lobby.GameStarted += code => Nav.NavigateTo($"/pobrawl/online?code={Uri.EscapeDataString(code)}");
+        if (!_wired)
+        {
+            _wired = true;
+            _lobby.StateChanged += _ => InvokeAsync(StateHasChanged);
+            _lobby.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
+            _lobby.EventReceived += ev => ToastService.Show(ev.Message, ev.Kind == "left" ? ToastType.Warning : ToastType.Info);
+            _lobby.GameStarted += code => Nav.NavigateTo($"/pobrawl/online?code={Uri.EscapeDataString(code)}");
+        }
         try
         {
-            await _lobby.ConnectAndJoinAsync(Name, IsGuest);
+            // An invite link's room: privacy unknown. No code: quick match, which only seats public rooms.
+            _private = _lobby.RoomCode is null ? false : null;
+            try
+            {
+                await _lobby.ConnectAndJoinAsync(Name, IsGuest);
+            }
+            catch (Exception ex) when (_lobby.RoomCode is not null && _lobby.IsConnected)
+            {
+                // A dead invite link (the room expired, or it is full): say so, and quick-match instead.
+                ToastService.Show(HubMessage(ex, "That room is gone"), ToastType.Warning);
+                _lobby.RoomCode = null;
+                _private = false;
+                await _lobby.JoinAsync();
+            }
         }
-        catch (Exception ex) when (_lobby.RoomCode is not null)
+        catch (Exception ex)
         {
-            // A dead invite link (the room expired, or it is full): say so, and quick-match instead.
-            ToastService.Show(HubMessage(ex, "That room is gone"), ToastType.Warning);
-            _lobby.RoomCode = null;
-            await _lobby.JoinAsync();
+            _failed = HubMessage(ex, "Couldn't reach the lobby.");
+            return;
         }
-        _refreshCts = new CancellationTokenSource();
+        _refreshCts ??= new CancellationTokenSource();
         _ = RefreshLoopAsync(_refreshCts.Token);
     }
 
     /// <summary>Move to another room (new, or joined). A refusal (full, unknown code) leaves you where you were.</summary>
-    private async Task SwitchAsync(Func<Task<LobbyState<PoBrawlLobbyPlayer>?>> seat, bool isPrivate)
+    private async Task SwitchAsync(Func<Task<LobbyState<PoBrawlLobbyPlayer>?>> seat, bool? isPrivate)
     {
         try
         {
@@ -217,7 +252,7 @@ else
         var code = _joinCode.Trim().ToUpperInvariant();
         if (code.Length == 0) return Task.CompletedTask;
         _joinCode = "";
-        return SwitchAsync(() => _lobby.SeatAsync(JoinRoom, code, Name, IsGuest), isPrivate: false);
+        return SwitchAsync(() => _lobby.SeatAsync(JoinRoom, code, Name, IsGuest), isPrivate: null);
     }
 
     private void Watch(string code) => Nav.NavigateTo($"/pobrawl/online?code={Uri.EscapeDataString(code)}");

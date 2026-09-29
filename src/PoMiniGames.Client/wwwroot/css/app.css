@@ -1333,13 +1333,21 @@ p, li, dd, blockquote,
      `min-height` alone is not enough here: .toast-close fails on WIDTH too, so
      both axes are set. Still zero-specificity via `:where()`, so any component
      rule can opt out by stating its own size. */
+  /* 2026-09-29: a checkbox or radio inside a <label> is excluded — the label is
+     its hit target, and stretching the native box to 44×44 painted it as a large
+     EMPTY square (no tick glyph scales with it), which read as a broken text field
+     on every intro card's "Don't show this again". Labels get the floor instead. */
   :where(select,
          input[type="range"],
-         input[type="checkbox"],
-         input[type="radio"],
+         input[type="checkbox"]:not(label *),
+         input[type="radio"]:not(label *),
          .toast-close) {
     min-height: 44px;
     min-width: 44px;
+  }
+
+  :where(label:has(> input[type="checkbox"], > input[type="radio"])) {
+    min-height: 44px;
   }
 
   /* A range input with a 44px min-height needs the track centred in it or the

@@ -28,6 +28,8 @@
            BackTo="@(_mode == "online" ? LobbyUrl : "/")"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
+           GameOverDelayMs="@LadderResultHoldMs"
+           Fullscreen="true"
            GameKey="@(_mode == "1p" ? "pobrawlko" : null)"
            Outcome="@OutcomeForCue"
            RequiresWebGl="true"
@@ -36,18 +38,23 @@
            Announcement="@_announcement">
     @if (!_introDone)
     {
-        <GameIntro CueScope="pobrawl"
-                   Title="@TitleContent"
-                   Objective="@IntroObjective"
-                   Controls="@IntroControlsContent"
-                   Mode="@_introMode"
-                   Options="@IntroOptions"
-                   StartEnabled="true"
-                   StartHint="@null"
-                   DialogLabel="@IntroDialogLabel"
-                   CaptureKeys="false"
-                   OnKey="OnIntroKey"
-                   OnStart="OnIntroStartAsync" />
+        @* .pb-intro is display:contents — it exists so this page's scoped CSS can reach the
+           shared card (::deep) and give Brawl's long 1P card its wide two-column layout. *@
+        <div class="pb-intro">
+            <GameIntro CueScope="pobrawl"
+                       Title="@TitleContent"
+                       Objective="@IntroObjective"
+                       Controls="@IntroControlsContent"
+                       Mode="@_introMode"
+                       Options="@IntroOptions"
+                       StartEnabled="true"
+                       ShowStart="@(_mode != "2p")"
+                       StartHint="@null"
+                       DialogLabel="@IntroDialogLabel"
+                       CaptureKeys="false"
+                       OnKey="OnIntroKey"
+                       OnStart="OnIntroStartAsync" />
+        </div>
     }
     <div class="pb-wrap">
         @* Labelled host — see the note on PoSports (browser audit #6): the engine
@@ -56,108 +63,72 @@
         <div id="pobrawl-container" class="pb-canvas-host"
              role="img" aria-label="Brawl arena — the fight renders here"></div>
 
-        @* Two-bar HUD, fed by the JS engine's OnHud callback: health, then energy.
-           The third bar (violet super meter) was removed 2026-08-11 — signature
-           moves still fire, they just fire themselves now. See _autoSuperReady in
-           game.js and the note on SuperBar's removal below. *@
-        @if (_phase == "fighting" || _demo)
-        {
-            <div class="pb-hud">
-                @* GFX/SOUND #1 (2026-09-23): the ghost is the damage chip — a pale bar under the
-                   fill that holds the old value for a beat and then drains to meet it, so every
-                   hit shows how much it took. Pure CSS (a delayed width transition on the same
-                   --hp); the 4×/sec OnHud pump needs no extra data. InDanger cracks the plate. *@
-                <div class="pb-hp-side @(InDanger(_p1Hp) ? "pb-hp-side--danger" : "")">
-                    <span class="pb-hp-name">@HudName(1)</span>
-                    @* Review #5: the tracks are real meters now — a screen reader can
-                       query either bar on demand (role=meter carries the value range)
-                       without waiting for the sparse live-region milestones. *@
-                    <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
-                         aria-valuenow="@_p1Hp" aria-label="@CharName(_p1Char) — health">
-                        <div class="pb-hp-ghost" style="--hp: @(_p1Hp)%;"></div><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%;"></div>
-                    </div>
-                    <div class="pb-en-track" role="meter" aria-valuemin="0" aria-valuemax="100"
-                         aria-valuenow="@_p1Energy" aria-label="@CharName(_p1Char) — energy" title="@EnergyTip">
-                        <div class="pb-en-fill @EnergyClass(_p1Energy)" style="--en: @(_p1Energy)%;"></div>
-                    </div>
-                </div>
-                @BodyDiagram(_p1Regions)
-                <div class="pb-centre">
-                    @* Counts DOWN from the 60 s limit (game.js TIME_LIMIT). The
-                       best-of-three pip scoreboard that used to sit under it went
-                       with the rounds themselves — every mode is one round now. *@
-                    <div class="pb-clock" title="@(InTraining ? "Training — no clock" : "Seconds remaining — the round ends at 0")">@(InTraining ? "∞" : _elapsed.ToString("0"))</div>
-                </div>
-                @BodyDiagram(_p2Regions)
-                <div class="pb-hp-side pb-hp-right @(InDanger(_p2Hp) ? "pb-hp-side--danger" : "")">
-                    <span class="pb-hp-name">@HudName(2)</span>
-                    <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
-                         aria-valuenow="@_p2Hp" aria-label="@CharName(_p2Char) — health">
-                        <div class="pb-hp-ghost" style="--hp: @(_p2Hp)%;"></div><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div>
-                    </div>
-                    <div class="pb-en-track" role="meter" aria-valuemin="0" aria-valuemax="100"
-                         aria-valuenow="@_p2Energy" aria-label="@CharName(_p2Char) — energy" title="@EnergyTip">
-                        <div class="pb-en-fill @EnergyClass(_p2Energy)" style="--en: @(_p2Energy)%;"></div>
-                    </div>
-                </div>
-            </div>
-
-            @* 1-player ladder rail. The rung is persisted in localStorage and was
-               otherwise invisible until the end-of-run modal, so a player mid-gauntlet
-               had no way to see how far through the fifteen presidents they were —
-               the pre-fight ladder card that used to carry it was removed in 2026-07.
-               Rendered outside .pb-hud so it can sit under the bars without competing
-               with them for the same flex row. *@
-            @if (_mode == "1p" && !_training)
+        @* Top of the arena, one column: HUD → 1P ladder rail → online room pills. They used
+           to be three absolutely-placed layers at hard-coded tops (10/62/64px), so anything that
+           made the HUD taller — a wrapped nameplate on a phone — ran it into the rail below. *@
+        <div class="pb-top">
+            @if (_phase == "fighting" || _demo)
             {
-                <div class="pb-ladder" role="img"
-                     aria-label="Ladder progress: @_ladder of @Roster.Length presidents beaten. Now fighting @CharName(_p2Char).">
-                    <span class="pb-ladder-count">@_ladder/@Roster.Length</span>
-                    <span class="pb-ladder-rail">
-                        @for (var i = 0; i < Roster.Length; i++)
-                        {
-                            <span class="pb-rung @(i < _ladder ? "pb-rung--done" : i == _ladder ? "pb-rung--now" : "")"
-                                  title="@Roster[i].Name"></span>
-                        }
-                    </span>
-                    <span class="pb-ladder-now">@CharName(_p2Char)</span>
-                </div>
+                @* Two-bar HUD (health, energy) + body damage + clock: its own component, so the
+                   engine's 4×/sec pump re-renders it alone (see PoBrawlHud.razor). *@
+                <PoBrawlHud @ref="_hud"
+                            P1Name="@HudName(1)" P2Name="@HudName(2)"
+                            P1Fighter="@CharName(_p1Char)" P2Fighter="@CharName(_p2Char)"
+                            Training="_training" />
+
+                @* 1-player ladder rail: how far through the fifteen presidents this run is. *@
+                @if (_mode == "1p" && !_training)
+                {
+                    <div class="pb-ladder" role="img"
+                         aria-label="Ladder progress: @_ladder of @Roster.Length presidents beaten. Now fighting @CharName(_p2Char).">
+                        <span class="pb-ladder-count">@_ladder/@Roster.Length</span>
+                        <span class="pb-ladder-rail">
+                            @for (var i = 0; i < Roster.Length; i++)
+                            {
+                                <span class="pb-rung @(i < _ladder ? "pb-rung--done" : i == _ladder ? "pb-rung--now" : "")"
+                                      title="@Roster[i].Name"></span>
+                            }
+                        </span>
+                        <span class="pb-ladder-now">@CharName(_p2Char)</span>
+                    </div>
+                }
             }
-        }
+
+            @* Online: the room, your corner, and anything the network is doing to the fight. *@
+            @if (_mode == "online" && !_netMissing)
+            {
+                @if (_everJoined)
+                {
+                    <div class="pb-net-status" role="status">
+                        <span class="pb-net-pill">Room @_code</span>
+                        <span class="pb-net-pill @(_isSpectator ? "pb-net-pill--watch" : "")">
+                            @(_isSpectator ? "👀 Spectating" : $"You: {(_localSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? "left" : "right")} corner")
+                        </span>
+                        @if (NetNotice is { } notice)
+                        {
+                            <span class="pb-net-pill pb-net-pill--warn">@notice</span>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="pb-net-status" role="status"><span class="pb-net-pill">Joining room @_code…</span></div>
+                }
+            }
+        </div>
 
         @if (_demo)
         {
-            <div class="pb-demo-badge">@(_drill ? "🥋 Demo — training drill" : "🎮 Demo — CPU vs CPU")</div>
+            <div class="pb-demo-badge">🎮 Demo — CPU vs CPU</div>
         }
 
-        @* Online: the room, your corner, and anything the network is doing to the fight. *@
-        @if (_mode == "online")
+        @if (_mode == "online" && _netMissing)
         {
-            @if (_netMissing)
-            {
-                <div class="pb-net-missing" role="status">
-                    <h2>No fight in room @_code</h2>
-                    <p>It already ended, or it never started. The lobby has the room.</p>
-                    <a class="pb-net-btn" href="@LobbyUrl">Back to the lobby</a>
-                </div>
-            }
-            else if (_net?.Snapshot is { } snap)
-            {
-                <div class="pb-net-status" role="status">
-                    <span class="pb-net-pill">Room @_code</span>
-                    <span class="pb-net-pill @(snap.IsSpectator ? "pb-net-pill--watch" : "")">
-                        @(snap.IsSpectator ? "👀 Spectating" : $"You: {(snap.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? "left" : "right")} corner")
-                    </span>
-                    @if (NetNotice is { } notice)
-                    {
-                        <span class="pb-net-pill pb-net-pill--warn">@notice</span>
-                    }
-                </div>
-            }
-            else
-            {
-                <div class="pb-net-status" role="status"><span class="pb-net-pill">Joining room @_code…</span></div>
-            }
+            <div class="pb-net-missing" role="status">
+                <h2>No fight in room @_code</h2>
+                <p>It already ended, or it never started. The lobby has the room.</p>
+                <a class="pb-net-btn" href="@LobbyUrl">Back to the lobby</a>
+            </div>
         }
 
         @* Training (1P). The OPTION lives on the intro card ("Training first",
@@ -230,8 +201,8 @@
     private static int PresidentElo(int rung) => 800 + rung * 133;
 
     private string _playerName = "";
-    private bool _demo;
     private string _mode = "1p";
+    private bool _demo => _mode == "demo";
 
     // Outcome for the end-of-game cue. _winner is 1 for the local player and 2
     // for the opponent; only the 1P ladder has a "you" to win, so 2-player and
@@ -260,7 +231,7 @@
     private int _p2Sel = 1;   // player 2 starts one down so they don't overlap P1
     private bool _p1Locked;
     private bool _p2Locked;
-    private bool _twoPlayerReady => _p1Locked && _p2Locked;
+    private bool BothLocked => _p1Locked && _p2Locked;
     private GameIntro.IntroMode _introMode => _demo
         ? GameIntro.IntroMode.Demo
         : _mode == "2p" ? GameIntro.IntroMode.TwoPlayer : GameIntro.IntroMode.OnePlayer;
@@ -283,47 +254,12 @@
     private string _phase = "fighting";
     private string _p1Char = "trump";
     private string _p2Char = "biden";
-    private int _p1Hp = 100;
-    private int _p2Hp = 100;
-    // Energy meters (0-100) fed by the JS engine. The bar is strike power AND
-    // stamina: winding up drains it into the swing, every swing costs a flat
-    // toll on top, blocking refills it fast and standing refills it slowly.
-    // Starts at game.js ENERGY_DEFAULT (1.0) — keep these two in step with it.
-    private int _p1Energy = 100;
-    private int _p2Energy = 100;
-
-    // Mirrors game.js ENERGY_RECOVER_TO (0.40). Below it a fighter is gassed and
-    // the engine refuses to start any punch or kick, so the bar is styled to say
-    // so; see .pb-en-spent. This is a display threshold only — the engine owns
-    // the real gate (and its hysteresis), and duplicating the number here is the
-    // lesser evil against widening the seven-argument OnHud arity contract just
-    // to carry one bool. It only has to be close enough to read correctly.
-    private const int EnergySpentPct = 40;
-    private const int EnergyHotPct = 50;
-
-    // _elapsed is the time LEFT (game.js _pushHud computes TIME_LIMIT - clock),
-    // but it only becomes true once the engine boots — until then it held 0,
-    // which read as "the round already ended" under a card telling the player
-    // there are 60 seconds (review #6). Seed it at the limit; ResetRoundHud
-    // keeps the two paths in step.
-
-    private const string EnergyTip =
-        "Energy — strike power and stamina. Attacking drains it; blocking refills it, and a block timed on their wind-up refills it fastest. Too low and you cannot punch or kick.";
-
-    // Mirrors game.js DANGER_HP (0.25): the plate cracks at the same moment the
-    // engine starts the heartbeat. Display only — the engine owns the effect.
-    private const int DangerHpPct = 25;
-    private static bool InDanger(int hp) => hp > 0 && hp <= DangerHpPct;
-
-    private static string EnergyClass(int pct) =>
-        pct < EnergySpentPct ? "pb-en-spent"
-        : pct > EnergyHotPct ? "pb-en-hot"
-        : "";
-    // The super meter/armed fields that used to sit here are gone (2026-08-11).
-    // The engine still runs the meter — it is what gates each president's
-    // signature move — but it is no longer pushed over OnHud or drawn, so the
-    // page holds no copy of it. Two bars, two numbers.
-    private double _elapsed = 60;
+    // The HUD's numbers (health, energy, regions, the clock) live in PoBrawlHud since
+    // 2026-09-29 — the page only forwards the engine's pump to it (OnHud) and keeps the
+    // danger milestones for the live region.
+    private PoBrawlHud? _hud;
+    // The super meter/armed fields that used to sit here are gone (2026-08-11). The engine
+    // still runs the meter to gate each president's signature move; it is not drawn.
     private int _winner;
     private double _lastKo;
     private double _bestKo;
@@ -337,9 +273,6 @@
     private bool _p1DangerAnnounced;
     private bool _p2DangerAnnounced;
 
-    // Per-region damage (0-100) fed by the JS engine: [head, torso, arms, legs].
-    private int[] _p1Regions = new int[4];
-    private int[] _p2Regions = new int[4];
     private List<StatItem> _statItems = new();
     private PlayerStats _stats = new();
     private readonly GameStatsService _gameStats = new();
@@ -347,7 +280,7 @@
 
     // ── 1P presidents ladder + adaptive ELO (same system as ConnectFive) ──
     private int _ladder;                 // 0-based rung; Roster[_ladder] is the opponent
-    private bool _champion;              // set for one select-screen after clearing rung 10
+    private bool _champion;              // the last rung just fell: the result modal shows the ending card
     private AdaptiveRating _rating = new();
     private int _lastEloDelta;
     private string LadderKey => $"pobrawl_ladder_{_playerName}";
@@ -373,21 +306,19 @@
     // the 60-second limit is now what bounds the fight instead.
 
     // ── Fight recap ───────────────────────────────────────────────────────
-    // Accumulated across every round of the match (a 2P best-of-three) and every
-    // rung of a 1P run, because the modal is only shown once at the end of both.
+    // Accumulated across every rung of a 1P run (2P and online are one fight), because
+    // the modal is only shown once, at the end of the run.
     // Null until the first OnMatchEnd carries a payload.
     private PoBrawlMatchRecap? _recap;
     // The most recent round alone — what the press conference talks about. _recap is the
     // whole 1P run, which is the wrong number for one president's line about one fight.
     private PoBrawlMatchRecap? _lastRecap;
 
-    // ── Training room (1P) and demo drills (2026-09-23, training.js) ──────
-    private bool _training;            // 1P: the engine is running the training room
-    // Set by the intro card's "Training first" checkbox (1P only); read once by
-    // OnIntroStartAsync to boot the engine straight into the room.
-    private bool _trainFromIntro;
-    private bool _drill;               // demo: this match is a drill (the engine rolls it)
-    private bool InTraining => _training || _drill;
+    // ── Training room (1P only, 2026-09-23, training.js) ──────
+    // 1P: the engine is running the training room. Bound straight to the intro card's
+    // "Training first" box — before Start there is no engine for it to disagree with, so the
+    // _trainFromIntro copy and the InTraining alias that used to shadow it are gone.
+    private bool _training;
     private string _dummy = "stand";
     // PoBrawl.training keys (training.js setTrainingOption). Constants because the markup
     // passes them inside a quoted attribute, where a string literal would end the attribute.
@@ -433,6 +364,14 @@
     private string _code = "";
     private string? _engineMatchId;   // the fight the running engine is showing
     private bool _netMissing;         // JoinMatch answered null: no fight on this code
+    // Corner state, cached at join. The live Snapshot can turn null underneath an open result
+    // screen — a SignalR reconnect that answers null once the swept room is gone — and every
+    // name/side readout used to dereference it: the modal ended up "waiting for <your own
+    // name>" and the status pill downgraded to "Joining room…" under a finished fight. These
+    // three keep the last known truth on screen for exactly as long as the fight is.
+    private PoMiniGames.Shared.Games.PoBrawlSide? _localSide;
+    private bool _isSpectator;
+    private bool _everJoined;
     private PoMiniGames.Shared.Games.PoBrawlMatchResult? _netResult;
     private string? _netSubmittedFor; // match id whose result already went to the Elo board
     private bool _rematchRequested;
@@ -442,7 +381,7 @@
     private string _p2Player = "";
 
     private string LobbyUrl => string.IsNullOrEmpty(_code) ? "/pobrawl/multi" : $"/pobrawl/multi?code={Uri.EscapeDataString(_code)}";
-    private bool IsSpectator => _net?.Snapshot?.IsSpectator == true;
+    private bool IsSpectator => _isSpectator;
 
     /// <summary>What the network is doing to the fight, or null when nothing worth saying.</summary>
     private string? NetNotice
@@ -500,17 +439,11 @@
         _ => "Brawl intro",
     };
 
-    private string? TwoPlayerStartHint => _mode != "2p"
-        ? null
-        : _twoPlayerReady
-            ? "Both players are ready. Press Start or wait for auto-start."
-            : $"Waiting: {ReadyLabel(1)} and {ReadyLabel(2)}";
-
-    private string ReadyLabel(int side)
-    {
-        var ready = side == 1 ? _p1Locked : _p2Locked;
-        return ready ? $"Player {side} ready" : $"Player {side} not ready";
-    }
+    // Whose pick a tap on the grid makes: player 1 until they lock, then player 2.
+    private string SelectPrompt =>
+        !_p1Locked ? "Player 1 — tap your fighter (or A / D, then F)"
+        : !_p2Locked ? "Player 2 — tap your fighter (or ← / →, then K)"
+        : "Both locked in — fight!";
 
     // 2026-09-11 UI sweep: demo previously fell through to HowToPlayContent, so a
     // spectated CPU-vs-CPU fight taught keyboard controls nobody can use (same
@@ -541,6 +474,7 @@
                moves now fire on their own once a fighter has taken enough damage,
                so there is no key to teach and no meter to watch. *@
             <li>Take enough punishment and your president's signature move fires itself</li>
+            <li class="pb-touch-keys">On a phone the touch pad drives Player 1 — Player 2 needs the keyboard or a gamepad</li>
         </ul>
     </div>;
 
@@ -575,8 +509,11 @@
     // presidents' coil-ending phrases are built around never starts.
     private RenderFragment HowToPlayContent => @<div>
         <ul>
-            <li><kbd>A</kbd>/<kbd>D</kbd> move · <kbd>W</kbd>/<kbd>S</kbd> circle · <b>hold</b> <kbd>R</kbd> to block</li>
-            <li><kbd>F</kbd> punch · <kbd>G</kbd> kick — hold to charge, release to strike</li>
+            @* The first two lines are keyboard-only; a touch screen gets the pad's own
+               glyphs instead (CSS swaps them on a coarse pointer — see .pb-keys). *@
+            <li class="pb-keys"><kbd>A</kbd>/<kbd>D</kbd> move · <kbd>W</kbd>/<kbd>S</kbd> circle · <b>hold</b> <kbd>R</kbd> to block</li>
+            <li class="pb-keys"><kbd>F</kbd> punch · <kbd>G</kbd> kick — hold to charge, release to strike</li>
+            <li class="pb-touch-keys">◀ ▶ move · ↺ ↻ circle · <b>hold</b> 🛡 to block · 👊 punch · 🦵 kick — hold to charge, release to strike</li>
             <li>👊 Punch is <b>speed</b>: fast, cheap, small damage. 🦵 Kick is the <b>power</b> hit — slower, and it costs twice the energy</li>
             <li>⚡ Energy is hit power <b>and</b> stamina — every swing spends it. Run it dry and you cannot strike at all</li>
             <li>🛡 Guard <b>as they wind up</b>, not before — that's a PERFECT guard: big energy back, they freeze, your answer hits harder</li>
@@ -632,7 +569,7 @@
            instead of the rung fight — the bar at the bottom of the arena
            carries the dummy picker and the way out. *@
         <label class="pb-intro-train">
-            <input type="checkbox" checked="@_trainFromIntro" @onchange="TrainFromIntroChanged" />
+            <input type="checkbox" @bind="_training" />
             <span><b>🥋 Training first</b> — no clock, no KO; the room's bar has the exit.</span>
         </label>
         <div class="pb-scout-head">
@@ -711,54 +648,52 @@
     // defaulted to (BOB vs Trump), with no indication that the card wanted the
     // keyboard. The keys still work exactly as before and remain the fast path;
     // this only adds the pointer route that was missing.
-    private RenderFragment SelectContent => @<div class="gps-intro-versus">
-        <p class="pb-intro-ready" role="status">@TwoPlayerStartHint</p>
-        <div>
-            <div class="gps-intro-side-title">Player 1 <span class="pb-intro-side-state">@(_p1Locked ? "Ready" : "Picking")</span></div>
-            <div class="gps-intro-side-keys">A / D move · F lock in — or tap a name</div>
-            <ul class="gps-intro-roster">
-                @for (int i = 0; i < PickableRoster.Length; i++)
-                {
-                    var idx = i;
-                    <li>
-                        <button type="button"
-                                class="gps-intro-roster-item @(idx == _p1Sel ? "gps-intro-roster-item--cursor" : "") @(_p1Locked && idx == _p1Sel ? "gps-intro-roster-item--locked" : "")"
-                                aria-pressed="@(idx == _p1Sel ? "true" : "false")"
-                                @onclick="() => PickFighter(1, idx)">
-                            @PickableRoster[idx].Name
-                        </button>
-                    </li>
-                }
-            </ul>
-            <button type="button" class="gps-intro-lock @(_p1Locked ? "gps-intro-lock--on" : "")"
-                    @onclick="() => ToggleLock(1)">
-                @(_p1Locked ? "✓ Ready" : "Lock in")
-            </button>
+    private RenderFragment SelectContent => @<div class="pb-select">
+        @* 2026-09-29: one shared 4×4 grid with a cursor per player, fighting-game style. It was
+           two side-by-side scrolling lists of all sixteen names — two scrollers nested in a
+           scrolling card, 30px rows under the touch floor — plus a Start button that bypassed
+           the lock-ins the objective asks for. The side cards are the lock toggles. *@
+        <div class="pb-select-sides">
+            @SideCard(1)
+            <span class="pb-select-vs" aria-hidden="true">VS</span>
+            @SideCard(2)
         </div>
-        <div class="gps-intro-vs-divider">VS</div>
-        <div>
-            <div class="gps-intro-side-title">Player 2 <span class="pb-intro-side-state">@(_p2Locked ? "Ready" : "Picking")</span></div>
-            <div class="gps-intro-side-keys">← / → move · K lock in — or tap a name</div>
-            <ul class="gps-intro-roster">
-                @for (int i = 0; i < PickableRoster.Length; i++)
-                {
-                    var idx = i;
-                    <li>
-                        <button type="button"
-                                class="gps-intro-roster-item @(idx == _p2Sel ? "gps-intro-roster-item--cursor" : "") @(_p2Locked && idx == _p2Sel ? "gps-intro-roster-item--locked" : "")"
-                                aria-pressed="@(idx == _p2Sel ? "true" : "false")"
-                                @onclick="() => PickFighter(2, idx)">
-                            @PickableRoster[idx].Name
-                        </button>
-                    </li>
-                }
-            </ul>
-            <button type="button" class="gps-intro-lock @(_p2Locked ? "gps-intro-lock--on" : "")"
-                    @onclick="() => ToggleLock(2)">
-                @(_p2Locked ? "✓ Ready" : "Lock in")
-            </button>
-        </div>
+        <p class="pb-select-prompt">@SelectPrompt</p>
+        <ul class="pb-select-grid" aria-label="Fighters">
+            @for (int i = 0; i < PickableRoster.Length; i++)
+            {
+                var idx = i;
+                var f = PickableRoster[idx];
+                <li>
+                    <button type="button"
+                            class="pb-select-tile @(idx == _p1Sel ? "pb-select-tile--p1" : "") @(idx == _p2Sel ? "pb-select-tile--p2" : "")"
+                            aria-label="@TileLabel(idx)"
+                            @onclick="() => TapFighter(idx)">
+                        <span class="pb-select-name">@f.Name</span>
+                        @if (idx == _p1Sel) { <span class="pb-select-mark pb-select-mark--p1" aria-hidden="true">P1</span> }
+                        @if (idx == _p2Sel) { <span class="pb-select-mark pb-select-mark--p2" aria-hidden="true">P2</span> }
+                    </button>
+                </li>
+            }
+        </ul>
     </div>;
+
+    private string TileLabel(int idx) =>
+        PickableRoster[idx].Name + (idx == _p1Sel ? ", Player 1" : "") + (idx == _p2Sel ? ", Player 2" : "");
+
+    private RenderFragment SideCard(int side)
+    {
+        var locked = side == 1 ? _p1Locked : _p2Locked;
+        var pick = PickableRoster[side == 1 ? _p1Sel : _p2Sel].Name;
+        return @<button type="button" class="pb-select-side pb-select-side--p@(side) @(locked ? "pb-select-side--locked" : "")"
+                        aria-pressed="@(locked ? "true" : "false")"
+                        aria-label="Player @side: @pick, @(locked ? "locked in — press to change" : "press to lock in")"
+                        @onclick="() => ToggleLock(side)">
+            <span class="pb-select-who">Player @side</span>
+            <span class="pb-select-pick">@pick</span>
+            <span class="pb-select-state">@(locked ? "✓ Ready" : "Lock in")</span>
+        </button>;
+    }
 
     private RenderFragment GameSummaryContent => @<div>
         <div>@ResultLine()</div>
@@ -772,7 +707,7 @@
                same fighters the moment the second one does. *@
             @if (_rematchRequested || _rematchVotes > 0)
             {
-                <div class="pb-rematch" role="status">🔁 Rematch @_rematchVotes/2 — @(_rematchRequested ? $"waiting for {OpponentPlayer}…" : $"{OpponentPlayer} wants a rematch! Press Play again.")</div>
+                <div class="pb-rematch">🔁 Rematch @_rematchVotes/2 — @(_rematchRequested ? $"waiting for {OpponentPlayer}…" : $"{OpponentPlayer} wants a rematch! Press Play again.")</div>
             }
             else
             {
@@ -830,7 +765,7 @@
            is already final, so a failed fetch simply shows nothing. *@
         @if (_presserLoading || _presser is not null)
         {
-            <figure class="pb-presser" aria-live="polite">
+            <figure class="pb-presser">
                 <figcaption class="pb-presser-head"><span aria-hidden="true">🎤</span> Post-fight press conference</figcaption>
                 @if (_presser is { } p)
                 {
@@ -895,8 +830,7 @@
     protected override void OnInitialized()
     {
         var routeMode = GameModes.Parse(Mode, ModeQuery, DemoQuery);
-        _demo = routeMode == GameMode.Demo;
-        _mode = _demo ? "demo"
+        _mode = routeMode == GameMode.Demo ? "demo"
               : routeMode == GameMode.TwoPlayer ? "2p"
               : "1p";
         // /pobrawl/online?code=… — the lobby's fight. Not a GameModes slug: it is not a way to
@@ -912,6 +846,10 @@
         // The name can still be settling (localStorage read, then the signed-in display name) —
         // and everything above is keyed by it. See OnPlayerNameChanged.
         PlayerNameService.StateChanged += OnPlayerNameChanged;
+        // Same for the identity itself: under ?autoGuest=1 the guest session is still being
+        // minted on first render, so the cloud-progress fetch below 403s. OnAuthSettled
+        // re-runs the merge the moment auth flips to signed-in. See MergeRemoteProgressAsync.
+        Auth.StateChanged += OnAuthSettled;
 
         if (_mode == "2p")
         {
@@ -925,6 +863,10 @@
         if (_demo) Kiosk.SetCurrent("pobrawl-demo");
     }
 
+    // One remote-progress merge per page life: first render when already signed in, otherwise
+    // the moment the auto-guest identity settles (see OnAuthSettled).
+    private bool _progressFetched;
+
     /// <summary>
     /// 1P: pick up ladder progress saved from another device (GET /api/pobrawl/progress). The
     /// newer of the two copies wins the rung; the fastest KO and the clear count take the best.
@@ -932,7 +874,25 @@
     /// </summary>
     protected override async Task OnInitializedAsync()
     {
-        if (_mode != "1p" || !Auth.IsAuthenticated) return;
+        if (_mode != "1p") return;
+        if (!Auth.IsAuthenticated) return; // OnAuthSettled picks this up.
+        _progressFetched = true;
+        await MergeRemoteProgressAsync();
+    }
+
+    private void OnAuthSettled()
+    {
+        if (_mode != "1p" || _progressFetched || _introDone || !Auth.IsAuthenticated) return;
+        _progressFetched = true;
+        _ = InvokeAsync(async () =>
+        {
+            await MergeRemoteProgressAsync();
+            StateHasChanged();
+        });
+    }
+
+    private async Task MergeRemoteProgressAsync()
+    {
         var remote = await ApiService.GetPoBrawlProgressAsync();
         if (remote is null) return;
         var localAt = long.TryParse(LocalStorageService.GetItem<string>(LadderAtKey), out var at) ? at : 0;
@@ -963,8 +923,9 @@
             return;
         }
         // The scouting card is up now; its portrait (and the ring introduction) can arrive
-        // whenever they arrive.
-        OnOpponentKnown();
+        // whenever they arrive. 1P only: in 2P this used to buy a ring introduction for the
+        // default cursors (BOB vs Trump) before anyone had picked.
+        if (_mode == "1p") OnOpponentKnown();
     }
 
     /// <summary>Everything this page keeps per player name: stats, Elo, the rung, the fastest KO, the clears.</summary>
@@ -1014,34 +975,41 @@
     {
         if (_mode != "2p" || _introDone) return;
         var n = PickableRoster.Length;
+        // The grid is SelectColumns wide: across is ±1, down is ±SelectColumns (the in-game
+        // circle keys, W/S and ↑/↓), all wrapping.
         switch (e.Code)
         {
             case "KeyA":      if (!_p1Locked) _p1Sel = (_p1Sel - 1 + n) % n; break;
             case "KeyD":      if (!_p1Locked) _p1Sel = (_p1Sel + 1) % n; break;
+            case "KeyW":      if (!_p1Locked) _p1Sel = (_p1Sel - SelectColumns + n) % n; break;
+            case "KeyS":      if (!_p1Locked) _p1Sel = (_p1Sel + SelectColumns) % n; break;
             case "KeyF":      _p1Locked = !_p1Locked; break;
             case "ArrowLeft":  if (!_p2Locked) _p2Sel = (_p2Sel - 1 + n) % n; break;
             case "ArrowRight": if (!_p2Locked) _p2Sel = (_p2Sel + 1) % n; break;
+            case "ArrowUp":    if (!_p2Locked) _p2Sel = (_p2Sel - SelectColumns + n) % n; break;
+            case "ArrowDown":  if (!_p2Locked) _p2Sel = (_p2Sel + SelectColumns) % n; break;
             case "KeyK":      _p2Locked = !_p2Locked; break;
             default: return;
         }
         // Both locked → straight into the fight (no reaching for the mouse).
-        if (_twoPlayerReady) { _ = OnIntroStartAsync(); return; }
+        if (BothLocked) { _ = OnIntroStartAsync(); return; }
         StateHasChanged();
     }
 
-    /// <summary>Pointer equivalent of the A/D and ←/→ cursor keys.</summary>
-    /// <remarks>
-    /// Picking also UNLOCKS that side. Without it a player who locked in early
-    /// would be frozen on their choice with no pointer-reachable way back, since
-    /// the lock button is the only other control and re-picking is the natural
-    /// gesture for "actually, this one". The keyboard has the same escape via a
-    /// second press of F/K.
-    /// </remarks>
-    private void PickFighter(int side, int idx)
+    // Columns of the 2P select grid — the CSS (.pb-select-grid) draws the same four.
+    private const int SelectColumns = 4;
+
+    /// <summary>
+    /// A tap on the grid picks AND locks for whoever is still choosing — player 1, then
+    /// player 2 — so a pointer pair gets through in two taps. A player who wants another
+    /// fighter unlocks from their side card and taps again.
+    /// </summary>
+    private void TapFighter(int idx)
     {
         if (_introDone) return;
-        if (side == 1) { _p1Sel = idx; _p1Locked = false; }
-        else { _p2Sel = idx; _p2Locked = false; }
+        if (!_p1Locked) { _p1Sel = idx; _p1Locked = true; }
+        else if (!_p2Locked) { _p2Sel = idx; _p2Locked = true; }
+        if (BothLocked) _ = OnIntroStartAsync();
     }
 
     /// <summary>Pointer equivalent of the F and K lock-in keys.</summary>
@@ -1053,7 +1021,7 @@
         // here too means the two input routes cannot disagree about when a match
         // begins, which is the kind of split that leaves the FIGHT button as the
         // only way out for one of them.
-        if (_twoPlayerReady) _ = OnIntroStartAsync();
+        if (BothLocked) _ = OnIntroStartAsync();
     }
 
     // Dismisses the intro and boots the engine. Idempotent: the FIGHT button and
@@ -1082,13 +1050,9 @@
         // 1P keeps the ladder matchup chosen in OnInitialized (BOB vs the rung).
         // "Training first" boots the room instead of the fight — the ladder is
         // one bar-button away once the player is done warming up.
-        if (_mode == "1p")
+        if (_mode == "1p" && _training)
         {
-            _training = _trainFromIntro;
-            if (_trainFromIntro)
-            {
-                _announcement = $"Training room on — no clock, no KO. Fight {CharName(_p2Char)} when ready.";
-            }
+            _announcement = $"Training room on — no clock, no KO. Fight {CharName(_p2Char)} when ready.";
         }
 
         StateHasChanged();
@@ -1106,13 +1070,7 @@
     /// </remarks>
     private void ResetRoundHud()
     {
-        _p1Hp = 100;
-        _p2Hp = 100;
-        _p1Energy = 100;
-        _p2Energy = 100;
-        _elapsed = 60; // time LEFT — matches game.js TIME_LIMIT; see the field note
-        _p1Regions = new int[4];
-        _p2Regions = new int[4];
+        _hud?.Reset();
         _clipReady = false;
     }
 
@@ -1179,7 +1137,16 @@
             _rematchVotes = Math.Max(_rematchVotes, 1);
             StateHasChanged();
             try { await _net.RequestRematchAsync(); }
-            catch { _rematchRequested = false; Toasts.Show("Couldn't reach the room — try again.", ToastType.Warning); }
+            catch (Exception ex)
+            {
+                // The hub refuses a rematch on a swept room (FinishedLinger elapsed, or a
+                // rematch already replaced it) with a HubException — surface its message and
+                // reset the vote instead of showing "waiting for a rematch" forever.
+                _rematchRequested = false;
+                _rematchVotes = 0;
+                StateHasChanged();
+                Toasts.Show(HubMessageText(ex, "Couldn't reach the room — try again."), ToastType.Warning);
+            }
             return;
         }
         ++_presserGeneration; // a press line still in flight belongs to the fight that just ended
@@ -1241,6 +1208,9 @@
             return;
         }
         _netMissing = false;
+        _everJoined = true;
+        _isSpectator = snap.IsSpectator;
+        _localSide = snap.LocalSide;
         _p1Player = snap.Player1.DisplayName;
         _p2Player = snap.Player2.DisplayName;
         if (snap.MatchId == _engineMatchId) { StateHasChanged(); return; }
@@ -1284,7 +1254,7 @@
     {
         _netResult = r;
         StateHasChanged();
-        if (_netSubmittedFor == r.MatchId || _net?.Snapshot is not { } snap) return;
+        if (_netSubmittedFor == r.MatchId || _isSpectator || _net?.Snapshot is not { } snap) return;
         _netSubmittedFor = r.MatchId;
         var dto = new PoMiniGames.Shared.Games.PoBrawlMatchResultDto
         {
@@ -1314,11 +1284,33 @@
     [JSInvokable]
     public Task OnNetHeld(string state) => _net?.SendHeldAsync(state) ?? Task.CompletedTask;
 
+    /// <summary>
+    /// The part of a hub failure this page can show. A HubException arrives either bare —
+    /// its message IS the server's text — or wrapped: "An unexpected error occurred invoking
+    /// 'RequestRematch' on the server. HubException: That fight has ended…", so the part
+    /// after the last marker is ours. The generic SignalR wrapper (a non-HubException
+    /// failure) only gets the fallback. Same parse as the lobby page's HubMessage; kept
+    /// local because the two pages fail in different hands.
+    /// </summary>
+    private static string HubMessageText(Exception ex, string fallback)
+    {
+        var message = ex.Message ?? "";
+        const string marker = "HubException: ";
+        var i = message.LastIndexOf(marker, StringComparison.Ordinal);
+        if (i >= 0) return message[(i + marker.Length)..];
+        return string.IsNullOrEmpty(message)
+            || message.StartsWith("An unexpected error occurred", StringComparison.Ordinal)
+            ? fallback
+            : message;
+    }
+
     /// <summary>netplay.js → an attack key ('punch' | 'kick' | 'special').</summary>
     [JSInvokable]
     public Task OnNetPress(string attack) => _net?.SendPressAsync(attack) ?? Task.CompletedTask;
 
-    private string OpponentPlayer => _net?.Snapshot?.LocalSide == PoMiniGames.Shared.Games.PoBrawlSide.Player2 ? _p1Player : _p2Player;
+    // The LOCAL side is cached at join (see the field note on _localSide): the Snapshot can
+    // be gone while the result screen is still up, and "who is my opponent" must survive it.
+    private string OpponentPlayer => _localSide == PoMiniGames.Shared.Games.PoBrawlSide.Player2 ? _p1Player : _p2Player;
 
     /// <summary>The HUD nameplate: the president, and online the person driving them too.</summary>
     private string HudName(int side)
@@ -1371,13 +1363,6 @@
         // The room-to-fight flip is invisible in the arena itself — say it.
         _announcement = $"Back to the ladder — fighting {CharName(_p2Char)} for the rung.";
         await InitEngine();
-    }
-
-    /// <summary>Intro-card "Training first" checkbox (1P only).</summary>
-    private Task TrainFromIntroChanged(ChangeEventArgs e)
-    {
-        _trainFromIntro = IsChecked(e);
-        return Task.CompletedTask;
     }
 
     private async Task SetDummyAsync(string id)
@@ -1457,6 +1442,8 @@
         if (generation != _presserGeneration) return;
         _presserLoading = false;
         _presser = reply;
+        // The shell's live region reads it (the figure used to be a second live region of its own).
+        if (reply is not null) _announcement = $"Press conference — {reply.Speaker}: {reply.Text}";
         await InvokeAsync(StateHasChanged);
         if (reply is not null && !Settings.Muted)
         {
@@ -1493,41 +1480,10 @@
     public void OnHud(int p1Hp, int p2Hp, double elapsed, int[]? p1Regions, int[]? p2Regions,
         int p1Energy, int p2Energy)
     {
-        // Review #10: the pump fires ~4×/sec for the whole fight, but the page only
-        // SHOWS integer seconds and four ints — quiet stretches (the round-open
-        // splash, standoffs, the post-match freeze) pushed identical state and
-        // re-rendered the whole page anyway. Skip when nothing visible moved; the
-        // danger announcement below still gets through on the pump that first
-        // observes a fighter in the red, because it runs before this check.
-        var shownSeconds = Math.Round(elapsed, MidpointRounding.AwayFromZero);
-        var dangerSaid = UpdateDangerAnnouncements(p1Hp, p2Hp);
-        if (!dangerSaid
-            && _p1Hp == p1Hp && _p2Hp == p2Hp
-            && _p1Energy == p1Energy && _p2Energy == p2Energy
-            && Math.Round(_elapsed, MidpointRounding.AwayFromZero) == shownSeconds
-            && RegionsUnchanged(_p1Regions, p1Regions)
-            && RegionsUnchanged(_p2Regions, p2Regions))
-        {
-            return;
-        }
-
-        _p1Hp = p1Hp;
-        _p2Hp = p2Hp;
-        _p1Energy = p1Energy;
-        _p2Energy = p2Energy;
-        _elapsed = elapsed;
-        if (p1Regions is { Length: 4 }) _p1Regions = p1Regions;
-        if (p2Regions is { Length: 4 }) _p2Regions = p2Regions;
-        InvokeAsync(StateHasChanged);
-    }
-
-    private static bool RegionsUnchanged(int[] current, int[]? next)
-    {
-        // A payload the page would ignore (see the assigns above) cannot change
-        // what is on screen either.
-        if (next is not { Length: 4 }) return true;
-        return current[0] == next[0] && current[1] == next[1]
-            && current[2] == next[2] && current[3] == next[3];
+        // The pump re-renders the HUD component only (it skips identical pumps itself); the
+        // page re-renders just for a new danger milestone, which is live-region text.
+        _hud?.Update(p1Hp, p2Hp, elapsed, p1Regions, p2Regions, p1Energy, p2Energy);
+        if (UpdateDangerAnnouncements(p1Hp, p2Hp)) InvokeAsync(StateHasChanged);
     }
 
     // Review #5: the first reading of a fighter in the red is a milestone the
@@ -1537,7 +1493,7 @@
     private bool UpdateDangerAnnouncements(int p1Hp, int p2Hp)
     {
         var said = false;
-        if (InDanger(p1Hp))
+        if (PoBrawlHud.InDanger(p1Hp))
         {
             if (!_p1DangerAnnounced)
             {
@@ -1550,7 +1506,7 @@
             _p1DangerAnnounced = false;
         }
 
-        if (InDanger(p2Hp))
+        if (PoBrawlHud.InDanger(p2Hp))
         {
             if (!_p2DangerAnnounced)
             {
@@ -1572,22 +1528,14 @@
     // fighters. Syncing the resolved character ids keeps the left/right names
     // matched to the fighters underneath them.
     /// <summary>
-    /// Engine → page on every spawn: whether this match is a training session or a demo
-    /// drill. Its own method, not an OnMatchStart argument, for the arity reason on OnHud.
+    /// Engine → page on every spawn: whether this match is a training session (1P)
+    /// — its own method, not an OnMatchStart argument, for the arity reason on OnHud.
     /// </summary>
     [JSInvokable]
     public void OnTrainingState(bool active, string dummy)
     {
-        if (_demo) _drill = active;
-        else if (active && !string.IsNullOrEmpty(dummy)) _dummy = dummy;
+        if (active && !string.IsNullOrEmpty(dummy)) _dummy = dummy;
         InvokeAsync(StateHasChanged);
-    }
-
-    /// <summary>A demo drill ran its course — the same beat as a finished demo match.</summary>
-    [JSInvokable]
-    public void OnTrainingShowcaseEnd()
-    {
-        if (_demo) Kiosk.MarkFinished();
     }
 
     /// <summary>Engine → page: the KO clip for the result on screen is ready to save.</summary>
@@ -1613,38 +1561,6 @@
         _announcement = $"New fight — {CharName(_p1Char)} versus {CharName(_p2Char)}.";
         InvokeAsync(StateHasChanged);
     }
-
-    // ── Region-damage body diagram ────────────────────────────────────────
-    // Mirrors the JS engine's per-region damage model (combat.js regionEffect):
-    // head ≥70 → extra hitstun taken, arms ≥70 → weaker attacks, legs ≥70 →
-    // slower movement (milder steps at 30/40). The diagram turns those hidden
-    // numbers into a target-selection tool: hunt the zones that are already red.
-    private RenderFragment BodyDiagram(int[] regions) =>
-        @<svg class="pb-body" viewBox="0 0 40 64"
-              aria-label="Body damage — head @(regions[0]), torso @(regions[1]), arms @(regions[2]), legs @(regions[3])">
-            <title>Head @(regions[0]) · Torso @(regions[1]) · Arms @(regions[2]) · Legs @(regions[3])</title>
-            <circle cx="20" cy="8" r="7" class="@RegionClass(regions[0])" style="fill:@RegionColor(regions[0])" />
-            <rect x="12" y="17" width="16" height="20" rx="3" class="@RegionClass(regions[1])" style="fill:@RegionColor(regions[1])" />
-            <rect x="4"  y="17" width="6"  height="18" rx="3" class="@RegionClass(regions[2])" style="fill:@RegionColor(regions[2])" />
-            <rect x="30" y="17" width="6"  height="18" rx="3" class="@RegionClass(regions[2])" style="fill:@RegionColor(regions[2])" />
-            <rect x="13" y="39" width="6"  height="22" rx="3" class="@RegionClass(regions[3])" style="fill:@RegionColor(regions[3])" />
-            <rect x="21" y="39" width="6"  height="22" rx="3" class="@RegionClass(regions[3])" style="fill:@RegionColor(regions[3])" />
-        </svg>;
-
-    // Healthy teal → bruised amber → crippled red, matching the 30/70 thresholds
-    // the gameplay effects use.
-    private static string RegionColor(int dmg)
-    {
-        var t = Math.Clamp(dmg, 0, 100) / 100.0;
-        (int r, int g, int b) from, to;
-        double f;
-        if (t < 0.5) { from = (74, 222, 178); to = (250, 176, 5); f = t / 0.5; }
-        else { from = (250, 176, 5); to = (224, 49, 49); f = (t - 0.5) / 0.5; }
-        int L(int a, int b2) => (int)(a + (b2 - a) * f);
-        return $"rgb({L(from.r, to.r)},{L(from.g, to.g)},{L(from.b, to.b)})";
-    }
-
-    private static string RegionClass(int dmg) => dmg >= 70 ? "pb-reg-crit" : "";
 
     /// <param name="winner">1 = left fighter, 2 = right fighter, 0 = draw.</param>
     /// <param name="elapsedSeconds">Round clock at the finish.</param>
@@ -1800,6 +1716,17 @@
             var nextP2 = Roster[_ladder].Id;
             _p2Char = nextP2;
             PrefetchIntro();
+            // The KO cinematic runs on the RENDER clock — frozen in a backgrounded tab — while
+            // the hold below is wall-clock. Wait the 'ko' phase out (capped) so the roll never
+            // cuts the ragdoll/replay the player was owed; accessor lives in index.js.
+            for (var waits = 0; waits < 40; waits++)
+            {
+                string? enginePhase;
+                try { enginePhase = await JSRuntime.InvokeAsync<string?>("PoBrawl.phase"); }
+                catch { break; } // engine gone, or an older cached build without the accessor
+                if (enginePhase is null || enginePhase != "ko") break;
+                await Task.Delay(250);
+            }
             await Task.Delay(LadderResultHoldMs);
             if (generation != _presserGeneration || _training) return;
 
@@ -1958,6 +1885,7 @@
     public async ValueTask DisposeAsync()
     {
         PlayerNameService.StateChanged -= OnPlayerNameChanged;
+        Auth.StateChanged -= OnAuthSettled;
         try { await JSRuntime.InvokeVoidAsync("PoBrawl.destroy"); } catch { }
         // Leaving the page mid-fight is a drop: the server's reconnect grace starts now.
         if (_net is not null) await _net.DisposeAsync();

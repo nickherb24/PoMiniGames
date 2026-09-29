@@ -77,11 +77,14 @@
                     break;
 
                 case IntroMode.TwoPlayer:
-                    <button class="gps-intro-btn gps-intro-btn--primary"
-                            disabled="@(!StartEnabled)"
-                            @onclick="StartAsync">
-                        @(StartLabel ?? "Start")
-                    </button>
+                    @if (ShowStart)
+                    {
+                        <button class="gps-intro-btn gps-intro-btn--primary"
+                                disabled="@(!StartEnabled)"
+                                @onclick="StartAsync">
+                            @(StartLabel ?? "Start")
+                        </button>
+                    }
                     @if (!string.IsNullOrWhiteSpace(StartHint))
                     {
                         <p class="gps-intro-hint">@StartHint</p>
@@ -136,6 +139,13 @@
 
     /// <summary>Overrides the action button label ("OK" / "Start").</summary>
     [Parameter] public string? StartLabel { get; set; }
+
+    /// <summary>
+    /// TwoPlayer only: false drops the Start button, for a select whose own lock-ins start
+    /// the match (PoBrawl) — there, Start was a second way in that skipped the picks.
+    /// Escape still calls OnStart (a modal must never trap the keyboard).
+    /// </summary>
+    [Parameter] public bool ShowStart { get; set; } = true;
 
     /// <summary>Optional helper line under the TwoPlayer Start button.</summary>
     [Parameter] public string? StartHint { get; set; }

@@ -1,0 +1,391 @@
+/* PoBrawlHud — the fight HUD. Moved out of PoBrawlPage.razor.css with the markup
+   (2026-09-29) so the engine's 4×/sec pump re-renders only this component.
+   Positioned by the page's .pb-top column; nothing here is absolutely placed. */
+
+/* ── HUD ─────────────────────────────────────────────── */
+
+/* ── Glassmorphic, audio-reactive chrome (GFX/SOUND #8) ────────────────────
+   The HUD was flat rectangles on a transparent layer. It is now a glass plate:
+   a frosted, saturated backdrop, a specular highlight raked across the top
+   edge, and a rim light that breathes on the music's low end.
+
+   TWO PLATFORM VARIABLES DRIVE THIS, AND BOTH NEED FALLBACKS:
+
+   --gfx-blur is published by visualRuntime.js's adaptive-quality tier, but ONLY
+   from applyTier(), which early-returns when the tier has not changed — and the
+   tier starts at 'high'. So on a machine that never drops a frame the variable
+   is NEVER SET. Every use here carries its own fallback; do not remove them
+   assuming the tier will provide one.
+
+   --audio-bass is published by the same module's §8 pump, which PoBrawl now
+   switches on in game.js start(). It is 0 whenever audio is muted or the
+   context has not been unlocked, and unset if the pump is off — so it is only
+   ever used to ADD glow on top of a value that stands on its own.
+
+   Everything is raw hex, like the rest of this HUD: .pb-hud floats over the
+   scheme-invariant arena and must not follow the theme. See the long note on
+   .pb-hp-name. */
+.pb-hud {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    pointer-events: none;
+}
+
+.pb-hp-side {
+    flex: 1;
+    min-width: 0; /* let a long nameplate ellipsize instead of widening the plate */
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 7px 10px 8px;
+    border-radius: 12px;
+    /* Two-stop wash rather than a flat tint: the plate has to read as a pane
+       catching light from above, and a uniform fill reads as a card. */
+    background: linear-gradient(160deg, rgba(146, 166, 226, 0.20), rgba(10, 14, 30, 0.34));
+    /* saturate() is what separates glassmorphism from a plain blur — the arena
+       behind is highly saturated, and letting that colour bleed through is the
+       whole effect. */
+    backdrop-filter: blur(var(--gfx-blur, 14px)) saturate(150%);
+    -webkit-backdrop-filter: blur(var(--gfx-blur, 14px)) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    /* Outer drop, then an inset top highlight (the lit edge of the pane) and an
+       inset bottom shade (its thickness). The middle shadow is the audio-driven
+       one: --audio-bass scales a cool rim glow, so the plate pulses with the
+       music's low end and flares on every impact the SFX bus passes. */
+    box-shadow:
+        0 6px 20px rgba(0, 0, 0, 0.45),
+        0 0 calc(var(--audio-bass, 0) * 26px) rgba(122, 152, 255, calc(0.15 + var(--audio-bass, 0) * 0.5)),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Raked specular streak. A single wide diagonal band at low alpha — the giveaway
+   of cheap glass is a plate with no highlight travelling across it. Static
+   (not animated): this sits over a 60 fps canvas and an animated sheen on the
+   HUD competes with the fight for the eye. */
+.pb-hp-side::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(104deg,
+        rgba(255, 255, 255, 0) 32%,
+        rgba(255, 255, 255, 0.11) 47%,
+        rgba(255, 255, 255, 0) 60%);
+    pointer-events: none;
+}
+
+.pb-hp-right {
+    align-items: flex-end;
+    /* Mirror the light: P2's plate is lit from the opposite side, so the two
+       glass panes read as facing each other across the ring. */
+    background: linear-gradient(200deg, rgba(146, 166, 226, 0.20), rgba(10, 14, 30, 0.34));
+}
+
+.pb-hp-right::before {
+    background: linear-gradient(76deg,
+        rgba(255, 255, 255, 0) 32%,
+        rgba(255, 255, 255, 0.11) 47%,
+        rgba(255, 255, 255, 0) 60%);
+}
+
+/* The blur is the expensive part of this HUD, and on the low tier
+   visualRuntime sets --gfx-blur to 0 precisely because the machine is already
+   dropping frames. A blur(0) backdrop-filter still promotes the element to its
+   own compositing layer and still costs a readback, so at that tier the filter
+   is dropped ENTIRELY and the plate falls back to a solid scrim. */
+:root[data-gfx="low"] .pb-hp-side {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: rgba(10, 14, 30, 0.72);
+}
+
+:root[data-gfx="low"] .pb-hp-side::before {
+    display: none;
+}
+
+.pb-hp-name {
+    font-family: var(--pb-display);
+    font-size: 0.78rem;
+    letter-spacing: 0.06em;
+    /* One line, always: a wrapped name ("player · fighter" online, on a 93px phone
+       plate) made the HUD taller and ran it into the ladder rail below. */
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* 2026-08-08 audit #3 — this is the SECOND fix here; the first one made it
+       worse, so read before changing.
+
+       The 2026-08-07 pass assumed ".pb-hud IS a theme surface" and switched this
+       to var(--color-text-primary). It is not: .pb-hud is `position: absolute`
+       with no background of its own (see the rule above), so it floats over the
+       dark fight arena in BOTH schemes. Following the theme therefore painted
+       near-black ink on the near-black arena in light mode — measured #0f172a on
+       #0d0f1a = 1.06:1, worse than the 1.20:1 it was meant to repair.
+
+       The arena is scheme-invariant, so the text over it must be too: a fixed
+       near-white plus the shadow that lifts it off bright sprite pixels, in both
+       schemes. Do not re-point this at a theme token. */
+    color: #f4f6ff;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
+}
+
+/* Tracks are recessed channels cut into the glass: a dark well, an inset top
+   shadow so the fill sits *in* it rather than on it, and a hairline lip. */
+.pb-hp-track {
+    position: relative;
+    width: 100%;
+    height: 12px;
+    border-radius: 6px;
+    background: rgba(4, 7, 18, 0.62);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.22);
+    box-shadow:
+        inset 0 2px 4px rgba(0, 0, 0, 0.55),
+        inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+}
+
+.pb-hp-fill {
+    height: 100%;
+    width: var(--hp, 100%);
+    transition: width 0.15s ease-out;
+    position: relative;
+    z-index: 1; /* over the ghost chip */
+    /* Gloss on the fill itself — the top half of the bar catches light. Layered
+       over each side's own colour gradient below via background-image stacking,
+       so the P1/P2 rules keep owning the hue. */
+    background-blend-mode: overlay, normal;
+}
+
+/* Bright leading edge on the health bar. It is the thing the eye tracks when
+   damage lands, and on a flat fill there was nothing to track — the bar just
+   got shorter. */
+.pb-hp-fill::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 3px;
+    height: 100%;
+    background: rgba(255, 255, 255, 0.85);
+    box-shadow: 0 0 7px rgba(255, 255, 255, 0.85);
+}
+
+.pb-hp-right .pb-hp-fill::after {
+    right: auto;
+    left: 0;
+}
+
+.pb-hp-p1 {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 55%),
+        linear-gradient(90deg, #22c55e, #86efac);
+}
+
+.pb-hp-p2 {
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 55%),
+        linear-gradient(90deg, #f87171, #ef4444);
+    margin-left: auto;
+}
+
+/* ── Damage chip (GFX/SOUND #1, 2026-09-23) ───────────────────────────
+   The ghost sits under the fill at the SAME --hp, but its width transition
+   waits 0.45 s and then drains over 0.6 s. So a hit snaps the coloured bar
+   down, leaves a pale sliver showing exactly what that hit cost, and the sliver
+   burns away to meet it — the fighting-game health bar every player already
+   reads. Healing (a round reset) runs the same curve upward, harmlessly hidden
+   under the fill. No JS: the HUD pump already writes --hp. */
+.pb-hp-ghost {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    width: var(--hp, 100%);
+    background: linear-gradient(180deg, #fff4dc, #ffb08a);
+    transition: width 0.6s cubic-bezier(.4, 0, .2, 1) 0.45s;
+}
+
+.pb-hp-right .pb-hp-ghost {
+    left: auto;
+    right: 0;
+}
+
+/* ── In the red (GFX/SOUND #4) ──────────────────────────────────────────
+   Under 25% the plate cracks and its rim runs red. Deliberately STATIC: the
+   heartbeat pulse lives in the arena (the screen-edge tint on this fighter's
+   side, game.js _updateDanger) and in the audio; a blinking HUD is what the
+   2026-09-12 flicker pass removed, and this does not bring it back. */
+.pb-hp-side--danger {
+    border-color: rgba(255, 110, 110, 0.6);
+    box-shadow:
+        0 6px 20px rgba(0, 0, 0, 0.45),
+        0 0 16px rgba(255, 60, 60, 0.35),
+        inset 0 1px 0 rgba(255, 255, 255, 0.22),
+        inset 0 -1px 0 rgba(0, 0, 0, 0.3);
+}
+
+.pb-hp-side--danger .pb-hp-track::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    pointer-events: none;
+    /* A few hairline fractures across the glass, stretched to the track. */
+    background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 12' preserveAspectRatio='none'%3E%3Cg fill='none' stroke='white' stroke-opacity='.7' stroke-width='.6'%3E%3Cpath d='M9 0 L12 4 L10 7 L14 12 M12 4 L17 5 L19 3'/%3E%3Cpath d='M47 0 L45 5 L49 8 L47 12 M45 5 L40 7'/%3E%3Cpath d='M81 0 L84 3 L82 6 L86 9 L85 12 M84 3 L90 2'/%3E%3C/g%3E%3C/svg%3E") center / 100% 100% no-repeat;
+}
+
+/* Energy meter — banked attack power (see game.js ENERGY_* consts). Thinner
+   sibling of the HP track; fill turns gold + glows once past the 50% idle
+   cap, i.e. when the fighter has blocked/charged their way into bonus power. */
+.pb-en-track {
+    width: 100%;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(4, 7, 18, 0.62);
+    overflow: hidden;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.55);
+}
+
+.pb-en-fill {
+    height: 100%;
+    width: var(--en, 50%);
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 60%),
+        linear-gradient(90deg, #5b7cfa, #8aa4ff);
+    transition: width 0.25s linear;
+}
+
+/* P2's whole side is right-aligned (`.pb-hp-right { align-items: flex-end }`),
+   so both of its bars anchor to the right edge and drain inward toward the
+   centre clock — mirroring P1, which anchors left and drains inward too.
+   2026-08-07 browser audit: only the energy fill carried this, so P2's HP bar
+   drained the opposite way to the energy bar sitting directly under it. */
+.pb-hp-right .pb-en-fill,
+.pb-hp-right .pb-hp-fill {
+    margin-left: auto;
+}
+
+.pb-en-hot {
+    background: linear-gradient(90deg, #ffb020, #ffd257);
+    box-shadow: 0 0 6px rgba(255, 210, 87, 0.75);
+}
+
+/* Gassed out (2026-09-12). Under ~40% the engine refuses to start a punch or a
+   kick at all (game.js ENERGY_ATTACK_FLOOR / ENERGY_RECOVER_TO), so the bar has
+   to say so — otherwise a dead attack button reads as dropped input rather than
+   as a mechanic.
+
+   This carried a 0.7 s opacity pulse when it was added. It came straight back
+   out in the flicker pass later the same day: the whole point of that pass was
+   that PoBrawl blinks too much, and answering it by adding one more blinking
+   element — in the HUD, which is the part of the frame a player's eye rests on
+   — is the wrong trade. The colour change alone is unambiguous, and it is
+   already the only red bar on screen. */
+.pb-en-spent {
+    background: linear-gradient(90deg, #c2354a, #f2637a);
+    box-shadow: 0 0 6px rgba(242, 99, 122, 0.7);
+}
+
+/* ── Super meter — REMOVED 2026-08-11 ─────────────────────────────────
+   The .pb-su / .pb-su-track / .pb-su-fill / .pb-su-fill--ready / .pb-su-prompt
+   rules and their two keyframes (pb-su-sweep, pb-su-pulse) lived here. The HUD
+   is two bars now — health and energy — so the violet third track, its conic
+   "armed" sweep and the "⚡ PRESS E/O" prompt all went with the markup in
+   PoBrawlPage.razor. Signature moves still fire; they just fire themselves.
+
+   The stack is now: health (thick, green/red) → energy (thin, gold when
+   banked).
+
+   Note for anyone re-adding a third readout: the ladder pip (.pb-rung--now)
+   used to borrow this block's `pb-su-pulse` keyframe. It owns a `pb-rung-pulse`
+   copy now, so deleting this section again cannot silently stop that pulse. */
+
+/* Region-damage body diagram: one 4-zone silhouette per fighter, flanking the
+   clock. Zones tint teal → amber → red as damage accrues; a zone past the
+   70-damage gameplay threshold (flinch / weak arms / slow legs) pulses. */
+.pb-body {
+    width: 24px;
+    height: 38px;
+    flex: 0 0 auto;
+    filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
+    opacity: 0.92;
+}
+
+.pb-body circle,
+.pb-body rect {
+    stroke: rgba(0, 0, 0, 0.45);
+    stroke-width: 1;
+    /* Healthy teal → bruised amber (50) → crippled red (100), the 30/70 thresholds
+       the gameplay effects use sitting inside those bands. The page passes --dmg
+       (0-100); the two nested mixes are the two halves of the old C# lerp. */
+    fill: color-mix(in srgb,
+        #e03131 calc(clamp(0, var(--dmg, 0) - 50, 50) * 2%),
+        color-mix(in srgb, #fab005 calc(clamp(0, var(--dmg, 0), 50) * 2%), #4adeb2));
+}
+
+.pb-reg-crit {
+    animation: pb-reg-pulse 0.9s ease-in-out infinite;
+}
+
+@keyframes pb-reg-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.45; }
+}
+
+.pb-clock {
+    min-width: 44px;
+    text-align: center;
+    font-family: var(--pb-display);
+    font-size: 1.3rem;
+    letter-spacing: 0.06em;
+    font-weight: 800;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.5);
+    border-radius: 8px;
+    padding: 2px 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pb-reg-crit {
+        animation: none;
+    }
+}
+
+/* Short arenas (a landscape phone is ~310px tall): a slimmer HUD, so the plates
+   stop covering the fighters' heads. Same information, tighter. */
+@media (max-height: 500px) {
+    .pb-hud {
+        gap: 6px;
+    }
+
+    .pb-hp-side {
+        gap: 2px;
+        padding: 4px 8px 5px;
+    }
+
+    .pb-hp-name {
+        font-size: 0.75rem;
+    }
+
+    .pb-hp-track {
+        height: 9px;
+    }
+
+    .pb-en-track {
+        height: 5px;
+    }
+
+    .pb-body {
+        width: 18px;
+        height: 28px;
+    }
+
+    .pb-clock {
+        font-size: 1.05rem;
+    }
+}

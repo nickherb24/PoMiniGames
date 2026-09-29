@@ -1099,10 +1099,15 @@ export function buildFighter(charId, quality = {}, portraitParts = null) {
   // divergent ones, and it means _applyDamageWear can go on ramping `clearcoat`
   // with sweat without caring which material it is talking to (on a standard
   // material that assignment is an inert property write, not an error).
+  // The constructor is stricter than a later write: setValues() warns once per
+  // unknown key, which printed five "not a property" warnings per fighter on
+  // every lower-tier boot. So the physical-only keys are dropped here.
   const physical = quality.physicalMaterials !== false;
-  const dress = (params) => (physical
-    ? new THREE.MeshPhysicalMaterial(params)
-    : new THREE.MeshStandardMaterial(params));
+  const dress = (params) => {
+    if (physical) return new THREE.MeshPhysicalMaterial(params);
+    const { sheen, sheenRoughness, sheenColor, clearcoat, clearcoatRoughness, ...standard } = params;
+    return new THREE.MeshStandardMaterial(standard);
+  };
   const b = c.buildScale;
   const casual = c.outfit === 'casual';
   // Caricature ratios layered on the base build.

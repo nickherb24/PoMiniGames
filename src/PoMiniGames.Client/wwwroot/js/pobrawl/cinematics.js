@@ -14,6 +14,15 @@ import { REGIONS } from './combat.js';
 // Scratch vector for the KO camera's head tracking. Module-local.
 const _koHead = new THREE.Vector3();
 
+// The lens the landscape framing was shot for, and the widest vertical FOV a
+// portrait frame may open to before the fish-eye stretch at the edges reads as a bug.
+export const BASE_FOV = 55;
+const PORTRAIT_FOV_MAX = 78;
+// Below this aspect the camera holds the horizontal view it has AT this aspect. 1.1 was
+// too tight: at the countdown the fighters stand on their wide marks and were cut in half
+// at the frame edges; 1.25 keeps both whole there and still fills a phone mid-fight.
+const HOLD_ASPECT = 1.25;
+
 class CinematicsMethods {
   // Deferred KO-ragdoll construction. The KO event only queues pendingKO;
   // here — safely outside world.step — we swap the fighter's live-fight
@@ -175,30 +184,38 @@ class CinematicsMethods {
 
   // ── presentation ────────────────────────────────────────────────────────
 
-  // Review #9 — portrait-aware framing. The camera's FOV is VERTICAL, so a tall
-  // narrow container (portrait phone; the host is ~86% of the viewport there)
-  // maps the fighters into the bottom of a mostly-dark frame: the backdrop
-  // void above them is the arena's dead space. Two knobs, both derived from
-  // the container aspect and both no-ops at 1.1 and above (landscape/square
-  // keep the tuning they were shot for):
-  //   • _framingDistance pulls the boom in as the frame narrows, so the
-  //     fighters keep filling the width instead of shrinking toward dots.
-  //   • _framingHeightBias drops the look point, which slides the visible band
-  //     DOWN the world — trading backdrop void for ring floor, so the action
-  //     reads as centred in the tall frame rather than hugging its bottom.
+  // Portrait-aware framing (2026-09-29 UI review #1). The camera's FOV is
+  // VERTICAL, so a narrow container keeps the landscape height and loses width:
+  // at a phone's ~0.47 aspect the horizontal view fell to ~27° and both fighters
+  // sat half outside the frame. (The earlier fix pulled the boom IN as the frame
+  // narrowed, which narrows the shot further — the fighters were off-screen at
+  // the countdown.) Below HOLD_ASPECT the camera now holds the horizontal view
+  // it has at HOLD_ASPECT: _fitFov widens the vertical FOV up to PORTRAIT_FOV_MAX,
+  // and _framingDistance pulls the boom OUT for whatever the cap could not cover.
+  // Both are no-ops at HOLD_ASPECT and above (landscape keeps its tuning).
+  // _framingHeightBias still drops the look point, trading backdrop void for
+  // ring floor in the tall frame.
   // _snapCameraToFraming and the spring's normal branch must stay in lockstep
-  // (see the note there), so both read these helpers instead of the old inline
-  // constants.
-  _framingDistance(sep) {
-    const base = THREE.MathUtils.clamp(2.2 + sep * 0.31, 2.5, 5);
+  // (see the note there), so both read these helpers.
+  _portraitFraming() {
     const el = this.container;
-    if (!el || !el.clientHeight) return base;
-    const aspect = el.clientWidth / el.clientHeight;
-    if (aspect >= 1.1) return base;
-    // 1.1 → no change; ~0.4 → 0.62× base. The 1.9 floor keeps the boom from
-    // pushing inside the ropes, where the spring's own z-clamp would fight it.
-    const zoom = THREE.MathUtils.clamp(0.62 + (aspect / 1.1) * 0.38, 0.62, 1);
-    return Math.max(base * zoom, 1.9);
+    const aspect = el && el.clientHeight ? el.clientWidth / el.clientHeight : 16 / 9;
+    if (aspect >= HOLD_ASPECT) return { fov: BASE_FOV, reach: 1 };
+    const wantHalfTan = Math.tan(THREE.MathUtils.degToRad(BASE_FOV / 2)) * HOLD_ASPECT; // horizontal
+    const fov = Math.min(PORTRAIT_FOV_MAX, THREE.MathUtils.radToDeg(2 * Math.atan(wantHalfTan / aspect)));
+    const gotHalfTan = Math.tan(THREE.MathUtils.degToRad(fov / 2)) * aspect;
+    return { fov, reach: wantHalfTan / gotHalfTan };
+  }
+
+  /** Container resized (or first sized): re-derive the base FOV from its aspect. */
+  _fitFov() {
+    this.fovBase = this._portraitFraming().fov;
+    this.camera.fov = this.fovBase;
+    this.camera.updateProjectionMatrix();
+  }
+
+  _framingDistance(sep) {
+    return THREE.MathUtils.clamp(2.2 + sep * 0.31, 2.5, 5) * this._portraitFraming().reach;
   }
 
   _framingHeightBias() {
@@ -235,8 +252,7 @@ class CinematicsMethods {
     this._camVel.set(0, 0, 0);
     this.fovPunch = 0;
     this.shakeT = 0;
-    this.camera.fov = this.fovBase;
-    this.camera.updateProjectionMatrix();
+    this._fitFov();
   }
 
   _updateCamera(dt) {

@@ -1,0 +1,134 @@
+@* The fight HUD: health, energy, body damage and the clock, fed ~4×/sec by the engine
+   (game.js _pushHud → PoBrawlPage.OnHud → Update). Its own component so that pump re-renders
+   this subtree alone: it used to call StateHasChanged on the page, which re-rendered the whole
+   GameShell (header section, stats, the shared live region) four times a second for the
+   length of every fight. The page keeps the danger announcements; everything drawn is here. *@
+
+<div class="pb-hud">
+    @* GFX/SOUND #1 (2026-09-23): the ghost is the damage chip — a pale bar under the
+       fill that holds the old value for a beat and then drains to meet it, so every
+       hit shows how much it took. Pure CSS (a delayed width transition on the same
+       --hp). InDanger cracks the plate. *@
+    <div class="pb-hp-side @(InDanger(_p1Hp) ? "pb-hp-side--danger" : "")">
+        <span class="pb-hp-name" title="@P1Name">@P1Name</span>
+        @* Review #5: real meters — a screen reader can query either bar on demand
+           (role=meter carries the value range) between the sparse announcements. *@
+        <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="@_p1Hp" aria-label="@P1Fighter — health">
+            <div class="pb-hp-ghost" style="--hp: @(_p1Hp)%;"></div><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%;"></div>
+        </div>
+        <div class="pb-en-track" role="meter" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="@_p1Energy" aria-label="@P1Fighter — energy" title="@EnergyTip">
+            <div class="pb-en-fill @EnergyClass(_p1Energy)" style="--en: @(_p1Energy)%;"></div>
+        </div>
+    </div>
+    @BodyDiagram(_p1Regions)
+    <div class="pb-clock" title="@(Training ? "Training — no clock" : "Seconds remaining — the round ends at 0")">@(Training ? "∞" : _elapsed.ToString("0"))</div>
+    @BodyDiagram(_p2Regions)
+    <div class="pb-hp-side pb-hp-right @(InDanger(_p2Hp) ? "pb-hp-side--danger" : "")">
+        <span class="pb-hp-name" title="@P2Name">@P2Name</span>
+        <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="@_p2Hp" aria-label="@P2Fighter — health">
+            <div class="pb-hp-ghost" style="--hp: @(_p2Hp)%;"></div><div class="pb-hp-fill pb-hp-p2" style="--hp: @(_p2Hp)%;"></div>
+        </div>
+        <div class="pb-en-track" role="meter" aria-valuemin="0" aria-valuemax="100"
+             aria-valuenow="@_p2Energy" aria-label="@P2Fighter — energy" title="@EnergyTip">
+            <div class="pb-en-fill @EnergyClass(_p2Energy)" style="--en: @(_p2Energy)%;"></div>
+        </div>
+    </div>
+</div>
+
+@code {
+    /// <summary>Nameplate text (online: "player · fighter").</summary>
+    [Parameter] public string P1Name { get; set; } = "";
+    [Parameter] public string P2Name { get; set; } = "";
+    /// <summary>The fighter alone, for the meters' accessible names.</summary>
+    [Parameter] public string P1Fighter { get; set; } = "";
+    [Parameter] public string P2Fighter { get; set; } = "";
+    /// <summary>The training room has no clock.</summary>
+    [Parameter] public bool Training { get; set; }
+
+    // Mirrors game.js ENERGY_RECOVER_TO (0.40): below it a fighter is gassed and the engine
+    // refuses to start a punch or kick, so the bar says so (.pb-en-spent). Display only — the
+    // engine owns the real gate and its hysteresis; this only has to read correctly.
+    private const int EnergySpentPct = 40;
+    private const int EnergyHotPct = 50;
+
+    private const string EnergyTip =
+        "Energy — strike power and stamina. Attacking drains it; blocking refills it, and a block timed on their wind-up refills it fastest. Too low and you cannot punch or kick.";
+
+    // Mirrors game.js DANGER_HP (0.25): the plate cracks as the engine starts the heartbeat.
+    public const int DangerHpPct = 25;
+    public static bool InDanger(int hp) => hp > 0 && hp <= DangerHpPct;
+
+    // Round-start values. _elapsed is the time LEFT (game.js _pushHud sends TIME_LIMIT - clock);
+    // seeded at the limit so the clock never reads 0 before the engine's first pump (review #6).
+    private int _p1Hp = 100, _p2Hp = 100;
+    private int _p1Energy = 100, _p2Energy = 100;
+    private double _elapsed = 60;
+    // Per-region damage (0-100): [head, torso, arms, legs].
+    private int[] _p1Regions = new int[4];
+    private int[] _p2Regions = new int[4];
+
+    /// <summary>Every readout back to its round-start value (a new fight or the next rung).</summary>
+    public void Reset()
+    {
+        _p1Hp = _p2Hp = 100;
+        _p1Energy = _p2Energy = 100;
+        _elapsed = 60;
+        _p1Regions = new int[4];
+        _p2Regions = new int[4];
+        InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>One engine pump. Skipped when nothing visible moved (review #10): the page only
+    /// shows integer seconds and ints, and quiet stretches push identical state.</summary>
+    public void Update(int p1Hp, int p2Hp, double elapsed, int[]? p1Regions, int[]? p2Regions, int p1Energy, int p2Energy)
+    {
+        if (_p1Hp == p1Hp && _p2Hp == p2Hp
+            && _p1Energy == p1Energy && _p2Energy == p2Energy
+            && Math.Round(_elapsed, MidpointRounding.AwayFromZero) == Math.Round(elapsed, MidpointRounding.AwayFromZero)
+            && RegionsUnchanged(_p1Regions, p1Regions)
+            && RegionsUnchanged(_p2Regions, p2Regions))
+        {
+            return;
+        }
+        _p1Hp = p1Hp;
+        _p2Hp = p2Hp;
+        _p1Energy = p1Energy;
+        _p2Energy = p2Energy;
+        _elapsed = elapsed;
+        if (p1Regions is { Length: 4 }) _p1Regions = p1Regions;
+        if (p2Regions is { Length: 4 }) _p2Regions = p2Regions;
+        InvokeAsync(StateHasChanged);
+    }
+
+    // A payload the HUD would ignore (see the assigns above) cannot change what is on screen.
+    private static bool RegionsUnchanged(int[] current, int[]? next) =>
+        next is not { Length: 4 }
+        || (current[0] == next[0] && current[1] == next[1] && current[2] == next[2] && current[3] == next[3]);
+
+    private static string EnergyClass(int pct) =>
+        pct < EnergySpentPct ? "pb-en-spent"
+        : pct > EnergyHotPct ? "pb-en-hot"
+        : "";
+
+    // ── Region-damage body diagram ────────────────────────────────────────
+    // Mirrors the engine's per-region damage model (combat.js regionEffect): head ≥70 → extra
+    // hitstun taken, arms ≥70 → weaker attacks, legs ≥70 → slower movement (milder steps at
+    // 30/40). The tint is CSS (color-mix over --dmg, see .pb-body in the .razor.css) — the
+    // page passes only the number, per the repo's style="" rule.
+    private static RenderFragment BodyDiagram(int[] regions) =>
+        @<svg class="pb-body" viewBox="0 0 40 64" role="img"
+              aria-label="Body damage — head @(regions[0]), torso @(regions[1]), arms @(regions[2]), legs @(regions[3])">
+            <title>Head @(regions[0]) · Torso @(regions[1]) · Arms @(regions[2]) · Legs @(regions[3])</title>
+            <circle cx="20" cy="8" r="7" class="@RegionClass(regions[0])" style="--dmg: @(regions[0])" />
+            <rect x="12" y="17" width="16" height="20" rx="3" class="@RegionClass(regions[1])" style="--dmg: @(regions[1])" />
+            <rect x="4"  y="17" width="6"  height="18" rx="3" class="@RegionClass(regions[2])" style="--dmg: @(regions[2])" />
+            <rect x="30" y="17" width="6"  height="18" rx="3" class="@RegionClass(regions[2])" style="--dmg: @(regions[2])" />
+            <rect x="13" y="39" width="6"  height="22" rx="3" class="@RegionClass(regions[3])" style="--dmg: @(regions[3])" />
+            <rect x="21" y="39" width="6"  height="22" rx="3" class="@RegionClass(regions[3])" style="--dmg: @(regions[3])" />
+        </svg>;
+
+    private static string RegionClass(int dmg) => dmg >= 70 ? "pb-reg-crit" : "";
+}

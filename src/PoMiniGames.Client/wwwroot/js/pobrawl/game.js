@@ -33,7 +33,7 @@ import {
 import { mixin } from './mixin.js';
 import { PersonalityEffects } from './personalityEffects.js';
 import { Vfx } from './vfx.js';
-import { Cinematics } from './cinematics.js';
+import { Cinematics, BASE_FOV } from './cinematics.js';
 import { HitResolution } from './hitResolution.js';
 import { Training } from './training.js';
 import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
@@ -269,7 +269,7 @@ export class BrawlGame {
     this.shakeT = 0;
     this.shakeAmp = 0;
     this.fovPunch = 0;
-    this.fovBase = 55;
+    this.fovBase = BASE_FOV; // _fitFov re-derives it from the container's aspect
     // Post-FX pulses: bloom strength, chromatic aberration, radial blur and
     // exposure spike on hits and KO, then decay exponentially in _updateFx.
     this.caPulse = 0;
@@ -321,9 +321,8 @@ export class BrawlGame {
     // used to fall back to the same 1337, so the "random" news headlines, KO shots and
     // demo pairings replayed identically on every visit (2026-09-29).
     this.rng = new RandomGenerator((options && options.seed) || (1 + Math.floor(Math.random() * 0x7ffffffe)));
-    // The training room (training.js). A demo rolls its drills per match in
-    // start()/resetMatch. The comfort switches went with their panel — gore is
-    // always on and calm follows motionReduced() above.
+    // The training room (training.js), 1-player only. The comfort switches went
+    // with their panel — gore is always on and calm follows motionReduced() above.
     this.training = options && options.training && options.mode === '1p'
       ? this._makeTraining(options.training)
       : null;
@@ -360,6 +359,16 @@ export class BrawlGame {
     // PCFSoft: percentage-closer soft edges — the fighters' shadows get a
     // real penumbra instead of the stepped PCF look.
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    // KNOWN WARNING, not ours (2026-09-29): on Windows/ANGLE the first program compile logs
+    //   THREE.WebGLProgram: Program Info Log: warning X4000: use of potentially
+    //   uninitialized variable (dyn_index_vec4_float4_int)
+    // The `dyn_index_*` temporaries are emitted by ANGLE's D3D backend when it lowers a
+    // dynamic array index, and the vec4 array it trips over is in three's own chunks (the
+    // light/shadow arrays in lights_fragment_begin / shadowmap_pars_fragment — this scene's
+    // shadow-casting key + spot is what pulls them in). None of this game's GLSL (the
+    // particle ShaderMaterial in vfx.js, the onBeforeCompile hooks in arena.js/sceneSetup.js/
+    // game.js/matWear.js) indexes an array with a variable — checked. The program still links
+    // and renders; the warning is upstream noise, so don't go hunting for a shader bug here.
     // AgX handles saturated bright lights (bloom pulses, colored corner
     // accents) far more gracefully than ACES, which skews hot colors.
     // Measured against ACES/Neutral/Reinhard on a live frame: AgX keeps ~15%
@@ -410,7 +419,7 @@ export class BrawlGame {
     // installs gets filtered along with everything else.
     this._initReactiveArena();
 
-    this.camera = new THREE.PerspectiveCamera(55, w / h, 0.1, 100);
+    this.camera = new THREE.PerspectiveCamera(BASE_FOV, w / h, 0.1, 100);
     this.camera.position.set(0, 2.4, 7);
 
     // Post chain: render → GTAO → bloom → CA/vignette → tone-map/sRGB
@@ -561,8 +570,14 @@ export class BrawlGame {
       // BokehPass owns render targets sized independently of the composer's;
       // without this its depth buffer keeps the old aspect and the blur skews.
       if (this.rackFocus) this.rackFocus.setSize(cw, ch);
+      // Portrait frames widen the lens (cinematics.js _fitFov).
+      this._fitFov();
     };
-    window.addEventListener('resize', this._onResize);
+    // The container, not the window: the host changes size without a window
+    // resize too (the touch pad's row appearing, the shell's chrome), and a
+    // window listener left the drawing buffer stretched to the old aspect.
+    this._resizeObs = new ResizeObserver(this._onResize);
+    this._resizeObs.observe(this.container);
 
     // Track the measured tier for the rest of the match. visualRuntime's monitor
     // is already running (PoBrawl itself starts it via enableAudioReactive above,
@@ -587,8 +602,6 @@ export class BrawlGame {
     // deal chip damage / spawn impact FX back through the engine.
     this._propHooks = this._makePropHooks();
     this.props = buildProps(this._physics.world, this._physics.materials, this.scene);
-    // A demo match is sometimes a training drill instead (training.js).
-    if (this.options.mode === 'demo') this.training = this._rollDemoDrill();
     this._spawnFighters(this.options.p1Character, this.options.p2Character);
     this._initTraining();
     if (this.options.mode === 'online') this._initNet();
@@ -618,18 +631,24 @@ export class BrawlGame {
 
     // Kick the audio context the first time the user interacts with the page —
     // .razor lifecycle alone doesn't always satisfy autoplay policy.
-    const resumeAudio = () => {
+    // An instance field so dispose() can drop it: a kiosk demo nobody touches
+    // never fires it, and each rotation used to leave a disposed game behind that
+    // resumed a closed AudioContext on the first real keypress.
+    this._resumeAudio = () => {
       this.audio.resume();
       this.audio.startMusic();
       // #6 — the hall bed can only start once the context is unsuspended;
       // starting looping sources on a suspended context leaves them silently
       // stalled and they never recover on resume.
       this.audio.startCrowd();
-      window.removeEventListener('pointerdown', resumeAudio);
-      window.removeEventListener('keydown', resumeAudio);
+      this._dropResumeAudio();
     };
-    window.addEventListener('pointerdown', resumeAudio);
-    window.addEventListener('keydown', resumeAudio);
+    this._dropResumeAudio = () => {
+      window.removeEventListener('pointerdown', this._resumeAudio);
+      window.removeEventListener('keydown', this._resumeAudio);
+    };
+    window.addEventListener('pointerdown', this._resumeAudio);
+    window.addEventListener('keydown', this._resumeAudio);
     // M mutes the fight. No binding in any layout uses M, and a focused text field keeps it.
     this._onMuteKey = (e) => {
       if (e.code !== 'KeyM' || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
@@ -936,8 +955,7 @@ export class BrawlGame {
     const charIdForIndex = spawnedCharId ?? (playerIndex === 1
       ? this.options.p1Character
       : this.options.p2Character);
-    // The training room (1P) or a demo drill claims the dummy's slot, and in a
-    // drill the drilling president's too. Null means "not a training slot".
+    // The training room (1P) claims the dummy's slot. Null means "not a training slot".
     const trainingController = this._trainingController(playerIndex, charIdForIndex);
     if (trainingController) return trainingController;
     // Online both corners are puppets of the server's snapshots (netplay.js).
@@ -1201,8 +1219,8 @@ export class BrawlGame {
     if (this.dotnet) {
       this.dotnet.invokeMethodAsync('OnMatchStart',
         this.fighters[0].charId, this.fighters[1].charId).catch(() => {});
-      // Whether this match is a training session or a demo drill, so the page can
-      // badge a drill and drop the ladder chrome. Its own call rather than a third
+      // Whether this match is a training session, so the page can drop the
+      // ladder chrome. Its own call rather than a third
       // OnMatchStart argument: interop fails silently on an arity change (see the
       // OnHud note), and a new method simply does not bind on a stale page.
       this.dotnet.invokeMethodAsync('OnTrainingState',
@@ -1335,9 +1353,6 @@ export class BrawlGame {
       const ids = this.rng.shuffle(CHARACTER_IDS);
       [p1, p2] = ids;
     }
-    if (this.options.mode === 'demo') {
-      this.training = this._rollDemoDrill();
-    }
     this._spawnFighters(p1, p2);
     this._initTraining();
     this._renderTrainingHud();
@@ -1370,7 +1385,7 @@ export class BrawlGame {
     // "NEXT ROUND" would leave the players unable to tell which round is
     // starting. Consumed here so it can never leak into the following match.
     const label = this._roundLabel
-      || (this.training ? (this.training.showcase ? 'TRAINING DRILL' : 'TRAINING')
+      || (this.training ? 'TRAINING'
         : this.options.mode === 'demo' ? 'DEMO' : 'NEXT ROUND');
     this._roundLabel = null;
     this.splash.querySelector('.pb-splash__round').textContent = label;
@@ -1459,7 +1474,7 @@ export class BrawlGame {
       this._tickFighting(dt);
       this._tickCombos();
       this._tickCommentary();
-      // The training room has no clock (a drill ends itself inside _tickTraining).
+      // The training room has no clock.
       if (this.training) this._tickTraining();
       // Online the server rings the bell (netplay.js _tickNet), on its own clock.
       if (!this.training && !this.online && this.clock >= TIME_LIMIT && this.phase === 'fighting') {
@@ -2947,18 +2962,22 @@ export class BrawlGame {
 
 
   // ── Touch controls ───────────────────────────────────────────────────
-  // Fixed to the bottom of the viewport (the empty strip below the canvas
-  // on portrait phones). Left cluster: walk in/out plus the two circle keys.
-  // Right cluster: block (hold), punch, kick (hold to charge). Synthetic key
-  // events feed the normal input path, so the touch panel has no control
-  // semantics of its own — rebinding a key in input.js rebinds the button.
+  // Docked along the bottom of the arena. Left cluster: walk in/out plus the two
+  // circle keys. Right cluster: block (hold), punch, kick (hold to charge). Each
+  // cluster stacks its small keys over its big ones, so the pad fits a 360px
+  // phone (one flat row of seven was ~440px, and kick sat off-screen). The host
+  // gets .pb-has-pad so the page's bottom-docked chrome (training bar, caption,
+  // news package) can lift clear of it. Synthetic key events feed the normal
+  // input path, so the touch panel has no control semantics of its own —
+  // rebinding a key in input.js rebinds the button.
   _buildTouchControls() {
     const panel = document.createElement('div');
     panel.className = 'pb-touch';
-    const mk = (code, label, small = false) => {
+    const mk = (code, label, name, small = false) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = label;
+      b.setAttribute('aria-label', name); // the glyphs alone read as "black left-pointing triangle"
       if (small) b.className = 'pb-touch-small';
       const down = (e) => {
         e.preventDefault();
@@ -2992,22 +3011,33 @@ export class BrawlGame {
     // Left cluster is the movement axis: walk in/out, and the two circle keys
     // beside them. All four are hold-to-act, matching the keyboard exactly —
     // these dispatch synthetic keydown/keyup for the very same codes.
-    const left = document.createElement('div');
-    left.className = 'pb-touch-cluster';
-    left.append(mk('KeyA', '◀'), mk('KeyD', '▶'),
-      mk('KeyW', '↺', true), mk('KeyS', '↻', true));
-    const right = document.createElement('div');
-    right.className = 'pb-touch-cluster';
+    const cluster = (small, big) => {
+      const c = document.createElement('div');
+      c.className = 'pb-touch-cluster';
+      const top = document.createElement('div');
+      top.className = 'pb-touch-row pb-touch-row--small';
+      top.append(...small);
+      const bottom = document.createElement('div');
+      bottom.className = 'pb-touch-row';
+      bottom.append(...big);
+      c.append(top, bottom);
+      return c;
+    };
+    const left = cluster(
+      [mk('KeyW', '↺', 'Circle counter-clockwise', true), mk('KeyS', '↻', 'Circle clockwise', true)],
+      [mk('KeyA', '◀', 'Move left'), mk('KeyD', '▶', 'Move right')]);
     // 2026-08-11: the ⚡ super button went with the super key it pressed, and
     // the 🛡 moved from KeyS to KeyR — S is a circle key now, so leaving the
     // shield on it would have had touch players orbiting when they meant to
     // guard, with no way to block at all.
-    right.append(mk('KeyR', '🛡', true),
-      mk('KeyF', '👊'), mk('KeyG', '🦵'));
+    const guard = [mk('KeyR', '🛡', 'Block (hold)', true)];
     // Online has a special (full energy); the local modes fire theirs by themselves.
-    if (this.options.mode === 'online') right.append(mk('KeyH', '⚡', true));
+    if (this.options.mode === 'online') guard.push(mk('KeyH', '⚡', 'Special', true));
+    const right = cluster(guard,
+      [mk('KeyF', '👊', 'Punch (hold to charge)'), mk('KeyG', '🦵', 'Kick (hold to charge)')]);
     panel.append(left, right);
     this.container.appendChild(panel);
+    this.container.classList.add('pb-has-pad');
     this.touchEl = panel;
   }
 
@@ -3349,13 +3379,14 @@ export class BrawlGame {
     // alive on every page the player visits afterwards, writing CSS variables
     // nothing reads.
     try { VisualRuntime.enableAudioReactive(false); } catch { /* */ }
-    window.removeEventListener('resize', this._onResize);
+    if (this._resizeObs) { this._resizeObs.disconnect(); this._resizeObs = null; }
+    if (this._dropResumeAudio) this._dropResumeAudio();
     window.removeEventListener('keydown', this._onMuteKey);
     this._disposeTraining();
     this._disposeNet();
     this._disposeCommentary();
     this._clearSpectacle();
-    if (this.touchEl) this.touchEl.remove();
+    if (this.touchEl) { this.touchEl.remove(); this.container.classList.remove('pb-has-pad'); }
     if (this.fighters) for (const f of this.fighters) f.controller.dispose();
     if (this.audio) this.audio.close();
     // Drop any swing physics and per-fighter bodies, then dispose the world.

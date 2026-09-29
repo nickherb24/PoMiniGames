@@ -1,14 +1,10 @@
 // training.js — the training room (2026-09-23).
 //
-// Two ways in, one engine path:
-//   • 1-player: the page's 🥋 Training button re-inits the engine with
-//     options.training. BOB (you) against a dummy wearing the current rung's
-//     president — same body, same size, same reach as the fight you are about to
-//     take — with no clock, no KO and no ladder consequence.
-//   • Demo: a kiosk match is occasionally replaced by a drill (DEMO_DRILL_CHANCE,
-//     rolled per match in game.js). A CPU president works a dummy that cycles
-//     stand → guard → punisher, then the reel rolls
-//     back into ordinary fights. Drills report nothing to the Elo board.
+// 1-player only: the page's 🥋 Training button re-inits the engine with
+// options.training. BOB (you) against a dummy wearing the current rung's
+// president — same body, same size, same reach as the fight you are about to
+// take — with no clock, no KO and no ladder consequence. (Demo used to swap 30%
+// of its matches for a CPU drill; removed 2026-09-29 by user call — demo only fights.)
 //
 // Nothing here changes combat. The room only (a) swaps who drives fighter 2,
 // (b) refuses the KO and tops health back up once a combo is over, (c) draws the
@@ -23,15 +19,6 @@ import { ATTACKS, MAX_HP } from './constants.js';
 
 /** Dummy behaviours, in the order the page's segmented control lists them. */
 export const DUMMY_MODES = Object.freeze(['stand', 'guard', 'punisher', 'cpu']);
-
-/** Chance a demo match is replaced by a drill. */
-export const DEMO_DRILL_CHANCE = 0.3;
-/** Length of a demo drill, in fight-clock seconds. */
-const DRILL_SECONDS = 24;
-/** A drill walks the dummy through these, one every DRILL_SECONDS / 3. */
-const DRILL_CYCLE = ['stand', 'guard', 'punisher'];
-/** CPU level for the drilling president (ai.js rungs run 1-15). */
-const DRILL_CPU_LEVEL = 10;
 
 /** Health comes back this long after the last hit on a fighter: "the combo is over". */
 const REFILL_AFTER_SECS = 1.0;
@@ -92,32 +79,22 @@ const frames = (secs) => Math.round(secs * 60);
 
 class TrainingMethods {
   /** Build the training state object from the page's options. */
-  _makeTraining(raw, showcase = false) {
+  _makeTraining(raw) {
     return {
-      showcase,
-      dummy: DUMMY_MODES.includes(raw?.dummy) ? raw.dummy : (showcase ? DRILL_CYCLE[0] : 'stand'),
+      dummy: DUMMY_MODES.includes(raw?.dummy) ? raw.dummy : 'stand',
       // Off unless the player ticks the training bar's Hitboxes box (2026-09-23,
-      // user call): the green capsule wireframe is a debugging view, and a demo
-      // drill has no one to opt in, so it never shows it at all.
-      hitboxes: !showcase && raw?.hitboxes === true,
+      // user call): the green capsule wireframe is a debugging view.
+      hitboxes: raw?.hitboxes === true,
       infiniteEnergy: !!raw?.infiniteEnergy,
       lastHitOn: new Map(),   // fighter → sim time of the last hit it took
       note: { hit: '', guard: '', combo: '' },
     };
   }
 
-  /** Demo only: roll whether the next match is a drill instead of a fight. */
-  _rollDemoDrill() {
-    // Math.random, deliberately not this.rng: the seeded stream is what keeps a
-    // demo FIGHT reproducible, and an extra draw here would shift every one after it.
-    return Math.random() < DEMO_DRILL_CHANCE ? this._makeTraining(null, true) : null;
-  }
-
   /** Controller for a fighter slot while the room is open, or null for the default. */
   _trainingController(index, charId) {
     const tr = this.training;
     if (!tr) return null;
-    if (tr.showcase && index === 1) return new AiController(DRILL_CPU_LEVEL, this.rng, charId);
     if (index !== 2) return null;
     if (tr.dummy === 'cpu') return new AiController(this.options.difficulty || 'medium', this.rng, charId);
     return new DummyController(tr.dummy);
@@ -127,7 +104,8 @@ class TrainingMethods {
     if (!this.training || this._trainHud) return;
     const hud = document.createElement('div');
     hud.className = 'pb-train';
-    hud.setAttribute('aria-live', 'polite');
+    // No aria-live: this readout rewrites on every landed hit, which made a screen reader
+    // talk over the whole session. Toggles and mode changes go through the page's shell.
     hud.innerHTML = `
       <div class="pb-train__title"></div>
       <div class="pb-train__row pb-train__hit"></div>
@@ -149,18 +127,15 @@ class TrainingMethods {
     if (!hud) return;
     hud.hidden = !tr;
     if (!tr) return;
-    const who = tr.showcase && this.fighters
-      ? `${(this.fighters[0].rig.config.name || '').toUpperCase()} DRILLS · `
-      : '';
     hud.querySelector('.pb-train__title').textContent =
-      `TRAINING · ${who}DUMMY: ${DUMMY_LABELS[tr.dummy] || tr.dummy.toUpperCase()}`;
+      `TRAINING · DUMMY: ${DUMMY_LABELS[tr.dummy] || tr.dummy.toUpperCase()}`;
     hud.querySelector('.pb-train__hit').textContent = tr.note.hit || 'Land a hit to see its numbers.';
     hud.querySelector('.pb-train__guard').textContent = tr.note.guard
       || `Guard on their wind-up: within ${PERFECT_WINDOW_MS} ms of impact is PERFECT.`;
     hud.querySelector('.pb-train__combo').textContent = tr.note.combo;
   }
 
-  /** Per sim tick while fighting: refill, infinite energy, the drill's clock. */
+  /** Per sim tick while fighting: refill and infinite energy. */
   _tickTraining() {
     const tr = this.training;
     if (!tr || !this.fighters) return;
@@ -175,15 +150,10 @@ class TrainingMethods {
         this._applyDamageWear(f);
         this.hudDirty = true;
       }
-      if (tr.infiniteEnergy || tr.showcase) {
+      if (tr.infiniteEnergy) {
         f.energy = 1;
         f.gassed = false;
       }
-    }
-    if (tr.showcase) {
-      const step = Math.min(DRILL_CYCLE.length - 1, Math.floor(this.clock / (DRILL_SECONDS / DRILL_CYCLE.length)));
-      if (DRILL_CYCLE[step] !== tr.dummy) this._setTrainingDummy(DRILL_CYCLE[step]);
-      if (this.clock >= DRILL_SECONDS) this._endDrill();
     }
   }
 
@@ -259,14 +229,6 @@ class TrainingMethods {
     else if (key === 'hitboxes') tr.hitboxes = !!value;
     else if (key === 'infiniteEnergy') tr.infiniteEnergy = !!value;
     else if (key === 'reset') this._resetTrainingPositions();
-  }
-
-  _endDrill() {
-    this.phase = 'result';
-    this.phaseT = 0;
-    this._setBanner('DRILL OVER');
-    // The kiosk rotates on a finished match; a drill finishing is the same beat.
-    if (this.dotnet) this.dotnet.invokeMethodAsync('OnTrainingShowcaseEnd').catch(() => {});
   }
 
   // ── Hitbox overlay ─────────────────────────────────────────────────────

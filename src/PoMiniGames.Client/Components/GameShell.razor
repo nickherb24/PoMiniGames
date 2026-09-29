@@ -250,10 +250,15 @@
             _gameOverCts = new CancellationTokenSource();
             _ = DelayThenShowAsync(_gameOverCts.Token);
         }
-        else if (!GameOver && _showGameOver)
+        else if (!GameOver)
         {
-            // Result was reset (Play Again, navigate away) — drop the modal.
+            // Result was reset (Play Again, navigate away) — drop the modal, and cancel a
+            // delay still in flight: left running it set _showGameOver after the reset, so the
+            // NEXT result's modal skipped its delay and covered that game's KO/win beat.
             _showGameOver = false;
+            _gameOverCts?.Cancel();
+            _gameOverCts?.Dispose();
+            _gameOverCts = null;
         }
     }
 

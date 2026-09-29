@@ -45,6 +45,16 @@ public sealed class PoBrawlMatchRegistry
     public PoBrawlMatchService? Get(string code) =>
         !string.IsNullOrWhiteSpace(code) && _byCode.TryGetValue(code, out var m) ? m : null;
 
+    /// <summary>
+    /// The match still held by some room under this id, or null once its FinishedLinger sweep
+    /// (or a rematch replacing it) removed it. The result ingest walks this rather than trusting
+    /// the client's story about the fight, and the registry is small — active rooms only.
+    /// </summary>
+    public PoBrawlMatchService? FindByMatchId(string matchId) =>
+        string.IsNullOrWhiteSpace(matchId)
+            ? null
+            : _byCode.Values.FirstOrDefault(m => string.Equals(m.MatchId, matchId, StringComparison.OrdinalIgnoreCase));
+
     /// <summary>Every match, running or lingering. The pump ticks the running ones.</summary>
     public IReadOnlyCollection<PoBrawlMatchService> All => _byCode.Values.ToArray();
 

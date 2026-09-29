@@ -126,3 +126,41 @@
     color: var(--color-text-primary);
     font-size: var(--text-sm);
 }
+
+/* The lobby could not be reached: the reason and a retry, in place of the panel. */
+.pbl-failed {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    max-width: 26rem;
+    margin: 2rem auto;
+    padding: 1.25rem;
+    text-align: center;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+}
+
+/* Sixteen fighters, four across and one line each: the shared picker's 7.5rem cards put
+   Brawl's roster in two tall columns on a phone, ~500px of the page's scroll. The chained
+   selectors outrank LobbyPanel's ::deep defaults (both are rendered by this page). */
+.lobby__hint + .lobby-pick-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.35rem;
+}
+
+.lobby__hint + .lobby-pick-grid .lobby-pick-card {
+    min-height: 44px;
+    padding: 0.35rem 0.25rem;
+    justify-content: center;
+    font-size: clamp(0.75rem, 2.9vw, 0.9rem);
+}
+
+.lobby__hint + .lobby-pick-grid .lobby-pick-card__name {
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
