@@ -37,10 +37,15 @@ public static class PoBrawlLeaderboardEndpoints
             async (PoBrawlHighScore entry, HttpContext http, IStorageService storage,
                    IScoreIntegrityGuard integrity) =>
             {
-                if (string.IsNullOrWhiteSpace(entry.PlayerInitials))
+                // The typed name is only a fallback (the claim name wins below), so it is only
+                // validated when it is the one that will be stored. Checked unconditionally, a
+                // signed-in player whose display name ran past 24 characters had every KO refused
+                // for a name the board was about to discard (2026-09-29).
+                var claimName = ClaimName(http);
+                if (claimName is null && string.IsNullOrWhiteSpace(entry.PlayerInitials))
                     return Results.BadRequest(new { error = "Player name is required" });
 
-                if (entry.PlayerInitials.Trim().Length > 24)
+                if (claimName is null && entry.PlayerInitials.Trim().Length > 24)
                     return Results.BadRequest(new { error = "Player name must be 24 characters or fewer" });
 
                 if (entry.KoTimeSeconds <= 0 || entry.KoTimeSeconds >= 600)
@@ -55,12 +60,7 @@ public static class PoBrawlLeaderboardEndpoints
                 // This board took its name entirely from the request body and consulted no
                 // identity at all, so any caller could post under any player's name. Prefer the
                 // claim identity, and moderate whatever is left.
-                var identity = RequestIdentity.Resolve(http.User);
-                var name = integrity.ResolveDisplayName(
-                    identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
-                        ? identity.DisplayName
-                        : entry.PlayerInitials,
-                    identity.IsGuest ? "Guest" : "Player");
+                var name = StoredName(http, integrity, claimName, entry.PlayerInitials);
 
                 var saved = await storage.SavePoBrawlHighScoreAsync(entry with { PlayerInitials = name });
                 return Results.Created("/api/pobrawl/highscores", saved);
@@ -93,10 +93,12 @@ public static class PoBrawlLeaderboardEndpoints
             async (PoBrawlLadderEntry entry, HttpContext http, IStorageService storage,
                    IScoreIntegrityGuard integrity) =>
             {
-                if (string.IsNullOrWhiteSpace(entry.PlayerName))
+                // Same rule as the KO board: the typed name is validated only when it is stored.
+                var claimName = ClaimName(http);
+                if (claimName is null && string.IsNullOrWhiteSpace(entry.PlayerName))
                     return Results.BadRequest(new { error = "Player name is required" });
 
-                if (entry.PlayerName.Trim().Length > 24)
+                if (claimName is null && entry.PlayerName.Trim().Length > 24)
                     return Results.BadRequest(new { error = "Player name must be 24 characters or fewer" });
 
                 if (entry.PresidentsBeaten < 0 || entry.PresidentsBeaten > PoBrawlRoster.Count)
@@ -106,12 +108,7 @@ public static class PoBrawlLeaderboardEndpoints
                 // than points or a time, so there is no rate for ScoreRules to check and the
                 // rung ceiling above already IS its whole range. The name still reaches a
                 // public board, so it is moderated like everywhere else.
-                var identity = RequestIdentity.Resolve(http.User);
-                var name = integrity.ResolveDisplayName(
-                    identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
-                        ? identity.DisplayName
-                        : entry.PlayerName,
-                    identity.IsGuest ? "Guest" : "Player");
+                var name = StoredName(http, integrity, claimName, entry.PlayerName);
 
                 var saved = await storage.SavePoBrawlLadderAsync(entry with { PlayerName = name });
                 return Results.Created("/api/pobrawl/ladder", saved);
@@ -179,5 +176,23 @@ public static class PoBrawlLeaderboardEndpoints
             .RequireRateLimiting("highscores");
 
         return app;
+    }
+
+    /// <summary>The signed-in display name, or null when the typed name is all there is.</summary>
+    private static string? ClaimName(HttpContext http)
+    {
+        var identity = RequestIdentity.Resolve(http.User);
+        return identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName) ? identity.DisplayName : null;
+    }
+
+    /// <summary>
+    /// The name a board row stores: the claim name, else the typed one — moderated either way, and
+    /// held to the boards' 24 characters (the sanitizer caps it; this covers moderation switched off).
+    /// </summary>
+    private static string StoredName(HttpContext http, IScoreIntegrityGuard integrity, string? claimName, string typed)
+    {
+        var name = integrity.ResolveDisplayName(claimName ?? typed,
+            RequestIdentity.Resolve(http.User).IsGuest ? "Guest" : "Player").Trim();
+        return name.Length > 24 ? name[..24].TrimEnd() : name;
     }
 }
