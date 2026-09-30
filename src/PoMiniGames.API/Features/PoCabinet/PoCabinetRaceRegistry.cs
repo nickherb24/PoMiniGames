@@ -29,8 +29,10 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     private const double CountdownSeconds = 3;
     private const int MaxQueuedInputs = 3;
     private static readonly TimeSpan AbandonAfter = TimeSpan.FromSeconds(45);
+    private static readonly TimeSpan VerifiedLapLifetime = TimeSpan.FromHours(1);
 
     private readonly ConcurrentDictionary<string, RaceSession> _races = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, VerifiedLap> _verifiedLaps = new(StringComparer.Ordinal);
     private readonly ConcurrentDictionary<string, Binding> _connections = new(StringComparer.Ordinal);
     private readonly IHubContext<PoCabinetRaceHub> _raceHub;
     private readonly IHubContext<PoCabinetLobbyHub> _lobbyHub;
@@ -75,6 +77,15 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     }
 
     public bool IsRunning(string code) => _races.ContainsKey(code);
+
+    /// <summary>
+    /// The best lap this host's own sim timed for <paramref name="playerId"/> in their last
+    /// finished race — the proof behind a multiplayer leaderboard submit. One use: taking it
+    /// removes it. In memory only, so a host recycle between the finish and the submit loses
+    /// it (the submit is then refused rather than trusted).
+    /// </summary>
+    public VerifiedLap? TakeVerifiedLap(string playerId) =>
+        _verifiedLaps.TryRemove(playerId, out var lap) && _time.GetUtcNow() - lap.At < VerifiedLapLifetime ? lap : null;
 
     /// <summary>
     /// Bind a connection to a race and return the join snapshot: current state plus the static
@@ -163,7 +174,20 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
             session.Sim.Tick(1.0 / TickHz, session.Applied);
             snapshot = BuildSnapshot(session, session.Sim.TakeDialogue());
             abandoned = session.ConnectionCount == 0 && _time.GetUtcNow() - session.LastSeen > AbandonAfter;
-            if (session.Sim.IsFinished) result = session.Sim.BuildResult(session.Code);
+            if (session.Sim.IsFinished)
+            {
+                result = session.Sim.BuildResult(session.Code);
+                var now = _time.GetUtcNow();
+                foreach (var car in session.Sim.SnapshotCars())
+                {
+                    if (car.IsPlayer && car.BestLapSeconds > 0)
+                        _verifiedLaps[car.OwnerId] = new VerifiedLap(session.Sim.TrackId, car.BestLapSeconds, now);
+                }
+                foreach (var (id, lap) in _verifiedLaps)
+                {
+                    if (now - lap.At >= VerifiedLapLifetime) _verifiedLaps.TryRemove(id, out _);
+                }
+            }
         }
 
         var group = _raceHub.Clients.Group(RaceGroup(session.Code));
@@ -244,6 +268,8 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     }
 
     private sealed record Binding(string Code, string? PlayerId);
+
+    public sealed record VerifiedLap(string TrackId, double BestLapSeconds, DateTimeOffset At);
 
     private sealed class RaceSession(string code, PoCabinetSim sim, DateTimeOffset createdAt)
     {

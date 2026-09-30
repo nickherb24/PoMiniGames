@@ -45,7 +45,7 @@
         <section class="pocabinet-lobby__controls">
             @if (IsHost)
             {
-                <PoCabinetTrackSelector SelectedTrackId="@view.TrackId" SelectedTrackIdChanged="SetTrackAsync" />
+                <PoCabinetTrackSelector SelectedTrackId="@view.TrackId" SelectedTrackIdChanged="SetTrackAsync" Compact="true" />
                 <div class="pocabinet-lobby__row">
                     <span id="pocabinet-bots-label">AI officials</span>
                     <div class="pocabinet-stepper" role="group" aria-labelledby="pocabinet-bots-label">

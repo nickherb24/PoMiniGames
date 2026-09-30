@@ -164,15 +164,15 @@ public static class GameCatalog
             new(GameMode.Demo, "/poracer/demo"),
         ]) { ChipPrimary = true },
 
-        // PoCabinet (2026-09-17): cockpit-view racing, four named officials, three
+        // PoCabinet (2026-09-17): third-person arcade racing, four named officials, three
         // themed tracks (Capitol Speedway / Mar-a-Lago GP / Press Briefing 500).
-        // All four modes are real: 1P championship, 2P hot-seat, multi SignalR lobby,
-        // demo AI showcase with Elo ladder. The lobby endpoint at /api/pocabinet is
+        // Three modes: 1P championship, multi SignalR lobby, demo AI showcase. The 2P
+        // mode was dropped on 2026-09-29 (it only ever ran the solo race); old
+        // /pocabinet/2player links land on 1P (PoCabinetPage.Mode). The lobby endpoint at /api/pocabinet is
         // authed; the leaderboard reads are anonymous.
         new(GameKeys.PoCabinet, "Cabinet", "🏛️",
         [
             new(GameMode.OnePlayer, "/pocabinet/1player"),
-            new(GameMode.TwoPlayer, "/pocabinet/2player"),
             new(GameMode.Multiplayer, "/pocabinet/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/pocabinet/demo"),
         ]) { ChipPrimary = true },

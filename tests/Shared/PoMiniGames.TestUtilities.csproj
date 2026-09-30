@@ -16,4 +16,9 @@
     <PackageReference Include="FluentAssertions" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Copied into every referencing test host's output (PoCabinetLapProofs reads it there). -->
+    <None Include="Fixtures\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

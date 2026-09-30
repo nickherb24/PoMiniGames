@@ -128,6 +128,7 @@ internal static class EndpointRouteExtensions
         // endpoint; T6 adds the lobby + race SignalR hubs.
         gameApi.MapPoCabinetCareerEndpoints();
         gameApi.MapPoCabinetScoreEndpoints();
+        gameApi.MapPoCabinetAiEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();
         gameApi.MapPoVoxelStrikeScoreEndpoints();
         // PoBrawl online (lobby + match hub) — match result ingest endpoint. Same

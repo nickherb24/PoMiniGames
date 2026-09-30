@@ -1,26 +1,21 @@
 // pocabinet/environment.js
 //
-// Time-of-day + weather pass for PoCabinet's scene. Two layers on top of the
-// static per-track atmosphere:
+// Weather pass for PoCabinet's scene, on top of the static per-track atmosphere.
+// Always daytime (2026-09-29): the night and local-clock dusk modes made the track
+// hard to read, so the time-of-day setting and every night-only effect went.
 //
-//   • night — handed to SceneHandle.setSkyEnvironment, which darkens fog and sky,
-//     dims the sun and fill, re-captures the IBL and lights the lamps; race.js
-//     switches the cars' headlights on from currentEnvironment().night
 //   • rain  — a camera-attached LineSegments streak field (recycled in a small
 //     box ahead of the player), fog pulled in, plus (solo races only) a grip
 //     penalty race.js applies (online stays dry: prediction must run the server numbers)
 //
 // "auto" resolution:
-//   • timeOfDay auto — the player's local clock (dawn/dusk ramps)
 //   • weather auto   — one cached open-meteo.com fetch for Washington D.C.
 //     (no API key, no geolocation prompt; the satire picks the capital).
 //     Cached 30 minutes in localStorage; any failure resolves to clear.
 //
-// Both also feed the rest of the scene: the sky dome and the lamps / floodlit
-// landmarks get the night factor (handle.setSkyEnvironment); rain turns the
-// asphalt dark and near-mirror, puts drops on the camera lens (postfx.js via
-// handle.fx.rain) and plays rain on the roof. The wiper clock still runs, but
-// with the cockpit view retired nothing draws or plays the wiper.
+// Rain also darkens the sky dome (handle.setWeather), turns the asphalt dark and
+// near-mirror, puts drops on the camera lens (postfx.js via handle.fx.rain) and
+// plays rain on the roof.
 //
 // All mutations go through the SceneHandle from scene.js and are fully undone
 // by dispose(), so a race teardown never leaks GPU resources.
@@ -29,28 +24,17 @@ import * as THREE from 'three';
 import { currentSettings, loadSettings } from './settings.js';
 import * as audio from './audio.js';
 
-const WIPE_PERIOD = 1.8;
-
 const ENV_CACHE_KEY = 'pocabinet.envcache.v1';
 const ENV_CACHE_MS = 30 * 60 * 1000;
 
 // open-meteo weather codes that mean "wet track" (drizzle/rain/showers/storm).
 const RAIN_CODES = new Set([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99]);
 
-let current = { night: 0, raining: false, source: 'default' };
+let current = { raining: false, source: 'default' };
 
 /** Environment of the most recent mount — race.js reads this for solo rain grip. */
 export function currentEnvironment() {
     return current;
-}
-
-/** Map the local clock to a 0 (noon) .. 1 (deep night) factor with dawn/dusk ramps. */
-function nightFactorFromClock() {
-    const h = new Date().getHours() + new Date().getMinutes() / 60;
-    if (h >= 8 && h < 17) return 0;         // full day
-    if (h >= 21 || h < 5) return 1;         // full night
-    if (h >= 17) return (h - 17) / 4;       // 17:00 → 21:00 dusk ramp
-    return 1 - (h - 5) / 3;                 // 05:00 → 08:00 dawn ramp
 }
 
 async function fetchCapitalRain() {
@@ -91,13 +75,9 @@ async function fetchCapitalRain() {
 export async function resolveEnvironment() {
     // Load from storage first: the page reads/writes the settings JSON itself, so
     // until something calls loadSettings the module copy is still the defaults and
-    // a saved day/night or weather choice would be ignored after a reload.
+    // a saved weather choice would be ignored after a reload.
     loadSettings();
     const prefs = currentSettings();
-    let night;
-    if (prefs.timeOfDay === 'night') night = 1;
-    else if (prefs.timeOfDay === 'day') night = 0;
-    else night = nightFactorFromClock();
 
     let raining;
     let source;
@@ -109,7 +89,7 @@ export async function resolveEnvironment() {
         source = resolved.source;
     }
 
-    current = { night, raining, source };
+    current = { raining, source };
     return current;
 }
 
@@ -129,14 +109,10 @@ class EnvironmentHandle {
         const handle = this.sceneHandle;
         if (!handle || handle.disposed) return;
         const prefs = currentSettings();
-        const night = this.env.night;
         const raining = this.env.raining;
 
-        handle.setSkyEnvironment?.(night, raining);
-        this.applied.push(() => handle.setSkyEnvironment?.(0, false));
-
-        // Night lighting, fog and the sky all come from setSkyEnvironment above; the
-        // headlights ride the cars (race.js → cars.js), not the camera.
+        handle.setWeather?.(raining);
+        this.applied.push(() => handle.setWeather?.(false));
 
         // ── Rain: camera-parented streak field ──
         if (raining) {
@@ -184,30 +160,20 @@ class EnvironmentHandle {
 
             if (handle.fx) {
                 handle.fx.rain = 1;
-                handle.fx.wipeP = WIPE_PERIOD;
-                handle.fx.wipeT = 0;
-                this.applied.push(() => { handle.fx.rain = 0; handle.fx.wipeT = 0; });
+                this.applied.push(() => { handle.fx.rain = 0; });
             }
             audio.setRain(1);
             this.applied.push(() => audio.setRain(0));
 
             let last = performance.now();
-            let wipeT = 0;
+            let reassert = 0;
             this.frameCb = (now) => {
                 if (this.disposed || !this.rain) return;
                 const dt = Math.min(0.05, (now - last) / 1000);
                 last = now;
-                // Wiper clock: the blade reverses at each half period — that is the thunk.
-                const before = Math.floor(wipeT / (WIPE_PERIOD / 2));
-                wipeT += dt;
-                if (handle.fx) {
-                    handle.fx.wipeT = wipeT;
-                    if (Math.floor(wipeT / (WIPE_PERIOD / 2)) !== before) {
-                        if (handle.fx.cockpit) audio.wiper();
-                        // Re-assert: the AudioContext may only have been unlocked after mount.
-                        audio.setRain(1);
-                    }
-                }
+                // Re-assert now and then: the AudioContext may only have been unlocked after mount.
+                reassert += dt;
+                if (reassert > 1) { reassert = 0; audio.setRain(1); }
                 const pos = this.rain.geom.attributes.position.array;
                 const speed = prefs.reducedMotion ? 9 : 22;
                 for (let i = 0; i < this.rain.count; i++) {

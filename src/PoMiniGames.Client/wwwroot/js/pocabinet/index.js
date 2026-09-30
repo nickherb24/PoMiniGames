@@ -8,31 +8,32 @@
 // Contract surface (called from src/PoMiniGames.Client/Games/PoCabinet/...):
 //   PoCabinet.mount(canvasId, world) -> sceneHandle      — world = PoCabinetStaticWorld
 //   PoCabinet.unmount(handle)
-//   PoCabinet.mountCockpit(sceneHandle) / unmountCockpit(handle)
 //   PoCabinet.mountDialogue(parentId, officialId) / showDialogue / hideDialogue / unmountDialogue
 //   PoCabinet.officialName(officialId)
 //   PoCabinet.mountMinimap(canvasId, world, opts) / unmountMinimap(handle)
 //   PoCabinet.mountEnvironment(sceneHandle) / unmountEnvironment(handle)
 //
-//   PoCabinet.startRace(dotnetRef, scene, cockpit, minimap, opts)  — race.js driver
+//   PoCabinet.startRace(dotnetRef, scene, minimap, opts)  — race.js driver
 //   PoCabinet.stopRace() / pauseRace() / resumeRace()
 //   PoCabinet.pushServerSnapshot(snap)                     — multiplayer
 //   PoCabinet.updateRaceSettings(settings) / cycleCamera()
 //   PoCabinet.showTelemetry(canvasId) -> summary text
 //   PoCabinet.startReplay() / replayCommand(cmd, value) / stopReplay()
 //   PoCabinet.recordClip() -> 'shared' | 'downloaded' | 'unavailable'
+//   PoCabinet.lapProof() -> { inputs, wet }               — solo score verification
+//   PoCabinet.setBanter(lines) / speak(officialId, text)  — officials' radio (AI pool, voices)
 //
 //   PoCabinet.loadSettings() / saveSettings(patch) / applySettings(scene, settings)
 //   PoCabinet.getRecords(trackId) / recordTrackResult(trackId, bestLap, sectors)
 //   PoCabinet.initAudio() / setAudioSuspended(bool) / countdownBeep / blip / lapChime / fanfare
 //   PoCabinet.shareResult(payload)
+//   PoCabinet.showModal(id)                                — pause dialog (focus trap, inert page)
 
 import { mount as sceneMount, unmount as sceneUnmount } from './scene.js';
-import { mountCockpit, unmountCockpit } from './cockpit.js';
-import { mount as mountDialogue, unmount as unmountDialogue, show, hide, officialName } from './dialogue.js';
+import { mount as mountDialogue, unmount as unmountDialogue, show, hide, officialName, speak } from './dialogue.js';
 import {
     startRace, stopRace, pauseRace, resumeRace, pushServerSnapshot, updateRaceSettings, cycleCamera,
-    showTelemetry, startReplay, replayCommand, stopReplay, recordClip,
+    showTelemetry, startReplay, replayCommand, stopReplay, recordClip, lapProof, setBanter,
 } from './race.js';
 import { loadSettings, saveSettings, getRecords, recordTrackResult } from './settings.js';
 import * as audio from './audio.js';
@@ -42,13 +43,12 @@ import { mountEnvironment, unmountEnvironment } from './environment.js';
 const api = {
     mount: sceneMount,
     unmount: sceneUnmount,
-    mountCockpit,
-    unmountCockpit,
     mountDialogue,
     showDialogue: (handle, text, durationMs) => show(handle, text, durationMs),
     hideDialogue: hide,
     unmountDialogue,
     officialName,
+    speak,
 
     startRace,
     stopRace,
@@ -62,6 +62,8 @@ const api = {
     replayCommand,
     stopReplay,
     recordClip,
+    lapProof,
+    setBanter,
 
     loadSettings,
     saveSettings,
@@ -77,6 +79,17 @@ const api = {
 
     mountMinimap,
     unmountMinimap,
+
+    /**
+     * Open a rendered <dialog> as modal. Its own Esc-close is cancelled: Esc is input.js's
+     * pause toggle, and letting both act would close the dialog without resuming the race.
+     */
+    showModal(id) {
+        const d = document.getElementById(id);
+        if (!d || d.open || typeof d.showModal !== 'function') return;
+        d.addEventListener('cancel', e => e.preventDefault());
+        d.showModal();
+    },
 
     mountEnvironment,
     unmountEnvironment,

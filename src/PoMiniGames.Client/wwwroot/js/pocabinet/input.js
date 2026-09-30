@@ -48,8 +48,11 @@ export function attachInput(opts) {
         return t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
     };
     const onKey = (e, down) => {
-        if (isTyping(e)) return;
         const k = (e.key || '').toLowerCase();
+        // Esc toggles pause even from a form control: the pause menu is a modal dialog whose
+        // focus lands on its volume slider, and its own Esc-close is cancelled (index.js
+        // showModal) so this stays the one handler. "p" still types into fields.
+        if (k !== 'escape' && isTyping(e)) return;
         if (k === 'escape' || k === 'p') {
             if (down && !e.repeat) { e.preventDefault(); o.onPause?.(); }
             return;

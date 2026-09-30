@@ -11,7 +11,12 @@
 // against the same GRIP_ACCEL the physics caps it at.
 //
 // update() returns the frame's contact events so race.js can play the crunch
-// (positional when it is someone else's shunt).
+// (positional when it is someone else's shunt), and the frame's barrier hits
+// (first touch only), which race.js turns into dents on that car (cars.js).
+//
+// One-shots race.js fires (2026-09-29): backfire() — a flame out of the tail on
+// every exhaust pop audio.js reports; debris() — chunks and paint flakes off a
+// shunt; confetti() — the podium shower over the line.
 
 import * as THREE from 'three';
 import { wrapAngle } from './track.js';
@@ -206,7 +211,7 @@ class SkidMarks {
     }
 }
 
-export class CarFx {
+class CarFx {
     /**
      * @param sceneHandle scene.js SceneHandle
      * @param track       runtime track (track.js)
@@ -241,7 +246,57 @@ export class CarFx {
     }
 
     newState() {
-        return { h: null, x: 0, y: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0 };
+        return { h: null, x: 0, y: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0 };
+    }
+
+    /** A flame out of the tail of car `id` (its last pose), `strength` 0..1. */
+    backfire(id, strength = 1) {
+        const s = this.state.get(id);
+        if (!s || s.h === null || this.disposed) return;
+        const rnd = Math.random;
+        const fx = Math.cos(s.h), fz = Math.sin(s.h);
+        const x = s.x / WS - fx * 2.02, z = s.y / WS - fz * 2.02;
+        const n = 4 + Math.round(strength * 6);
+        for (let i = 0; i < n; i++) {
+            const k = rnd();
+            const out = 2.5 + rnd() * 4 * strength;
+            // Core blue-white, tips orange: brighter the closer to the pipe.
+            const hot = k < 0.3;
+            this.sparks.spawn(
+                x + (rnd() - 0.5) * 0.25, 0.3 + rnd() * 0.08, z + (rnd() - 0.5) * 0.25,
+                -fx * out + (rnd() - 0.5) * 0.8, 0.2 + rnd() * 0.5, -fz * out + (rnd() - 0.5) * 0.8,
+                0.06 + rnd() * 0.1 * (0.5 + strength), 0.55 + strength * 0.35, 0.12, 1,
+                hot ? 0.6 : 1.0, hot ? 0.75 : 0.45 + k * 0.25, hot ? 1.0 : 0.12, 7, -1.5);
+        }
+    }
+
+    /** Chunks of trim and flakes of `paint` (hex) flying off a shunt at world (x, z). */
+    debris(x, z, paint, strength = 1) {
+        if (this.disposed) return;
+        const rnd = Math.random;
+        const c = new THREE.Color(paint || '#888888');
+        const n = Math.round(4 + strength * 10);
+        for (let i = 0; i < n; i++) {
+            const flake = rnd() < 0.55;
+            const shade = 0.08 + rnd() * 0.1;
+            this.smoke.spawn(x, 0.4 + rnd() * 0.3, z,
+                (rnd() - 0.5) * 7 * strength, 1.5 + rnd() * 3.5 * strength, (rnd() - 0.5) * 7 * strength,
+                0.7 + rnd() * 0.8, 0.14 + rnd() * 0.08, 0.1, 1,
+                flake ? c.r : shade, flake ? c.g : shade, flake ? c.b : shade, 0.4, 9.8);
+        }
+    }
+
+    /** A shower of confetti over world (x, z) — the podium moment. */
+    confetti(x, z, count = 160) {
+        if (this.disposed) return;
+        const rnd = Math.random;
+        const col = new THREE.Color();
+        for (let i = 0; i < count; i++) {
+            col.setHSL(rnd(), 0.85, 0.58);
+            this.smoke.spawn(x + (rnd() - 0.5) * 8, 7 + rnd() * 4, z + (rnd() - 0.5) * 8,
+                (rnd() - 0.5) * 5, 2 + rnd() * 4, (rnd() - 0.5) * 5,
+                3 + rnd() * 2, 0.16, 0.14, 1, col.r, col.g, col.b, 1.6, 1.4);
+        }
     }
 
     /**
@@ -251,7 +306,7 @@ export class CarFx {
      * @returns {{ contacts: Array<{ x, z, strength, ids: [a, b] }>, scraping: Map<id, number> }}
      */
     update(dt, cars, opts = {}) {
-        const events = { contacts: [], scraping: new Map() };
+        const events = { contacts: [], scraping: new Map(), walls: [] };
         if (this.disposed || dt <= 0) return events;
         const t = this.track;
         const hw = t.halfWidth;
@@ -345,7 +400,14 @@ export class CarFx {
                     this.spark(px, 0.35, pz, -vx * 0.5 + (rnd() - 0.5) * 4 - nx * 2, 1.5 + rnd() * 3.5, -vz * 0.5 + (rnd() - 0.5) * 4 - nz * 2);
                 }
                 events.scraping.set(c.id, Math.min(1, v / 100));
+                // First touch of a stint along the wall is the hit; riding it is only the scrape.
+                const now = performance.now();
+                if (!s.walled && now - s.wallAt > 500) {
+                    s.wallAt = now;
+                    events.walls.push({ id: c.id, x: px, z: pz, strength: Math.min(1, v / 110) });
+                }
             }
+            s.walled = wall;
         }
 
         // Car-to-car contact: centres closer than two radii (+ a little for interpolation).

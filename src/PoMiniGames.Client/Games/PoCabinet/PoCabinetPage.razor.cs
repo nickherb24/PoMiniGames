@@ -10,7 +10,7 @@ namespace PoMiniGamesClient.Games.PoCabinet;
 /// <summary>
 /// Code-behind for <see cref="PoCabinetPage"/>. The page lifecycle is:
 /// <list type="number">
-///   <item><b>Start</b> — track, paint, settings. 1p/2p/demo go to <see cref="Phase.Loading"/>;
+///   <item><b>Start</b> — track, paint, settings. 1p/demo go to <see cref="Phase.Loading"/>;
 ///         multiplayer joins the one lobby (first in hosts; there are no codes).</item>
 ///   <item><b>Lobby</b> — <see cref="PoCabinetLobby"/>; its <c>RaceStarting</c> hand-off calls
 ///         <see cref="BeginWireModeAsync"/> directly. (It used to navigate to this same page with
@@ -25,8 +25,10 @@ namespace PoMiniGamesClient.Games.PoCabinet;
 /// </list>
 /// <para>
 /// The page is the HUD, not the renderer: it receives a snapshot per tick (from race.js for
-/// solo races, from the server for multiplayer) and derives lap/sector timing, countdown
-/// beeps, dialogue and the finish from it. Cars, camera, minimap and engine audio are
+/// solo races, from the server for multiplayer) and derives lap timing, countdown beeps,
+/// dialogue and the finish from it. Sector splits come from race.js (<see cref="OnSectorAsync"/>),
+/// which knows the exact crossing instant; the page used to re-derive them from 15 Hz
+/// progress fractions. Cars, camera, minimap and engine audio are
 /// race.js's job, per frame, with no interop round trip.
 /// </para>
 /// </summary>
@@ -38,6 +40,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     [Inject] private PoCabinetSession Session { get; set; } = default!;
     [Inject] private PoCabinetCareerState Career { get; set; } = default!;
     [Inject] private PoMiniGamesClient.Services.Auth.AuthStateService AuthState { get; set; } = default!;
+    [Inject] private PoMiniGamesClient.Services.Http.ApiService Api { get; set; } = default!;
 
     [Parameter] public string? ModeSegment { get; set; }
 
@@ -46,7 +49,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// <summary>One results row: name plus a short detail (finish time, "You", "AI official").</summary>
     protected sealed record StandingRow(string Name, string Detail, bool IsLocal);
 
-    protected GameMode Mode => GameModes.Parse(ModeSegment);
+    // No 2P mode (removed 2026-09-29): a stale /pocabinet/2player link plays 1P.
+    protected GameMode Mode => GameModes.Parse(ModeSegment) is var m && m == GameMode.TwoPlayer ? GameMode.OnePlayer : m;
 
     protected string _playerName = "Player";
     protected Phase _phase = Phase.Start;
@@ -56,14 +60,27 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     protected int _lap = 1;
     protected int _position = 1;
+    /// <summary>+1 when the last place change was a gain, −1 a loss (drives the badge colour).</summary>
+    private int _positionDelta;
+    protected string PosBadgeKey => $"pos-{_position}";
+    protected string PosBadgeClass => _positionDelta > 0 ? "pocabinet-posbadge--up" : _positionDelta < 0 ? "pocabinet-posbadge--down" : "";
     protected int _totalLaps = PoCabinetCatalog.TotalLaps;
     protected int _totalCars = 5;
     protected double _speedKmh;
     protected double _lapSeconds;
-    protected string? _announcement;
+    /// <summary>The screen-reader channel (laps, places, radio lines, the finish).</summary>
+    protected string? _liveAnnouncement;
+    private long _placeAnnouncedAt;
     protected string? _status;
+    /// <summary>Replay-only messages (clip saved…); kept apart so a results status never leaks under the replay bar.</summary>
+    protected string? _replayStatus;
+    private bool _pauseShown;
 
-    protected PoCabinetUiSettings Settings { get; } = new();
+    /// <summary>The race engineer's read on the race: a headline and up to three tips.</summary>
+    protected sealed record Debrief(string Headline, IReadOnlyList<string> Tips);
+    protected Debrief? _debrief;
+
+    protected PoCabinetUiSettings Settings { get; private set; } = new();
 
     protected bool _paused;
     protected int? _pingMs;
@@ -85,11 +102,9 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected double _bestLapSession;
     protected int _sectorIndex;
     protected double _sectorStart;
-    private bool _lineAligned;
-    private double _prevProgress;
     private int _lastCountdown = -1;
     private double _goUntilElapsed;
-    private string _envKey = "auto|auto";
+    private string _envKey = "clear";
 
     protected PoCabinetRaceSnapshot? _lastSnapshot;
 
@@ -123,19 +138,11 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _ => "pocabinet-ping--poor",
     };
 
-    protected static string ConfettiColor(int i) => (i % 5) switch
-    {
-        0 => "#c6a35a",
-        1 => "#3470d8",
-        2 => "#2ecc71",
-        3 => "#c1253b",
-        _ => "#ffffff",
-    };
-
-    protected static int ConfettiX(int i) => i * 41 % 100;
-
-    protected static string ConfettiDelay(int i) =>
-        (1.8 + i % 5 * 0.45).ToString("F2", System.Globalization.CultureInfo.InvariantCulture) + "s";
+    protected string Lede => Mode == GameMode.Demo
+        ? "The officials race themselves while the camera roams. 3 laps."
+        : IsMultiplayerMode
+            ? "Everyone who joins lands in one lobby — first in hosts and picks the track. 3 laps."
+            : "Pick a track and take on the officials. 3 laps; top 3 moves the campaign on.";
 
     protected RenderFragment TitleContent => builder => builder.AddMarkupContent(0, "🏛️ Cabinet");
 
@@ -145,7 +152,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         || Career.Current.GoldLiveryUnlocked;
 
     private IJSObjectReference? _sceneHandle;
-    private IJSObjectReference? _cockpitHandle;
     private IJSObjectReference? _dialogueHandle;
     private IJSObjectReference? _minimapHandle;
     private IJSObjectReference? _envHandle;
@@ -177,13 +183,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             // exist until the engine module is imported (at race start), and asking it first
             // used to throw, silently fall back to defaults — assists off, whatever the player
             // had chosen. Importing the engine here instead would delay the first render.
-            var raw = await JS.InvokeAsync<string?>("localStorage.getItem", "pocabinet.settings.v1");
-            if (!string.IsNullOrWhiteSpace(raw))
-            {
-                using var doc = JsonDocument.Parse(raw);
-                Settings.LoadFrom(doc.RootElement);
-            }
-            _envKey = $"{Settings.Weather}|{Settings.TimeOfDay}";
+            Settings = PoCabinetUiSettings.FromJson(await JS.InvokeAsync<string?>("localStorage.getItem", "pocabinet.settings.v1"));
+            _envKey = Settings.Weather;
         }
         catch { /* storage unavailable or corrupt — defaults are fine */ }
     }
@@ -233,6 +234,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             }
         }
 
+        if (_paused && !_pauseShown)
+        {
+            _pauseShown = true;
+            await SafeJsAsync("PoCabinet.showModal", "pocabinetPause");
+        }
+
         if (_phase == Phase.Finished && !_telemetryDrawn && !IsSpectating)
         {
             _telemetryDrawn = true;
@@ -243,6 +250,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 {
                     _telemetrySummary = res.TryGetProperty("summary", out var s) ? s.GetString() : null;
                     _hasReferenceLap = res.TryGetProperty("hasReference", out var r) && r.ValueKind == JsonValueKind.True;
+                    if (res.TryGetProperty("facts", out var facts) && facts.ValueKind == JsonValueKind.Object && _debrief is null) _ = LoadDebriefAsync(facts);
                 }
             }
             catch { _telemetrySummary = null; }
@@ -307,7 +315,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         await Career.ResetAsync();
     }
 
-    /// <summary>Mount the scene and start the in-browser race (1p, 2p, demo).</summary>
+    /// <summary>Mount the scene and start the in-browser race (1p, demo).</summary>
     private async Task BeginSoloAsync()
     {
         try
@@ -323,7 +331,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _status = null;
             _phase = Phase.Racing;
             await InvokeAsync(StateHasChanged);
-            await JS.InvokeVoidAsync("PoCabinet.startRace", _selfRef, _sceneHandle, _cockpitHandle, _minimapHandle, new
+            await JS.InvokeVoidAsync("PoCabinet.startRace", _selfRef, _sceneHandle, _minimapHandle, new
             {
                 mode = Mode == GameMode.Demo ? "demo" : "solo",
                 world = _world,
@@ -331,6 +339,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 color = PlayerColorHex,
                 settings = Settings.ToJs(),
             });
+            _ = LoadBanterAsync(trackId);
         }
         catch (Exception ex)
         {
@@ -340,6 +349,17 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _phase = Phase.Start;
             await InvokeAsync(StateHasChanged);
         }
+    }
+
+    /// <summary>
+    /// The officials' line pool (AI-written per track per day, scripted fallback) for the solo
+    /// race. Not awaited by the start: the first call of the day can take seconds, and a race
+    /// that starts without banter only misses the grid line.
+    /// </summary>
+    private async Task LoadBanterAsync(string trackId)
+    {
+        var pool = await Api.GetPoCabinetBanterAsync(trackId);
+        if (pool is not null && _phase is Phase.Racing) await SafeJsAsync("PoCabinet.setBanter", pool.Lines);
     }
 
     /// <summary>
@@ -369,7 +389,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _totalLaps = _world.TotalLaps;
             await LoadStoredRecordsAsync(_world.TrackId);
             await MountSceneAsync(_world);
-            await JS.InvokeVoidAsync("PoCabinet.startRace", _selfRef, _sceneHandle, _cockpitHandle, _minimapHandle, new
+            await JS.InvokeVoidAsync("PoCabinet.startRace", _selfRef, _sceneHandle, _minimapHandle, new
             {
                 mode = "net",
                 world = _world,
@@ -457,7 +477,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Mount the scene, cockpit, dialogue bubble, minimap and environment against the static
+    /// Mount the scene, dialogue bubble, minimap and environment against the static
     /// world. The environment resolves before race.js starts so its rain-grip factor is in
     /// place for the first solo tick.
     /// </summary>
@@ -467,7 +487,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         // IJSRuntime does not marshal ElementReference as a live DOM element, so the mounts
         // resolve their canvases by id.
         _sceneHandle = await JS.InvokeAsync<IJSObjectReference>("PoCabinet.mount", "pocabinetCanvas", world);
-        _cockpitHandle = await JS.InvokeAsync<IJSObjectReference>("PoCabinet.mountCockpit", _sceneHandle);
         _dialogueHandle = await JS.InvokeAsync<IJSObjectReference>("PoCabinet.mountDialogue", "pocabinetDialogueLayer", "sean-s");
         _currentDialogueOfficialId = "sean-s";
         try { await JS.InvokeVoidAsync("PoCabinet.applySettings", _sceneHandle, Settings.ToJs()); }
@@ -543,21 +562,30 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             {
                 var lapTime = snap.ElapsedRaceTime - _lastLapTime;
                 if (lapTime > 0 && (_bestLapSession <= 0 || lapTime < _bestLapSession)) _bestLapSession = lapTime;
-                CloseLapTelemetry(lapTime, snap.ElapsedRaceTime);
+                CloseLap(lapTime, snap.ElapsedRaceTime);
                 if (lapTime > 0) Fire("PoCabinet.lapChime");
+                if (localCar.Lap <= _totalLaps)
+                    _liveAnnouncement = $"Lap {localCar.Lap} of {_totalLaps}. Last lap {FormatLapTime(lapTime)}.";
                 forceRender = true;
             }
             _lastLapCount = localCar.Lap;
             _lap = localCar.Lap;
+            if (localCar.Position != _position)
+            {
+                _positionDelta = Math.Sign(_position - localCar.Position);
+                // Throttled: a side-by-side tussle flips places every tick.
+                var nowMs = Environment.TickCount64;
+                if (snap.Started && nowMs - _placeAnnouncedAt > 4000)
+                {
+                    _placeAnnouncedAt = nowMs;
+                    _liveAnnouncement = $"Position {localCar.Position} of {cars.Count}.";
+                }
+            }
             _position = localCar.Position;
             _lapSeconds = snap.ElapsedRaceTime;
             if (snap.BestLapSeconds is { } reported && reported > 0 && (_bestLapSession <= 0 || reported < _bestLapSession))
             {
                 _bestLapSession = reported;
-            }
-            if (snap.Started && !snap.Finished && !localCar.Finished)
-            {
-                TrackSectorProgress(localCar.LapProgress, snap.ElapsedRaceTime);
             }
         }
         else if (cars.Count > 0)
@@ -576,7 +604,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             if (!string.Equals(key, _lastDialogueKey, StringComparison.Ordinal))
             {
                 _lastDialogueKey = key;
-                _announcement = d.Text;
+                _liveAnnouncement = $"{d.Text}";
                 _ = ShowDialogueAsync(d);
                 forceRender = true;
             }
@@ -606,6 +634,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     {
         _phase = Phase.Finished;
         _telemetryDrawn = false;
+        _liveAnnouncement = IsSpectating ? "Race finished." : $"Race finished. Position {_position} of {_totalCars}.";
         Fire("PoCabinet.fanfare", _position <= 3 && !IsSpectating);
     }
 
@@ -623,6 +652,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             {
                 await JS.InvokeVoidAsync("PoCabinet.showDialogue", _dialogueHandle, d.Text, 2400);
                 await JS.InvokeVoidAsync("PoCabinet.blip");
+                await JS.InvokeVoidAsync("PoCabinet.speak", d.OfficialId, d.Text);
             }
         }
         catch { /* dialogue is flavour */ }
@@ -658,12 +688,29 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 return;
             }
             var outcome = _position <= 3 ? GameResult.Win : GameResult.Loss;
+            // Solo laps carry their input log; the server re-runs the race and stores the lap
+            // time it computes (PoCabinetLapVerifier). Online laps need no proof — the server
+            // timed them — and a solo submit without one is refused.
+            string? inputs = null;
+            var wet = false;
+            if (!IsMultiplayerMode)
+            {
+                try
+                {
+                    var proof = await JS.InvokeAsync<JsonElement>("PoCabinet.lapProof");
+                    if (proof.TryGetProperty("inputs", out var i) && i.ValueKind == JsonValueKind.String) inputs = i.GetString();
+                    wet = proof.TryGetProperty("wet", out var w) && w.ValueKind == JsonValueKind.True;
+                }
+                catch (JSException) { /* no proof → the server refuses the lap; local records still stand */ }
+            }
             var req = new PoCabinetHighScoreRequest(
                 TrackId: trackId,
                 BestLapSeconds: lapSeconds,
                 FinalPosition: Math.Clamp(_position, 1, 9),
                 IsGuest: !(AuthState?.IsAuthenticated == true),
-                GameCode: _gameCode ?? "SOLO");
+                GameCode: _gameCode ?? "SOLO",
+                Inputs: inputs,
+                Wet: wet);
             await GameResults.RecordAndSubmitPoCabinetAsync(_playerName, outcome, req);
 
             if (Mode == GameMode.OnePlayer)
@@ -680,14 +727,36 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         await InvokeAsync(StateHasChanged);
     }
 
+    /// <summary>
+    /// The race engineer: the telemetry numbers (race.js) plus the result go to the server, which
+    /// writes the headline and tips (model or rule-based). Demo races don't ask — nobody drove.
+    /// </summary>
+    private async Task LoadDebriefAsync(JsonElement facts)
+    {
+        if (Mode == GameMode.Demo) return;
+        static int Int(JsonElement e, string name) => e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number ? (int)Math.Round(v.GetDouble()) : 0;
+        var deltas = facts.TryGetProperty("sectorDeltas", out var d) && d.ValueKind == JsonValueKind.Array
+            ? d.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Number).Select(x => x.GetDouble()).ToArray()
+            : [];
+        var best = _submittedBestLap > 0 ? _submittedBestLap : _bestLapSession;
+        var request = new PoCabinetDebriefRequest(
+            _trackId ?? PoCabinetCatalog.DefaultTrackId, _position, _totalCars, best,
+            _previousBest > 0 ? _previousBest : _storedBestLap, deltas,
+            Int(facts, "fullThrottlePct"), Int(facts, "brakePct"), Int(facts, "topKmh"), Int(facts, "slowestKmh"),
+            facts.TryGetProperty("worstPointPct", out var w) && w.ValueKind == JsonValueKind.Number ? (int)w.GetDouble() : -1,
+            Int(facts, "wallHits"), _lapTimes.Count);
+        var reply = await Api.GetPoCabinetDebriefAsync(request);
+        if (reply is null || _phase is not (Phase.Finished or Phase.Replay)) return;
+        _debrief = new Debrief(reply.Headline, reply.Tips);
+        await InvokeAsync(StateHasChanged);
+    }
+
     // ─── Telemetry: sectors, laps, personal records ──────────────────────────
 
     private void ResetTelemetry()
     {
         _sectorIndex = 0;
         _sectorStart = 0;
-        _lineAligned = false;
-        _prevProgress = 0;
         _sectorTimes = new double?[3];
         _lastLapSectorTimes = new double?[3];
         _sessionBestSectors.AsSpan().Fill(double.MaxValue);
@@ -712,7 +781,10 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _telemetrySummary = null;
         _hasReferenceLap = false;
         _lastDialogueKey = null;
-        _announcement = null;
+        _liveAnnouncement = null;
+        _placeAnnouncedAt = 0;
+        _debrief = null;
+        _replayStatus = null;
         _lap = 1;
         _position = 1;
         _speedKmh = 0;
@@ -750,51 +822,36 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         catch { /* first race ever, or storage unavailable — defaults hold */ }
     }
 
-    private void TrackSectorProgress(double progress, double elapsed)
+    /// <summary>
+    /// race.js, both modes: the local car crossed sector boundary <paramref name="sector"/> (0..2,
+    /// thirds of the lap) at race time <paramref name="raceTime"/>, <paramref name="seconds"/>
+    /// after the previous one. Crossing times are interpolated inside the tick, like lap times.
+    /// Sector 2 closing is the lap line: the finished lap's splits move to "last lap".
+    /// </summary>
+    [JSInvokable]
+    public Task OnSectorAsync(int sector, double seconds, double raceTime)
     {
-        // Sector boundaries are thirds of the lap: the lap line sits at progress 0, so the
-        // thirds only line up once the first line crossing has happened. The standing-start
-        // lap records just its closing stint in CloseLapTelemetry.
-        if (!_lineAligned) return;
-        while (_sectorIndex < 2)
+        if (sector is < 0 or > 2 || !(seconds > 0)) return Task.CompletedTask;
+        _sectorTimes[sector] = seconds;
+        if (seconds < _sessionBestSectors[sector]) _sessionBestSectors[sector] = seconds;
+        _sectorStart = raceTime;
+        _sectorIndex = (sector + 1) % 3;
+        if (sector == 2)
         {
-            var boundary = (_sectorIndex + 1) / 3.0;
-            if (!CrossedBoundary(_prevProgress, progress, boundary)) break;
-            RecordSector(elapsed - _sectorStart, _sectorIndex);
-            _sectorIndex++;
-            _sectorStart = elapsed;
+            _lastLapSectorTimes = (double?[])_sectorTimes.Clone();
+            _sectorTimes = new double?[3];
         }
-        _prevProgress = progress;
+        return InvokeAsync(StateHasChanged);
     }
 
-    private static bool CrossedBoundary(double prev, double cur, double boundary)
+    private void CloseLap(double lapTime, double elapsed)
     {
-        if (prev <= cur) return prev < boundary && boundary <= cur;
-        return boundary > prev || boundary <= cur; // wrapped this step
-    }
-
-    private void CloseLapTelemetry(double lapTime, double elapsed)
-    {
-        RecordSector(lapTime - (_sectorTimes[0] ?? 0) - (_sectorTimes[1] ?? 0), 2);
-        _lastLapSectorTimes = (double?[])_sectorTimes.Clone();
-        _sectorTimes = new double?[3];
-        _sectorIndex = 0;
-        _sectorStart = elapsed;
-        _lineAligned = true;
-        _prevProgress = 0;
         if (lapTime > 0)
         {
             _lastLapSeconds = lapTime;
             _lapTimes.Add(lapTime);
         }
         _lastLapTime = elapsed;
-    }
-
-    private void RecordSector(double seconds, int index)
-    {
-        if (seconds <= 0 || index < 0 || index > 2) return;
-        _sectorTimes[index] = seconds;
-        if (seconds < _sessionBestSectors[index]) _sessionBestSectors[index] = seconds;
     }
 
     protected string SectorClass(int index)
@@ -849,6 +906,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     {
         if (!_paused) return;
         _paused = false;
+        _pauseShown = false;
         await SafeJsAsync("PoCabinet.resumeRace");
         await SafeJsAsync("PoCabinet.setAudioSuspended", false);
         await InvokeAsync(StateHasChanged);
@@ -888,6 +946,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private async Task TeardownRaceAsync()
     {
         _paused = false;
+        _pauseShown = false;
         await SafeJsAsync("PoCabinet.stopRace");
         await SafeJsAsync("PoCabinet.setAudioSuspended", true);
         await TeardownSceneAsync();
@@ -905,16 +964,15 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             if (_envHandle is not null) await JS.InvokeVoidAsync("PoCabinet.unmountEnvironment", _envHandle);
             if (_minimapHandle is not null) await JS.InvokeVoidAsync("PoCabinet.unmountMinimap", _minimapHandle);
             if (_dialogueHandle is not null) await JS.InvokeVoidAsync("PoCabinet.unmountDialogue", _dialogueHandle);
-            if (_cockpitHandle is not null) await JS.InvokeVoidAsync("PoCabinet.unmountCockpit", _cockpitHandle);
             if (_sceneHandle is not null) await JS.InvokeVoidAsync("PoCabinet.unmount", _sceneHandle);
         }
         catch { /* engine may already be torn down */ }
-        foreach (var h in new[] { _envHandle, _minimapHandle, _dialogueHandle, _cockpitHandle, _sceneHandle })
+        foreach (var h in new[] { _envHandle, _minimapHandle, _dialogueHandle, _sceneHandle })
         {
             if (h is null) continue;
             try { await h.DisposeAsync(); } catch { /* already gone */ }
         }
-        _envHandle = _minimapHandle = _dialogueHandle = _cockpitHandle = _sceneHandle = null;
+        _envHandle = _minimapHandle = _dialogueHandle = _sceneHandle = null;
     }
 
     // ─── Replay ──────────────────────────────────────────────────────────────
@@ -925,6 +983,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         {
             if (await JS.InvokeAsync<bool>("PoCabinet.startReplay"))
             {
+                _replayStatus = null;
                 _phase = Phase.Replay;
                 _replayPlaying = true;
                 _replayCamera = "chase";
@@ -976,12 +1035,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected async Task RecordClipAsync()
     {
         _recordingClip = true;
-        _status = null;
+        _replayStatus = null;
         await InvokeAsync(StateHasChanged);
         try
         {
             var outcome = await JS.InvokeAsync<string>("PoCabinet.recordClip");
-            _status = outcome switch
+            _replayStatus = outcome switch
             {
                 "shared" => "Clip shared.",
                 "downloaded" => "Clip saved to your downloads.",
@@ -990,10 +1049,17 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _status = $"Could not record the clip: {ex.Message}";
+            _replayStatus = $"Could not record the clip: {ex.Message}";
         }
         _recordingClip = false;
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Results → Share → clip: the clip is recorded from the replay, so go there first.</summary>
+    protected async Task ShareClipAsync()
+    {
+        await StartReplayAsync();
+        if (_phase == Phase.Replay) await RecordClipAsync();
     }
 
     // ─── Settings ────────────────────────────────────────────────────────────
@@ -1013,7 +1079,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         // The colour-safe palette is baked into the minimap at mount.
         if (_minimapHandle is not null) await MountMinimapAsync();
 
-        var envKey = $"{Settings.Weather}|{Settings.TimeOfDay}";
+        var envKey = Settings.Weather;
         if (!string.Equals(envKey, _envKey, StringComparison.Ordinal))
         {
             _envKey = envKey;

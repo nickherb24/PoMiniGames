@@ -102,6 +102,9 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlPresserReply))]
 // PoBrawl ring introduction + cross-device ladder progress (2026-09-29).
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlIntroRequest))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetBanterPool))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetDebriefRequest))]
+[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetDebriefReply))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlProgressDto))]
 // Player Card & Online MMR
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.PlayerCardDto))]

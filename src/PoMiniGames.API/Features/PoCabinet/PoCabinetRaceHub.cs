@@ -24,9 +24,11 @@ public sealed class PoCabinetRaceHub(PoCabinetRaceRegistry registry) : Hub
         return snapshot;
     }
 
-    /// <summary>One tick of input. The code argument is kept for wire compatibility; the
-    /// connection's own binding (set by <see cref="JoinRace"/>) decides which car it drives.</summary>
-    public Task SubmitInput(string gameCode, PoCabinetInput input)
+    /// <summary>One tick of input. The connection's own binding (set by <see cref="JoinRace"/>)
+    /// decides which car it drives. (It also took the game code until 2026-09-29 — unused
+    /// since there is one lobby; a client cached from before gets "method not found" until
+    /// the app-update prompt reloads it.)</summary>
+    public Task SubmitInput(PoCabinetInput input)
     {
         registry.SubmitInput(Context.ConnectionId, input);
         return Task.CompletedTask;

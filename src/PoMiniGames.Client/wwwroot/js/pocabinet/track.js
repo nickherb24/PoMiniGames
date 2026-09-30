@@ -9,7 +9,7 @@
 // runs this projection against the server's; change the search window, the
 // smoothing or the sample step on one side and predicted cars drift on the other.
 
-export const CURVATURE_SAMPLE_STEP = 8;
+const CURVATURE_SAMPLE_STEP = 8;
 
 /** Signed angle normalised to (-π, π]. Same operation order as the C# WrapAngle. */
 export function wrapAngle(a) {

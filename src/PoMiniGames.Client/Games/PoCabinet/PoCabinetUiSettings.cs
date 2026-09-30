@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Text.Json;
 
 namespace PoMiniGamesClient.Games.PoCabinet;
 
@@ -6,21 +7,21 @@ namespace PoMiniGamesClient.Games.PoCabinet;
 /// Player-tunable presentation settings for PoCabinet, mirrored from the JS
 /// store (<c>wwwroot/js/pocabinet/settings.js</c>). JavaScript owns the disk
 /// format (localStorage + sanitisation); this class is the Blazor-side view
-/// model the settings panel binds to. The <see cref="ToJs"/> projection must
-/// stay key-compatible with the JS defaults — a rename on either side silently
-/// reverts the player's pref to its default.
+/// model the settings panel binds to. Both directions go through the
+/// source-generated <see cref="PoCabinetJsonContext"/> (camelCase), so a property
+/// here IS its JS key: no hand-written key list left to drift (2026-09-29; it was a
+/// GetDouble/GetBool mapper plus an anonymous projection, each spelling every key).
 /// </summary>
 public sealed class PoCabinetUiSettings
 {
     public double MasterVolume { get; set; } = 0.7;
     public bool Muted { get; set; }
-    public double RenderScale { get; set; } = 1;
-    public double Fov { get; set; } = 70;
+    public bool Music { get; set; } = true;
+    public bool Voices { get; set; } = true;
     public double HudScale { get; set; } = 1;
     public bool ReducedMotion { get; set; }
     public bool ColorSafe { get; set; }
-    public string Weather { get; set; } = "auto";
-    public string TimeOfDay { get; set; } = "auto";
+    public string Weather { get; set; } = "clear";
     public string TouchControls { get; set; } = "auto";
     public string SteerMode { get; set; } = "pad";
     public double SteerSensitivity { get; set; } = 1;
@@ -28,72 +29,17 @@ public sealed class PoCabinetUiSettings
     public bool AutoBrake { get; set; }
     public bool RacingLine { get; set; }
 
-    /// <summary>Load from a <c>PoCabinet.loadSettings()</c> JSON element, keeping defaults for missing props.</summary>
-    public void LoadFrom(System.Text.Json.JsonElement el)
+    /// <summary>Parse the stored JSON; defaults for anything missing, unknown keys ignored.</summary>
+    public static PoCabinetUiSettings FromJson(string? json)
     {
-        if (el.ValueKind != System.Text.Json.JsonValueKind.Object) return;
-        MasterVolume = GetDouble(el, "masterVolume", MasterVolume);
-        Muted = GetBool(el, "muted", Muted);
-        RenderScale = GetDouble(el, "renderScale", RenderScale);
-        Fov = GetDouble(el, "fov", Fov);
-        HudScale = GetDouble(el, "hudScale", HudScale);
-        ReducedMotion = GetBool(el, "reducedMotion", ReducedMotion);
-        ColorSafe = GetBool(el, "colorSafe", ColorSafe);
-        Weather = GetString(el, "weather", Weather);
-        TimeOfDay = GetString(el, "timeOfDay", TimeOfDay);
-        TouchControls = GetString(el, "touchControls", TouchControls);
-        SteerMode = GetString(el, "steerMode", SteerMode);
-        SteerSensitivity = GetDouble(el, "steerSensitivity", SteerSensitivity);
-        SteeringAssist = GetString(el, "steeringAssist", SteeringAssist);
-        AutoBrake = GetBool(el, "autoBrake", AutoBrake);
-        RacingLine = GetBool(el, "racingLine", RacingLine);
+        if (string.IsNullOrWhiteSpace(json)) return new();
+        try { return JsonSerializer.Deserialize(json, PoCabinetJsonContext.Default.PoCabinetUiSettings) ?? new(); }
+        catch (JsonException) { return new(); }
     }
 
-    /// <summary>Key-compatible projection passed to <c>PoCabinet.saveSettings</c>/<c>applySettings</c>.</summary>
-    public object ToJs() => new
-    {
-        masterVolume = MasterVolume,
-        muted = Muted,
-        renderScale = RenderScale,
-        fov = Fov,
-        hudScale = HudScale,
-        reducedMotion = ReducedMotion,
-        colorSafe = ColorSafe,
-        weather = Weather,
-        timeOfDay = TimeOfDay,
-        touchControls = TouchControls,
-        steerMode = SteerMode,
-        steerSensitivity = SteerSensitivity,
-        steeringAssist = SteeringAssist,
-        autoBrake = AutoBrake,
-        racingLine = RacingLine,
-    };
+    /// <summary>The camelCase shape <c>PoCabinet.saveSettings</c>/<c>applySettings</c> read.</summary>
+    public JsonElement ToJs() => JsonSerializer.SerializeToElement(this, PoCabinetJsonContext.Default.PoCabinetUiSettings);
 
     /// <summary>HudScale formatted invariantly for the <c>--pocabinet-hud</c> CSS custom property.</summary>
     public string HudScaleCss => HudScale.ToString(CultureInfo.InvariantCulture);
-
-    private static double GetDouble(System.Text.Json.JsonElement el, string name, double fallback)
-    {
-        if (el.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Number)
-        {
-            var d = v.GetDouble();
-            if (!double.IsNaN(d)) return d;
-        }
-        return fallback;
-    }
-
-    private static bool GetBool(System.Text.Json.JsonElement el, string name, bool fallback) =>
-        el.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.True ? true
-        : v.ValueKind == System.Text.Json.JsonValueKind.False ? false
-        : fallback;
-
-    private static string GetString(System.Text.Json.JsonElement el, string name, string fallback)
-    {
-        if (el.TryGetProperty(name, out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-        {
-            var s = v.GetString();
-            if (!string.IsNullOrWhiteSpace(s)) return s;
-        }
-        return fallback;
-    }
 }

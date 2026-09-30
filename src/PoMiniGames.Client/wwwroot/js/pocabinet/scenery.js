@@ -1,10 +1,14 @@
 // pocabinet/scenery.js
 //
 // Everything trackside that is not the road: apex kerbs, the start-light gantry,
-// street lamps (with fake light pools on the tarmac at night), per-track
+// street lamps, per-track
 // landmarks and planting, satirical billboards, and a press pen of
 // photographers whose flashbulbs race.js fires on a personal-best lap or a
 // photo finish (and, on Press Briefing, whenever something fast goes by).
+//
+// The grandstand (2026-09-29) holds a crowd that jumps when race.js excites it
+// (a pass by, an overtake, a PB, the finish); `crowd.center` is where audio.js
+// puts its murmur and cheers.
 //
 // Deterministic: placement uses an RNG seeded by the track id, so every player
 // sees the same island of props. Everything is placed outside the barrier line
@@ -138,15 +142,12 @@ export class Scenery {
         this.group = new THREE.Group();
         this.group.name = 'pocabinet-scenery';
         this.rng = seededRng(`pocabinet:${track.id}`);
-        this.night = 0;
-        this.nightMats = [];     // { mat, day: Color, night: Color } — MeshBasic colour ramps
-        this.nightEmissive = []; // { mat, color: Color } — Lambert floodlighting
-        this.nightGlows = [];    // { mat, max } — additive sprites / pools
         this.flashes = [];       // photographers
         this.blinkers = [];      // aviation lights
         this.onFlash = null;
         this.time = 0;
         this.exclusions = [];    // { x, y, r } sim — landmark footprints
+        this.crowd = null;       // { center, level, fans } — see buildGrandstand
 
         const accent = new THREE.Color(this.atmosphere.accentHex || '#c6a35a');
         this.accent = accent;
@@ -158,6 +159,7 @@ export class Scenery {
         this.buildPlanting();
         this.buildBillboards();
         this.buildPressPen();
+        this.buildGrandstand();
         this.group.traverse(o => {
             if (!o.isMesh || o.userData.noShadow) return;
             const m = o.material;
@@ -295,16 +297,7 @@ export class Scenery {
         const headGeom = new THREE.BoxGeometry(0.4, 0.16, 0.8);
         const posts = new THREE.InstancedMesh(postGeom, lam('#3a3d44', { roughness: 0.5, metalness: 0.7 }), count);
         const arms = new THREE.InstancedMesh(armGeom, lam('#3a3d44', { roughness: 0.5, metalness: 0.7 }), count);
-        const headMat = new THREE.MeshBasicMaterial({ color: '#8f8a78' });
-        this.nightMats.push({ mat: headMat, day: new THREE.Color('#8f8a78'), night: hdr('#fff1c8', 7) });
-        const heads = new THREE.InstancedMesh(headGeom, headMat, count);
-        const glowMat = new THREE.SpriteMaterial({ map: glowTexture(), color: '#ffd89a', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 });
-        const poolMat = new THREE.MeshBasicMaterial({ map: glowTexture(), color: '#ffcf8a', blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0 });
-        glowMat.color.multiplyScalar(2.5);
-        poolMat.color.multiplyScalar(1.1);
-        this.nightGlows.push({ mat: glowMat, max: 0.85 }, { mat: poolMat, max: 0.4 });
-        const poolGeom = new THREE.PlaneGeometry(10, 10);
-        poolGeom.rotateX(-Math.PI / 2);
+        const heads = new THREE.InstancedMesh(headGeom, lam('#8f8a78'), count);
         const dummy = new THREE.Object3D();
         let used = 0;
         for (let i = 0; i < count; i++) {
@@ -326,14 +319,6 @@ export class Scenery {
             dummy.position.set(hx, 5.92, hz);
             dummy.updateMatrix();
             heads.setMatrixAt(used, dummy.matrix);
-            const glow = new THREE.Sprite(glowMat);
-            glow.position.set(hx, 5.75, hz);
-            glow.scale.set(1.3, 1.3, 1);
-            this.group.add(glow);
-            const pool = new THREE.Mesh(poolGeom, poolMat);
-            pool.position.set(hx, 0.07, hz);
-            pool.renderOrder = 2;
-            this.group.add(pool);
             used++;
         }
         for (const m of [posts, arms, heads]) {
@@ -388,16 +373,11 @@ export class Scenery {
         this.group.add(g);
     }
 
-    floodlit(mat, color) {
-        this.nightEmissive.push({ mat, color: new THREE.Color(color) });
-        return mat;
-    }
-
     buildCapitol(at, face) {
         const g = new THREE.Group();
         g.name = 'pocabinet-capitol';
-        const marble = this.floodlit(lam('#e8e3d4'), '#6a6250');
-        const shade = this.floodlit(lam('#cfc8b6'), '#4a4436');
+        const marble = lam('#e8e3d4');
+        const shade = lam('#cfc8b6');
         const add = (geom, mat, x, y, z) => { const m = new THREE.Mesh(geom, mat); m.position.set(x, y, z); g.add(m); return m; };
         add(new THREE.BoxGeometry(16, 7, 10), marble, 0, 3.5, 0);
         for (const s of [-1, 1]) {
@@ -439,7 +419,7 @@ export class Scenery {
         if (!clearOfTrack(t, c.x, c.y, 30)) return;
         const g = new THREE.Group();
         g.name = 'pocabinet-monument';
-        const stone = this.floodlit(lam('#ece6d8'), '#5a5446');
+        const stone = lam('#ece6d8');
         const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 1.15, 26, 4, 1), stone);
         shaft.rotation.y = Math.PI / 4;
         shaft.position.y = 13;
@@ -476,7 +456,7 @@ export class Scenery {
     buildMansion(at, face) {
         const g = new THREE.Group();
         g.name = 'pocabinet-mansion';
-        const stucco = this.floodlit(lam('#f0d3b6'), '#5e4a3a');
+        const stucco = lam('#f0d3b6');
         const roof = lam('#b5532e');
         const add = (geom, mat, x, y, z) => { const m = new THREE.Mesh(geom, mat); m.position.set(x, y, z); g.add(m); return m; };
         const pyramid = (w, d, h, x, y, z) => {
@@ -532,7 +512,7 @@ export class Scenery {
     buildBriefingRoom(at, face) {
         const g = new THREE.Group();
         g.name = 'pocabinet-briefing';
-        const navy = this.floodlit(lam('#1c2c66'), '#0c1433');
+        const navy = lam('#1c2c66');
         const add = (geom, mat, x, y, z) => { const m = new THREE.Mesh(geom, mat); m.position.set(x, y, z); g.add(m); return m; };
         add(new THREE.BoxGeometry(58, 13, 1), navy, 0, 6.5, 0);
         const gold = new THREE.MeshBasicMaterial({ color: '#c9a445' });
@@ -542,7 +522,7 @@ export class Scenery {
             add(new THREE.CircleGeometry(2.25, 36), inner, x, 7.5, 0.54);
             add(new THREE.CircleGeometry(0.7, 5), gold, x, 7.5, 0.56);
         }
-        const wood = this.floodlit(lam('#5a3a22'), '#2a1a10');
+        const wood = lam('#5a3a22');
         add(new THREE.BoxGeometry(3, 2.6, 2), wood, 0, 1.3, 4);
         add(new THREE.CircleGeometry(0.6, 24), gold, 0, 1.6, 5.02);
         const flag = new THREE.MeshBasicMaterial({ map: flagTexture(), side: THREE.DoubleSide });
@@ -747,6 +727,83 @@ export class Scenery {
         }
     }
 
+    // ── Grandstand: four stepped rows of fans facing the start straight ──
+    buildGrandstand() {
+        const t = this.track;
+        const press = this.trackId === 'pressbriefing';
+        // Opposite the press pen; Press Briefing has pens both sides of the line, so its stand is half a lap on.
+        const mid = press ? t.length * 0.5 : 0;
+        const side = -1;
+        const cols = 26, rows = 4, spacing = 6;
+        const stepGeom = new THREE.BoxGeometry(0.62, 0.5, 1.1);
+        const bodyGeom = new THREE.BoxGeometry(0.34, 0.55, 0.26);
+        const headGeom = new THREE.SphereGeometry(0.15, 8, 6);
+        const steps = new THREE.InstancedMesh(stepGeom, lam('#8d8f94'), cols * rows);
+        const bodies = new THREE.InstancedMesh(bodyGeom, lam('#ffffff'), cols * rows);
+        const heads = new THREE.InstancedMesh(headGeom, lam('#ffffff'), cols * rows);
+        const dummy = new THREE.Object3D();
+        const color = new THREE.Color();
+        const fans = [];
+        let n = 0, sx = 0, sz = 0;
+        for (let c = 0; c < cols; c++) {
+            const d = mid + (c - cols / 2) * spacing;
+            const base = simAt(t, d, side * (t.halfWidth + RUN_OFF + 9));
+            const back = simAt(t, d, side * (t.halfWidth + RUN_OFF + 9 + rows * 11));
+            if (!clearOfTrack(t, base.x, base.y, 4) || !clearOfTrack(t, back.x, back.y, 4) || this.excluded(base.x, base.y)) continue;
+            const inward = { x: side * base.ty, z: -side * base.tx };
+            const yaw = yawTo(inward.x, inward.z);
+            for (let r = 0; r < rows; r++) {
+                const p = simAt(t, d, side * (t.halfWidth + RUN_OFF + 9 + r * 11));
+                const x = p.x / WS, z = p.y / WS;
+                dummy.rotation.set(0, yaw, 0);
+                dummy.scale.set(1, 1 + r * 2, 1);
+                dummy.position.set(x, (0.5 + r) * 0.5, z);
+                dummy.updateMatrix();
+                steps.setMatrixAt(n, dummy.matrix);
+                dummy.scale.set(1, 1, 1);
+                const seat = 0.52 + r;   // top of this row's step (height 0.5 + r)
+                color.setHSL(this.rng(), 0.55, 0.35 + this.rng() * 0.25);
+                bodies.setColorAt(n, color);
+                color.setHSL(0.07, 0.4, 0.35 + this.rng() * 0.35);
+                heads.setColorAt(n, color);
+                fans.push({ x, z, seat, yaw, phase: this.rng() * Math.PI * 2, rate: 7 + this.rng() * 4, i: n });
+                sx += x; sz += z;
+                n++;
+            }
+        }
+        for (const m of [steps, bodies, heads]) {
+            m.count = n;
+            m.frustumCulled = false;
+            this.group.add(m);
+        }
+        if (!n) return;
+        this.crowd = { center: { x: sx / n, y: 2, z: sz / n }, level: 0, fans, bodies, heads, dummy, pose: 0 };
+        this.poseCrowd(0);
+    }
+
+    /** Lift the crowd: `amount` 0..1, decays over a couple of seconds. */
+    exciteCrowd(amount) {
+        if (this.crowd) this.crowd.level = Math.max(this.crowd.level, Math.min(1, amount));
+    }
+
+    poseCrowd(e) {
+        const c = this.crowd;
+        const { dummy, bodies, heads } = c;
+        for (const f of c.fans) {
+            const jump = e > 0.01 ? Math.max(0, Math.sin(this.time * f.rate + f.phase)) * 0.35 * e : 0;
+            dummy.rotation.set(0, f.yaw, 0);
+            dummy.scale.set(1, 1, 1);
+            dummy.position.set(f.x, f.seat + 0.28 + jump, f.z);
+            dummy.updateMatrix();
+            bodies.setMatrixAt(f.i, dummy.matrix);
+            dummy.position.y = f.seat + 0.7 + jump;
+            dummy.updateMatrix();
+            heads.setMatrixAt(f.i, dummy.matrix);
+        }
+        bodies.instanceMatrix.needsUpdate = true;
+        heads.instanceMatrix.needsUpdate = true;
+    }
+
     /** Fire the press pen: `strength` 0..1 is the share of cameras that go off. */
     flashBurst(strength = 1) {
         for (const f of this.flashes) {
@@ -784,16 +841,18 @@ export class Scenery {
                 f.sprite.material.opacity = 0;
             }
         }
+        if (this.crowd) {
+            const c = this.crowd;
+            c.level *= Math.exp(-dt * 0.6);
+            if (c.level > 0.01 || c.pose > 0) {
+                this.poseCrowd(c.level);
+                c.pose = c.level > 0.01 ? 1 : 0;
+            }
+        }
         const on = (this.time % 1.6) < 0.18;
-        for (const b of this.blinkers) b.material.opacity = on ? Math.max(0.25, this.night) : 0;
+        for (const b of this.blinkers) b.material.opacity = on ? 0.6 : 0;
     }
 
-    setNight(n) {
-        this.night = Math.min(1, Math.max(0, Number(n) || 0));
-        for (const m of this.nightMats) m.mat.color.copy(m.day).lerp(m.night, this.night);
-        for (const e of this.nightEmissive) e.mat.emissive.copy(e.color).multiplyScalar(this.night);
-        for (const g of this.nightGlows) g.mat.opacity = g.max * this.night;
-    }
 
     dispose() {
         // Geometry + materials go with the track group's traversal; sprite

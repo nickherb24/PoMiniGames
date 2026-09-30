@@ -88,7 +88,4 @@ public static class PoCabinetAiDriver
             : 0;
         return new PoCabinetControls(throttle, brake, steer);
     }
-
-    /// <summary>Shortest signed angular difference a-b, normalised to (-π, π].</summary>
-    public static double ShortAngleDiff(double a, double b) => PoCabinetTrack.WrapAngle(a - b);
 }

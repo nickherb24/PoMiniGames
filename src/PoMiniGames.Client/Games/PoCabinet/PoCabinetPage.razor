@@ -18,41 +18,51 @@
         @if (_phase == Phase.Start)
         {
             <section class="pocabinet-start" aria-label="Cabinet start">
-                <div class="pocabinet-card">
-                    <h1>Cabinet</h1>
-                    <p class="pocabinet-card__lede">@(Mode == GameMode.Demo ? "Watch a 3-lap showcase — the officials race themselves while the camera roams." : IsMultiplayerMode ? "Race online. Everyone who joins lands in the same lobby — first in hosts and picks the track." : "Pick a track, pick your paint, and take on the officials.") 3 laps per race.</p>
-                    <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged" />
-                    <details class="pocabinet-customize">
-                        <summary>Customize paint job</summary>
-                        <PoCabinetPaintShop SelectedLivery="@_livery" SelectedColor="@_color" SelectionChanged="OnPaintChanged" />
-                    </details>
-                    <details class="pocabinet-customize">
-                        <summary>Settings, controls &amp; driver aids</summary>
-                        <PoCabinetSettingsPanel Value="Settings" ValueChanged="OnSettingsChangedAsync" />
-                    </details>
-                    <p class="pocabinet-hint" aria-hidden="true">Selected: <strong>@(_livery)</strong> · <strong>@(_color)</strong></p>
-                    <div class="pocabinet-actions">
-                        <button class="pocabinet-primary" @onclick="StartRaceAsync">@(Mode == GameMode.Demo ? "Watch demo" : IsMultiplayerMode ? "Join lobby" : "Start race")</button>
+                <div class="pocabinet-card pocabinet-card--start">
+                    <div class="pocabinet-start__main">
+                        <header class="pocabinet-start__head">
+                            <h1>Cabinet</h1>
+                            @* One switcher replaces the "Multiplayer" link and the three mode-specific intros. *@
+                            <nav class="pocabinet-modes" aria-label="Mode">
+                                <a href="/pocabinet/1player" class="pocabinet-mode @(Mode == GameMode.OnePlayer ? "pocabinet-mode--on" : null)" aria-current="@(Mode == GameMode.OnePlayer ? "page" : null)">Solo</a>
+                                <a href="/pocabinet/multi" class="pocabinet-mode @(IsMultiplayerMode ? "pocabinet-mode--on" : null)" aria-current="@(IsMultiplayerMode ? "page" : null)">Online</a>
+                                <a href="/pocabinet/demo" class="pocabinet-mode @(Mode == GameMode.Demo ? "pocabinet-mode--on" : null)" aria-current="@(Mode == GameMode.Demo ? "page" : null)">Demo</a>
+                            </nav>
+                        </header>
+                        <p class="pocabinet-card__lede">@Lede</p>
                         @if (!IsMultiplayerMode)
                         {
-                            <a href="/pocabinet/multi">Multiplayer</a>
+                            <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged"
+                                                    Campaign="@(Mode == GameMode.OnePlayer)" />
                         }
-                        <a href="/leaderboards?game=pocabinet">Leaderboard</a>
-                    </div>
-                    @if (Mode == GameMode.OnePlayer)
-                    {
-                        <PoCabinetChampionshipView />
-                        @if (HasAnyCareerProgress)
+                        <div class="pocabinet-actions">
+                            <button class="pocabinet-primary" @onclick="StartRaceAsync">@(Mode == GameMode.Demo ? "Watch demo" : IsMultiplayerMode ? "Join lobby" : "Start race")</button>
+                            <a class="pocabinet-link" href="/leaderboards?game=pocabinet">Leaderboard</a>
+                            @if (Mode == GameMode.OnePlayer && HasAnyCareerProgress)
+                            {
+                                <button class="pocabinet-link" @onclick="ResetCareerAsync" aria-label="Reset career progression">Reset career</button>
+                            }
+                        </div>
+                        @if (!string.IsNullOrEmpty(_status))
                         {
-                            <button class="pocabinet-secondary" @onclick="ResetCareerAsync" aria-label="Reset career progression">
-                                Reset career
-                            </button>
+                            <p class="pocabinet-status" role="alert">@_status</p>
                         }
-                    }
-                    @if (!string.IsNullOrEmpty(_status))
-                    {
-                        <p class="pocabinet-status" role="alert">@_status</p>
-                    }
+                    </div>
+                    <div class="pocabinet-start__side">
+                        <details class="pocabinet-customize">
+                            <summary>
+                                Paint job
+                                <span class="pocabinet-customize__value">
+                                    <span class="pocabinet-customize__swatch" style="--pocabinet-swatch:@PlayerColorHex" aria-hidden="true"></span>@_livery · @_color
+                                </span>
+                            </summary>
+                            <PoCabinetPaintShop SelectedLivery="@_livery" SelectedColor="@_color" SelectionChanged="OnPaintChanged" />
+                        </details>
+                        <details class="pocabinet-customize">
+                            <summary>Settings, controls &amp; driver aids</summary>
+                            <PoCabinetSettingsPanel Value="Settings" ValueChanged="OnSettingsChangedAsync" />
+                        </details>
+                    </div>
                 </div>
             </section>
         }
@@ -74,6 +84,25 @@
                         aria-label="Cabinet race view. Drive with W A S D, the arrow keys, a gamepad or the on-screen controls.">
                 </canvas>
                 <canvas id="pocabinetMinimap" @ref="_minimapCanvas" class="pocabinet-minimap" aria-hidden="true"></canvas>
+                @if (_phase == Phase.Racing && !IsSpectating)
+                {
+                    @* Glass cluster: race.js writes speed, gear and --rpm into it every frame, straight
+                       to the DOM. The speed and gear spans are rendered EMPTY on purpose: Blazor must own no
+                       text node inside them, or JS replacing it breaks the renderer's diff ("reading
+                       'Symbol()'"). aria-hidden: the live announcer below covers what matters. *@
+                    <div id="pocabinetGauge" class="pocabinet-gauge" aria-hidden="true">
+                        <span class="pocabinet-gauge__track"></span>
+                        <span class="pocabinet-gauge__ring"></span>
+                        <span class="pocabinet-gauge__speed" data-gauge="speed"></span>
+                        <span class="pocabinet-gauge__unit">km/h</span>
+                        <span class="pocabinet-gauge__gear" data-gauge="gear"></span>
+                    </div>
+                    @* @key re-creates the badge on every place change, so its swoosh replays. Prefixed:
+                       the countdown sibling keys on its number, and a bare 3 here collided with it. *@
+                    <div @key="PosBadgeKey" class="pocabinet-posbadge @PosBadgeClass" aria-hidden="true">
+                        <span class="pocabinet-posbadge__p">P</span>@_position<span class="pocabinet-posbadge__of">/@_totalCars</span>
+                    </div>
+                }
                 <div id="pocabinetDialogueLayer" class="pocabinet-dialogue-layer" aria-hidden="true"></div>
 
                 @* Touch controls: always in the DOM so input.js can bind once; input.js shows
@@ -90,11 +119,11 @@
                 @if (_countdownDisplay > 0)
                 {
                     @* @key re-creates the element per number, so its entry animation replays each second. *@
-                    <div @key="_countdownDisplay" class="pocabinet-countdown" role="status">@_countdownDisplay</div>
+                    <div @key="_countdownDisplay" class="pocabinet-countdown" aria-hidden="true">@_countdownDisplay</div>
                 }
                 else if (_showGo)
                 {
-                    <div class="pocabinet-countdown pocabinet-countdown--go" role="status">GO!</div>
+                    <div class="pocabinet-countdown pocabinet-countdown--go" aria-hidden="true">GO!</div>
                 }
                 @if (IsMultiplayerMode && _phase == Phase.Racing && _pingMs is not null)
                 {
@@ -128,13 +157,18 @@
                         </button>
                         <button type="button" class="pocabinet-secondary" @onclick="ExitReplayAsync" disabled="@_recordingClip">Back to results</button>
                     </div>
+                    @if (!string.IsNullOrEmpty(_replayStatus))
+                    {
+                        <p class="pocabinet-status" role="status">@_replayStatus</p>
+                    }
                 }
                 else
                 {
-                    <div class="pocabinet-hud" aria-live="polite">
+                    @* Speed and place live on the gauge and badge; the strip keeps what they don't show.
+                       Not a live region: it re-renders ~15 times a second. The announcer below speaks
+                       laps, places and the finish instead. *@
+                    <div class="pocabinet-hud">
                         <span>Lap <strong>@Math.Min(_lap, _totalLaps)</strong>/@_totalLaps</span>
-                        <span>Pos <strong>@_position</strong>/@_totalCars</span>
-                        <span>Speed <strong>@($"{_speedKmh:0}")</strong> km/h</span>
                         <span>Time <strong>@FormatLapTime(_lapSeconds)</strong></span>
                         <span>Last <strong>@FormatLapTime(_lastLapSeconds)</strong></span>
                         <span>Best <strong>@FormatLapTime(_bestLapSession > 0 ? _bestLapSession : _storedBestLap)</strong></span>
@@ -159,20 +193,20 @@
                                 </span>
                             }
                         </span>
-                        <button type="button" class="pocabinet-pausebtn" @onclick="CycleCameraAsync" aria-label="Change camera (C)">🎥</button>
-                        @if (Pausable)
-                        {
-                            <button type="button" class="pocabinet-pausebtn" @onclick="TogglePauseAsync"
-                                    aria-label="@(_paused ? "Resume race" : "Pause race")">
-                                @(_paused ? "▶" : "⏸")
-                            </button>
-                        }
+                        <span class="pocabinet-hud__buttons">
+                            <button type="button" class="pocabinet-iconbtn" @onclick="CycleCameraAsync" aria-label="Change camera (C)">🎥</button>
+                            @if (Pausable)
+                            {
+                                <button type="button" class="pocabinet-iconbtn" @onclick="TogglePauseAsync"
+                                        aria-label="@(_paused ? "Resume race" : "Pause race")">
+                                    @(_paused ? "▶" : "⏸")
+                                </button>
+                            }
+                        </span>
                     </div>
                 }
-                @if (!string.IsNullOrEmpty(_announcement) && _phase == Phase.Racing)
-                {
-                    <p class="pocabinet-announcement" role="status">@_announcement</p>
-                }
+                @* Screen-reader channel: laps, places, officials' radio lines, the finish. *@
+                <p class="pocabinet-sr" role="status" aria-live="polite">@_liveAnnouncement</p>
                 @if (IsMultiplayerMode && _phase == Phase.Racing && !string.IsNullOrEmpty(_status))
                 {
                     <div class="pocabinet-reconnect" role="alert">
@@ -180,105 +214,115 @@
                         <span>@_status</span>
                     </div>
                 }
-                else if (!string.IsNullOrEmpty(_status) && _phase != Phase.Finished)
+                else if (!string.IsNullOrEmpty(_status) && _phase == Phase.Racing)
                 {
                     <p class="pocabinet-status" role="alert">@_status</p>
                 }
 
                 @if (_phase == Phase.Finished)
                 {
-                    <section class="pocabinet-results" role="dialog" aria-modal="false" aria-labelledby="pocabinet-results-title">
+                    @* A native, non-modal dialog over the still-running scene (the replay needs the
+                       canvas alive). The body scrolls; the actions are pinned to its bottom edge, so
+                       "Race again" is never below the fold. *@
+                    <dialog open class="pocabinet-results" aria-labelledby="pocabinet-results-title">
                         <div class="pocabinet-results__card">
-                            @if (_position <= 3 && !Settings.ReducedMotion && !IsSpectating)
-                            {
-                                <div class="pocabinet-confetti" aria-hidden="true">
-                                    @for (var i = 0; i < 24; i++)
+                            <div class="pocabinet-results__body">
+                                <header class="pocabinet-results__head">
+                                    <h2 id="pocabinet-results-title">@(_awaitingFinal ? "You're home — waiting for the field…" : "Race finished")</h2>
+                                    @if (!IsSpectating)
                                     {
-                                        var n = i;
-                                        // Values computed in code-behind helpers — the Razor
-                                        // expression parser mis-compiles the modulo character
-                                        // inside markup code blocks, so this file stays free of it.
-                                        <span style="--cx:@ConfettiX(n);--cd:@ConfettiDelay(n);--cc:@ConfettiColor(n)"></span>
+                                        <p class="pocabinet-results__place">P<strong>@_position</strong>/@_totalCars</p>
                                     }
-                                </div>
-                            }
-                            <h2 id="pocabinet-results-title">@(_awaitingFinal ? "You're home — waiting for the field…" : "Race finished")</h2>
-                            @if (_isPersonalBest)
-                            {
-                                <p class="pocabinet-pb" role="status">★ New personal best!</p>
-                            }
-                            else if (_previousBest > 0)
-                            {
-                                <p class="pocabinet-pbdelta">Personal best: @FormatLapTime(_previousBest)</p>
-                            }
-                            @if (!IsSpectating)
-                            {
-                                <p>Position: <strong>P@_position</strong>/@_totalCars</p>
-                            }
-                            @if (_finalStandings is { } standings && standings.Count > 0)
-                            {
-                                <div class="pocabinet-podium" aria-label="Podium">
-                                    @foreach (var (entry, idx) in standings.Take(3).Select((c, i) => (c, i)))
+                                    @if (_isPersonalBest)
                                     {
-                                        <div class="pocabinet-podium__step @(entry.IsLocal ? "pocabinet-podium__step--player" : "")">
-                                            <span class="pocabinet-podium__medal" aria-hidden="true">@(idx == 0 ? "🥇" : idx == 1 ? "🥈" : "🥉")</span>
-                                            <strong>@entry.Name</strong>
-                                            <span class="pocabinet-podium__official">@entry.Detail</span>
+                                        <p class="pocabinet-pb" role="status">★ New personal best!</p>
+                                    }
+                                    else if (_previousBest > 0)
+                                    {
+                                        <p class="pocabinet-pbdelta">Personal best: @FormatLapTime(_previousBest)</p>
+                                    }
+                                </header>
+                                @if (_debrief is { } debrief)
+                                {
+                                    <section class="pocabinet-debrief" aria-label="Race engineer">
+                                        <p class="pocabinet-debrief__headline">📰 @debrief.Headline</p>
+                                        <ul class="pocabinet-debrief__tips">
+                                            @foreach (var tip in debrief.Tips)
+                                            {
+                                                <li>@tip</li>
+                                            }
+                                        </ul>
+                                    </section>
+                                }
+                                <div class="pocabinet-results__grid">
+                                    <div class="pocabinet-results__col">
+                                        @if (_finalStandings is { } standings && standings.Count > 0)
+                                        {
+                                            <div class="pocabinet-podium" aria-label="Podium">
+                                                @foreach (var (entry, idx) in standings.Take(3).Select((c, i) => (c, i)))
+                                                {
+                                                    <div class="pocabinet-podium__step @(entry.IsLocal ? "pocabinet-podium__step--player" : "")">
+                                                        <span class="pocabinet-podium__medal" aria-hidden="true">@(idx == 0 ? "🥇" : idx == 1 ? "🥈" : "🥉")</span>
+                                                        <strong>@entry.Name</strong>
+                                                        <span class="pocabinet-podium__official">@entry.Detail</span>
+                                                    </div>
+                                                }
+                                            </div>
+                                            @if (standings.Count > 3)
+                                            {
+                                                <ol class="pocabinet-standings" start="4">
+                                                    @foreach (var entry in standings.Skip(3))
+                                                    {
+                                                        <li>@entry.Name — @entry.Detail</li>
+                                                    }
+                                                </ol>
+                                            }
+                                        }
+                                        @if (_lastLapSectorTimes.Any(s => s is not null))
+                                        {
+                                            <div class="pocabinet-laps">
+                                                <h3>Last lap sectors</h3>
+                                                <div class="pocabinet-laps__row">
+                                                    @for (var i = 0; i < 3; i++)
+                                                    {
+                                                        var idx = i;
+                                                        <span class="pocabinet-sector @SectorClassFor(_lastLapSectorTimes[idx], idx)">
+                                                            S@(idx + 1) @(_lastLapSectorTimes[idx] is { } t ? FormatLapTime(t) : "—")
+                                                        </span>
+                                                    }
+                                                </div>
+                                                @if (_lapTimes.Count > 0)
+                                                {
+                                                    <p class="pocabinet-laps__all">
+                                                        Laps:
+                                                        @foreach (var (t, idx) in _lapTimes.Select((t, i) => (t, i)))
+                                                        {
+                                                            <span>@(idx + 1): @FormatLapTime(t)&nbsp;</span>
+                                                        }
+                                                    </p>
+                                                }
+                                            </div>
+                                        }
+                                    </div>
+                                    @if (!IsSpectating)
+                                    {
+                                        <div class="pocabinet-telemetry">
+                                            <h3>Telemetry — best lap@(_hasReferenceLap ? " vs your personal best" : "")</h3>
+                                            <canvas id="pocabinetTelemetry" class="pocabinet-telemetry__chart" role="img"
+                                                    aria-label="@(_telemetrySummary ?? "Speed, time delta and pedal trace for your best lap")"></canvas>
+                                            @if (!string.IsNullOrEmpty(_telemetrySummary))
+                                            {
+                                                <p class="pocabinet-telemetry__summary">@_telemetrySummary</p>
+                                            }
                                         </div>
                                     }
                                 </div>
-                                @if (standings.Count > 3)
+                                @if (!string.IsNullOrEmpty(_status))
                                 {
-                                    <ol class="pocabinet-standings" start="4">
-                                        @foreach (var entry in standings.Skip(3))
-                                        {
-                                            <li>@entry.Name — @entry.Detail</li>
-                                        }
-                                    </ol>
+                                    <p class="pocabinet-status" role="status">@_status</p>
                                 }
-                            }
-                            @if (_lastLapSectorTimes.Any(s => s is not null))
-                            {
-                                <div class="pocabinet-laps">
-                                    <h3>Last lap sectors</h3>
-                                    <div class="pocabinet-laps__row">
-                                        @for (var i = 0; i < 3; i++)
-                                        {
-                                            var idx = i;
-                                            <span class="pocabinet-sector @SectorClassFor(_lastLapSectorTimes[idx], idx)">
-                                                S@(idx + 1) @(_lastLapSectorTimes[idx] is { } t ? FormatLapTime(t) : "—")
-                                            </span>
-                                        }
-                                    </div>
-                                    @if (_lapTimes.Count > 0)
-                                    {
-                                        <p class="pocabinet-laps__all">
-                                            Laps:
-                                            @foreach (var (t, idx) in _lapTimes.Select((t, i) => (t, i)))
-                                            {
-                                                <span>@(idx + 1): @FormatLapTime(t)&nbsp;</span>
-                                            }
-                                        </p>
-                                    }
-                                </div>
-                            }
-                            @if (!IsSpectating)
-                            {
-                                <div class="pocabinet-telemetry">
-                                    <h3>Telemetry — best lap@(_hasReferenceLap ? " vs your personal best" : "")</h3>
-                                    <canvas id="pocabinetTelemetry" class="pocabinet-telemetry__chart" role="img"
-                                            aria-label="@(_telemetrySummary ?? "Speed, time delta and pedal trace for your best lap")"></canvas>
-                                    @if (!string.IsNullOrEmpty(_telemetrySummary))
-                                    {
-                                        <p class="pocabinet-telemetry__summary">@_telemetrySummary</p>
-                                    }
-                                </div>
-                            }
-                            @if (!string.IsNullOrEmpty(_status))
-                            {
-                                <p class="pocabinet-status" role="status">@_status</p>
-                            }
-                            <div class="pocabinet-actions">
+                            </div>
+                            <div class="pocabinet-actions pocabinet-results__actions">
                                 @if (IsMultiplayerMode)
                                 {
                                     <button class="pocabinet-primary" @onclick="BackToLobbyAsync">Rematch — back to lobby</button>
@@ -290,26 +334,37 @@
                                 <button class="pocabinet-secondary" @onclick="StartReplayAsync">Watch replay</button>
                                 @if (!IsSpectating)
                                 {
-                                    <button class="pocabinet-secondary" @onclick="ShareResultAsync">Share result</button>
+                                    @* One Share menu: the result card and the best-lap clip used to be two
+                                       buttons in two places. *@
+                                    <details class="pocabinet-share">
+                                        <summary class="pocabinet-secondary">Share</summary>
+                                        <div class="pocabinet-share__menu">
+                                            <button type="button" class="pocabinet-secondary" @onclick="ShareResultAsync">Result card (image)</button>
+                                            <button type="button" class="pocabinet-secondary" @onclick="ShareClipAsync">Best-lap clip (video)</button>
+                                        </div>
+                                    </details>
                                 }
                                 <button class="pocabinet-secondary" @onclick="BackToStartAsync">Back to start</button>
                             </div>
                         </div>
-                    </section>
+                    </dialog>
                 }
             </section>
             @if (_paused)
             {
-                <div class="pocabinet-overlay" role="dialog" aria-modal="true" aria-label="Race paused">
+                @* Modal: showModal() (after render, PoCabinet.showModal) traps focus and makes the
+                   page behind inert. Esc is input.js's pause toggle, so the dialog's own Esc-close
+                   is cancelled in JS to keep the two from fighting. *@
+                <dialog id="pocabinetPause" class="pocabinet-overlay" aria-label="Race paused">
                     <div class="pocabinet-overlay__card">
                         <h2>Paused</h2>
-                        <PoCabinetSettingsPanel Value="Settings" ValueChanged="OnSettingsChangedAsync" />
+                        <PoCabinetSettingsPanel Value="Settings" ValueChanged="OnSettingsChangedAsync" Compact="true" />
                         <div class="pocabinet-actions">
                             <button class="pocabinet-primary" @onclick="ResumeRaceAsync">Resume</button>
                             <button class="pocabinet-secondary" @onclick="QuitToMenuAsync">Quit to menu</button>
                         </div>
                     </div>
-                </div>
+                </dialog>
             }
         }
     </div>

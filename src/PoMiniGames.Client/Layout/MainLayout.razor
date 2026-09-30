@@ -105,7 +105,9 @@
                 <SectionOutlet SectionName="game-elo" />
                 @if (AuthState.IsAuthenticated)
                 {
-                    <span class="gl-auth-user" title="@AuthUserTitle">@AuthUserLabel</span>
+                    @* Narrow phones show just the initial as an avatar (the name ellipsised to "t…"
+                       beside a game title); the name stays in the DOM, visually hidden, for screen readers. *@
+                    <span class="gl-auth-user" title="@AuthUserTitle"><span class="gl-auth-user__initial" aria-hidden="true">@AuthUserInitial</span><span class="gl-auth-user__name">@AuthUserLabel</span></span>
                 }
                 <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
                     @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
@@ -249,6 +251,9 @@
             return user.Email ?? string.Empty;
         }
     }
+
+    private string AuthUserInitial =>
+        AuthUserLabel.Length > 0 ? char.ToUpperInvariant(AuthUserLabel[0]).ToString() : "?";
 
     private string AuthUserTitle
     {

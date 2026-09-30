@@ -16,16 +16,15 @@
 const SETTINGS_KEY = 'pocabinet.settings.v1';
 const RECORDS_KEY = 'pocabinet.records.v1';
 
-export const DEFAULT_SETTINGS = Object.freeze({
+const DEFAULT_SETTINGS = Object.freeze({
     masterVolume: 0.7,     // 0..1 Web Audio master gain
     muted: false,
-    renderScale: 1,        // multiplies the devicePixelRatio cap (0.6 / 0.8 / 1)
-    fov: 70,               // cockpit camera vertical FOV, 60..90
+    music: true,           // adaptive race score (music.js)
+    voices: true,          // officials' radio lines read aloud (dialogue.js speak)
     hudScale: 1,           // HUD font scale, 0.85 / 1 / 1.15
     reducedMotion: false,  // confetti off, rain particles thinned
     colorSafe: false,      // Okabe-Ito palette on the minimap markers
-    weather: 'auto',       // auto | clear | rain  (auto = open-meteo, DC)
-    timeOfDay: 'auto',     // auto | day | night   (auto = player's local clock)
+    weather: 'clear',      // clear | rain | auto (auto = open-meteo, DC). Clear by default (2026-09-29): auto changed grip without warning
     // Controls + driver aids (input.js / physics.assistControls). Aids only
     // shape the player's input, so they work online without server support.
     touchControls: 'auto', // auto (coarse pointer or first touch) | on | off
@@ -48,14 +47,13 @@ function sanitize(raw) {
     const src = (raw && typeof raw === 'object') ? raw : {};
     const s = { ...DEFAULT_SETTINGS };
     s.masterVolume = clamp(src.masterVolume, 0, 1, s.masterVolume);
-    s.renderScale = clamp(src.renderScale, 0.5, 1.5, s.renderScale);
-    s.fov = clamp(src.fov, 60, 90, s.fov);
     s.hudScale = clamp(src.hudScale, 0.8, 1.3, s.hudScale);
     s.muted = !!src.muted;
+    s.music = src.music !== false;
+    s.voices = src.voices !== false;
     s.reducedMotion = !!src.reducedMotion;
     s.colorSafe = !!src.colorSafe;
     if (['auto', 'clear', 'rain'].includes(src.weather)) s.weather = src.weather;
-    if (['auto', 'day', 'night'].includes(src.timeOfDay)) s.timeOfDay = src.timeOfDay;
     if (['auto', 'on', 'off'].includes(src.touchControls)) s.touchControls = src.touchControls;
     if (['pad', 'tilt'].includes(src.steerMode)) s.steerMode = src.steerMode;
     s.steerSensitivity = clamp(src.steerSensitivity, 0.5, 1.5, s.steerSensitivity);

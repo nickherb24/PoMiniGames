@@ -21,10 +21,15 @@
 //   • road + wind noise — rises with speed²; a short slapback delay on the engine
 //     swells as the car nears a barrier, panned to that side.
 //   • squeal, wall scrape, kerb buzz, impacts (optionally positional), rain on the
-//     roof, wiper thunks, camera shutters, and the UI pings (countdown, blip,
+//     roof, camera shutters, and the UI pings (countdown, blip,
 //     lap chime, fanfare).
 //   • slow motion — one control: pulls the master lowpass down and every engine's
 //     pitch with it (the photo-finish moment in race.js).
+//   • crowd (2026-09-29) — a positional murmur bed at the grandstand that swells
+//     with excitement, plus one-shot cheers (formant-filtered noise and "woo"
+//     sweeps). Every exhaust pop (player crackle/shift, rival downshift) is also
+//     queued as an event so race.js can put a flame on that car (takePops).
+//   • music.js borrows the context and bus through graph().
 //
 // All continuous controls are setTargetAtTime, so per-frame calls never click.
 
@@ -42,7 +47,9 @@ let scrape = null;         // { gain }
 let kerb = null;           // { osc, gain }
 let rain = null;           // { gain }
 let wallFx = null;         // { wet, pan }
+let crowd = null;          // { gain, panner, f1 } grandstand murmur
 const rivals = new Map();  // id -> rival voice
+const pops = [];           // exhaust-pop events for the flame visuals: { id, strength }
 
 let volume = 0.7;
 let muted = false;
@@ -52,8 +59,8 @@ let lastShutter = 0;
 let lastImpact = 0;
 
 // ── Virtual gearbox (render-only; physics.js has no gears) ──────────────────
-export const IDLE_RPM = 950;
-export const REDLINE = 8200;
+const IDLE_RPM = 950;
+const REDLINE = 8200;
 const SHIFT_UP = 7700;
 const SHIFT_DOWN = 3700;
 const GEAR_TOP_KMH = [66, 108, 150, 192, 236, 292];
@@ -291,6 +298,7 @@ export function init() {
 
             engine = buildPlayerEngine();
             buildBeds();
+            buildCrowd();
         }
         if (ctx.state === 'suspended') void ctx.resume();
         return true;
@@ -331,7 +339,7 @@ export function setSuspended(s) {
  *   throttle — 0..1 pedal (drives load: brightness, drive, level)
  *   phase    — 'race' (follow the car), 'grid' (neutral revs before GO),
  *              'off' (fade out: replay, results, teardown)
- * The gearbox runs even before the AudioContext exists, so the cockpit's gear
+ * The gearbox runs even before the AudioContext exists, so the gauge's gear
  * readout and shift lights work with sound off.
  */
 export function updateEngine(speedKmh, throttle = 0, phase = 'race') {
@@ -383,23 +391,43 @@ export function updateEngine(speedKmh, throttle = 0, phase = 'race') {
         engine.shift.gain.linearRampToValueAtTime(0.3, t + 0.04);
         engine.shift.gain.linearRampToValueAtTime(1, t + 0.14);
         crackle(2, 0.06, 0.7);
+        pops.push({ id: 'player', strength: 0.5 });
+    }
+    // Downshift under braking: a heel-and-toe blip (the note jumps, then settles) and a pop.
+    if (shifted < 0 && player.active && phase === 'race' && thr < 0.2 && kmh > 60) {
+        engine.shift.gain.cancelScheduledValues(t);
+        engine.shift.gain.setValueAtTime(1, t);
+        engine.shift.gain.linearRampToValueAtTime(1.35, t + 0.03);
+        engine.shift.gain.linearRampToValueAtTime(1, t + 0.16);
+        engine.osc.detune.cancelScheduledValues(t);
+        engine.osc.detune.setValueAtTime(0, t);
+        engine.osc.detune.linearRampToValueAtTime(260, t + 0.04);
+        engine.osc.detune.linearRampToValueAtTime(0, t + 0.2);
+        crackle(3, 0.12, 0.65);
+        pops.push({ id: 'player', strength: 0.6 });
     }
     // Lift-off overrun: throttle snapped shut at high RPM → exhaust crackle.
     if (player.active && phase === 'race' && player.lastThrottle > 0.55 && thr < 0.1 && rpm > 4800
         && t - player.lastCrackle > 0.8) {
         player.lastCrackle = t;
         crackle(4 + Math.floor(Math.random() * 5), 0.55, 1);
+        pops.push({ id: 'player', strength: 1 });
     }
     player.lastThrottle = thr;
 }
 
-/** Gear, RPM and redline for the cockpit readout. */
+/** Gear, RPM and redline for the glass gauge. */
 export function engineState() {
     return { gear: player.gear, rpm: player.rpm, redline: REDLINE, idle: IDLE_RPM };
 }
 
-/** A burst of short exhaust pops spread over `spread` seconds. */
-function crackle(count, spread, strength) {
+/** Exhaust pops since the last call — race.js turns each into a flame on that car. */
+export function takePops() {
+    return pops.splice(0, pops.length);
+}
+
+/** A burst of short exhaust pops spread over `spread` seconds (optionally into a panner). */
+function crackle(count, spread, strength, dest) {
     if (!ctx) return;
     const t0 = ctx.currentTime;
     for (let i = 0; i < count; i++) {
@@ -412,9 +440,9 @@ function crackle(count, spread, strength) {
         g.gain.setValueAtTime(0, t);
         g.gain.linearRampToValueAtTime(peak, t + 0.002);
         g.gain.exponentialRampToValueAtTime(0.001, t + dur);
-        src.connect(band); band.connect(g); g.connect(bus);
+        src.connect(band); band.connect(g); g.connect(dest || bus);
         src.start(t, Math.random() * 1.5, dur + 0.02);
-        if (Math.random() < 0.35) sweep(95, 55, 0.05, 'sine', peak * 0.8, t);
+        if (Math.random() < 0.35) sweep(95, 55, 0.05, 'sine', peak * 0.8, t, dest);
     }
 }
 
@@ -506,6 +534,8 @@ export function silenceRace() {
     setWallProximity(0, 0);
     setSlowMo(0);
     updateRivals([]);
+    setCrowd(0);
+    pops.length = 0;
 }
 
 // ── Rivals: positional engines with Doppler ──────────────────────────────────
@@ -601,7 +631,12 @@ export function updateRivals(list) {
         const kmh = Math.max(0, Number(r.kmh) || 0);
         const accel = kmh - v.lastKmh;
         v.lastKmh = kmh;
-        gearbox(v.state, kmh, accel > 0 ? 1 : 0);
+        const shift = gearbox(v.state, kmh, accel > 0 ? 1 : 0);
+        // A rival braking hard for a corner pops on the downshift, from where it is.
+        if (shift < 0 && accel < -0.4 && kmh > 70 && Math.random() < 0.6) {
+            crackle(2 + Math.floor(Math.random() * 3), 0.1, 0.8, v.panner);
+            pops.push({ id: r.id, strength: 0.6 });
+        }
 
         const dx = r.x - listenerPos.x, dy = (r.y || 0) - listenerPos.y, dz = r.z - listenerPos.z;
         const d = Math.hypot(dx, dy, dz) || 1;
@@ -618,6 +653,86 @@ export function updateRivals(list) {
         setPannerPosition(v.panner, r.x, r.y || 0.5, r.z);
     }
     for (const [id, v] of rivals) if (v.seen !== stamp) dropRival(id, v);
+}
+
+// ── Crowd: grandstand murmur + cheers ────────────────────────────────────────
+
+/** Two vowel-ish formants over noise, slowly amplitude-wandering: a crowd you are near. */
+function buildCrowd() {
+    const src = noiseSource();
+    const f1 = filter('bandpass', 520, 1.6), f2 = filter('bandpass', 1450, 2.2);
+    const mix = gainNode(1);
+    const wander = ctx.createOscillator();
+    wander.frequency.value = 0.37;
+    const wanderDepth = gainNode(0.25);
+    wander.connect(wanderDepth);
+    wanderDepth.connect(mix.gain);
+    src.connect(f1); src.connect(f2);
+    f1.connect(mix); f2.connect(mix);
+    const gain = gainNode(0);
+    const panner = makePanner();
+    panner.refDistance = 8;
+    mix.connect(gain); gain.connect(panner); panner.connect(bus);
+    src.start(); wander.start();
+    crowd = { gain, panner, f1 };
+}
+
+/**
+ * The grandstand bed: `level` 0..1 excitement (0 = no crowd on this track, or no
+ * race), `pos` its world position. Called every frame by race.js.
+ */
+export function setCrowd(level, pos) {
+    if (!ctx || !crowd) return;
+    const t = ctx.currentTime;
+    const l = Math.min(1, Math.max(0, Number(level) || 0));
+    crowd.gain.gain.setTargetAtTime(l > 0 ? 0.05 + l * 0.22 : 0, t, 0.35);
+    crowd.f1.frequency.setTargetAtTime(480 + l * 220, t, 0.4);
+    if (pos) setPannerPosition(crowd.panner, pos.x, pos.y ?? 2, pos.z);
+}
+
+/**
+ * A cheer: a swell of shouting noise and a handful of rising "woo" voices.
+ * `strength` 0..1; `pos` makes it positional (the grandstand), null = all around.
+ */
+export function cheer(strength = 1, pos = null) {
+    if (!ctx) return;
+    const s = Math.min(1, Math.max(0.1, Number(strength) || 0));
+    const t = ctx.currentTime;
+    const dest = oneShotDest(pos) || bus;
+    const dur = 1.4 + s * 1.6;
+    for (const [freq, q] of [[600, 1.2], [1300, 1.8], [2500, 2.5]]) {
+        const src = noiseSource(false);
+        const f = filter('bandpass', freq, q);
+        const g = gainNode(0);
+        g.gain.setValueAtTime(0.0001, t);
+        g.gain.exponentialRampToValueAtTime(0.16 * s, t + 0.25);
+        g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+        src.connect(f); f.connect(g); g.connect(dest);
+        src.start(t, Math.random() * 1.2, dur + 0.05);
+    }
+    const voices = 3 + Math.round(s * 5);
+    for (let i = 0; i < voices; i++) {
+        const at = t + Math.random() * 0.5;
+        const o = ctx.createOscillator();
+        o.type = 'sawtooth';
+        const f0 = 240 + Math.random() * 260;
+        o.frequency.setValueAtTime(f0, at);
+        o.frequency.exponentialRampToValueAtTime(f0 * (1.5 + Math.random() * 0.5), at + 0.35);
+        o.frequency.exponentialRampToValueAtTime(f0 * 1.1, at + 0.9);
+        const band = filter('bandpass', 900 + Math.random() * 600, 3);
+        const g = gainNode(0);
+        g.gain.setValueAtTime(0.0001, at);
+        g.gain.exponentialRampToValueAtTime(0.025 * s, at + 0.1);
+        g.gain.exponentialRampToValueAtTime(0.001, at + 1);
+        o.connect(band); band.connect(g); g.connect(dest);
+        o.start(at);
+        o.stop(at + 1.05);
+    }
+}
+
+/** The context and the mix bus, for music.js. Null until the first gesture. */
+export function graph() {
+    return ctx ? { ctx, bus } : null;
 }
 
 // ── One-shots ────────────────────────────────────────────────────────────────
@@ -663,16 +778,9 @@ export function shutter(pos = null, strength = 1) {
     sweep(2400, 5600, 0.22, 'sine', 0.012 * s, t + 0.02, dest);
 }
 
-/** Wiper blade reaching the end of its sweep. */
-export function wiper() {
-    if (!ctx) return;
-    const t = ctx.currentTime;
-    sweep(85, 60, 0.07, 'sine', 0.07, t);
-    if (Math.random() < 0.5) sweep(980, 760, 0.1, 'triangle', 0.012, t + 0.01);
-}
 
 /** One synthesized ping. */
-export function beep(freq, durationSeconds, type = 'sine', gainValue = 0.15) {
+function beep(freq, durationSeconds, type = 'sine', gainValue = 0.15) {
     if (!ctx) return;
     try {
         const osc = ctx.createOscillator();

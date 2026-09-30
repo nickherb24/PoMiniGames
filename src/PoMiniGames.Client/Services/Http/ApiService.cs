@@ -575,6 +575,41 @@ public class ApiService
         }
     }
 
+    /// <summary>
+    /// PoCabinet: the officials' radio lines for a track, or null (signed out, rate-limited,
+    /// offline). Flavour: the race starts without it and picks the pool up when it lands.
+    /// </summary>
+    public async Task<PoMiniGames.Shared.Games.PoCabinetBanterPool?> GetPoCabinetBanterAsync(string trackId)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/pocabinet/banter?track={Uri.EscapeDataString(trackId)}", ApiJsonContext.Default.PoCabinetBanterPool);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>PoCabinet: the post-race headline and tips, or null. Never retried — the results already stand.</summary>
+    public async Task<PoMiniGames.Shared.Games.PoCabinetDebriefReply?> GetPoCabinetDebriefAsync(
+        PoMiniGames.Shared.Games.PoCabinetDebriefRequest request)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync(
+                "/api/pocabinet/debrief", request, ApiJsonContext.Default.PoCabinetDebriefRequest);
+            return response.IsSuccessStatusCode
+                ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoCabinetDebriefReply)
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     // ─── PoBrawl 1P ladder progress (cross-device) ───────────────────────
 
     /// <summary>The caller's saved ladder progress, or null (none saved, signed out, offline).</summary>

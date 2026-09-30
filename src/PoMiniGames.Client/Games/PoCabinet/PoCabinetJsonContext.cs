@@ -13,4 +13,5 @@ namespace PoMiniGamesClient.Games.PoCabinet;
     PropertyNameCaseInsensitive = true,
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(PoCabinetCareerDto))]
+[JsonSerializable(typeof(PoCabinetUiSettings))]
 internal sealed partial class PoCabinetJsonContext : JsonSerializerContext;

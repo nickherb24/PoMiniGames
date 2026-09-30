@@ -18,7 +18,6 @@ public class PoCabinetRouteUiTests
 
     [Theory]
     [InlineData("/pocabinet/1player", "Cabinet")]
-    [InlineData("/pocabinet/2player", "Cabinet")]
     [InlineData("/pocabinet/multi", "Cabinet")]
     [InlineData("/pocabinet/demo", "Cabinet")]
     public async Task Route_RendersBlazorWasm_AndShowsGameTitle(string path, string expectedTitleFragment)
@@ -28,7 +27,7 @@ public class PoCabinetRouteUiTests
         // three.js renderers need a real GL context — without SwiftShader the
         // GameShell would correctly show its "needs 3D graphics" fallback and
         // the page would not reach the in-race HUD. Harmless for the track
-        // selector / paint shop / championship panels.
+        // selector and paint shop panels.
         options.Args = ["--enable-unsafe-swiftshader", "--use-gl=angle", "--use-angle=swiftshader"];
         await using var browser = await playwright.Chromium.LaunchAsync(options);
         var context = await browser.NewContextAsync(new BrowserNewContextOptions
@@ -66,9 +65,16 @@ public class PoCabinetRouteUiTests
         var appHtml = await page.Locator("#app").InnerHTMLAsync();
         appHtml.Should().NotBeNullOrWhiteSpace("the Blazor app shell must render markup after NetworkIdle");
 
-        // The track selector is part of every interactive mode's pre-race UI.
-        // Demo mode auto-starts into the kiosk race reel on first paint.
-        if (path.EndsWith("/demo", StringComparison.OrdinalIgnoreCase))
+        // Solo shows the track selector before the race; Online shows only "Join lobby" (the
+        // lobby host picks the track there, 2026-09-29); Demo auto-starts into the race reel.
+        if (path.EndsWith("/multi", StringComparison.OrdinalIgnoreCase))
+        {
+            var join = page.GetByRole(AriaRole.Button, new() { Name = "Join lobby", Exact = true });
+            await join.WaitForAsync(new() { Timeout = 30_000 });
+            (await page.Locator(".pocabinet-track").CountAsync()).Should().Be(0,
+                "the online start card no longer repeats the tracks the lobby host picks");
+        }
+        else if (path.EndsWith("/demo", StringComparison.OrdinalIgnoreCase))
         {
             var raceMount = page.Locator("#pocabinetCanvas, .pocabinet-track").First;
             await raceMount.WaitForAsync(new() { Timeout = 30_000 });

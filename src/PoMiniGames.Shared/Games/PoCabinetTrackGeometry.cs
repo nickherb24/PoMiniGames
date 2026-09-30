@@ -40,13 +40,14 @@ public static class PoCabinetTrackGeometry
                 StepsPerSegment: 12,
                 Atmosphere: new PoCabinetAtmosphereWire
                 {
-                    SkyHex = "#14233f",
-                    FogStart = 220,
-                    FogEnd = 900,
-                    FogHex = "#14233f",
-                    AmbientIntensity = 0.5,
-                    GroundHex = "#24361f",
-                    RoadHex = "#393b42",
+                    // Daytime (2026-09-29; was a dark dusk that made the race hard to read).
+                    SkyHex = "#8fb8e0",
+                    FogStart = 260,
+                    FogEnd = 1100,
+                    FogHex = "#a9c6e0",
+                    AmbientIntensity = 0.7,
+                    GroundHex = "#3f6a2e",
+                    RoadHex = "#44464d",
                     AccentHex = "#c6a35a",
                 }),
             ["maralago"] = new(
@@ -82,13 +83,14 @@ public static class PoCabinetTrackGeometry
                 StepsPerSegment: 12,
                 Atmosphere: new PoCabinetAtmosphereWire
                 {
-                    SkyHex = "#1a0d1a",
-                    FogStart = 200,
-                    FogEnd = 820,
-                    FogHex = "#1a0d1a",
-                    AmbientIntensity = 0.45,
-                    GroundHex = "#2a1722",
-                    RoadHex = "#35353d",
+                    // Daytime (2026-09-29; was a night scene) — a sunlit stone plaza.
+                    SkyHex = "#9cc0e4",
+                    FogStart = 240,
+                    FogEnd = 1000,
+                    FogHex = "#b4cbe0",
+                    AmbientIntensity = 0.7,
+                    GroundHex = "#8a7f78",
+                    RoadHex = "#3f3f47",
                     AccentHex = "#c1253b",
                 }),
         };

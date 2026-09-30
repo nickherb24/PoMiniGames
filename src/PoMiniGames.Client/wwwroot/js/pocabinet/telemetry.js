@@ -14,7 +14,7 @@
 // Colours come from the app's design tokens so the chart follows light/dark;
 // only the semantic gain/loss green/red are fixed, matching the sector chips.
 
-export const BINS = 200;
+const BINS = 200;
 const TRACE_KEY = 'pocabinet.traces.v1';
 
 /**
@@ -55,6 +55,45 @@ function fillGaps(arr) {
     // Leading gap (first bin skipped at speed): back-fill from the first value.
     const first = arr.find(Number.isFinite);
     for (let i = 0; i < arr.length && !Number.isFinite(arr[i]); i++) arr[i] = first ?? 0;
+}
+
+/**
+ * The numbers the post-race debrief is written from (the page posts them to
+ * /api/pocabinet/debrief; the server writes every word). `reference` may be null.
+ *   sectorDeltas   seconds vs the reference per third of the lap (+ = slower), or []
+ *   worstPointPct  where on the lap the most time went vs the reference (-1 = none)
+ *   fullThrottlePct / brakePct   share of the lap flat out / on the brakes
+ *   topKmh / slowestKmh          ignoring the first few bins (a standing start)
+ */
+export function debriefFacts(current, reference) {
+    if (!current) return null;
+    const n = BINS, third = Math.floor(n / 3);
+    const ends = tr => [tr.t[third], tr.t[third * 2], tr.time];
+    let sectorDeltas = [], worstPointPct = -1;
+    if (reference) {
+        const c = ends(current), r = ends(reference);
+        let pc = 0, pr = 0;
+        for (let i = 0; i < 3; i++) {
+            sectorDeltas.push(Math.round(((c[i] - pc) - (r[i] - pr)) * 100) / 100);
+            pc = c[i]; pr = r[i];
+        }
+        // The steepest 10-bin growth of the running delta is where the lap was lost.
+        let worst = 0;
+        for (let i = 0; i + 10 < n; i++) {
+            const loss = (current.t[i + 10] - reference.t[i + 10]) - (current.t[i] - reference.t[i]);
+            if (loss > worst) { worst = loss; worstPointPct = Math.round((i + 5) / n * 100); }
+        }
+    }
+    const pct = f => Math.round(current.thr.filter(f).length / n * 100);
+    const moving = current.speed.slice(5);
+    return {
+        sectorDeltas,
+        worstPointPct,
+        fullThrottlePct: pct(v => v > 0.95),
+        brakePct: Math.round(current.brk.filter(v => v > 0.05).length / n * 100),
+        topKmh: Math.round(Math.max(...moving)),
+        slowestKmh: Math.round(Math.min(...moving)),
+    };
 }
 
 export function bestTrace(traces) {

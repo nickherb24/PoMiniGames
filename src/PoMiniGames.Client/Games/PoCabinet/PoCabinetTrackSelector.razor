@@ -1,38 +1,78 @@
 @*
-    PoCabinetTrackSelector — three themed tracks as a 1×3 card grid (Concept 8,
-    lighter version). Each card shows the track name, difficulty, length and a
-    swatch of the atmosphere accent. Keyboard navigation + screen reader labels.
-    Persists the selection via two-way binding; the parent decides where the
-    choice goes next.
+    PoCabinetTrackSelector — the three themed tracks. Keyboard navigation + screen reader
+    labels; the parent owns the selection (two-way binding).
+
+    Campaign (1P, 2026-09-29): the championship strip that used to repeat the same three
+    tracks underneath ("The Campaign" — Active / Locked) is folded into the cards. Each
+    card says what a race there means for the campaign, and the trophy / gold-livery
+    chips sit under the grid. Every track stays raceable: a "locked" stage was only ever
+    "doesn't count yet", which is what the card now says instead of implying you can't
+    pick it.
+
+    Compact (the lobby host): a plain dropdown instead of three big cards.
 *@
 
 @using PoMiniGames.Shared.Games
-@inject IJSRuntime JS
+@implements IDisposable
+@inject PoCabinetCareerState Career
 
-<div class="pocabinet-track-selector" role="radiogroup" aria-label="Choose a track">
-    @foreach (var track in PoCabinetCatalog.Tracks)
+@if (Compact)
+{
+    <label class="pocabinet-track-select">
+        <span>Track</span>
+        <select value="@SelectedTrackId" @onchange="e => SelectTrack(e.Value?.ToString() ?? PoCabinetCatalog.DefaultTrackId)">
+            @foreach (var track in PoCabinetCatalog.Tracks)
+            {
+                <option value="@track.Id">@track.Name · @TrackMeta(track.Id)</option>
+            }
+        </select>
+    </label>
+}
+else
+{
+    <div class="pocabinet-track-selector" role="radiogroup" aria-label="Choose a track">
+        @for (var i = 0; i < PoCabinetCatalog.Tracks.Count; i++)
+        {
+            var stage = i;
+            var track = PoCabinetCatalog.Tracks[i];
+            var accent = TrackAccent(track.Id);
+            var isSelected = track.Id == SelectedTrackId;
+            (string Kind, string Text)? campaign = Campaign ? StageNote(stage) : null;
+            <button type="button"
+                    class="pocabinet-track @(isSelected ? "pocabinet-track--selected" : null)"
+                    role="radio"
+                    aria-checked="@isSelected"
+                    data-track-id="@track.Id"
+                    title="@track.Description"
+                    @onclick="() => SelectTrack(track.Id)">
+                <span class="pocabinet-track__swatch" style="--accent: @accent;" aria-hidden="true"></span>
+                <span class="pocabinet-track__body">
+                    <strong class="pocabinet-track__title">@track.Name</strong>
+                    <span class="pocabinet-track__meta">@TrackMeta(track.Id)</span>
+                    @if (campaign is { } note)
+                    {
+                        <span class="pocabinet-track__stage pocabinet-track__stage--@note.Kind">@note.Text</span>
+                    }
+                </span>
+            </button>
+        }
+    </div>
+    @if (Campaign)
     {
-        var accent = TrackAccent(track.Id);
-        var isSelected = track.Id == SelectedTrackId;
-        <button type="button"
-                class="pocabinet-track @(isSelected ? "pocabinet-track--selected" : null)"
-                role="radio"
-                aria-checked="@isSelected"
-                data-track-id="@track.Id"
-                title="@track.Description"
-                @onclick="() => SelectTrack(track.Id)">
-            <span class="pocabinet-track__swatch" style="--accent: @accent;" aria-hidden="true"></span>
-            <span class="pocabinet-track__body">
-                <strong class="pocabinet-track__title">@track.Name</strong>
-                <span class="pocabinet-track__meta">@TrackMeta(track.Id)</span>
-            </span>
-        </button>
+        <p class="pocabinet-rewards" aria-label="Campaign rewards">
+            <span class="pocabinet-reward @(Career.Current.TrophyUnlocked ? "pocabinet-reward--unlocked" : null)">🏆 @(Career.Current.TrophyUnlocked ? "Trophy won" : "Trophy: win the final stage")</span>
+            <span class="pocabinet-reward @(Career.Current.GoldLiveryUnlocked ? "pocabinet-reward--unlocked" : null)">🎨 Gold livery @(Career.Current.GoldLiveryUnlocked ? "unlocked" : "locked")</span>
+        </p>
     }
-</div>
+}
 
 @code {
     [Parameter] public string? SelectedTrackId { get; set; }
     [Parameter] public EventCallback<string> SelectedTrackIdChanged { get; set; }
+    /// <summary>1P: show each track's campaign stage and the rewards.</summary>
+    [Parameter] public bool Campaign { get; set; }
+    /// <summary>Lobby host: a dropdown instead of cards.</summary>
+    [Parameter] public bool Compact { get; set; }
 
     private static readonly Dictionary<string, (string Accent, int LengthKm, string Difficulty)> TrackInfo =
         new(StringComparer.OrdinalIgnoreCase)
@@ -42,11 +82,24 @@
             ["pressbriefing"] = ("#c0392b", 3, "Hard"),
         };
 
+    protected override void OnInitialized() => Career.Changed += OnCareerChanged;
+
+    private void OnCareerChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose() => Career.Changed -= OnCareerChanged;
+
     private static string TrackAccent(string id) =>
         TrackInfo.TryGetValue(id, out var info) ? info.Accent : "#888";
 
     private static string TrackMeta(string id) =>
         TrackInfo.TryGetValue(id, out var info) ? $"{info.LengthKm} km · {info.Difficulty}" : "";
+
+    private (string Kind, string Text) StageNote(int stage)
+    {
+        if (Career.Current.CompletedStages.Contains(stage)) return ("done", $"Stage {stage + 1} ✓ cleared");
+        if (stage == Career.Current.CurrentStageIndex) return ("active", $"Stage {stage + 1} · top 3 advances");
+        return ("free", $"Stage {stage + 1} · free race for now");
+    }
 
     private Task SelectTrack(string id)
     {

@@ -13,6 +13,12 @@
 // yaw rate, body roll from lateral acceleration, pitch and brake lights from
 // longitudinal acceleration. Nothing here reads or changes physics.
 //
+// Damage (2026-09-29) is cosmetic and per car: addDamage() records up to eight
+// dents in the car's own paint material, and one onBeforeCompile hook crumples the
+// panel toward the body's core, dulls the clearcoat and scuffs through to primer
+// around each. Every car shares the program (one cache key); only the uniforms
+// differ. A car never drives any differently for it.
+//
 // World: sim (x, y) → three (x / 10, 0, y / 10); the car is built along +X and
 // rotated by −heading about Y (unchanged from the box cars it replaces).
 
@@ -147,8 +153,55 @@ function shared() {
     return SHARED;
 }
 
+const MAX_DENTS = 8;
+const DENT_MERGE = 0.55;   // a hit this close to an existing dent deepens it instead
+
+/** The dent hook on one car's paint: uniforms are this material's own. */
+function dentable(paint) {
+    const dents = Array.from({ length: MAX_DENTS }, () => new THREE.Vector4(0, 0, 0, 0));
+    paint.userData.dents = dents;
+    paint.onBeforeCompile = (shader) => {
+        shader.uniforms.uDents = { value: dents };
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', `#include <common>
+uniform vec4 uDents[${MAX_DENTS}];
+varying float vDamage;
+varying vec3 vPanel;`)
+            .replace('#include <begin_vertex>', `#include <begin_vertex>
+vDamage = 0.0;
+vPanel = position;
+for (int i = 0; i < ${MAX_DENTS}; i++) {
+    vec4 d = uDents[i];
+    if (d.w <= 0.0) continue;
+    float f = d.w * (1.0 - smoothstep(0.0, 0.8, distance(position, d.xyz)));
+    vDamage = max(vDamage, f);
+    vec3 core = vec3(position.x * 0.7, 0.45, 0.0);
+    float wob = 0.7 + 0.3 * sin(position.x * 23.0 + position.y * 17.0 + position.z * 29.0);
+    transformed -= normalize(position - core + 1e-4) * f * 0.17 * wob;
+}`);
+        shader.fragmentShader = shader.fragmentShader
+            .replace('#include <common>', `#include <common>
+varying float vDamage;
+varying vec3 vPanel;`)
+            .replace('#include <color_fragment>', `#include <color_fragment>
+{
+    float scuff = smoothstep(0.1, 0.8, vDamage);
+    vec3 cell = floor(vPanel * vec3(38.0, 11.0, 38.0));
+    float scratch = step(0.8, fract(sin(dot(cell, vec3(12.9898, 78.233, 37.719))) * 43758.5453));
+    diffuseColor.rgb *= 1.0 - scuff * 0.5;
+    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.5, 0.52, 0.55), scratch * smoothstep(0.3, 0.95, vDamage));
+}`)
+            .replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+roughnessFactor = mix(roughnessFactor, 0.9, smoothstep(0.1, 0.7, vDamage));`)
+            .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
+#ifdef USE_CLEARCOAT
+material.clearcoat *= 1.0 - smoothstep(0.1, 0.6, vDamage);
+#endif`);
+    };
+    paint.customProgramCacheKey = () => 'pocabinet-dents';
+}
+
 const HEAD_DAY = new THREE.Color('#fff4dc').multiplyScalar(1.2);
-const HEAD_NIGHT = new THREE.Color('#fff1d0').multiplyScalar(9);
 const TAIL = new THREE.Color('#ff1a12');
 
 class CarHandle {
@@ -160,15 +213,46 @@ class CarHandle {
         this.tailMat = tailMat;
         this.wheels = wheels;
         this.disposed = false;
-        this.night = 0;
         this.spin = 0;
         this.steer = 0;
         this.roll = 0;
         this.pitch = 0;
         this.braking = 0;
         this.last = null;
-        this.headlight = null;
+        this.nextDent = 0;
+        this._v = new THREE.Vector3();
         this.applyLights();
+    }
+
+    /** Paint colour as '#rrggbb' (debris flakes match the car). */
+    get paintHex() {
+        return `#${this.paint.color.getHexString()}`;
+    }
+
+    /**
+     * A hit at world (x, z), `strength` 0..1: dent the nearest panel. Returns false
+     * when the car is already as bent as it gets there.
+     */
+    addDamage(x, z, strength) {
+        if (this.disposed) return false;
+        const p = this.group.worldToLocal(this._v.set(x, 0.5, z));
+        // Onto the body's skin: clamp into its footprint, then out to the nearest face.
+        p.x = Math.max(-1.9, Math.min(1.94, p.x));
+        p.z = Math.max(-0.83, Math.min(0.83, p.z));
+        if (1.9 - Math.abs(p.x) < 0.83 - Math.abs(p.z)) p.x = Math.sign(p.x || 1) * 1.9;
+        else p.z = Math.sign(p.z || 1) * 0.83;
+        p.y = 0.48;
+        const dents = this.paint.userData.dents;
+        const s = Math.min(1, Math.max(0.15, Number(strength) || 0));
+        const near = dents.find(d => d.w > 0 && Math.hypot(d.x - p.x, d.z - p.z) < DENT_MERGE);
+        if (near) {
+            if (near.w >= 1) return false;
+            near.w = Math.min(1, near.w + s * 0.5);
+            return true;
+        }
+        dents[this.nextDent].set(p.x, p.y, p.z, s * 0.7);
+        this.nextDent = (this.nextDent + 1) % MAX_DENTS;
+        return true;
     }
 
     /**
@@ -208,66 +292,24 @@ class CarHandle {
         }
     }
 
-    /** 0 (day) … 1 (night): headlights and tail lights brighten to bloom. */
-    setNight(n) {
-        this.night = Math.min(1, Math.max(0, Number(n) || 0));
-        this.applyLights();
-    }
-
-    /** A real SpotLight for the car the camera follows (others get emissive lamps only). */
-    setHeadlight(on) {
-        if (on && !this.headlight) {
-            const s = new THREE.SpotLight(0xfff0d0, 0, 70, 0.5, 0.55, 1.2);
-            s.position.set(1.95, 0.6, 0);
-            s.target.position.set(22, -0.8, 0);
-            this.group.add(s, s.target);
-            this.headlight = s;
-        } else if (!on && this.headlight) {
-            this.group.remove(this.headlight, this.headlight.target);
-            this.headlight.dispose();
-            this.headlight = null;
-        }
-        this.applyLights();
-    }
-
     applyLights() {
-        this.headMat.color.copy(HEAD_DAY).lerp(HEAD_NIGHT, this.night);
-        const tail = (1.2 + this.night * 3) * (this.braking ? 2.6 : 1);
-        this.tailMat.color.copy(TAIL).multiplyScalar(tail);
-        if (this.headlight) this.headlight.intensity = 220 * this.night;
+        this.tailMat.color.copy(TAIL).multiplyScalar(this.braking ? 3.1 : 1.2);
     }
 
     dispose() {
         if (this.disposed) return;
         this.disposed = true;
         if (this.group.parent) this.group.parent.remove(this.group);
-        this.setHeadlight(false);
         this.paint.dispose();
         this.headMat.dispose();
         this.tailMat.dispose();
     }
 }
 
-// ──────────────────────────────────────────────────────────────────────────
-//  Per-official colour palette. Stays in JS so the wire DTO can ship a name
-//  and the client resolves the hex locally.
-// ──────────────────────────────────────────────────────────────────────────
-
-export const OFFICIAL_COLORS = Object.freeze({
-    'sean-s':   '#3470d8', // Press Secretary — defensive blue
-    'steve-b':  '#5e4b8b', // Chief Strategist — purple, plotting
-    'bill-b':   '#a02c2c', // AG — aggressive red
-    'mike-p':   '#1c8054', // VP — steady green
-});
-
-function resolveColor(officialId, fallback) {
-    if (officialId && OFFICIAL_COLORS[officialId]) return OFFICIAL_COLORS[officialId];
-    return fallback || '#888888';
-}
 
 /**
  * Build a car and add it to `parent`. Returns a handle with `update(snap)`,
- * `setNight(n)`, `setHeadlight(on)` and `dispose()`.
+ * `addDamage(x, z, s)` and `dispose()`.
  * @param {THREE.Object3D} parent
  * @param {{ id?: string, name: string, color?: string }} opts
  */
@@ -278,9 +320,10 @@ export function mountCar(parent, opts) {
     const m = shared();
 
     const paint = new THREE.MeshPhysicalMaterial({
-        color: resolveColor(opts.id, opts.color), roughness: 0.32, metalness: 0.45,
+        color: opts.color || '#888888', roughness: 0.32, metalness: 0.45,
         clearcoat: 1, clearcoatRoughness: 0.05,
     });
+    dentable(paint);
     const headMat = new THREE.MeshBasicMaterial({ color: HEAD_DAY.clone() });
     const tailMat = new THREE.MeshBasicMaterial({ color: TAIL.clone() });
 

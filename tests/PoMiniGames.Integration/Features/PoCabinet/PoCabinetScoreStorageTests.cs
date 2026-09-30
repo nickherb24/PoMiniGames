@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Json;
 using FluentAssertions;
 using PoMiniGames.Domain.Models;
+using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.PoCabinet;
 using PoMiniGames.TestUtilities;
 
@@ -9,8 +10,10 @@ namespace PoMiniGames.Integration.Features.PoCabinet;
 
 /// <summary>
 /// PoCabinet score round-trip against a real Azurite container through the full HTTP
-/// path. Three claims:
+/// path. Four claims:
 /// <list type="number">
+///   <item>Only verified laps are stored: a bare claim with no input log is refused (422),
+///         and a proof's stored time is the server's replay, whatever the claim says.</item>
 ///   <item>A best lap submitted on <c>capitol</c> survives a fresh
 ///         <c>GET /api/pocabinet/scores?track=capitol</c> on the same host. Cross-Azurite
 ///         session round-trip — the row lives in the table the descriptor declared.</item>
@@ -21,14 +24,13 @@ namespace PoMiniGames.Integration.Features.PoCabinet;
 ///         better PB, and a faster lap does.</item>
 /// </list>
 /// <para>
-/// <b>Test identity.</b> <see cref="TestWebApplicationFactory"/> signs every
-/// request as <c>test-user</c> via the FakeAuth scheme, and the server
+/// <b>Test identity.</b> The test signs in as a fresh FakeAuth user per run, and the server
 /// overwrites the wire-supplied <c>PlayerDisplayName</c> with the resolved
-/// identity. The assertions match on that resolved name (<c>"test-user"</c>),
+/// identity. The assertions match on that resolved name,
 /// not the randomized wire name — the wire name is the issue PoRacer had to
 /// fix for the same reason (see PoRacerScoreEndpoints.cs header comment).
 /// </para>
-/// One method, three claims. The Integration tier is at its 50 cap (per
+/// One method, four claims. The Integration tier is at its 50 cap (per
 /// <see cref="IntegrationTestCountCeilingTests"/>) and the rule is to consolidate
 /// rather than raise.
 /// </summary>
@@ -45,67 +47,77 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
         // §2 CSRF: the POSTs below are state-changing /api/* calls and are refused without
         // the synchroniser token. Arm up front so the ratcheting assertions at the end
         // exercise a real 200 rather than collapsing into a blanket 403.
-        var client = await _factory.CreateClient().ArmAntiforgeryAsync();
+        // A fresh identity per run: this tier writes to the developer's local Azurite, and a
+        // PB left behind by an earlier run under a shared "test-user" would out-ratchet this
+        // run's first lap. The token is bound to identity, so arm after switching.
+        var resolvedPlayer = $"pocab-int-{Guid.NewGuid():N}"[..24];
+        var raw = _factory.CreateClient();
+        raw.DefaultRequestHeaders.Remove(FakeAuthHandler.UserHeader);
+        raw.DefaultRequestHeaders.Add(FakeAuthHandler.UserHeader, resolvedPlayer);
+        var client = await raw.ArmAntiforgeryAsync();
 
-        // The server resolves identity from FakeAuth → "test-user". Randomise the wire
-        // player name so a stale row from a prior run cannot match by accident; the
-        // asserted identity is the resolved one.
-        const string resolvedPlayer = "test-user";
+        // The server resolves identity from FakeAuth, never the wire player name; the wire
+        // name differs on purpose so a match can only come from the resolved identity.
         var wirePlayer = $"pocabinet-int-{Guid.NewGuid():N}";
-        var submit = new PoCabinetScoreDto
+        // Laps are server-timed from their input logs (PoCabinetLapVerifier), so each submit
+        // carries a real browser-recorded proof and the claim is only logged. The fixtures'
+        // own times drive the assertions: clean ≈ 23.32 s, messy ≈ 23.29 s (faster), wild ≈
+        // 40.88 s (slower), all on Capitol; maralago-clean ≈ 30.34 s.
+        PoCabinetScoreDto Submit(string proofName, int position)
         {
-            PlayerDisplayName = wirePlayer,
-            TrackId = "capitol",
-            BestLapSeconds = 42.0,
-            FinalPosition = 1,
-            AchievedAtUtc = DateTimeOffset.UtcNow,
-            IsGuest = true,
-            GameCode = "INT-TEST",
-        };
+            var proof = PoCabinetLapProofs.Get(proofName);
+            return new PoCabinetScoreDto
+            {
+                PlayerDisplayName = wirePlayer,
+                TrackId = proof.TrackId,
+                BestLapSeconds = proof.JsBestLap,
+                FinalPosition = position,
+                AchievedAtUtc = DateTimeOffset.UtcNow,
+                IsGuest = true,
+                GameCode = "SOLO",
+                Inputs = proof.Inputs,
+                Wet = proof.Wet,
+            };
+        }
+        double Lap(string proofName) => Math.Round(PoCabinetLapProofs.Get(proofName).JsBestLap, 3);
+        async Task<double> StoredAsync(string track) =>
+            (await client.GetFromJsonAsync<List<PoCabinetHighScore>>($"/api/pocabinet/scores?track={track}"))!
+                .First(s => s.PlayerName == resolvedPlayer).BestLapSeconds;
 
-        // ── Submit a Capitol best lap ─────────────────────────────────────
-        var firstPost = await client.PostAsJsonAsync("/api/pocabinet/scores", submit);
+        // ── No proof: a bare claimed time is refused, not stored ─────────────
+        var bare = Submit("capitol-clean", 1);
+        bare.Inputs = null;
+        bare.BestLapSeconds = 1.0;
+        (await client.PostAsJsonAsync("/api/pocabinet/scores", bare)).StatusCode
+            .Should().Be(HttpStatusCode.UnprocessableEntity, "a solo lap with no input log can't be verified");
+
+        // ── Submit a Capitol best lap; the claim is a lie, the stored time is the replay's ─
+        var lying = Submit("capitol-clean", 1);
+        lying.BestLapSeconds = 5.0;
+        var firstPost = await client.PostAsJsonAsync("/api/pocabinet/scores", lying);
         firstPost.StatusCode.Should().Be(HttpStatusCode.Created);
+        (await StoredAsync("capitol")).Should().BeApproximately(Lap("capitol-clean"), 0.001,
+            "the server stores the lap it re-timed, and resolves identity from auth, not the wire name");
 
-        var capitolBoard = await client.GetFromJsonAsync<List<PoCabinetHighScore>>(
-            "/api/pocabinet/scores?track=capitol");
-        capitolBoard.Should().NotBeNull();
-        capitolBoard!.Should().Contain(s => s.PlayerName == resolvedPlayer && Math.Abs(s.BestLapSeconds - 42.0) < 0.001,
-            "the server resolves identity from auth, not the wire PlayerDisplayName (anti-spoofing)");
-
-        // ── Submit a Mar-a-Lago best lap for the same player (no partition leak) ─
-        submit.TrackId = "maralago";
-        submit.BestLapSeconds = 55.0;
-        submit.FinalPosition = 2;
-        var secondPost = await client.PostAsJsonAsync("/api/pocabinet/scores", submit);
-        secondPost.StatusCode.Should().Be(HttpStatusCode.Created);
-
-        var marBoard = await client.GetFromJsonAsync<List<PoCabinetHighScore>>(
-            "/api/pocabinet/scores?track=maralago");
-        marBoard.Should().NotBeNull();
-        marBoard!.Should().Contain(s => s.PlayerName == resolvedPlayer && Math.Abs(s.BestLapSeconds - 55.0) < 0.001);
-        marBoard.Should().NotContain(s => Math.Abs(s.BestLapSeconds - 42.0) < 0.001,
-            "the Capitol 42.0 must not appear on the Mar-a-Lago board");
+        // ── Mar-a-Lago lap for the same player (no partition leak) ─────────
+        (await client.PostAsJsonAsync("/api/pocabinet/scores", Submit("maralago-clean", 2))).StatusCode
+            .Should().Be(HttpStatusCode.Created);
+        (await StoredAsync("maralago")).Should().BeApproximately(Lap("maralago-clean"), 0.001);
+        var marBoard = await client.GetFromJsonAsync<List<PoCabinetHighScore>>("/api/pocabinet/scores?track=maralago");
+        var capitolLap = Lap("capitol-clean");
+        marBoard!.Should().NotContain(s => Math.Abs(s.BestLapSeconds - capitolLap) < 0.001,
+            "the Capitol lap must not appear on the Mar-a-Lago board");
 
         // ── A worse later Capitol lap must NOT overwrite the PB ────────────
-        submit.TrackId = "capitol";
-        submit.BestLapSeconds = 99.0;
-        submit.FinalPosition = 4;
-        var worsePost = await client.PostAsJsonAsync("/api/pocabinet/scores", submit);
-        worsePost.StatusCode.Should().Be(HttpStatusCode.Created);
-        var capitolBoardAfter = await client.GetFromJsonAsync<List<PoCabinetHighScore>>(
-            "/api/pocabinet/scores?track=capitol");
-        capitolBoardAfter!.First(s => s.PlayerName == resolvedPlayer).BestLapSeconds
-            .Should().BeApproximately(42.0, 0.001, "a worse lap must not erase a stored PB");
+        (await client.PostAsJsonAsync("/api/pocabinet/scores", Submit("capitol-wild", 4))).StatusCode
+            .Should().Be(HttpStatusCode.Created);
+        (await StoredAsync("capitol")).Should().BeApproximately(Lap("capitol-clean"), 0.001,
+            "a worse lap must not erase a stored PB");
 
         // ── A faster Capitol lap overwrites the PB ─────────────────────────
-        submit.BestLapSeconds = 38.5;
-        submit.FinalPosition = 1;
-        var fasterPost = await client.PostAsJsonAsync("/api/pocabinet/scores", submit);
-        fasterPost.StatusCode.Should().Be(HttpStatusCode.Created);
-        var capitolBoardFinal = await client.GetFromJsonAsync<List<PoCabinetHighScore>>(
-            "/api/pocabinet/scores?track=capitol");
-        capitolBoardFinal!.First(s => s.PlayerName == resolvedPlayer).BestLapSeconds
-            .Should().BeApproximately(38.5, 0.001, "a faster lap must replace the stored PB");
+        (await client.PostAsJsonAsync("/api/pocabinet/scores", Submit("capitol-messy", 1))).StatusCode
+            .Should().Be(HttpStatusCode.Created);
+        (await StoredAsync("capitol")).Should().BeApproximately(Lap("capitol-messy"), 0.001,
+            "a faster lap must replace the stored PB");
     }
 }

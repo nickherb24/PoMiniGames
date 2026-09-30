@@ -12,6 +12,15 @@ namespace PoMiniGames.Features.PoCabinet;
 /// PoCabinet score endpoints. Anonymous reads (per-track leaderboards);
 /// authenticated best-lap submissions guarded by the <c>pocabinet</c> rate-limit
 /// policy (added 2026-09-17 alongside this slice).
+///
+/// <para>
+/// <b>Every stored lap is server-computed (2026-09-29).</b> A solo submission carries its
+/// input log and <see cref="PoCabinetLapVerifier"/> re-runs the race; a multiplayer one is
+/// looked up from the result the server's own sim produced
+/// (<see cref="PoCabinetRaceRegistry.TakeVerifiedLap"/>). The claimed
+/// <see cref="PoCabinetScoreDto.BestLapSeconds"/> is only compared and logged. A submission
+/// with neither proof is refused with 422, which the client treats as final (not parked).
+/// </para>
 /// </summary>
 public static class PoCabinetScoreEndpoints
 {
@@ -44,6 +53,7 @@ public static class PoCabinetScoreEndpoints
         [FromBody] PoCabinetScoreDto dto,
         HttpContext http,
         StorageService storage,
+        PoCabinetRaceRegistry races,
         IScoreIntegrityGuard integrity,
         ILoggerFactory loggerFactory,
         CancellationToken ct)
@@ -58,16 +68,44 @@ public static class PoCabinetScoreEndpoints
         if (errors.Count > 0)
             return Results.ValidationProblem(errors);
 
-        var verdict = integrity.Inspect(http, GameKey.PoCabinet, dto.BestLapSeconds);
-        if (!verdict.Allowed) return verdict.ToProblem();
-
         var (userId, displayName, isGuest, _) = RequestIdentity.Resolve(http.User);
         var log = loggerFactory.CreateLogger("PoCabinetScores");
         var trackId = ResolveTrack(dto.TrackId);
 
+        double verifiedLap;
+        if (!string.IsNullOrEmpty(dto.Inputs))
+        {
+            var inputs = PoCabinetLapVerifier.Decode(dto.Inputs);
+            if (inputs is null)
+                return Results.ValidationProblem(new Dictionary<string, string[]> { [nameof(dto.Inputs)] = ["Malformed input log."] });
+            verifiedLap = PoCabinetLapVerifier.Replay(trackId, dto.Wet, inputs);
+        }
+        else
+        {
+            var lap = races.TakeVerifiedLap(userId);
+            verifiedLap = lap is not null && lap.TrackId == trackId ? lap.BestLapSeconds : -1;
+        }
+        if (verifiedLap <= 0)
+        {
+            log.LogWarning("PoCabinet score refused: unverifiable lap user={UserId} track={Track} claimed={T}s",
+                userId, trackId, dto.BestLapSeconds);
+            return Results.Problem("This lap could not be verified.", statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+        verifiedLap = Math.Round(verifiedLap, 3);
+        // JS and .NET trig differ in the last ulp, so a small gap is honest drift; a big one is
+        // a forged claim or a physics copy that has fallen out of step — either is worth seeing.
+        if (Math.Abs(verifiedLap - dto.BestLapSeconds) > 0.05)
+        {
+            log.LogWarning("PoCabinet lap mismatch user={UserId} track={Track} claimed={Claimed}s verified={Verified}s",
+                userId, trackId, dto.BestLapSeconds, verifiedLap);
+        }
+
+        var verdict = integrity.Inspect(http, GameKey.PoCabinet, verifiedLap);
+        if (!verdict.Allowed) return verdict.ToProblem();
+
         log.LogInformation(
             "PoCabinet score POST user={UserId} guest={Guest} track={Track} t={T}s pos={Pos}",
-            userId, isGuest, trackId, dto.BestLapSeconds, dto.FinalPosition);
+            userId, isGuest, trackId, verifiedLap, dto.FinalPosition);
 
         PoCabinetHighScore saved;
         try
@@ -77,7 +115,7 @@ public static class PoCabinetScoreEndpoints
                 PlayerName = integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
                 UserId = userId,
                 TrackId = trackId,
-                BestLapSeconds = dto.BestLapSeconds,
+                BestLapSeconds = verifiedLap,
                 FinalPosition = dto.FinalPosition,
                 IsGuest = isGuest,
                 Date = (dto.AchievedAtUtc == default ? DateTimeOffset.UtcNow : dto.AchievedAtUtc)
@@ -129,4 +167,9 @@ public sealed class PoCabinetScoreDto
     public DateTimeOffset AchievedAtUtc { get; set; }
     public bool IsGuest { get; set; }
     public string GameCode { get; set; } = "";
+    /// <summary>Solo proof: base64 input log (see <see cref="PoCabinetLapVerifier.Decode"/>).
+    /// Empty for a multiplayer race, whose laps the server already simulated.</summary>
+    public string? Inputs { get; set; }
+    /// <summary>Solo proof: the race ran in rain (grip <see cref="PoCabinetLapVerifier.WetGrip"/>).</summary>
+    public bool Wet { get; set; }
 }

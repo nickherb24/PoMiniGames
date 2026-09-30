@@ -232,6 +232,3 @@ export function water(material, strength = 0.18) {
 }
 
 /** MeshStandardMaterial shorthand. */
-export function std(color, roughness = 0.8, metalness = 0, extra) {
-    return new THREE.MeshStandardMaterial({ color, roughness, metalness, ...(extra || {}) });
-}

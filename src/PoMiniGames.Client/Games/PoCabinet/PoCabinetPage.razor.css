@@ -22,7 +22,7 @@
     border-radius: var(--radius-md, 8px);
     padding: 1.5rem;
     max-width: 720px;
-    margin: 2rem auto;
+    margin: 1rem auto;
     box-shadow: var(--shadow-card, none);
 }
 
@@ -30,12 +30,6 @@
     margin: 0 0 1.25rem 0;
     color: var(--color-text-muted);
     line-height: 1.45;
-}
-
-.pocabinet-hint {
-    margin: 0.75rem 0 0;
-    color: var(--color-text-muted);
-    font-size: 0.85rem;
 }
 
 .pocabinet-customize {
@@ -171,51 +165,6 @@
     outline-offset: 2px;
 }
 
-/* ─── Championship ───────────────────────────────────────────────────────── */
-
-::deep .pocabinet-championship {
-    margin-top: 1.5rem;
-    padding: 0.75rem;
-    border: 1px dashed var(--color-border, transparent);
-    border-radius: var(--radius-md, 6px);
-}
-
-::deep .pocabinet-championship__title {
-    margin: 0 0 0.5rem 0;
-    font-size: 1rem;
-    letter-spacing: 0.08em;
-}
-
-::deep .pocabinet-championship__stages {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-
-::deep .pocabinet-stage {
-    flex: 1 1 0;
-    min-width: 120px;
-    padding: 0.5rem;
-    border: 1px solid var(--color-border, transparent);
-    border-radius: var(--radius-md, 6px);
-    text-align: center;
-    background: var(--color-surface);
-}
-
-::deep .pocabinet-stage--done { opacity: 1; }
-::deep .pocabinet-stage--active { outline: 2px solid var(--color-primary); }
-
-::deep .pocabinet-championship__rewards {
-    margin-top: 0.75rem;
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-    font-size: 0.85rem;
-}
-
 ::deep .pocabinet-reward {
     padding: 0.25rem 0.5rem;
     border: 1px dashed var(--color-border, transparent);
@@ -303,11 +252,23 @@
     position: relative;
     width: 100%;
     height: 100%;
+    /* Glass over the 3D view. Canvas-overlay tokens: scheme-invariant on purpose, since
+       what sits behind them is the race, not the page surface. */
+    --pocabinet-glass-fill: linear-gradient(145deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.05) 55%, rgba(255, 255, 255, 0.1));
+    --pocabinet-glass-edge: rgba(255, 255, 255, 0.3);
+    --pocabinet-glass-shade: rgba(6, 10, 22, 0.28);
+    --pocabinet-glass-text: #ffffff;
+    --pocabinet-glass-blur: blur(14px) saturate(170%);
+    --pocabinet-rev-low: #35d07f;
+    --pocabinet-rev-mid: #f5c542;
+    --pocabinet-rev-high: #ff4d4d;
+    --pocabinet-gain: #2ecc71;
+    --pocabinet-loss: #ff5a5a;
 }
 
 .pocabinet-canvas {
     width: 100%;
-    height: 70vh;
+    height: var(--pocabinet-canvas-h);
     background: #0f1a3a;
     border-radius: var(--radius-md, 8px);
     display: block;
@@ -343,8 +304,10 @@
     width: calc(170px * var(--pocabinet-hud, 1));
     height: calc(120px * var(--pocabinet-hud, 1));
     border-radius: var(--radius-md, 6px);
-    background: rgba(8, 12, 24, 0.55);
-    border: 1px solid var(--color-border, transparent);
+    background: var(--pocabinet-glass-shade);
+    border: 1px solid var(--pocabinet-glass-edge);
+    -webkit-backdrop-filter: var(--pocabinet-glass-blur);
+    backdrop-filter: var(--pocabinet-glass-blur);
     pointer-events: none;
 }
 
@@ -382,6 +345,166 @@
     100% { opacity: 0; transform: translate(-50%, -50%) scale(2.4); letter-spacing: 0.3em; }
 }
 
+/* ─── Glass cluster: rev ring, speed, gear (race.js writes --rpm + text) ─── */
+
+.pocabinet-gauge {
+    --rpm: 0;
+    --size: calc(min(138px, 30vw) * var(--pocabinet-hud, 1));
+    position: absolute;
+    left: 50%;
+    /* The section also holds the HUD strip below the canvas; sit on the canvas's lower edge. */
+    top: calc(var(--pocabinet-canvas-h) - var(--size) - 0.8rem);
+    width: var(--size);
+    height: var(--size);
+    transform: translateX(-50%);
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    background: var(--pocabinet-glass-fill), var(--pocabinet-glass-shade);
+    border: 1px solid var(--pocabinet-glass-edge);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), inset 0 -10px 24px rgba(0, 0, 0, 0.25), 0 10px 30px rgba(0, 0, 0, 0.35);
+    -webkit-backdrop-filter: var(--pocabinet-glass-blur);
+    backdrop-filter: var(--pocabinet-glass-blur);
+    color: var(--pocabinet-glass-text);
+    pointer-events: none;
+    z-index: 4;
+}
+
+/* The ring: a 270° arc from bottom-left, cut to --rpm by a conic mask and hollowed by a radial one. */
+.pocabinet-gauge__track,
+.pocabinet-gauge__ring {
+    position: absolute;
+    inset: 6%;
+    border-radius: 50%;
+    -webkit-mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+    mask: radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+}
+
+.pocabinet-gauge__track {
+    background: conic-gradient(from 225deg, rgba(255, 255, 255, 0.16) 0.75turn, transparent 0);
+}
+
+.pocabinet-gauge__ring {
+    background: conic-gradient(from 225deg, var(--pocabinet-rev-low), var(--pocabinet-rev-mid) 0.5turn, var(--pocabinet-rev-high) 0.72turn, transparent 0.75turn);
+    -webkit-mask:
+        conic-gradient(from 225deg, #000 calc(var(--rpm) * 0.75turn), transparent 0),
+        radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+    -webkit-mask-composite: source-in;
+    mask:
+        conic-gradient(from 225deg, #000 calc(var(--rpm) * 0.75turn), transparent 0),
+        radial-gradient(farthest-side, transparent calc(100% - 9px), #000 calc(100% - 8px));
+    mask-composite: intersect;
+    filter: drop-shadow(0 0 4px rgba(255, 190, 90, 0.55));
+}
+
+.pocabinet-gauge[data-redline="on"] .pocabinet-gauge__ring {
+    animation: pocabinet-redline 0.12s steps(2) infinite;
+}
+
+.pocabinet-gauge[data-redline="on"] {
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 26px rgba(255, 77, 77, 0.55), 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+@keyframes pocabinet-redline {
+    50% { filter: drop-shadow(0 0 10px rgba(255, 77, 77, 0.95)) brightness(1.35); }
+}
+
+.pocabinet-gauge__speed {
+    font-size: calc(var(--size) * 0.3);
+    font-weight: 800;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.02em;
+    text-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
+}
+
+.pocabinet-gauge__unit {
+    font-size: calc(var(--size) * 0.085);
+    opacity: 0.75;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.pocabinet-gauge__gear {
+    position: absolute;
+    bottom: 9%;
+    min-width: 1.6em;
+    padding: 0.05em 0.45em;
+    border-radius: 999px;
+    font-size: calc(var(--size) * 0.12);
+    font-weight: 800;
+    text-align: center;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid var(--pocabinet-glass-edge);
+}
+
+/* ─── Position badge: re-created per place change (@key), so it swooshes in ─ */
+
+.pocabinet-posbadge {
+    position: absolute;
+    top: 0.7rem;
+    left: 0.7rem;
+    padding: 0.2rem 0.75rem 0.25rem;
+    border-radius: var(--radius-md, 10px);
+    font-size: calc(2rem * var(--pocabinet-hud, 1));
+    font-weight: 800;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    color: var(--pocabinet-glass-text);
+    background: var(--pocabinet-glass-fill), var(--pocabinet-glass-shade);
+    border: 1px solid var(--pocabinet-glass-edge);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 22px rgba(0, 0, 0, 0.3);
+    -webkit-backdrop-filter: var(--pocabinet-glass-blur);
+    backdrop-filter: var(--pocabinet-glass-blur);
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 4;
+    animation: pocabinet-pos-swoosh 0.55s cubic-bezier(0.2, 0.9, 0.25, 1.15) both;
+}
+
+/* A glint that sweeps across the glass as the new place lands. */
+.pocabinet-posbadge::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.55) 50%, transparent 65%);
+    transform: translateX(-120%);
+    animation: pocabinet-glint 0.9s 0.15s ease-out both;
+}
+
+.pocabinet-posbadge__p {
+    font-size: 0.55em;
+    opacity: 0.8;
+    margin-right: 0.08em;
+}
+
+.pocabinet-posbadge__of {
+    font-size: 0.45em;
+    opacity: 0.7;
+    margin-left: 0.1em;
+}
+
+.pocabinet-posbadge--up {
+    border-color: var(--pocabinet-gain);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 22px rgba(46, 204, 113, 0.5);
+}
+
+.pocabinet-posbadge--down {
+    border-color: var(--pocabinet-loss);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 0 22px rgba(255, 90, 90, 0.45);
+}
+
+@keyframes pocabinet-pos-swoosh {
+    0% { opacity: 0; transform: translateX(-40%) skewX(-12deg) scale(1.25); filter: blur(5px); }
+    60% { opacity: 1; transform: translateX(4%) skewX(3deg) scale(0.98); filter: blur(0); }
+    100% { transform: none; }
+}
+
+@keyframes pocabinet-glint {
+    to { transform: translateX(120%); }
+}
+
 /* Dialogue bubble layer — dialogue.js appends its own .pocabinet-dialogue
    bubble inside this overlay. */
 .pocabinet-dialogue-layer {
@@ -392,7 +515,8 @@
 
 .pocabinet-ping {
     position: absolute;
-    top: 0.7rem;
+    /* Under the position badge. */
+    top: calc(0.9rem + 3.4rem * var(--pocabinet-hud, 1));
     left: 0.7rem;
     padding: 0.2rem 0.55rem;
     border-radius: 999px;
@@ -471,8 +595,9 @@
     outline-offset: -2px;
 }
 
-.pocabinet-pausebtn {
-    margin-left: auto;
+.pocabinet-iconbtn {
+    min-width: 2.25rem;
+    min-height: 2.25rem;
     background: transparent;
     color: var(--color-text, inherit);
     border: 1px solid var(--color-border, currentColor);
@@ -482,21 +607,30 @@
     font: inherit;
 }
 
-.pocabinet-pausebtn:focus-visible {
+.pocabinet-iconbtn:focus-visible {
     outline: 2px solid var(--color-focus, currentColor);
     outline-offset: 2px;
 }
 
 /* ─── Pause overlay ──────────────────────────────────────────────────────── */
 
+/* A modal <dialog> (showModal): the browser centres it in the top layer and makes the
+   page behind inert. Reset the UA frame; the card is the visible surface. */
 .pocabinet-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(4, 8, 18, 0.72);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 40;
+    /* Explicit: the app's reset zeroes dialog margins, which pinned the modal top-left. */
+    margin: auto;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    max-width: none;
+    max-height: none;
+    color: inherit;
+}
+
+.pocabinet-overlay::backdrop {
+    background: rgba(4, 8, 18, 0.62);
+    -webkit-backdrop-filter: blur(3px);
+    backdrop-filter: blur(3px);
 }
 
 .pocabinet-overlay__card {
@@ -569,11 +703,13 @@
 /* Frosted glass over the still-running scene: the race stays visible, blurred, behind it. */
 .pocabinet-results__card {
     position: relative;
-    overflow: hidden;
-    max-width: 720px;
+    display: flex;
+    flex-direction: column;
+    max-width: 1040px;
+    max-height: 100%;
     margin: 0 auto;
-    padding: 1.25rem;
-    background: color-mix(in srgb, var(--color-surface) 74%, transparent);
+    padding: 1rem 1.25rem 0;
+    background: color-mix(in srgb, var(--color-surface) 93%, transparent);
     -webkit-backdrop-filter: blur(16px) saturate(1.35);
     backdrop-filter: blur(16px) saturate(1.35);
     border: 1px solid color-mix(in srgb, var(--color-text) 14%, transparent);
@@ -696,46 +832,6 @@
     font-size: 0.85rem;
 }
 
-.pocabinet-confetti {
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    overflow: hidden;
-}
-
-.pocabinet-confetti span {
-    position: absolute;
-    top: -12px;
-    left: calc(var(--cx, 0) * 1%);
-    width: 9px;
-    height: 14px;
-    background: var(--cc);
-    opacity: 0.9;
-    animation: pocabinet-fall var(--cd, 2s) linear infinite;
-}
-
-@keyframes pocabinet-fall {
-    to { transform: translateY(110vh) rotate(340deg); }
-}
-
-/* Reduced motion: kill the confetti animation entirely (the element stays for
-   layout simplicity but renders as nothing). */
-.pocabinet-reduced .pocabinet-confetti span {
-    animation: none;
-    display: none;
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .pocabinet-confetti span { animation: none; display: none; }
-    .pocabinet-reconnect__spinner { animation-duration: 2.4s; }
-    .pocabinet-countdown, .pocabinet-results, .pocabinet-results__card { animation: none; }
-}
-
-.pocabinet-reduced .pocabinet-countdown,
-.pocabinet-reduced .pocabinet-results,
-.pocabinet-reduced .pocabinet-results__card {
-    animation: none;
-}
 /* ─── Touch controls (input.js flips data-active; hidden otherwise) ──────── */
 
 .pocabinet-touch {
@@ -744,7 +840,7 @@
     top: 0;
     left: 0;
     right: 0;
-    height: 70vh; /* the canvas box — the controls sit over its lower edge */
+    height: var(--pocabinet-canvas-h); /* the canvas box — the controls sit over its lower edge */
     pointer-events: none;
     justify-content: space-between;
     align-items: flex-end;
@@ -973,4 +1069,454 @@
 ::deep .pocabinet-dialogue__body {
     font-size: 0.95rem;
     line-height: 1.3;
+}
+
+/* ═══ 2026-09-29 consolidation pass ═════════════════════════════════════════
+   Everything below is the audit follow-up: layout that fills the viewport, the
+   merged start card, the compact HUD strip, results with pinned actions, touch-safe
+   targets, contrast, and ONE reduced-motion rule. Later rules win on purpose. */
+
+/* The canvas fills what the header and the HUD strip leave (was a fixed 70vh, which
+   left a gap on tall screens and scrolled on short ones). Touch controls, the gauge
+   and the results overlay all key off the same variable. */
+.pocabinet-race {
+    --pocabinet-canvas-h: max(300px, calc(100dvh - 8.75rem));
+}
+
+@media (max-width: 640px) {
+    .pocabinet-race { --pocabinet-canvas-h: max(280px, calc(100dvh - 10.5rem)); }
+}
+
+/* Screen-reader-only live region. */
+.pocabinet-sr {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+/* ─── Start card: two columns on desktop, mode switcher ───────────────────── */
+
+.pocabinet-card--start {
+    max-width: 1040px;
+    display: grid;
+    gap: 1rem 2rem;
+}
+
+@media (min-width: 960px) {
+    .pocabinet-card--start { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; }
+}
+
+.pocabinet-start__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.pocabinet-start__head h1 {
+    margin: 0;
+}
+
+.pocabinet-modes {
+    display: inline-flex;
+    padding: 0.2rem;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-text) 7%, transparent);
+}
+
+.pocabinet-mode {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0 0.95rem;
+    border-radius: 999px;
+    color: var(--color-text);
+    text-decoration: none;
+    font-weight: 600;
+}
+
+.pocabinet-mode--on {
+    background: var(--color-primary);
+    color: var(--color-on-primary, white);
+}
+
+.pocabinet-card__lede {
+    margin: 0.5rem 0 0;
+}
+
+.pocabinet-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 2.25rem;
+    padding: 0 0.4rem;
+    background: none;
+    border: 0;
+    color: var(--color-primary);
+    font: inherit;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    cursor: pointer;
+}
+
+.pocabinet-actions {
+    align-items: center;
+}
+
+.pocabinet-customize {
+    margin-top: 0;
+    border: 1px solid var(--color-border, transparent);
+    border-radius: var(--radius-md, 8px);
+    padding: 0 0.85rem;
+}
+
+.pocabinet-customize + .pocabinet-customize {
+    margin-top: 0.6rem;
+}
+
+.pocabinet-customize > summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    color: var(--color-text);
+    font-weight: 600;
+}
+
+.pocabinet-customize[open] > summary {
+    margin-bottom: 0.25rem;
+}
+
+.pocabinet-customize[open] {
+    padding-bottom: 0.85rem;
+}
+
+.pocabinet-customize__value {
+    margin-left: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--color-text-muted);
+    font-weight: 400;
+    font-size: 0.9rem;
+}
+
+.pocabinet-customize__swatch {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    background: var(--pocabinet-swatch);
+    border: 1px solid var(--color-border, transparent);
+}
+
+::deep .pocabinet-paintshop {
+    margin-top: 0.25rem;
+}
+
+/* Campaign stage on each track card, and the rewards under the grid (was a separate
+   "The Campaign" block repeating the same three tracks). */
+::deep .pocabinet-track__stage {
+    display: inline-block;
+    margin-top: 0.3rem;
+    padding: 0.1rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    border: 1px solid var(--color-border, transparent);
+    color: var(--color-text-muted);
+}
+
+::deep .pocabinet-track__stage--active {
+    border-color: var(--color-primary);
+    color: var(--color-text);
+}
+
+::deep .pocabinet-track__stage--done {
+    border-color: #2e9e5b;
+    color: var(--color-text);
+}
+
+::deep .pocabinet-rewards {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin: -0.25rem 0 0.25rem;
+    font-size: 0.85rem;
+}
+
+::deep .pocabinet-track-select {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+::deep .pocabinet-track-select select {
+    flex: 1 1 auto;
+    min-height: 2.5rem;
+    font: inherit;
+}
+
+/* Lobby: bounded width, top-aligned like the start card. */
+::deep .pocabinet-lobby {
+    max-width: 1040px;
+    margin: 0 auto;
+}
+
+/* ─── HUD strip: one compact row (two on phones) ──────────────────────────── */
+
+.pocabinet-hud {
+    gap: 0.35rem 1rem;
+    align-items: center;
+    padding: 0.45rem 0.75rem;
+}
+
+.pocabinet-hud__buttons {
+    display: inline-flex;
+    gap: 0.4rem;
+    margin-left: auto;
+}
+
+/* Sector chips sit on the page surface: token colours, so they read in both themes
+   (they were white-on-dark text tokens over a fixed dark fill — grey on grey in light mode). */
+.pocabinet-sector {
+    background: color-mix(in srgb, var(--color-text) 9%, transparent);
+    color: var(--color-text);
+}
+
+.pocabinet-sector__label {
+    color: var(--color-text-muted);
+}
+
+/* ─── Glass gauge: out of the way of the touch controls ───────────────────── */
+
+.pocabinet-gauge__unit {
+    font-size: max(11px, calc(var(--size) * 0.085));
+}
+
+/* With touch controls on, bottom-centre is under the steer pad and the Brake pedal:
+   sit smaller, just above the steer pad on the left. */
+.pocabinet-race:has(.pocabinet-touch[data-active="true"]) .pocabinet-gauge {
+    --size: calc(min(104px, 26vw) * var(--pocabinet-hud, 1));
+    left: 0.75rem;
+    transform: none;
+    top: calc(var(--pocabinet-canvas-h) - 84px - 1.5rem - var(--size));
+}
+
+/* ─── Results: native dialog, scrolling body, pinned actions ─────────────── */
+
+.pocabinet-results {
+    margin: 0;
+    border: 0;
+    width: auto;
+    height: auto;
+    max-width: none;
+    max-height: none;
+    color: inherit;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.pocabinet-results__card {
+    width: 100%;
+    min-height: 0;
+}
+
+.pocabinet-results__body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding-bottom: 0.75rem;
+}
+
+.pocabinet-results__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 0.25rem 1rem;
+}
+
+.pocabinet-results__head h2 {
+    margin: 0;
+    flex: 1 1 auto;
+}
+
+.pocabinet-results__head p {
+    margin: 0;
+}
+
+.pocabinet-results__place {
+    font-size: 1.1rem;
+}
+
+.pocabinet-results__place strong {
+    font-size: 1.6rem;
+}
+
+.pocabinet-results__grid {
+    display: grid;
+    gap: 0.5rem 1.5rem;
+}
+
+@media (min-width: 900px) {
+    .pocabinet-results__grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); align-items: start; }
+    .pocabinet-telemetry { margin-top: 0.5rem; }
+}
+
+.pocabinet-podium {
+    margin: 0.75rem 0;
+}
+
+.pocabinet-results__actions {
+    flex: 0 0 auto;
+    margin: 0 -1.25rem;
+    padding: 0.75rem 1.25rem;
+    border-top: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 96%, transparent);
+    border-radius: 0 0 var(--radius-md, 10px) var(--radius-md, 10px);
+}
+
+.pocabinet-results__actions .pocabinet-secondary,
+.pocabinet-share .pocabinet-secondary {
+    margin-top: 0;
+}
+
+.pocabinet-share {
+    position: relative;
+}
+
+.pocabinet-share > summary {
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+}
+
+.pocabinet-share > summary::-webkit-details-marker { display: none; }
+
+.pocabinet-share__menu {
+    position: absolute;
+    bottom: calc(100% + 0.4rem);
+    left: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    padding: 0.5rem;
+    min-width: 13rem;
+    border-radius: var(--radius-md, 8px);
+    background: var(--color-surface);
+    border: 1px solid var(--color-border, transparent);
+    box-shadow: var(--shadow-card, 0 8px 24px rgba(0, 0, 0, 0.25));
+    z-index: 2;
+}
+
+.pocabinet-debrief {
+    margin: 0.75rem 0 0.25rem;
+    padding: 0.6rem 0.85rem;
+    border-radius: var(--radius-md, 8px);
+    background: color-mix(in srgb, var(--color-primary) 10%, transparent);
+    border: 1px solid color-mix(in srgb, var(--color-primary) 35%, transparent);
+}
+
+.pocabinet-debrief__headline {
+    margin: 0 0 0.35rem;
+    font-weight: 700;
+}
+
+.pocabinet-debrief__tips {
+    margin: 0;
+    padding-left: 1.2rem;
+    line-height: 1.4;
+}
+
+/* ─── Touch-safe targets (≥32 px, ≥44 px on coarse pointers) ─────────────── */
+
+::deep .pocabinet-settings__row select,
+::deep .pocabinet-settings__row input[type="range"],
+.pocabinet-replaybar select,
+.pocabinet-replaybar input[type="range"] {
+    min-height: 2rem;
+    font: inherit;
+}
+
+::deep .pocabinet-settings__row input[type="checkbox"] {
+    width: 1.25rem;
+    height: 1.25rem;
+    accent-color: var(--color-primary);
+}
+
+::deep .pocabinet-settings__more > summary {
+    display: flex;
+    align-items: center;
+    min-height: 2.5rem;
+    cursor: pointer;
+    font-weight: 600;
+}
+
+::deep .pocabinet-settings__rest {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+}
+
+@media (pointer: coarse) {
+    .pocabinet-primary,
+    .pocabinet-secondary,
+    .pocabinet-iconbtn,
+    .pocabinet-mode,
+    .pocabinet-link,
+    .pocabinet-customize > summary,
+    ::deep .pocabinet-primary,
+    ::deep .pocabinet-secondary,
+    ::deep .pocabinet-settings__row select,
+    ::deep .pocabinet-settings__row input[type="range"],
+    ::deep .pocabinet-settings__more > summary,
+    .pocabinet-replaybar select,
+    .pocabinet-replaybar input[type="range"] {
+        min-height: 44px;
+    }
+    .pocabinet-iconbtn { min-width: 44px; }
+    ::deep .pocabinet-settings__row input[type="checkbox"] { width: 1.5rem; height: 1.5rem; }
+}
+
+/* ─── Reduced motion: one rule for both switches ──────────────────────────
+   The in-game setting (.pocabinet-reduced on the race section) and the OS preference
+   used to be two scattered lists per component, and they drifted. */
+.pocabinet-reduced *,
+.pocabinet-reduced *::before,
+.pocabinet-reduced *::after {
+    animation: none !important;
+    transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .pocabinet-root *,
+    .pocabinet-root *::before,
+    .pocabinet-root *::after {
+        animation: none !important;
+        transition: none !important;
+    }
+}
+
+/* Phones: the start card fits one screen (tighter cards and margins), and the replay bar —
+   taller than the HUD strip it replaces — takes its room from the canvas, not the page. */
+@media (max-width: 640px) {
+    .pocabinet-card { margin: 0.5rem auto; padding: 1rem; }
+    ::deep .pocabinet-track-selector { gap: 0.5rem; margin: 0.75rem 0; }
+    ::deep .pocabinet-track { padding: 0.55rem 0.7rem; }
+    ::deep .pocabinet-track__swatch { height: 48px; }
+    .pocabinet-race:has(.pocabinet-replaybar) { --pocabinet-canvas-h: max(260px, calc(100dvh - 15rem)); }
+}
+
+::deep .pocabinet-settings__row input[type="checkbox"] {
+    width: 1.5rem;
+    height: 1.5rem;
+}
+
+/* Phones: sectors and the two buttons share the strip's second row (they wrapped to a third). */
+@media (max-width: 640px) {
+    .pocabinet-hud { column-gap: 0.75rem; }
+    .pocabinet-sectors { flex: 1 1 auto; gap: 0.25rem; }
+    .pocabinet-sector { min-width: 0; padding: 0.12rem 0.35rem; }
 }

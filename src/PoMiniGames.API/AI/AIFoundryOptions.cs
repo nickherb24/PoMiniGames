@@ -190,6 +190,8 @@ public sealed class AIFoundryOptions
         public const string Ecosystem = "ecosystem";
         /// <summary>PoBrawl: only the post-fight press conference, via <see cref="Tasks.PoBrawlPresser"/>.</summary>
         public const string PoBrawl = "pobrawl";
+        /// <summary>PoCabinet: radio banter and the race debrief, via task keys. Shares the default pipeline.</summary>
+        public const string PoCabinet = "pocabinet";
     }
 
     /// <summary>
@@ -231,6 +233,12 @@ public sealed class AIFoundryOptions
 
         /// <summary>PoBrawl: the one-line post-fight press conference. A cheap-model job.</summary>
         public const string PoBrawlPresser = "pobrawl.presser";
+
+        /// <summary>PoCabinet: the officials' per-track radio line pool (one call per track per day). Cheap model.</summary>
+        public const string PoCabinetBanter = "pocabinet.banter";
+
+        /// <summary>PoCabinet: the post-race headline + tips from the race numbers. Cheap model.</summary>
+        public const string PoCabinetDebrief = "pocabinet.debrief";
     }
 
     /// <summary>

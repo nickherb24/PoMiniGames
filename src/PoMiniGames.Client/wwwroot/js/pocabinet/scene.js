@@ -8,7 +8,7 @@
 // Rendering is physically based: MeshStandard/Physical materials lit by a sun
 // (DirectionalLight with a shadow map that follows the car in focus), a
 // hemisphere fill, and image-based lighting from a PMREM capture of the sky dome
-// (re-captured whenever night/rain changes). The frame goes through postfx.js
+// (re-captured whenever the weather changes). The frame goes through postfx.js
 // (HDR bloom, light shafts, ACES tone mapping). Surfaces use procedural textures
 // from materials.js — asphalt with a normal and roughness map, grass with a
 // world-space macro tint so it never tiles — plus camera-riding grass blades
@@ -23,8 +23,12 @@
 // World mapping: sim (x, y) → three (x / 10, 0, y / 10).
 //
 // Camera: third person only (2026-09-23). 'chase' (close), 'far' (high and
-// long) and 'tv' (trackside cameras handing off along the lap). The cockpit
-// view was retired; 'cockpit' is accepted and treated as 'chase'.
+// long) and 'tv' (trackside cameras handing off along the lap).
+//
+// Quality is automatic (2026-09-29, replacing the Render quality and FOV settings):
+// the loop watches the frame rate and steps the pixel ratio, bloom depth, shadow map
+// and grass down a tier after a sustained dip below 45 fps. It never steps back up
+// mid-race; a remount starts at 'high' again.
 //
 // `handle.fx` is the per-frame bag race.js and environment.js write into (speed,
 // rain, flash, shake, kerb rumble, slow motion, focus); the loop turns it into
@@ -34,7 +38,7 @@
 // API surface:
 //   const handle = await mount(canvas, world);
 //   handle.setView({ x, y, heading, mode, speed, dt }); handle.setRacingLine(bool);
-//   handle.setStartLights(lit, go); handle.setSkyEnvironment(night, rain);
+//   handle.setStartLights(lit, go); handle.setWeather(rain);
 //   unmount(handle);
 
 import * as THREE from 'three';
@@ -60,10 +64,7 @@ function hex(value, fallback) {
     try { return new THREE.Color(value || fallback); } catch { return new THREE.Color(fallback); }
 }
 
-function qualityFor(renderScale) {
-    const s = Number(renderScale) || 1;
-    return s <= 0.65 ? 'low' : s <= 0.85 ? 'medium' : 'high';
-}
+const RENDER_SCALE = { low: 0.6, medium: 0.8, high: 1 };
 
 class SceneHandle {
     constructor(renderer, scene, camera, hemi, sun, canvas) {
@@ -89,13 +90,14 @@ class SceneHandle {
         this.post = null;
         this.quality = 'high';
         this.baseFov = camera.fov;
-        this.night = 0;
+        this.fps = { frames: 0, time: 0, slow: 0 };
+        this.userScale = 1;
         this.sunDir = new THREE.Vector3(0.5, 0.8, 0.3).normalize();
         this.sunDirVisual = null;
         this.sunVisibility = 0;
         this.raining = false;
         this.fx = {
-            speed: 0, cockpit: false, rain: 0, wipeT: 0, wipeP: 1.8, flash: 0, slow: 0,
+            speed: 0, rain: 0, flash: 0, slow: 0,
             shake: 0, rumble: 0, reduced: false, focus: null,
             exposure: 1, bloom: 0.7, bloomThreshold: 1, sun: null, sunColor: new THREE.Color(1, 0.9, 0.75),
         };
@@ -132,6 +134,7 @@ class SceneHandle {
             for (const cb of this._frameCbs) {
                 try { cb(now); } catch { /* one bad effect never kills the frame */ }
             }
+            this.autoQuality(dt);
             try {
                 this.applyFx(dt);
                 this.followShadow();
@@ -162,8 +165,7 @@ class SceneHandle {
         const x = (Number(p.x) || 0) / WORLD_SCALE;
         const z = (Number(p.y) || 0) / WORLD_SCALE;
         const heading = Number(p.heading) || 0;
-        let mode = p.mode || 'chase';
-        if (mode === 'cockpit') mode = 'chase';
+        const mode = p.mode || 'chase';
         const fx = Math.cos(heading), fz = Math.sin(heading);
         if (mode === 'chase' || mode === 'far') {
             const far = mode === 'far';
@@ -257,26 +259,30 @@ class SceneHandle {
         this.fx.sun = { x: p.x * 0.5 + 0.5, y: p.y * 0.5 + 0.5, v: vis * fade };
     }
 
-    /** Legacy cockpit follow (kept for callers that only have a pose). */
-    updatePlayerView(p) {
-        this.setView({ ...p, mode: 'chase' });
-    }
-
-    /** Apply player view preferences — pixel-ratio cap multiplier, FOV, quality tier. */
+    /** Apply player view preferences (reduced motion, racing line). */
     applyView(opts) {
         if (this.disposed) return;
         const o = opts && typeof opts === 'object' ? opts : {};
-        const scale = Math.min(1.5, Math.max(0.5, Number(o.renderScale) || 1));
-        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * scale);
-        const fov = Math.min(90, Math.max(60, Number(o.fov) || 70));
-        this.baseFov = fov;
-        if (Math.abs(this.camera.fov - fov) > 0.01) {
-            this.camera.fov = fov;
-            this.camera.updateProjectionMatrix();
-        }
         this.fx.reduced = !!o.reducedMotion;
-        this.setQuality(qualityFor(o.renderScale));
         this.setRacingLine(!!o.racingLine);
+    }
+
+    /** Step quality down a tier after ~3 s averaging under 45 fps (see the header). */
+    autoQuality(dt) {
+        const f = this.fps;
+        if (!(dt > 0) || this.quality === 'low') return;
+        f.frames++;
+        f.time += dt;
+        if (f.time < 1) return;
+        const rate = f.frames / f.time;
+        f.frames = 0;
+        f.time = 0;
+        f.slow = rate < 45 ? f.slow + 1 : 0;
+        if (f.slow < 3) return;
+        f.slow = 0;
+        const next = this.quality === 'high' ? 'medium' : 'low';
+        this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2) * RENDER_SCALE[next]);
+        this.setQuality(next);
         this.resize();
     }
 
@@ -303,33 +309,27 @@ class SceneHandle {
         this.scenery?.setStartLights(lit, go);
     }
 
-    /**
-     * Night factor 0..1 and rain: fog and sky colour, light levels, the sky's stars
-     * and clouds, the lamps and floodlit landmarks, and a fresh IBL capture.
-     */
-    setSkyEnvironment(night, rain) {
-        const n = Math.min(1, Math.max(0, Number(night) || 0));
-        this.night = n;
+    /** Rain or clear: fog and sky colour, light levels, the sky's clouds, and a fresh IBL capture. */
+    setWeather(rain) {
         this.raining = !!rain;
         const base = this.baseAtmosphere || {};
-        const fog = hex(base.fogHex, '#14233f').lerp(new THREE.Color('#05070f'), n * 0.85);
-        if (rain) fog.lerp(new THREE.Color('#4d545c'), 0.35 * (1 - n));
+        const fog = hex(base.fogHex, '#14233f');
+        if (rain) fog.lerp(new THREE.Color('#4d545c'), 0.35);
         this.scene.background = fog.clone();
         if (this.scene.fog) {
             this.scene.fog.color.copy(fog);
             this.scene.fog.near = (Number(base.fogStart) || 220) * (rain ? 0.6 : 1);
-            this.scene.fog.far = (Number(base.fogEnd) || 900) * (1 - n * 0.25) * (rain ? 0.75 : 1);
+            this.scene.fog.far = (Number(base.fogEnd) || 900) * (rain ? 0.75 : 1);
         }
         const ambient = (Number(base.ambientIntensity) || 0.5) / 0.55;
-        const day = (1 - n * 0.9) * (rain ? 0.5 : 1);
+        const day = rain ? 0.5 : 1;
         this.sun.intensity = SUN_BASE * ambient * day;
         this.hemi.intensity = HEMI_BASE * ambient * (0.3 + 0.7 * day);
         this.scene.environmentIntensity = ENV_BASE * (0.25 + 0.75 * day);
         this.sunVisibility = this.sky ? this.sky.preset.sunSize > 0 ? day * (rain ? 0 : 1) : 0 : 0;
-        this.fx.exposure = 1 + n * 0.35;
-        this.fx.bloomThreshold = n > 0.5 ? 0.8 : 1.1;
-        this.sky?.setEnvironment(n, rain);
-        this.scenery?.setNight(n);
+        this.fx.exposure = 1;
+        this.fx.bloomThreshold = 1.1;
+        this.sky?.setRain(rain);
         this.captureEnvironment();
     }
 
@@ -458,7 +458,7 @@ class SceneHandle {
         this.scene.add(group);
         this.trackGroup = group;
         this.buildGrass();
-        this.setSkyEnvironment(0, false);
+        this.setWeather(false);
     }
 
     buildGrass() {
@@ -739,10 +739,3 @@ export function unmount(handle) {
     handle.dispose();
 }
 
-// Diagnostic hook for E2E smoke tests.
-export function sceneApi() {
-    return {
-        isMounted: (handle) => handle && !handle.disposed,
-        version: 'pocabinet-scene@3.0.0',
-    };
-}

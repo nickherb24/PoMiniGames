@@ -21,22 +21,22 @@ import { wrapAngle } from './track.js';
 export const TICK_SECONDS = 1 / 30;
 export const MAX_SPEED = 140;
 export const KMH_PER_UNIT = 2.0;
-export const ACCEL = 55;
-export const BRAKE_DECEL = 130;
-export const COAST_DECEL = 14;
-export const REVERSE_ACCEL = 25;
-export const REVERSE_MAX = 18;
-export const STEER_RATE = 2.3;
-export const STEER_FULL_SPEED = 18;
+const ACCEL = 55;
+const BRAKE_DECEL = 130;
+const COAST_DECEL = 14;
+const REVERSE_ACCEL = 25;
+const REVERSE_MAX = 18;
+const STEER_RATE = 2.3;
+const STEER_FULL_SPEED = 18;
 export const GRIP_ACCEL = 105;
-export const SCRUB_DECEL = 30;
-export const GRASS_DECEL = 50;
-export const GRASS_GRIP = 0.6;
+const SCRUB_DECEL = 30;
+const GRASS_DECEL = 50;
+const GRASS_GRIP = 0.6;
 export const RUN_OFF = 26;
 export const CAR_RADIUS = 14;
-export const WALL_RESTITUTION = 0.25;
-export const WALL_FRICTION = 0.85;
-export const CONTACT_SPEED_FLOOR = REVERSE_MAX * 1.5;
+const WALL_RESTITUTION = 0.25;
+const WALL_FRICTION = 0.85;
+const CONTACT_SPEED_FLOOR = REVERSE_MAX * 1.5;
 
 /** The four officials, in the server's roster order (PoCabinetPersonality.Roster). */
 export const OFFICIALS = Object.freeze([
@@ -147,7 +147,7 @@ export function step(track, car, c, dt, grip) {
     advanceDistance(track, car, proj.along);
 }
 
-export function advanceDistance(track, car, along) {
+function advanceDistance(track, car, along) {
     let delta = along - car.along;
     const half = track.length * 0.5;
     if (delta > half) delta -= track.length;
@@ -203,7 +203,7 @@ export function gridSlot(track, car, slot) {
 }
 
 /** Speed the tightest corner in braking range allows. Shared by the AI and the auto-brake assist. */
-export function cornerSpeed(track, car, grip, margin) {
+function cornerSpeed(track, car, grip, margin) {
     const v = car.speed;
     const kappa = track.maxCurvature(car.along + 5, car.along + 30 + Math.abs(v) * 1.1);
     return Math.sqrt(GRIP_ACCEL * grip * margin / Math.max(kappa, 1e-5));

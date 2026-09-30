@@ -154,7 +154,7 @@ public sealed class PoCabinetSession : IAsyncDisposable
     public Task SendInputAsync(PoCabinetInput input)
     {
         if (!_raceJoined || _gameCode is null || _race.State != HubConnectionState.Connected) return Task.CompletedTask;
-        return _race.SendAsync("SubmitInput", _gameCode, input);
+        return _race.SendAsync("SubmitInput", input);
     }
 
     /// <summary>Begin the 3-second latency probe (idempotent) feeding the HUD ping badge.</summary>

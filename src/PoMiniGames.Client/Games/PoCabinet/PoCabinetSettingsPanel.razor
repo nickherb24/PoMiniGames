@@ -1,8 +1,12 @@
-@* PoCabinetSettingsPanel — audio / render / accessibility / environment prefs.
+@* PoCabinetSettingsPanel — audio / accessibility / environment prefs and driver aids.
    Bound two-way via Value + ValueChanged; persistence and JS-side application
-   (pixel ratio, FOV, Web Audio gains) are the page's job — this component only
+   (Web Audio gains, aids, racing line) are the page's job — this component only
    edits the view model and raises the change. Native Blazor + design tokens,
-   no Radzen. *@
+   no Radzen. Render quality and FOV are gone (2026-09-29): scene.js picks the
+   quality tier from the measured frame rate.
+
+   Compact (the pause overlay): the three audio rows up front, everything else
+   folded under "More settings", so pausing doesn't open a 15-row form. *@
 
 <div class="pocabinet-settings" role="group" aria-label="Cabinet settings">
     <div class="pocabinet-settings__row">
@@ -18,108 +22,109 @@
     </div>
 
     <div class="pocabinet-settings__row">
-        <label for="pocabinet-quality">Render quality</label>
-        <select id="pocabinet-quality" value="@Format(Value.RenderScale)" @onchange="OnQualityChanged">
-            <option value="0.6">Low (fast)</option>
-            <option value="0.8">Medium</option>
-            <option value="1">High (device default)</option>
-        </select>
+        <label for="pocabinet-music">Race music</label>
+        <input id="pocabinet-music" type="checkbox" checked="@Value.Music" @onchange="OnMusicChanged" />
     </div>
 
     <div class="pocabinet-settings__row">
-        <label for="pocabinet-fov">Field of view</label>
-        <input id="pocabinet-fov" type="range" min="60" max="90" step="1"
-               value="@Format(Value.Fov)" @oninput="OnFovChanged" />
-        <span class="pocabinet-settings__value">@($"{Value.Fov:0}°")</span>
+        <label for="pocabinet-voices">Officials' voices</label>
+        <input id="pocabinet-voices" type="checkbox" checked="@Value.Voices" @onchange="OnVoicesChanged" />
     </div>
 
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-hud">HUD size</label>
-        <select id="pocabinet-hud" value="@Format(Value.HudScale)" @onchange="OnHudScaleChanged">
-            <option value="0.85">Small</option>
-            <option value="1">Normal</option>
-            <option value="1.15">Large</option>
-        </select>
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-tod">Time of day</label>
-        <select id="pocabinet-tod" value="@Value.TimeOfDay" @onchange="OnTimeOfDayChanged">
-            <option value="auto">Auto (my clock)</option>
-            <option value="day">Day</option>
-            <option value="night">Night (headlights)</option>
-        </select>
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-weather">Weather</label>
-        <select id="pocabinet-weather" value="@Value.Weather" @onchange="OnWeatherChanged">
-            <option value="auto">Auto (Washington D.C.)</option>
-            <option value="clear">Clear</option>
-            <option value="rain">Rain (slippery, solo)</option>
-        </select>
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-motion">Reduced motion (confetti, rain density)</label>
-        <input id="pocabinet-motion" type="checkbox" checked="@Value.ReducedMotion" @onchange="OnReducedMotionChanged" />
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-colorsafe">Colorblind-safe minimap palette</label>
-        <input id="pocabinet-colorsafe" type="checkbox" checked="@Value.ColorSafe" @onchange="OnColorSafeChanged" />
-    </div>
-
-    <h3 class="pocabinet-settings__group">Controls &amp; driver aids</h3>
-    <p class="pocabinet-settings__hint">Keyboard: W A S D or arrows, C changes camera, Esc pauses. Gamepads work too: left stick steers, the triggers are gas and brake.</p>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-touch">On-screen touch controls</label>
-        <select id="pocabinet-touch" value="@Value.TouchControls" @onchange="OnTouchChanged">
-            <option value="auto">Auto (touch screens)</option>
-            <option value="on">Always show</option>
-            <option value="off">Hide</option>
-        </select>
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-steermode">Touch steering</label>
-        <select id="pocabinet-steermode" value="@Value.SteerMode" @onchange="OnSteerModeChanged">
-            <option value="pad">Steer pad</option>
-            <option value="tilt">Tilt the device</option>
-        </select>
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-sens">Steering sensitivity</label>
-        <input id="pocabinet-sens" type="range" min="0.5" max="1.5" step="0.05"
-               value="@Format(Value.SteerSensitivity)" @oninput="OnSensitivityChanged" />
-        <span class="pocabinet-settings__value">@($"{Value.SteerSensitivity:0.00}×")</span>
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-assist">Steering assist</label>
-        <select id="pocabinet-assist" value="@Value.SteeringAssist" @onchange="OnAssistChanged">
-            <option value="off">Off</option>
-            <option value="light">Light</option>
-            <option value="strong">Strong</option>
-        </select>
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-autobrake">Auto-brake for corners</label>
-        <input id="pocabinet-autobrake" type="checkbox" checked="@Value.AutoBrake" @onchange="OnAutoBrakeChanged" />
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-line">Show racing line (green = flat out, red = brake)</label>
-        <input id="pocabinet-line" type="checkbox" checked="@Value.RacingLine" @onchange="OnRacingLineChanged" />
-    </div>
+    @if (Compact)
+    {
+        <details class="pocabinet-settings__more">
+            <summary>More settings</summary>
+            @Rest
+        </details>
+    }
+    else
+    {
+        @Rest
+    }
 </div>
 
 @code {
     [Parameter] public PoCabinetUiSettings Value { get; set; } = new();
     [Parameter] public EventCallback<PoCabinetUiSettings> ValueChanged { get; set; }
+    /// <summary>Pause overlay: audio rows only, the rest behind "More settings".</summary>
+    [Parameter] public bool Compact { get; set; }
+
+    private RenderFragment Rest => @<div class="pocabinet-settings__rest">
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-hud">HUD size</label>
+            <select id="pocabinet-hud" value="@Format(Value.HudScale)" @onchange="OnHudScaleChanged">
+                <option value="0.85">Small</option>
+                <option value="1">Normal</option>
+                <option value="1.15">Large</option>
+            </select>
+        </div>
+
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-weather">Weather</label>
+            <select id="pocabinet-weather" value="@Value.Weather" @onchange="OnWeatherChanged">
+                <option value="clear">Clear</option>
+                <option value="rain">Rain (slippery, solo)</option>
+                <option value="auto">Live (Washington D.C.)</option>
+            </select>
+        </div>
+
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-motion">Reduced motion (confetti, rain density)</label>
+            <input id="pocabinet-motion" type="checkbox" checked="@Value.ReducedMotion" @onchange="OnReducedMotionChanged" />
+        </div>
+
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-colorsafe">Colorblind-safe minimap palette</label>
+            <input id="pocabinet-colorsafe" type="checkbox" checked="@Value.ColorSafe" @onchange="OnColorSafeChanged" />
+        </div>
+
+        <h3 class="pocabinet-settings__group">Controls &amp; driver aids</h3>
+        <p class="pocabinet-settings__hint">Keyboard: W A S D or arrows, C changes camera, Esc pauses. Gamepads work too: left stick steers, the triggers are gas and brake.</p>
+
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-touch">On-screen touch controls</label>
+            <select id="pocabinet-touch" value="@Value.TouchControls" @onchange="OnTouchChanged">
+                <option value="auto">Auto (touch screens)</option>
+                <option value="on">Always show</option>
+                <option value="off">Hide</option>
+            </select>
+        </div>
+
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-steermode">Touch steering</label>
+            <select id="pocabinet-steermode" value="@Value.SteerMode" @onchange="OnSteerModeChanged">
+                <option value="pad">Steer pad</option>
+                <option value="tilt">Tilt the device</option>
+            </select>
+        </div>
+
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-sens">Steering sensitivity</label>
+            <input id="pocabinet-sens" type="range" min="0.5" max="1.5" step="0.05"
+                   value="@Format(Value.SteerSensitivity)" @oninput="OnSensitivityChanged" />
+            <span class="pocabinet-settings__value">@($"{Value.SteerSensitivity:0.00}×")</span>
+        </div>
+
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-assist">Steering assist</label>
+            <select id="pocabinet-assist" value="@Value.SteeringAssist" @onchange="OnAssistChanged">
+                <option value="off">Off</option>
+                <option value="light">Light</option>
+                <option value="strong">Strong</option>
+            </select>
+        </div>
+
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-autobrake">Auto-brake for corners</label>
+            <input id="pocabinet-autobrake" type="checkbox" checked="@Value.AutoBrake" @onchange="OnAutoBrakeChanged" />
+        </div>
+
+        <div class="pocabinet-settings__row">
+            <label for="pocabinet-line">Show racing line (green = flat out, red = brake)</label>
+            <input id="pocabinet-line" type="checkbox" checked="@Value.RacingLine" @onchange="OnRacingLineChanged" />
+        </div>
+    </div>;
 
     private static string Format(double d) =>
         d.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -136,17 +141,14 @@
     private Task OnMuteChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.Muted = e.Value is bool b && b);
 
-    private Task OnQualityChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.RenderScale = ParseDouble(e.Value?.ToString(), s.RenderScale));
+    private Task OnMusicChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.Music = e.Value is bool b && b);
 
-    private Task OnFovChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.Fov = ParseDouble(e.Value?.ToString(), s.Fov));
+    private Task OnVoicesChanged(ChangeEventArgs e) =>
+        RaiseAsync(s => s.Voices = e.Value is bool b && b);
 
     private Task OnHudScaleChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.HudScale = ParseDouble(e.Value?.ToString(), s.HudScale));
-
-    private Task OnTimeOfDayChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.TimeOfDay = e.Value?.ToString() ?? s.TimeOfDay);
 
     private Task OnWeatherChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.Weather = e.Value?.ToString() ?? s.Weather);

@@ -555,6 +555,32 @@
     .gl-auth-user { max-width: 8rem; }
 }
 
+/* ≤420 px with a game title in the centre rail the chip still ellipsised to one glyph
+   ("t…", 2026-09-29 audit): below that width it becomes a round initial. The name span
+   stays readable to screen readers. */
+.gl-auth-user__initial { display: none; }
+@media (max-width: 420px) {
+    .gl-auth-user {
+        display: inline-grid;
+        place-items: center;
+        width: 2rem;
+        height: 2rem;
+        max-width: none;
+        padding: 0;
+        border-radius: 50%;
+        font-weight: 700;
+    }
+    .gl-auth-user__initial { display: inline; }
+    .gl-auth-user__name {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+    }
+}
+
 /* The .gl-fps--preview chip belonged to the settings page's FPS-badge row and
    went with that page on 2026-08-11. Since 2026-08-30 the live chip renders
    only in Development or with `?debug=1` — see FpsCounter.razor. */
