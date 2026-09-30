@@ -23,19 +23,11 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
     private string _displayName = "Player";
     private bool _isGuest = true;
 
-    private readonly bool _roomScoped;
-
     /// <param name="hubPath">Hub path relative to the API base, e.g. <c>poracer/lobby-hub</c>.</param>
-    /// <param name="roomScoped">
-    /// The hub has many rooms (PoBrawl): a reconnect re-joins the room this client was in, by its
-    /// code, through <c>JoinRoom(code, displayName, isGuest)</c>. A plain <c>Join</c> after a
-    /// reconnect would quick-match a new connection id into whatever room was open.
-    /// </param>
-    public LobbyClient(ApiEndpoints endpoints, string hubPath, bool roomScoped = false)
+    public LobbyClient(ApiEndpoints endpoints, string hubPath)
     {
         _endpoints = endpoints;
         _hubPath = hubPath;
-        _roomScoped = roomScoped;
     }
 
     public event Action<LobbyState<TPlayer>>? StateChanged;
@@ -88,25 +80,10 @@ public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILob
         return await JoinAsync();
     }
 
-    /// <summary>Room-scoped hubs: the code the first join should take (a shared link); null quick-matches.</summary>
-    public string? RoomCode { get; set; }
-
-    public Task<LobbyState<TPlayer>?> JoinAsync()
-    {
-        var code = State?.GameCode ?? RoomCode;
-        return _roomScoped && !string.IsNullOrEmpty(code)
-            ? SeatAsync("JoinRoom", code, _displayName, _isGuest)
-            : SeatAsync("Join", _displayName, _isGuest);
-    }
-
-    /// <summary>
-    /// A seat-taking hub call (<c>Join</c>, or a room hub's <c>JoinRoom</c> / <c>CreateRoom</c>)
-    /// whose reply is the new lobby state. Throws the hub's refusal (unknown code, full room).
-    /// </summary>
-    public async Task<LobbyState<TPlayer>?> SeatAsync(string method, params object?[] args)
+    public async Task<LobbyState<TPlayer>?> JoinAsync()
     {
         if (_hub is null) return null;
-        var state = await _hub.InvokeCoreAsync<LobbyState<TPlayer>>(method, args);
+        var state = await _hub.InvokeAsync<LobbyState<TPlayer>>("Join", _displayName, _isGuest);
         State = state;
         StateChanged?.Invoke(state);
         return state;

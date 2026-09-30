@@ -11,7 +11,7 @@ namespace PoMiniGamesClient.Games.PoCabinet;
 /// Code-behind for <see cref="PoCabinetPage"/>. The page lifecycle is:
 /// <list type="number">
 ///   <item><b>Start</b> — track, paint, settings. 1p/2p/demo go to <see cref="Phase.Loading"/>;
-///         multiplayer opens a lobby (or joins one from the lobby browser / an invite link).</item>
+///         multiplayer joins the one lobby (first in hosts; there are no codes).</item>
 ///   <item><b>Lobby</b> — <see cref="PoCabinetLobby"/>; its <c>RaceStarting</c> hand-off calls
 ///         <see cref="BeginWireModeAsync"/> directly. (It used to navigate to this same page with
 ///         a query string, which Blazor treats as a parameter change on the live component —
@@ -34,7 +34,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 {
     [Inject] private IJSRuntime JS { get; set; } = default!;
     [Inject] private PlayerNameService PlayerNameSvc { get; set; } = default!;
-    [Inject] private NavigationManager Nav { get; set; } = default!;
     [Inject] private GameResultService GameResults { get; set; } = default!;
     [Inject] private PoCabinetSession Session { get; set; } = default!;
     [Inject] private PoCabinetCareerState Career { get; set; } = default!;
@@ -54,7 +53,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected string? _trackId = PoCabinetCatalog.DefaultTrackId;
     protected string? _livery = "Stripe";
     protected string? _color = "Indigo";
-    protected string? _joinCode;
 
     protected int _lap = 1;
     protected int _position = 1;
@@ -167,7 +165,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     private int _lastLapCount;
     private double _lastLapTime;
     private long _lastHudRender;
-    private string? _handledUri;
     private GameMode? _lastMode;
 
     protected override async Task OnInitializedAsync()
@@ -192,10 +189,8 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Deep links: <c>?lobby=CODE</c> opens the lobby (invite links, rematch), <c>?code=CODE</c>
-    /// joins a running race (spectating when you have no seat). Parsed here, not in
-    /// <c>OnInitializedAsync</c>, because navigating to the same page with a new query is a
-    /// parameter change on the live component. A mode switch mid-race tears the race down.
+    /// A mode switch mid-race (same component, new route parameter) tears the race down.
+    /// (The <c>?lobby=</c> / <c>?code=</c> invite deep links went with the join codes, 2026-09-29.)
     /// </summary>
     protected override async Task OnParametersSetAsync()
     {
@@ -205,29 +200,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _phase = Phase.Start;
         }
         _lastMode = Mode;
-
-        if (string.Equals(_handledUri, Nav.Uri, StringComparison.Ordinal)) return;
-        _handledUri = Nav.Uri;
-        var query = Nav.ToAbsoluteUri(Nav.Uri).Query.TrimStart('?');
-        foreach (var kvp in query.Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var eq = kvp.IndexOf('=');
-            if (eq <= 0) continue;
-            var key = kvp[..eq];
-            var value = Uri.UnescapeDataString(kvp[(eq + 1)..]).Trim().ToUpperInvariant();
-            if (value.Length == 0) continue;
-            if (string.Equals(key, "lobby", StringComparison.OrdinalIgnoreCase) && _phase == Phase.Start)
-            {
-                _playerName = PlayerNameSvc.GetOrReadInitialName();
-                _joinCode = value;
-                _phase = Phase.Lobby;
-            }
-            else if (string.Equals(key, "code", StringComparison.OrdinalIgnoreCase) && _phase is Phase.Start or Phase.Lobby)
-            {
-                _playerName = PlayerNameSvc.GetOrReadInitialName();
-                await BeginWireModeAsync(value);
-            }
-        }
     }
 
     /// <summary>
@@ -291,7 +263,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    /// <summary>Start button: multiplayer opens a lobby as host; everything else races.</summary>
+    /// <summary>Start button: multiplayer joins the lobby; everything else races.</summary>
     protected async Task StartRaceAsync()
     {
         _playerName = PlayerNameSvc.GetOrReadInitialName();
@@ -299,28 +271,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         await UnlockAudioAsync();
         if (IsMultiplayerMode)
         {
-            _joinCode = null;
             _phase = Phase.Lobby;
             await InvokeAsync(StateHasChanged);
             return;
         }
         _phase = Phase.Loading;
         await InvokeAsync(StateHasChanged);
-    }
-
-    protected async Task JoinLobbyAsync(string code)
-    {
-        _playerName = PlayerNameSvc.GetOrReadInitialName();
-        await UnlockAudioAsync();
-        _joinCode = code;
-        _phase = Phase.Lobby;
-        await InvokeAsync(StateHasChanged);
-    }
-
-    protected async Task WatchRaceAsync(string code)
-    {
-        await UnlockAudioAsync();
-        await BeginWireModeAsync(code);
     }
 
     protected Task OnLobbyRaceStartingAsync((string Code, string TrackId) start)
@@ -331,7 +287,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     protected Task LeaveLobbyAsync()
     {
-        _joinCode = null;
         _phase = Phase.Start;
         return InvokeAsync(StateHasChanged);
     }
@@ -388,8 +343,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Enter a multiplayer race (from the lobby hand-off, the lobby browser's Watch, or a
-    /// <c>?code=</c> link). Records state only; the hub join and mount wait for the Loading
+    /// Enter a multiplayer race (from the lobby hand-off or its Watch button). Records state only; the hub join and mount wait for the Loading
     /// render in <see cref="OnAfterRenderAsync"/>, when the canvas exists.
     /// </summary>
     public Task BeginWireModeAsync(string gameCode)
@@ -433,7 +387,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             await TeardownRaceAsync();
             _status = $"Could not join the race: {ex.Message}";
             _phase = Session.Lobby is not null ? Phase.Lobby : Phase.Start;
-            _joinCode = Session.Lobby?.Code;
             await InvokeAsync(StateHasChanged);
         }
     }
@@ -925,10 +878,9 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// <summary>Rematch: the lobby reopened when the race ended; rejoining it is idempotent.</summary>
     protected async Task BackToLobbyAsync()
     {
-        var code = _gameCode;
+        var wasOnline = _gameCode is not null;
         await TeardownRaceAsync();
-        _joinCode = code;
-        _phase = code is null ? Phase.Start : Phase.Lobby;
+        _phase = wasOnline ? Phase.Lobby : Phase.Start;
         await InvokeAsync(StateHasChanged);
     }
 

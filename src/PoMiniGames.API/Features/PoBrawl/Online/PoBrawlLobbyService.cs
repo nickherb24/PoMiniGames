@@ -5,27 +5,27 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoBrawl.Online;
 
 /// <summary>
-/// One PoBrawl 1v1 room: the shared ready/start lobby capped at two, where BOTH seats
+/// The PoBrawl 1v1 room: the shared ready/start lobby capped at two, where BOTH seats
 /// (host included) must be ready, and every seat carries a fighter pick. A player joins
 /// with the 1P avatar and changes fighter through <see cref="PickFighter"/>; the match
 /// service needs both fighters pinned before it can start a fight.
 /// </summary>
-/// <remarks>
-/// 2026-09-29: one room per code (<see cref="PoBrawlRooms"/>) instead of the single global
-/// "BRAWL" room, so any number of pairs can fight at once, and a pair can keep a private room.
-/// </remarks>
 public sealed class PoBrawlLobbyService : LobbyRoom<PoBrawlLobbyPlayer>
 {
+    public const string GlobalCode = "BRAWL";
+
     /// <summary>Hard cap. PoBrawl is 1v1 only — a third arrival is rejected.</summary>
     public const int Cap = 2;
 
-    public PoBrawlLobbyService(string code, bool isPublic) : base(code, Cap, "Match already in progress")
+    public PoBrawlLobbyService() : base(GlobalCode, Cap, "Match already in progress")
     {
-        IsPublic = isPublic;
     }
 
-    /// <summary>Listed in the open-room browser (and eligible for quick match), or reachable by code only.</summary>
-    public bool IsPublic { get; }
+    /// <summary>
+    /// A fresh match code per start, carried to the fight page as <c>?code=</c> — internal
+    /// plumbing, never shown. The match registry and match hub key on it, so a rematch keeps it.
+    /// </summary>
+    public string CreateMatchCode() => WithLock(_ => GameCode = "multi-" + Guid.NewGuid().ToString("N"));
 
     public (LobbyState<PoBrawlLobbyPlayer> state, string message) Open(
         string connectionId, string principalId, string displayName, bool isGuest, PoBrawlFighter fighter) =>

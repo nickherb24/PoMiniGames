@@ -20,7 +20,7 @@
             <section class="pocabinet-start" aria-label="Cabinet start">
                 <div class="pocabinet-card">
                     <h1>Cabinet</h1>
-                    <p class="pocabinet-card__lede">@(Mode == GameMode.Demo ? "Watch a 3-lap showcase — the officials race themselves while the camera roams." : IsMultiplayerMode ? "Race friends online. Host a lobby and share the code, or jump into an open one." : "Pick a track, pick your paint, and take on the officials.") 3 laps per race.</p>
+                    <p class="pocabinet-card__lede">@(Mode == GameMode.Demo ? "Watch a 3-lap showcase — the officials race themselves while the camera roams." : IsMultiplayerMode ? "Race online. Everyone who joins lands in the same lobby — first in hosts and picks the track." : "Pick a track, pick your paint, and take on the officials.") 3 laps per race.</p>
                     <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged" />
                     <details class="pocabinet-customize">
                         <summary>Customize paint job</summary>
@@ -32,17 +32,13 @@
                     </details>
                     <p class="pocabinet-hint" aria-hidden="true">Selected: <strong>@(_livery)</strong> · <strong>@(_color)</strong></p>
                     <div class="pocabinet-actions">
-                        <button class="pocabinet-primary" @onclick="StartRaceAsync">@(Mode == GameMode.Demo ? "Watch demo" : "Start race")</button>
+                        <button class="pocabinet-primary" @onclick="StartRaceAsync">@(Mode == GameMode.Demo ? "Watch demo" : IsMultiplayerMode ? "Join lobby" : "Start race")</button>
                         @if (!IsMultiplayerMode)
                         {
                             <a href="/pocabinet/multi">Multiplayer</a>
                         }
                         <a href="/leaderboards?game=pocabinet">Leaderboard</a>
                     </div>
-                    @if (IsMultiplayerMode)
-                    {
-                        <PoCabinetLobbyBrowser OnJoin="JoinLobbyAsync" OnWatch="WatchRaceAsync" />
-                    }
                     @if (Mode == GameMode.OnePlayer)
                     {
                         <PoCabinetChampionshipView />
@@ -62,7 +58,7 @@
         }
         else if (_phase == Phase.Lobby)
         {
-            <PoCabinetLobby InitialJoinCode="@_joinCode" InitialTrackId="@_trackId" Color="@PlayerColorHex"
+            <PoCabinetLobby InitialTrackId="@_trackId" Color="@PlayerColorHex"
                             OnRaceStarting="OnLobbyRaceStartingAsync" OnExit="LeaveLobbyAsync" />
         }
         else

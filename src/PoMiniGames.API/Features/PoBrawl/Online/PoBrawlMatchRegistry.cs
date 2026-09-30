@@ -4,15 +4,11 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoBrawl.Online;
 
 /// <summary>
-/// Process-local registry of running PoBrawl 1v1 matches, one per room code.
+/// Process-local registry of PoBrawl 1v1 matches, one per match code (a fresh code per lobby
+/// start — see <see cref="PoBrawlLobbyService.CreateMatchCode"/>), so any number of pairs can
+/// fight at once.
 /// </summary>
 /// <remarks>
-/// <para>
-/// 2026-09-29: rooms came back. This held one match for the one global "BRAWL" room, so a
-/// second pair could not fight until the first finished, and a start threw away whatever was
-/// running. Now each lobby room's code owns at most one match, and a start only replaces the
-/// match on its own code.
-/// </para>
 /// <para>
 /// A finished match lingers for <see cref="FinishedLinger"/> so both corners can vote for the
 /// rematch and a player who reconnects after the bell still gets their result. The pump
@@ -46,9 +42,9 @@ public sealed class PoBrawlMatchRegistry
         !string.IsNullOrWhiteSpace(code) && _byCode.TryGetValue(code, out var m) ? m : null;
 
     /// <summary>
-    /// The match still held by some room under this id, or null once its FinishedLinger sweep
+    /// The match still held under this id, or null once its FinishedLinger sweep
     /// (or a rematch replacing it) removed it. The result ingest walks this rather than trusting
-    /// the client's story about the fight, and the registry is small — active rooms only.
+    /// the client's story about the fight, and the registry is small — live and lingering fights only.
     /// </summary>
     public PoBrawlMatchService? FindByMatchId(string matchId) =>
         string.IsNullOrWhiteSpace(matchId)

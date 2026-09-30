@@ -5,7 +5,7 @@ using PoMiniGamesClient.Services.Http;
 namespace PoMiniGamesClient.Games.PoBrawl;
 
 /// <summary>
-/// The client half of one online PoBrawl room on the match hub: join (or re-join) the fight on a
+/// The client half of one online PoBrawl fight on the match hub: join (or re-join) the fight on a
 /// code, stream the local corner's inputs, and surface the snapshots, the result and the rematch.
 /// <see cref="PoBrawlPage"/> hosts it in online mode and hands each snapshot to the arena engine,
 /// which plays the fight as a puppet of them (wwwroot/js/pobrawl/netplay.js).
@@ -127,7 +127,7 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
 
     /// <summary>
     /// The part of a hub failure a page can show. A HubException arrives wrapped — "An unexpected
-    /// error occurred invoking 'JoinRoom' on the server. HubException: No room with code ABCDE." —
+    /// error occurred invoking 'Join' on the server. HubException: Lobby is full — …" —
     /// so the part after the last marker is the server's text. Any other failure (transport, a
     /// non-HubException) gets the fallback.
     /// </summary>

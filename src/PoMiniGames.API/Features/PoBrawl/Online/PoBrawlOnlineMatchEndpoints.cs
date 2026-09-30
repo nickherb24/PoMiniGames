@@ -73,7 +73,7 @@ public static class PoBrawlOnlineMatchEndpoints
                 {
                     return Results.Problem(
                         title: "Match not held",
-                        detail: "No finished fight with that id is still held. Results must be reported before the room is swept.",
+                        detail: "No finished fight with that id is still held. Results must be reported before the fight is swept.",
                         statusCode: StatusCodes.Status404NotFound);
                 }
                 if (match.FinishedAtUtc is null)

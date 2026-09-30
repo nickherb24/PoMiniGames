@@ -49,7 +49,7 @@ public class OnlineModesUiTests
 
     [Theory]
     [InlineData("/pobrawl/multi", "Start Fight", "/pobrawl/online", "#pobrawl-container canvas")]
-    [InlineData("/poracer/multi", "Start Race", "/poracer", ".racer-hud")]
+    [InlineData("/poracer/multi", "Start Race", "/poracer", ".race-hud")]
     [InlineData("/povoxelstrike/multi", "Start the Run", "/povoxelstrike/multi/", "#povoxelstrike-container canvas")]
     public async Task LobbyGame_TwoPlayersReady_HostStarts_AndBothReachTheMatch(string lobby, string startLabel, string matchPath, string marker)
     {
@@ -151,18 +151,20 @@ public class OnlineModesUiTests
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 60_000,
         });
-        // Every game opens on the intro card; Start dismisses it, and for the online modes that
-        // is also what connects to the hub.
+        // Most online modes open on the intro card, whose Start is also what connects to the hub.
+        // The Racer lobby has none (dropped 2026-09-17) and joins on arrival, so its shared lobby
+        // card counts as arrived too.
         var start = page.Locator(".gps-intro-btn--primary").First;
         try
         {
-            await start.WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
+            await page.Locator(".gps-intro-btn--primary, .lobby").First
+                .WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
         }
         catch (TimeoutException)
         {
-            throw new XunitException($"[{tag}] no intro card at {page.Url}. {await DescribeAsync(page)}");
+            throw new XunitException($"[{tag}] no intro card or lobby at {page.Url}. {await DescribeAsync(page)}");
         }
-        await start.ClickAsync();
+        if (await start.CountAsync() > 0) await start.ClickAsync();
         return page;
     }
 

@@ -5,9 +5,9 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoCabinet;
 
 /// <summary>
-/// Owns every running PoCabinet multiplayer race on this host: one <see cref="PoCabinetSim"/>
-/// per lobby code, ticked at 30 Hz by one shared timer, broadcasting a snapshot to the
-/// <c>race:{code}</c> group after every tick.
+/// Owns the running PoCabinet multiplayer race on this host (keyed by
+/// <see cref="PoCabinetLobbyService.RaceId"/>: one lobby, so at most one race), ticked at
+/// 30 Hz by one shared timer, broadcasting a snapshot to the race group after every tick.
 ///
 /// <para>
 /// <b>Inputs are queued, one consumed per tick.</b> Each client runs its own car on a fixed
@@ -59,7 +59,7 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
 
     public static string RaceGroup(string code) => $"race:{code.ToUpperInvariant()}";
 
-    public static string LobbyGroup(string code) => $"lobby:{code.ToUpperInvariant()}";
+    public const string LobbyGroup = "lobby:" + PoCabinetLobbyService.RaceId;
 
     /// <summary>Start a race for <paramref name="code"/>, replacing any finished one.</summary>
     public void Create(string code, string trackId, IReadOnlyList<PoCabinetDriver> drivers)
@@ -185,9 +185,9 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
         {
             _logger.LogInformation("PoCabinet race {Code} abandoned", session.Code);
         }
-        _lobbies.MarkRaceFinished(session.Code);
-        var view = _lobbies.View(session.Code);
-        if (view is not null) _ = _lobbyHub.Clients.Group(LobbyGroup(session.Code)).SendAsync("LobbyState", view);
+        _lobbies.MarkRaceFinished();
+        var view = _lobbies.View();
+        if (view is not null) _ = _lobbyHub.Clients.Group(LobbyGroup).SendAsync("LobbyState", view);
     }
 
     private static PoCabinetRaceSnapshot BuildSnapshot(RaceSession session, PoCabinetDialogueEvent? dialogue)

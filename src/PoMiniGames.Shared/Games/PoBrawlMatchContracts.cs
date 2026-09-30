@@ -145,7 +145,7 @@ public sealed class PoBrawlMatchState
 public sealed class PoBrawlMatchSnapshot
 {
     public string MatchId { get; set; } = "";
-    /// <summary>The room code — the rematch and the reconnect both find the fight by it.</summary>
+    /// <summary>The match code — the rematch and the reconnect both find the fight by it.</summary>
     public string GameCode { get; set; } = "";
     public PoBrawlMatchPlayerInfo Player1 { get; set; } = new("", "");
     public PoBrawlMatchPlayerInfo Player2 { get; set; } = new("", "");
@@ -153,15 +153,6 @@ public sealed class PoBrawlMatchSnapshot
     /// <summary>True for a caller with no seat on this fight: they watch, and their inputs are ignored.</summary>
     public bool IsSpectator { get; set; }
 }
-
-/// <summary>One row of the open-room browser: a public room with a free seat, or a public fight to watch.</summary>
-public sealed record PoBrawlRoomSummary(
-    string Code,
-    string HostName,
-    int Players,
-    int MaxPlayers,
-    bool InProgress,
-    IReadOnlyList<string> Fighters);
 
 public sealed record PoBrawlMatchPlayerInfo(string DisplayName, string FighterId);
 

@@ -177,7 +177,7 @@ public sealed class PoCabinetInput
 // ──────────────────────────────  Multiplayer lobby  ──────────────────────────────
 
 /// <summary>
-/// One lobby seat as other players see it. <see cref="SeatId"/> is a per-lobby hash of the
+/// One lobby seat as other players see it. <see cref="SeatId"/> is a hash of the
 /// player's claim id — never the claim itself, which is an Entra object id.
 /// </summary>
 public sealed class PoCabinetLobbySeat
@@ -193,27 +193,16 @@ public sealed class PoCabinetLobbySeat
 /// <summary>Full lobby state, broadcast as <c>LobbyState</c> after every change.</summary>
 public sealed class PoCabinetLobbyView
 {
+    /// <summary>Internal id of the lobby's race (what <c>JoinRace</c> takes). Never shown — there are no join codes.</summary>
     public string Code { get; set; } = "";
     public string TrackId { get; set; } = PoCabinetCatalog.DefaultTrackId;
-    public bool IsPublic { get; set; }
     /// <summary>AI officials the host asked for; the race seats min(BotCount, free seats).</summary>
     public int BotCount { get; set; }
     /// <summary>True while a race for this lobby is running; the lobby reopens when it ends.</summary>
     public bool InRace { get; set; }
     public IReadOnlyList<PoCabinetLobbySeat> Players { get; set; } = new List<PoCabinetLobbySeat>();
-    /// <summary>The caller's own seat — set only on the Open/Join reply, null in broadcasts.</summary>
+    /// <summary>The caller's own seat — set only on the Join reply (null there when no seat was free), null in broadcasts.</summary>
     public string? YourSeatId { get; set; }
-}
-
-/// <summary>One row of the public lobby browser.</summary>
-public sealed class PoCabinetLobbySummary
-{
-    public string Code { get; set; } = "";
-    public string HostName { get; set; } = "";
-    public string TrackId { get; set; } = PoCabinetCatalog.DefaultTrackId;
-    public int Humans { get; set; }
-    public int Bots { get; set; }
-    public bool InRace { get; set; }
 }
 
 // ──────────────────────────────  Final result  ──────────────────────────────

@@ -63,7 +63,7 @@ public sealed class PoCabinetRaceHubContractTests(PoMiniGamesE2EFixture fixture)
         // negotiate test so we keep the test-method ceiling tight.
         var snapshot = new PoCabinetRaceSnapshot
         {
-            GameCode = "CAB-XXXXXXXX",
+            GameCode = "cabinet",
             ServerTimeMs = 1_700_000_000_000,
             ElapsedRaceTime = 95.42,
             Started = true,

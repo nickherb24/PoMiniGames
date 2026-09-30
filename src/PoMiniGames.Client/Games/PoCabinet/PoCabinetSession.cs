@@ -8,9 +8,9 @@ namespace PoMiniGamesClient.Games.PoCabinet;
 /// Owns the two PoCabinet hub connections for the app's lifetime (scoped = one per tab in
 /// WASM), so the lobby survives the hop into a race and back for a rematch.
 /// <list type="number">
-///   <item><b>Lobby hub</b> (<c>/pocabinet/lobby-hub</c>): open or join a lobby, receive
-///         <c>LobbyState</c> after every change, host controls (track, AI officials, public),
-///         and <c>RaceStarting(code, trackId)</c>. A reconnect rejoins the same lobby — seats
+///   <item><b>Lobby hub</b> (<c>/pocabinet/lobby-hub</c>): join the one lobby (first in
+///         hosts), receive <c>LobbyState</c> after every change, host controls (track, AI
+///         officials), and <c>RaceStarting(raceId, trackId)</c>. A reconnect rejoins — seats
 ///         are keyed by claim identity server-side, so it is the same seat.</item>
 ///   <item><b>Race hub</b> (<c>/pocabinet/race-hub</c>): <see cref="JoinRaceAsync"/> returns
 ///         the static world and this client's car id (null = spectating); then one numbered
@@ -27,8 +27,9 @@ public sealed class PoCabinetSession : IAsyncDisposable
     private readonly HubConnection _lobby;
     private readonly HubConnection _race;
     private readonly CancellationTokenSource _lifetime = new();
-    private string? _lobbyCode;
+    private bool _inLobby;
     private string _displayName = "Player";
+    private string? _trackId;
     private string? _color;
     private string? _gameCode;
     private bool _raceJoined;
@@ -41,7 +42,7 @@ public sealed class PoCabinetSession : IAsyncDisposable
 
         _lobby.On<PoCabinetLobbyView>("LobbyState", async view =>
         {
-            if (!string.Equals(view.Code, _lobbyCode, StringComparison.OrdinalIgnoreCase)) return;
+            if (!_inLobby) return;
             Lobby = view;
             if (LobbyChanged is { } handler) await handler(view);
         });
@@ -51,8 +52,8 @@ public sealed class PoCabinetSession : IAsyncDisposable
         });
         _lobby.Reconnected += async _ =>
         {
-            if (_lobbyCode is null) return;
-            try { await JoinLobbyAsync(_lobbyCode, _displayName, _color); } catch { /* the view shows the stale state */ }
+            if (!_inLobby) return;
+            try { await JoinLobbyAsync(_displayName, _trackId, _color); } catch { /* the view shows the stale state */ }
         };
 
         _race.On<PoCabinetRaceSnapshot>("RaceSnapshot", async snapshot =>
@@ -95,27 +96,22 @@ public sealed class PoCabinetSession : IAsyncDisposable
     public event Func<string?, Task>? StatusChanged;
     public event Func<double, Task>? PingMeasured;
 
-    public async Task<PoCabinetLobbyView> OpenLobbyAsync(string displayName, string? trackId, bool isPublic, string? color, CancellationToken ct = default)
+    /// <summary>
+    /// Join (or rejoin) the lobby; the first arrival hosts on <paramref name="trackId"/>. When
+    /// no seat is free (race running, or eight seated) the view comes back with a null
+    /// <see cref="MySeatId"/> and broadcasts keep arriving, so the caller can retry.
+    /// </summary>
+    public async Task<PoCabinetLobbyView?> JoinLobbyAsync(string displayName, string? trackId, string? color, CancellationToken ct = default)
     {
         await EnsureAsync(_lobby, ct);
-        var view = await _lobby.InvokeAsync<PoCabinetLobbyView>("Open", displayName, trackId, isPublic, color, ct);
-        Remember(view, displayName, color);
+        var view = await _lobby.InvokeAsync<PoCabinetLobbyView?>("Join", displayName, trackId, color, ct);
+        _inLobby = true;
+        _displayName = displayName;
+        _trackId = trackId;
+        _color = color;
+        Lobby = view;
+        MySeatId = view?.YourSeatId;
         return view;
-    }
-
-    /// <summary>Join (or rejoin) a lobby. Null when the code is unknown, full, or its race is running.</summary>
-    public async Task<PoCabinetLobbyView?> JoinLobbyAsync(string code, string displayName, string? color, CancellationToken ct = default)
-    {
-        await EnsureAsync(_lobby, ct);
-        var view = await _lobby.InvokeAsync<PoCabinetLobbyView?>("Join", code, displayName, color, ct);
-        if (view is not null) Remember(view, displayName, color);
-        return view;
-    }
-
-    public async Task<IReadOnlyList<PoCabinetLobbySummary>> ListOpenAsync(CancellationToken ct = default)
-    {
-        await EnsureAsync(_lobby, ct);
-        return await _lobby.InvokeAsync<List<PoCabinetLobbySummary>>("ListOpen", ct);
     }
 
     public Task<bool> ToggleReadyAsync() => LobbyCallAsync("ToggleReady");
@@ -124,18 +120,16 @@ public sealed class PoCabinetSession : IAsyncDisposable
 
     public Task<bool> SetBotsAsync(int count) => LobbyCallAsync("SetBots", count);
 
-    public Task<bool> SetPublicAsync(bool isPublic) => LobbyCallAsync("SetPublic", isPublic);
-
     public Task<bool> TryStartAsync() => LobbyCallAsync("TryStart");
 
     public async Task LeaveLobbyAsync()
     {
-        var code = _lobbyCode;
-        _lobbyCode = null;
+        var wasIn = _inLobby;
+        _inLobby = false;
         Lobby = null;
         MySeatId = null;
-        if (code is null || _lobby.State != HubConnectionState.Connected) return;
-        try { await _lobby.InvokeAsync("Leave", code); } catch { /* best effort */ }
+        if (!wasIn || _lobby.State != HubConnectionState.Connected) return;
+        try { await _lobby.InvokeAsync("Leave"); } catch { /* best effort */ }
     }
 
     /// <summary>Join a running race. The reply carries the static world and, for a seated
@@ -195,23 +189,11 @@ public sealed class PoCabinetSession : IAsyncDisposable
         }
     }
 
-    private void Remember(PoCabinetLobbyView view, string displayName, string? color)
-    {
-        _lobbyCode = view.Code;
-        _displayName = displayName;
-        _color = color;
-        Lobby = view;
-        if (view.YourSeatId is not null) MySeatId = view.YourSeatId;
-    }
-
     private async Task<bool> LobbyCallAsync(string method, params object?[] args)
     {
-        if (_lobbyCode is null) return false;
+        if (!_inLobby) return false;
         await EnsureAsync(_lobby, default);
-        var all = new object?[args.Length + 1];
-        all[0] = _lobbyCode;
-        Array.Copy(args, 0, all, 1, args.Length);
-        return await _lobby.InvokeCoreAsync<bool>(method, all);
+        return await _lobby.InvokeCoreAsync<bool>(method, args);
     }
 
     private static async Task EnsureAsync(HubConnection hub, CancellationToken ct)

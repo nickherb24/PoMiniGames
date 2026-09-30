@@ -22,7 +22,7 @@ public class PoBrawlLobbyServiceTests
     [Fact]
     public void Open_AssignsFirstArrivalAsHost_AndBouncesThirdAtCap()
     {
-        var lobby = new PoBrawlLobbyService("TEST", isPublic: true);
+        var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
         lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
         lobby.State.HostConnectionId.Should().Be("conn-1");
@@ -36,7 +36,7 @@ public class PoBrawlLobbyServiceTests
     [Fact]
     public void RejoinSameConnection_RefreshesPlayerRow_PreservesHost()
     {
-        var lobby = new PoBrawlLobbyService("TEST", isPublic: true);
+        var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
         lobby.ToggleReady("conn-1");
         var (state, _) = lobby.Open("conn-1", "alice", "Alice2", isGuest: false, AnyFighter);
@@ -48,7 +48,7 @@ public class PoBrawlLobbyServiceTests
     [Fact]
     public void TryStart_RequiresHostAndAllReady_AndIsIdempotent()
     {
-        var lobby = new PoBrawlLobbyService("TEST", isPublic: true);
+        var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
         lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
         lobby.ToggleReady("conn-1");
@@ -60,36 +60,43 @@ public class PoBrawlLobbyServiceTests
     }
 
     /// <summary>
-    /// Rooms (2026-09-29): quick match still pairs two strangers, a private room is never handed
-    /// to quick match or listed, and the browser shows waiting public rooms and live fights.
+    /// The one shared room (2026-09-29, rooms-by-code removed): each start mints a fresh match
+    /// code and the room frees up, so the next two arrivals fight alongside the first pair.
     /// </summary>
     [Fact]
-    public void Rooms_QuickMatchPairs_PrivateStaysHidden_ListShowsWaitingAndLive()
+    public void Start_MintsFreshMatchCode_SoTheNextPairFightsAlongside()
     {
-        var rooms = new PoBrawlRooms();
+        var lobby = new PoBrawlLobbyService();
         var matches = new PoBrawlMatchRegistry();
 
-        var hidden = rooms.Create(isPublic: false);
-        hidden.Open("conn-p", "carol", "Carol", isGuest: false, AnyFighter);
+        string StartPair(string a, string b)
+        {
+            lobby.Open(a, a, a, isGuest: false, AnyFighter);
+            lobby.Open(b, b, b, isGuest: true, AnyFighter);
+            lobby.ToggleReady(a);
+            lobby.ToggleReady(b);
+            lobby.TryStart(a).Should().BeTrue();
+            var code = lobby.CreateMatchCode();
+            matches.Start(code, lobby.Players);
+            lobby.End();
+            // Both lobby connections close as the pair navigates to the fight.
+            lobby.Leave(a);
+            lobby.Leave(b);
+            return code;
+        }
 
-        var first = rooms.QuickMatch();
-        first.Should().NotBeSameAs(hidden, "quick match never seats a stranger in a private room");
-        first.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
-        rooms.QuickMatch().Should().BeSameAs(first, "the second arrival is paired with the first");
+        var first = StartPair("conn-1", "conn-2");
+        var second = StartPair("conn-3", "conn-4");
 
-        rooms.ListOpen(matches).Should().ContainSingle(r => r.Code == first.GameCode && !r.InProgress)
-            .And.NotContain(r => r.Code == hidden.GameCode);
-        rooms.Get(hidden.GameCode.ToLowerInvariant()).Should().BeSameAs(hidden, "codes are case-insensitive");
-
-        first.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
-        matches.Start(first.GameCode, first.Players);
-        rooms.ListOpen(matches).Should().ContainSingle(r => r.Code == first.GameCode && r.InProgress, "a live public fight can be watched");
+        second.Should().NotBe(first);
+        matches.Get(first)!.Roster.Select(p => p.ConnectionId).Should().Equal("conn-1", "conn-2");
+        matches.Get(second)!.Roster.Select(p => p.ConnectionId).Should().Equal("conn-3", "conn-4");
     }
 
     [Fact]
     public void EndMatch_ResetsReadyFlags_AndClearsStaleMatch()
     {
-        var lobby = new PoBrawlLobbyService("TEST", isPublic: true);
+        var lobby = new PoBrawlLobbyService();
         lobby.Open("conn-1", "alice", "Alice", isGuest: false, AnyFighter);
         lobby.Open("conn-2", "bob", "Bob", isGuest: true, AnyFighter);
         lobby.ToggleReady("conn-1");

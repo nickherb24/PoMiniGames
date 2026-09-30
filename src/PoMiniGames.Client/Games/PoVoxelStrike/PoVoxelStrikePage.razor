@@ -307,8 +307,13 @@
         catch { /* engine torn down mid-frame */ }
     }
 
+    // A run that ended because the squad died already shows the game-over modal; the
+    // toast is only news when the host ends a run that is still going.
     private void OnRunEnded() =>
-        _ = InvokeAsync(() => ToastService.Show("The host ended the run.", ToastType.Info));
+        _ = InvokeAsync(() =>
+        {
+            if (_phase != Phase.Dead) ToastService.Show("The host ended the run.", ToastType.Info);
+        });
 
     private void OnPlayerDropped(string connectionId) =>
         _ = InvokeAsync(() => ToastService.Show("A squad member dropped.", ToastType.Warning));
@@ -459,6 +464,10 @@
         _finalCrushKills = crushKills;
         _finalVoxels = voxelsDestroyed;
         StateHasChanged();
+
+        // Close the run so the shared lobby reopens for the next squad instead of reading
+        // "in progress" until everyone leaves this page. The hub honours the host's call only.
+        if (IsMulti) _ = Hub.EndRunAsync();
 
         if (_demo)
         {

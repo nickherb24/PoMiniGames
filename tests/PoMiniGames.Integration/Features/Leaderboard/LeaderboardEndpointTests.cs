@@ -70,10 +70,11 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         times.Should().BeInAscendingOrder(because: "the fastest KO must rank first");
         times.Should().Contain(7.25).And.Contain(42.5);
 
-        // Bad input is rejected: empty initials and a non-positive KO time.
+        // A signed-in caller's typed name is only a fallback (the claim name is stored), so a
+        // blank one is accepted; a non-positive KO time is still rejected.
         (await _client.PostAsJsonAsync("/api/pobrawl/highscores",
             new { PlayerInitials = "", KoTimeSeconds = 5.0 })).StatusCode
-            .Should().Be(HttpStatusCode.BadRequest);
+            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
         (await _client.PostAsJsonAsync("/api/pobrawl/highscores",
             new { PlayerInitials = "ABC", KoTimeSeconds = 0.0 })).StatusCode
             .Should().Be(HttpStatusCode.BadRequest);
@@ -137,10 +138,11 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         var beaten = entries.Select(e => e.GetProperty("value").GetDouble()).ToList();
         beaten.Should().BeInDescendingOrder(because: "most presidents beaten ranks first");
 
-        // Bad input is rejected: empty name and an out-of-range count.
+        // Same rule as the KO board: a signed-in caller's blank typed name is fine (the claim
+        // name is stored); an out-of-range count is still rejected.
         (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
             new { PlayerName = "", PresidentsBeaten = 3 })).StatusCode
-            .Should().Be(HttpStatusCode.BadRequest);
+            .Should().BeOneOf(HttpStatusCode.OK, HttpStatusCode.Created);
         (await _client.PostAsJsonAsync("/api/pobrawl/ladder",
             new { PlayerName = "abc", PresidentsBeaten = PoBrawlRoster.Count + 1 })).StatusCode
             .Should().Be(HttpStatusCode.BadRequest);

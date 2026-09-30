@@ -5,13 +5,13 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.Features.PoBrawl.Online;
 
 /// <summary>
-/// Match hub for live PoBrawl 1v1. Each connection joins its room's group and
+/// Match hub for live PoBrawl 1v1. Each connection joins its match code's group and
 /// streams <see cref="PoBrawlMatchInput"/>s to the server; the server broadcasts
 /// <see cref="PoBrawlMatchState"/>s from the pump and a single
 /// <see cref="PoBrawlMatchResult"/> per corner on finish.
 /// </summary>
 /// <remarks>
-/// The group is keyed by the room CODE, not the match id, so a rematch (a new match on the same
+/// The group is keyed by the match CODE, not the match id, so a rematch (a new match on the same
 /// code) reaches everyone already watching — spectators included — without a re-subscribe.
 /// </remarks>
 public sealed class PoBrawlMatchHub : Hub
@@ -81,19 +81,19 @@ public sealed class PoBrawlMatchHub : Hub
     }
 
     /// <summary>
-    /// After the bell: this corner wants another round. The vote count goes out to the room, and
+    /// After the bell: this corner wants another round. The vote count goes out to the match group, and
     /// once both corners have asked, a fresh match starts on the same code with the same fighters
-    /// and everyone in the room is told to re-join it.
+    /// and everyone in the group is told to re-join it.
     /// </summary>
     public async Task RequestRematch()
     {
         var match = _registry.MatchFor(Context.ConnectionId);
-        // A swept room (FinishedLinger elapsed, or a rematch already replaced it) can never
+        // A swept match (FinishedLinger elapsed, or a rematch already replaced it) can never
         // reach two votes. Throwing — instead of the old silent return — is what lets the
         // caller's UI reset its "waiting for a rematch" state instead of showing it forever.
         if (match is null)
         {
-            throw new HubException("That fight has ended and the room is gone — start a new one from the lobby.");
+            throw new HubException("That fight has ended — start a new one from the lobby.");
         }
         var agreed = match.VoteRematch(Context.ConnectionId);
         var group = Clients.Group(MatchGroup(match.GameCode));

@@ -316,10 +316,10 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoCabinet.PoCabinetLobbyService>();
         services.AddSingleton<PoMiniGames.Features.PoCabinet.PoCabinetRaceRegistry>();
 
-        // PoBrawl online — 1v1 SignalR-driven combat. In-memory rooms by code (quick match,
-        // private rooms, the open-room browser), an in-memory match per room code, and a
-        // hosted pump driving the per-tick frame broadcast for all of them.
-        services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlRooms>();
+        // PoBrawl online — 1v1 SignalR-driven combat. One shared in-memory lobby (the first two
+        // arrivals fight), an in-memory match per started fight, and a hosted pump driving the
+        // per-tick frame broadcast for all of them.
+        services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlLobbyService>();
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchRegistry>();
         services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
         // The post-fight press-conference line (one cheap model call per shown result modal).

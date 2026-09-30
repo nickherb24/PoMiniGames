@@ -8,7 +8,6 @@
 @inject ApiService Api
 @inject ApiEndpoints Endpoints
 @inject ToastService ToastService
-@inject IJSRuntime JS
 @implements IAsyncDisposable
 
 <PageTitle>Brawl · Lobby · PoMiniGames</PageTitle>
@@ -38,13 +37,13 @@ else
                 State="@_lobby.State"
                 LocalConnectionId="@_lobby.ConnectionId"
                 ConnectionState="@_lobby.ConnectionState"
-                Hint="@HintText"
+                Hint="First two in are the fight — 1v1, both players ready up, the host starts."
                 MaxPlayersHint="2"
                 StartLabel="Start Fight"
                 HostReadies="true"
                 CanStart="@EveryoneReady"
                 WaitingHint="Waiting for both players to mark Ready…"
-                PickerTitle="Room"
+                PickerTitle="Fighters"
                 OnReady="_lobby.ToggleReadyAsync"
                 OnStart="_lobby.StartGameAsync"
                 OnLeave="LeaveAsync">
@@ -52,58 +51,6 @@ else
             <span class="lobby-pill lobby-pill--muted">@FighterName(p.Fighter.Id)</span>
         </PlayerBadges>
         <Picker>
-            @* Quick match lands you in a public room (so two people who open this page still meet);
-               you can also open a private one, join a friend's by code or link, or watch a live fight. *@
-            <div class="pbl-room">
-                <span class="pbl-room__code">Room <b>@(Code ?? "…")</b></span>
-                @if (_private == true)
-                {
-                    <span class="lobby-pill lobby-pill--accent">private</span>
-                }
-                <button type="button" class="pbl-btn" disabled="@(Code is null)" @onclick="CopyInviteAsync">🔗 Copy invite link</button>
-                <button type="button" class="pbl-btn" @onclick="() => SwitchAsync(() => _lobby.SeatAsync(CreateRoom, false, Name, IsGuest), isPrivate: true)">🔒 New private room</button>
-                <button type="button" class="pbl-btn" @onclick="() => SwitchAsync(() => _lobby.SeatAsync(CreateRoom, true, Name, IsGuest), isPrivate: false)">🌐 New public room</button>
-            </div>
-            <form class="pbl-join" @onsubmit="JoinByCodeAsync" @onsubmit:preventDefault="true">
-                <label for="pbl-code">Join a friend's room</label>
-                <input id="pbl-code" class="pbl-join__input" maxlength="5" autocomplete="off" spellcheck="false"
-                       placeholder="CODE" @bind="_joinCode" @bind:event="oninput" />
-                <button type="submit" class="pbl-btn" disabled="@(string.IsNullOrWhiteSpace(_joinCode))">Join</button>
-            </form>
-
-            <div class="pbl-open">
-                <div class="pbl-open__head">
-                    <span>Open rooms &amp; live fights</span>
-                    <button type="button" class="pbl-btn pbl-btn--small" @onclick="RefreshRoomsAsync" aria-label="Refresh the room list">↻</button>
-                </div>
-                @if (OtherRooms.Count == 0)
-                {
-                    <p class="pbl-open__empty">Nothing else open right now — share your code, or wait here for quick match.</p>
-                }
-                else
-                {
-                    <ul class="pbl-open__list">
-                        @foreach (var r in OtherRooms)
-                        {
-                            <li class="pbl-open__row">
-                                @if (r.InProgress)
-                                {
-                                    <span class="lobby-pill lobby-pill--warn">live</span>
-                                    <span class="pbl-open__what">@string.Join(" vs ", r.Fighters)</span>
-                                    <button type="button" class="pbl-btn pbl-btn--small" @onclick="() => Watch(r.Code)">👀 Watch</button>
-                                }
-                                else
-                                {
-                                    <span class="lobby-pill lobby-pill--ok">@r.Players/@r.MaxPlayers</span>
-                                    <span class="pbl-open__what">@r.HostName · @string.Join(", ", r.Fighters)</span>
-                                    <button type="button" class="pbl-btn pbl-btn--small" @onclick="() => SwitchAsync(() => _lobby.SeatAsync(JoinRoom, r.Code, Name, IsGuest), isPrivate: false)">Join</button>
-                                }
-                            </li>
-                        }
-                    </ul>
-                }
-            </div>
-
             <p class="lobby__hint">Pick your fighter before you mark ready.</p>
             <div class="lobby-pick-grid">
                 @foreach (var f in RosterForPicker)
@@ -123,32 +70,16 @@ else
 </GameShell>
 
 @code {
-    /// <summary>A room code from an invite link, or from "back to the lobby" after a fight.</summary>
-    [SupplyParameterFromQuery(Name = "code")] public string? CodeQuery { get; set; }
-
-    // The hub method names, for SeatAsync — nameof keeps them greppable against PoBrawlLobbyHub.
-    private const string CreateRoom = nameof(CreateRoom);
-    private const string JoinRoom = nameof(JoinRoom);
-
     private LobbyClient<PoBrawlLobbyPlayer> _lobby = null!;
     private bool _introDone;
-    // Whether this room is private: known when we made it or quick-matched into it, null when
-    // we came in by a code or link (the lobby state does not carry it).
-    private bool? _private;
     private string? _failed;   // why the lobby could not be reached; the retry card shows it
     private bool _wired;       // lobby events subscribed (once — a retry must not double them)
-    private string _joinCode = "";
-    private IReadOnlyList<PoBrawlRoomSummary> _rooms = [];
-    private CancellationTokenSource? _refreshCts;
 
-    protected override void OnInitialized() => _lobby = new LobbyClient<PoBrawlLobbyPlayer>(Endpoints, "pobrawl/lobby-hub", roomScoped: true)
-    {
-        RoomCode = string.IsNullOrWhiteSpace(CodeQuery) ? null : CodeQuery.Trim().ToUpperInvariant(),
-    };
+    protected override void OnInitialized() => _lobby = new LobbyClient<PoBrawlLobbyPlayer>(Endpoints, "pobrawl/lobby-hub");
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl · Online</span>;
     private RenderFragment HowToPlayContent => @<div>
-        <p>Fight another player in the arena. Quick match drops you in an open room; or share a private room's code with a friend.</p>
+        <p>Fight another player in the arena. The first two people in the lobby are the fight.</p>
         <ul>
             <li>Pick a fighter — your opponent does too — then both mark Ready</li>
             <li><b>Hold</b> <kbd>A</kbd>/<kbd>D</kbd> to walk and <kbd>R</kbd> to block · <kbd>F</kbd> punch, <kbd>G</kbd> kick, <kbd>H</kbd> special (full energy)</li>
@@ -164,19 +95,9 @@ else
     private static string FighterName(string id) =>
         string.Equals(id, PoBrawlRoster.Bob.Id, StringComparison.OrdinalIgnoreCase) ? PoBrawlRoster.Bob.Name : PoBrawlRoster.DisplayName(id);
 
-    private string? Code => _lobby.State?.GameCode;
     private string Name => AuthState.User?.DisplayName ?? "Player";
     private bool IsGuest => !AuthState.IsAuthenticated;
     private string MyFighterId => _lobby.Me?.Fighter.Id ?? "";
-    private string HintText => Code is null
-        ? "Finding you a room…"
-        : $"Room {Code} — {_private switch
-        {
-            true => "private: only people with the code or link can join. ",
-            false => "public: quick match can seat a stranger here. ",
-            null => "",
-        }}1v1, both players ready up, the host starts.";
-    private IReadOnlyList<PoBrawlRoomSummary> OtherRooms => [.. _rooms.Where(r => r.Code != Code)];
 
     private bool EveryoneReady =>
         _lobby.State is { } s && s.Players.Count == s.MaxPlayers && s.Players.All(p => p.IsReady);
@@ -201,95 +122,12 @@ else
         }
         try
         {
-            // An invite link's room: privacy unknown. No code: quick match, which only seats public rooms.
-            _private = _lobby.RoomCode is null ? false : null;
-            try
-            {
-                await _lobby.ConnectAndJoinAsync(Name, IsGuest);
-            }
-            catch (Exception ex) when (_lobby.RoomCode is not null && _lobby.IsConnected)
-            {
-                // A dead invite link (the room expired, or it is full): say so, and quick-match instead.
-                ToastService.Show(PoBrawlNetSession.HubMessage(ex, "That room is gone"), ToastType.Warning);
-                _lobby.RoomCode = null;
-                _private = false;
-                await _lobby.JoinAsync();
-            }
+            await _lobby.ConnectAndJoinAsync(Name, IsGuest);
         }
         catch (Exception ex)
         {
+            // Unreachable, or the room is full / a fight is being set up: the hub's reason and a retry.
             _failed = PoBrawlNetSession.HubMessage(ex, "Couldn't reach the lobby.");
-            return;
-        }
-        _refreshCts ??= new CancellationTokenSource();
-        _ = RefreshLoopAsync(_refreshCts.Token);
-    }
-
-    /// <summary>Move to another room (new, or joined). A refusal (full, unknown code) leaves you where you were.</summary>
-    private async Task SwitchAsync(Func<Task<LobbyState<PoBrawlLobbyPlayer>?>> seat, bool? isPrivate)
-    {
-        try
-        {
-            await seat();
-            _private = isPrivate;
-            await RefreshRoomsAsync();
-        }
-        catch (Exception ex)
-        {
-            ToastService.Show(PoBrawlNetSession.HubMessage(ex, "Couldn't join that room"), ToastType.Warning);
-        }
-    }
-
-    private Task JoinByCodeAsync()
-    {
-        var code = _joinCode.Trim().ToUpperInvariant();
-        if (code.Length == 0) return Task.CompletedTask;
-        _joinCode = "";
-        return SwitchAsync(() => _lobby.SeatAsync(JoinRoom, code, Name, IsGuest), isPrivate: null);
-    }
-
-    private void Watch(string code) => Nav.NavigateTo($"/pobrawl/online?code={Uri.EscapeDataString(code)}");
-
-    private async Task CopyInviteAsync()
-    {
-        if (Code is null) return;
-        var link = $"{Nav.BaseUri}pobrawl/multi?code={Uri.EscapeDataString(Code)}";
-        try
-        {
-            await JS.InvokeVoidAsync("navigator.clipboard.writeText", link);
-            ToastService.Show($"Invite link copied — room {Code}.", ToastType.Info);
-        }
-        catch
-        {
-            ToastService.Show($"Share this link: {link}", ToastType.Info);
-        }
-    }
-
-    private async Task RefreshRoomsAsync()
-    {
-        if (!_lobby.IsConnected) return;
-        try
-        {
-            _rooms = await _lobby.InvokeAsync<List<PoBrawlRoomSummary>>("ListOpen");
-            await InvokeAsync(StateHasChanged);
-        }
-        catch
-        {
-            // The list is a convenience; the room itself carries on.
-        }
-    }
-
-    private async Task RefreshLoopAsync(CancellationToken ct)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(5));
-        await RefreshRoomsAsync();
-        try
-        {
-            while (await timer.WaitForNextTickAsync(ct)) await RefreshRoomsAsync();
-        }
-        catch (OperationCanceledException)
-        {
-            // Page gone.
         }
     }
 
@@ -305,10 +143,5 @@ else
         Nav.NavigateTo("/");
     }
 
-    public async ValueTask DisposeAsync()
-    {
-        _refreshCts?.Cancel();
-        _refreshCts?.Dispose();
-        await _lobby.DisposeAsync();
-    }
+    public ValueTask DisposeAsync() => _lobby.DisposeAsync();
 }

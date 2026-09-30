@@ -1,30 +1,21 @@
 @*
-    PoCabinetLobby — host opens a lobby (or a guest joins one by code) and the seat grid
-    mirrors the server's LobbyState broadcasts: humans, the AI officials filling free seats,
-    ready flags, host badge. The host picks the track, how many officials race, whether the
-    lobby is listed publicly, and starts; the RaceStarting broadcast hands everyone to the
-    race through OnRaceStarting. After a race the same lobby reopens — coming back here with
-    the same code is the rematch.
+    PoCabinetLobby — joins the one lobby (no codes: the first arrival hosts, later arrivals
+    take the next seats) and the seat grid mirrors the server's LobbyState broadcasts: humans,
+    the AI officials filling free seats, ready flags, host badge. The host picks the track and
+    how many officials race, and starts; the RaceStarting broadcast hands everyone to the race
+    through OnRaceStarting. After a race the same lobby reopens — coming back here is the
+    rematch. Arriving while a race runs (or all eight seats are taken) shows a waiting note
+    and re-tries the seat on every broadcast, so the next reopen seats you.
 *@
 
 @using PoMiniGames.Shared.Games
 @implements IAsyncDisposable
-@inject IJSRuntime JS
-@inject NavigationManager Nav
 @inject PlayerNameService PlayerNameSvc
 @inject PoCabinetSession Session
 
 <div class="pocabinet-lobby" aria-label="Multiplayer lobby">
     <header class="pocabinet-lobby__header">
         <h2>Lobby</h2>
-        @if (!string.IsNullOrEmpty(_code))
-        {
-            <div class="pocabinet-lobby__code" aria-live="polite">
-                <span>Code: <strong id="lobby-code">@_code</strong></span>
-                <button type="button" @onclick="CopyCodeAsync">Copy code</button>
-                <button type="button" @onclick="CopyLinkAsync">Copy invite link</button>
-            </div>
-        }
     </header>
 
     @if (_view is { } view)
@@ -63,15 +54,11 @@
                         <button type="button" aria-label="More AI officials" disabled="@(view.BotCount >= 4)" @onclick="() => SetBotsAsync(view.BotCount + 1)">+</button>
                     </div>
                 </div>
-                <label class="pocabinet-lobby__row">
-                    <span>List in public lobbies</span>
-                    <input type="checkbox" checked="@view.IsPublic" @onchange="SetPublicAsync" />
-                </label>
                 <button class="pocabinet-lobby__start pocabinet-primary" disabled="@(!CanStart(view) || _busy)" @onclick="StartAsync">
                     @StartLabel(view)
                 </button>
             }
-            else
+            else if (MySeat(view) is not null)
             {
                 <p class="pocabinet-lobby__track">Track: <strong>@PoCabinetCatalog.GetTrack(view.TrackId).Name</strong> · @view.BotCount AI official@(view.BotCount == 1 ? "" : "s")</p>
                 <button class="pocabinet-lobby__ready pocabinet-primary" disabled="@(view.InRace || _busy)" @onclick="ToggleReadyAsync">
@@ -80,7 +67,12 @@
             }
             @if (view.InRace)
             {
-                <p class="pocabinet-lobby__note" role="status">A race is running for this lobby. It reopens here when it ends.</p>
+                <p class="pocabinet-lobby__note" role="status">@(MySeat(view) is null ? "Race in progress — you'll get a seat when it finishes." : "A race is running for this lobby. It reopens here when it ends.")</p>
+                <button type="button" class="pocabinet-secondary" @onclick="WatchAsync">Watch</button>
+            }
+            else if (MySeat(view) is null)
+            {
+                <p class="pocabinet-lobby__note" role="status">All @PoCabinetCatalog.CarCount seats are taken — you'll get one as soon as someone leaves.</p>
             }
             <button type="button" class="pocabinet-secondary" @onclick="LeaveAsync">Leave lobby</button>
         </section>
@@ -98,8 +90,7 @@
 </div>
 
 @code {
-    /// <summary>Code to join; empty = open a new lobby as host.</summary>
-    [Parameter] public string? InitialJoinCode { get; set; }
+    /// <summary>Track the lobby opens on if this player is the first to arrive.</summary>
     [Parameter] public string? InitialTrackId { get; set; }
     /// <summary>Paint hex this player races in.</summary>
     [Parameter] public string? Color { get; set; }
@@ -109,39 +100,45 @@
     private static readonly string[] OfficialNames = ["Sean S.", "Steve B.", "Bill B.", "Mike P."];
 
     private PoCabinetLobbyView? _view;
-    private string _code = "";
     private string? _error;
     private bool _busy;
+    private bool _joining;
 
-    private bool IsHost => _view?.Players.FirstOrDefault(p => p.IsHost)?.SeatId == Session.MySeatId;
+    private bool IsHost => Session.MySeatId is not null && _view?.Players.FirstOrDefault(p => p.IsHost)?.SeatId == Session.MySeatId;
 
     protected override async Task OnInitializedAsync()
     {
         Session.LobbyChanged += OnLobbyChangedAsync;
         Session.RaceStarting += OnRaceStartingAsync;
-        var name = PlayerNameSvc.GetOrReadInitialName();
+        await JoinAsync();
+    }
+
+    /// <summary>Take (or retake) a seat. Guarded: our own join's broadcast arrives before its reply.</summary>
+    private async Task JoinAsync()
+    {
+        if (_joining) return;
+        _joining = true;
         try
         {
-            if (string.IsNullOrWhiteSpace(InitialJoinCode))
-            {
-                _view = await Session.OpenLobbyAsync(name, InitialTrackId, isPublic: true, Color);
-            }
-            else
-            {
-                _view = await Session.JoinLobbyAsync(InitialJoinCode.Trim().ToUpperInvariant(), name, Color);
-                if (_view is null) _error = "That lobby is full, has closed, or its race is already running.";
-            }
-            _code = _view?.Code ?? "";
+            _view = await Session.JoinLobbyAsync(PlayerNameSvc.GetOrReadInitialName(), InitialTrackId, Color) ?? _view;
         }
         catch (Exception ex)
         {
             _error = $"Could not reach the lobby: {ex.Message}";
+        }
+        finally
+        {
+            _joining = false;
         }
     }
 
     private Task OnLobbyChangedAsync(PoCabinetLobbyView view)
     {
         _view = view;
+        // Waiting for a seat: the race just ended or someone left, so try again. Not awaited —
+        // this runs on the hub's receive loop, which has to stay free to deliver the reply.
+        if (Session.MySeatId is null && !view.InRace && view.Players.Count < PoCabinetCatalog.CarCount)
+            _ = InvokeAsync(async () => { await JoinAsync(); StateHasChanged(); });
         return InvokeAsync(StateHasChanged);
     }
 
@@ -180,8 +177,6 @@
 
     private Task SetBotsAsync(int count) => RunAsync(() => Session.SetBotsAsync(Math.Clamp(count, 0, 4)));
 
-    private Task SetPublicAsync(ChangeEventArgs e) => RunAsync(() => Session.SetPublicAsync(e.Value is bool b && b));
-
     private Task ToggleReadyAsync() => RunAsync(() => Session.ToggleReadyAsync());
 
     private Task StartAsync() => RunAsync(async () =>
@@ -195,16 +190,9 @@
         await OnExit.InvokeAsync();
     }
 
-    private async Task CopyCodeAsync()
-    {
-        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", _code); } catch { /* ignore */ }
-    }
-
-    private async Task CopyLinkAsync()
-    {
-        var link = Nav.ToAbsoluteUri($"/pocabinet/multi?lobby={Uri.EscapeDataString(_code)}").ToString();
-        try { await JS.InvokeVoidAsync("navigator.clipboard.writeText", link); } catch { /* ignore */ }
-    }
+    /// <summary>Follow the running race; a seated player gets their car back, anyone else spectates.</summary>
+    private Task WatchAsync() =>
+        _view is { } view ? OnRaceStarting.InvokeAsync((view.Code, view.TrackId)) : Task.CompletedTask;
 
     public ValueTask DisposeAsync()
     {

@@ -25,7 +25,7 @@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            Elo="@(_mode == "1p" ? _rating.Elo : (int?)null)"
-           BackTo="@(_mode == "online" ? LobbyUrl : "/")"
+           BackTo="@(_mode == "online" ? "/pobrawl/multi" : "/")"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
            GameOverDelayMs="@LadderResultHoldMs"
@@ -91,13 +91,12 @@
                 }
             }
 
-            @* Online: the room, your corner, and anything the network is doing to the fight. *@
+            @* Online: your corner, and anything the network is doing to the fight. *@
             @if (_mode == "online" && !_netMissing)
             {
                 @if (_everJoined)
                 {
                     <div class="pb-net-status" role="status">
-                        <span class="pb-net-pill">Room @_code</span>
                         <span class="pb-net-pill @(_isSpectator ? "pb-net-pill--watch" : "")">
                             @(_isSpectator ? "👀 Spectating" : $"You: {(_localSide == PoMiniGames.Shared.Games.PoBrawlSide.Player1 ? "left" : "right")} corner")
                         </span>
@@ -109,7 +108,7 @@
                 }
                 else
                 {
-                    <div class="pb-net-status" role="status"><span class="pb-net-pill">Joining room @_code…</span></div>
+                    <div class="pb-net-status" role="status"><span class="pb-net-pill">Joining the fight…</span></div>
                 }
             }
         </div>
@@ -122,9 +121,9 @@
         @if (_mode == "online" && _netMissing)
         {
             <div class="pb-net-missing" role="status">
-                <h2>No fight in room @_code</h2>
-                <p>It already ended, or it never started. The lobby has the room.</p>
-                <a class="pb-net-btn" href="@LobbyUrl">Back to the lobby</a>
+                <h2>No fight here</h2>
+                <p>It already ended, or it never started.</p>
+                <a class="pb-net-btn" href="/pobrawl/multi">Back to the lobby</a>
             </div>
         }
 
@@ -151,7 +150,7 @@
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
-    /// <summary>Online: the room code of the fight (from the lobby, a shared link, or a refresh).</summary>
+    /// <summary>Online: the fight's internal match code (from the lobby's start, or a refresh).</summary>
     [SupplyParameterFromQuery(Name = "code")] public string? CodeQuery { get; set; }
 
     // 1-player ladder: PoBrawlRoster.Fighters in ladder order — most recent president first,
@@ -286,7 +285,7 @@
     private string? _engineMatchId;   // the fight the running engine is showing
     private bool _netMissing;         // JoinMatch answered null: no fight on this code
     // Corner state, cached at join. The live Snapshot can turn null underneath an open result
-    // screen (a reconnect that answers null once the swept room is gone), so name/side
+    // screen (a reconnect that answers null once the swept fight is gone), so name/side
     // readouts must not dereference it.
     private PoMiniGames.Shared.Games.PoBrawlSide? _localSide;
     private bool _isSpectator;
@@ -298,8 +297,6 @@
     private string? _netNoticeShown;
     private string _p1Player = "";
     private string _p2Player = "";
-
-    private string LobbyUrl => string.IsNullOrEmpty(_code) ? "/pobrawl/multi" : $"/pobrawl/multi?code={Uri.EscapeDataString(_code)}";
 
     /// <summary>What the network is doing to the fight, or null when nothing worth saying.</summary>
     private string? NetNotice
@@ -480,7 +477,7 @@
         }
         @if (_mode == "online" && !_isSpectator)
         {
-            @* Both corners have to ask; the server starts the next fight on the same code with the
+            @* Both corners have to ask; the server starts the next fight with the
                same fighters the moment the second one does. *@
             @if (_rematchRequested || _rematchVotes > 0)
             {
@@ -488,7 +485,7 @@
             }
             else
             {
-                <div>Play again asks @OpponentPlayer for a rematch — same fighters, same room.</div>
+                <div>Play again asks @OpponentPlayer for a rematch — same fighters.</div>
             }
         }
         @if (_mode == "1p")
@@ -865,13 +862,13 @@
             try { await _net.RequestRematchAsync(); }
             catch (Exception ex)
             {
-                // The hub refuses a rematch on a swept room (FinishedLinger elapsed, or a
+                // The hub refuses a rematch on a swept fight (FinishedLinger elapsed, or a
                 // rematch already replaced it) with a HubException — surface its message and
                 // reset the vote instead of showing "waiting for a rematch" forever.
                 _rematchRequested = false;
                 _rematchVotes = 0;
                 StateHasChanged();
-                Toasts.Show(PoBrawlNetSession.HubMessage(ex, "Couldn't reach the room — try again."), ToastType.Warning);
+                Toasts.Show(PoBrawlNetSession.HubMessage(ex, "Couldn't reach the fight — try again."), ToastType.Warning);
             }
             return;
         }
