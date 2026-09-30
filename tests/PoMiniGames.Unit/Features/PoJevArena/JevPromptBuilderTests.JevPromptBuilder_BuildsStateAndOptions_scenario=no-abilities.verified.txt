@@ -1,7 +1,7 @@
 ﻿{
   Prompt: {
     State:
-Subject: Blue-06 "Plain Claw" (HP: 180/220 [82%], Mass: 3.0, Speed: 4.5 m/s)
+Subject: Blue-06 "Plain Claw" (HP: 36/44 [82%], Mass: 3.0, Speed: 4.5 m/s)
 Personality: opportunist (goes where the easy win is); target bias engage_closest (fights whatever is nearest); panic threshold flees_if_outnumbered (breaks when the odds turn)
 Abilities: melee (always)
 Status: Under direct fire, 1 ally within 4 m
@@ -26,7 +26,8 @@ Team Counts: 7 Blue alive vs 9 Red alive,
         Criteria: {
           fall_back: Back away from the nearest threat without attacking,
           melee_charge: Rush the target and strike it in melee,
-          peel_to_ally: Disengage and move to the closest living ally for protection
+          peel_to_ally: Disengage and move to the closest living ally for protection,
+          take_cover: Move behind the nearest pillar so it blocks the nearest threat's line of fire
         }
       },
       target_focus: {

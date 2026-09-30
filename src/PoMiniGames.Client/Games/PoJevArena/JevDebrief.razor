@@ -47,21 +47,6 @@
                         }
                     </div>
 
-                    <h4 class="jev-kicker">By creature</h4>
-                    <ul class="jev-debrief__creatures">
-                        @foreach (var c in t.Creatures)
-                        {
-                            <li>
-                                <strong>@c.Name</strong> ×@c.Count ·
-                                @if (c.TopAction is not null)
-                                {
-                                    <span>mostly @Pretty(c.TopAction) (@Pct(c.TopShare)%)</span>
-                                }
-                                <span class="jev-muted"> · confidence @F(c.AverageConfidence)</span>
-                            </li>
-                        }
-                    </ul>
-
                     @if (t.Moments.Length > 0)
                     {
                         <h4 class="jev-kicker">Moments</h4>
@@ -82,16 +67,24 @@
             </article>
         }
     </div>
+
+    @if (Debrief.Units is { Length: > 0 } units)
+    {
+        <UnitStories Units="units" Frames="Frames" OnJump="OnJump" />
+    }
 </section>
 
 @code {
     [Parameter, EditorRequired] public ArenaDebrief Debrief { get; set; } = default!;
     [Parameter] public string Winner { get; set; } = "draw";
     [Parameter] public bool IsTwoPlayer { get; set; }
+
+    /// <summary>Match length in Black Box frames: the stories' shared time axis.</summary>
+    [Parameter] public int Frames { get; set; }
     [Parameter] public EventCallback<ArenaMoment> OnJump { get; set; }
 
     private static readonly HashSet<string> Aggressive = ["melee_charge", "kite_and_shoot", "lob_boulder"];
-    private static readonly HashSet<string> Defensive = ["shield_brace", "shell_up", "fall_back", "dodge_dash"];
+    private static readonly HashSet<string> Defensive = ["shield_brace", "shell_up", "fall_back", "dodge_dash", "take_cover"];
     private static readonly HashSet<string> Supportive = ["mend_ally", "peel_to_ally"];
 
     private IEnumerable<(string Team, ArenaTeamDebrief Summary)> Teams => [("blue", Debrief.Blue), ("red", Debrief.Red)];
@@ -107,7 +100,7 @@
         var (style, basis) = supportive >= 0.3 && supportive >= aggressive && supportive >= defensive
                 ? ("as a support team", $"{Pct(supportive)}% of calls healed or covered allies")
             : defensive > aggressive
-                ? ("defensively", $"{Pct(defensive)}% of calls were blocks, shells, dodges or retreats")
+                ? ("defensively", $"{Pct(defensive)}% of calls were blocks, shells, dodges, cover or retreats")
                 : ("aggressively", $"{Pct(aggressive)}% of calls were attacks");
 
         var top = t.Actions.ElementAtOrDefault(0);
@@ -137,7 +130,11 @@
 
     private static string Certainty(ArenaTeamDebrief t)
     {
-        var mood = t.AverageConfidence >= 0.7 ? "Jev was decisive"
+        // The average alone flatters a team whose calls split between sure and torn, so a large
+        // coin-flip share overrides it.
+        var flipShare = t.Decisions == 0 ? 0 : (double)t.CoinFlips / t.Decisions;
+        var mood = flipShare >= 0.3 ? $"Jev was often torn ({Pct(flipShare)}% of calls were coin-flips)"
+            : t.AverageConfidence >= 0.7 ? "Jev was decisive"
             : t.AverageConfidence >= 0.5 ? "Jev was fairly sure of itself"
             : "Jev was often torn";
         var flips = t.CoinFlips == 0 ? "no coin-flip calls" : $"{t.CoinFlips} coin-flip call{(t.CoinFlips == 1 ? "" : "s")} under 0.40";

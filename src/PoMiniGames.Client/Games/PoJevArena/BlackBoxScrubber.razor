@@ -1,42 +1,48 @@
 @using System.Globalization
 
 @* The post-match forensic transport. Frame-accurate: the slider is the recorded 60 Hz frame index,
-   and the decision jumps land on the frames where Jev's answers arrived (for either side's
-   selected unit, or anyone when unscoped). Keyboard: Space play/pause, ←/→ one frame
-   (Shift: one second) — handled by the engine while the arena is mounted. *@
+   ticks under it mark every knockout (team colour) and the debrief's key moments (★), and the
+   decision jumps land on the frames where Jev's answers arrived. Keyboard (handled by the engine
+   while the arena is mounted): Space play/pause, ←/→ one frame (Shift: one second), Home/End. *@
 <section class="jev-blackbox" aria-label="Black Box">
     <div class="jev-blackbox__transport">
-        <button type="button" class="jev-btn jev-btn--ghost" aria-label="First frame" @onclick='() => Command("first")'>|&lt;</button>
-        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Previous Jev decision" @onclick='() => Command("prevDecision")'>&lt;&lt;</button>
-        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Back one frame" @onclick='() => Command("step", -1)'>&lt;</button>
-        <button type="button" class="jev-btn" @onclick='() => Command(State?.Playing == true ? "pause" : "play")'>@(State?.Playing == true ? "Pause" : "Play")</button>
-        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Forward one frame" @onclick='() => Command("step", 1)'>&gt;</button>
-        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Next Jev decision" @onclick='() => Command("nextDecision")'>&gt;&gt;</button>
-        <button type="button" class="jev-btn jev-btn--ghost" aria-label="Last frame" @onclick='() => Command("last")'>&gt;|</button>
-
-        <label class="jev-blackbox__speed">
-            <span class="jev-muted jev-small">Speed</span>
-            <select class="jev-input" value="@SpeedValue" @onchange='e => Command("speed", double.Parse(e.Value?.ToString() ?? "1", CultureInfo.InvariantCulture))'>
-                <option value="0.25">0.25×</option>
-                <option value="0.5">0.5×</option>
-                <option value="1">1×</option>
-                <option value="2">2×</option>
-                <option value="4">4×</option>
-            </select>
-        </label>
-        <span class="jev-blackbox__clock">@Clock</span>
+        <button type="button" class="jev-btn jev-btn--ghost jev-btn--sm" aria-label="Previous Jev decision" @onclick='() => Command("prevDecision")'>⏮</button>
+        <button type="button" class="jev-btn jev-btn--ghost jev-btn--sm" aria-label="Back one frame" @onclick='() => Command("step", -1)'>◀</button>
+        <button type="button" class="jev-btn jev-btn--sm jev-blackbox__play" @onclick='() => Command(State?.Playing == true ? "pause" : "play")'>@(State?.Playing == true ? "Pause" : "Play")</button>
+        <button type="button" class="jev-btn jev-btn--ghost jev-btn--sm" aria-label="Forward one frame" @onclick='() => Command("step", 1)'>▶</button>
+        <button type="button" class="jev-btn jev-btn--ghost jev-btn--sm" aria-label="Next Jev decision" @onclick='() => Command("nextDecision")'>⏭</button>
+        <button type="button" class="jev-btn jev-btn--ghost jev-btn--sm" aria-label="@($"Playback speed {Speed}×, change")" @onclick="CycleSpeed">@(Speed)×</button>
+        <span class="jev-blackbox__clock" title="@FrameTitle">@Clock</span>
     </div>
 
-    <label class="jev-visually-hidden" for="jev-bb-slider">Timeline</label>
-    <input id="jev-bb-slider" class="jev-blackbox__slider" type="range" min="0" max="@Math.Max(0, (State?.Frames ?? 1) - 1)"
-           value="@(State?.Frame ?? 0)" @oninput='e => Command("scrub", double.Parse(e.Value?.ToString() ?? "0", CultureInfo.InvariantCulture))' />
+    <div class="jev-blackbox__track">
+        <label class="jev-visually-hidden" for="jev-bb-slider">Timeline</label>
+        <input id="jev-bb-slider" class="jev-blackbox__slider" type="range" min="0" max="@Last"
+               value="@(State?.Frame ?? 0)" @oninput='e => Command("scrub", double.Parse(e.Value?.ToString() ?? "0", CultureInfo.InvariantCulture))' />
+        <div class="jev-blackbox__marks" aria-hidden="true">
+            @foreach (var ko in Kos)
+            {
+                <span class="jev-mark jev-mark--@ko.Team" style="--at: @At(ko.Frame)%"></span>
+            }
+            @foreach (var m in Moments)
+            {
+                <span class="jev-mark jev-mark--moment" style="--at: @At(m.Frame)%" title="@m.Kind">★</span>
+            }
+        </div>
+    </div>
 </section>
 
 @code {
+    private static readonly double[] Speeds = [0.25, 0.5, 1, 2, 4];
+
     [Parameter] public ArenaBlackBoxView? State { get; set; }
+    [Parameter] public IReadOnlyList<ArenaKo> Kos { get; set; } = [];
+    [Parameter] public IEnumerable<ArenaMoment> Moments { get; set; } = [];
     [Parameter] public EventCallback<(string Command, double Value)> OnCommand { get; set; }
 
-    private string SpeedValue => (State?.Speed ?? 1).ToString(CultureInfo.InvariantCulture);
+    private int Last => Math.Max(0, (State?.Frames ?? 1) - 1);
+    private string Speed => (State?.Speed ?? 1).ToString(CultureInfo.InvariantCulture);
+    private string At(int frame) => (Last == 0 ? 0 : 100.0 * frame / Last).ToString("0.##", CultureInfo.InvariantCulture);
 
     private string Clock
     {
@@ -44,10 +50,17 @@
         {
             if (State is null) return "—";
             var now = TimeSpan.FromSeconds(State.Seconds);
-            var end = TimeSpan.FromSeconds(Math.Max(0, State.Frames - 1) / 60.0);
-            return string.Create(CultureInfo.InvariantCulture,
-                $"{now:m\\:ss\\.f} / {end:m\\:ss\\.f} · frame {State.Frame} / {Math.Max(0, State.Frames - 1)}");
+            var end = TimeSpan.FromSeconds(Last / 60.0);
+            return string.Create(CultureInfo.InvariantCulture, $"{now:m\\:ss\\.f} / {end:m\\:ss}");
         }
+    }
+
+    private string FrameTitle => State is null ? "" : $"Frame {State.Frame} of {Last}";
+
+    private Task CycleSpeed()
+    {
+        var at = Array.IndexOf(Speeds, State?.Speed ?? 1);
+        return Command("speed", Speeds[(at + 1) % Speeds.Length]);
     }
 
     private Task Command(string command, double value = 0) => OnCommand.InvokeAsync((command, value));

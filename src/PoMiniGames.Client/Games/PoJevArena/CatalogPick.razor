@@ -1,20 +1,27 @@
 @using PoMiniGames.Shared.Games.PoJevArena
 
-@* A select over one fixed personality catalog; the summary under it is what Jev is told. *@
-<label class="jev-field">
-    <span>@Label</span>
-    <select class="jev-input" value="@Value" @onchange="e => ValueChanged.InvokeAsync(e.Value?.ToString() ?? Value)">
+@* One fixed personality catalog as a row of radio chips, every option visible at once; the
+   summary under it is what Jev is told. *@
+<fieldset class="jev-chips">
+    <legend>@Label</legend>
+    <div class="jev-chips__row">
         @foreach (var entry in Entries)
         {
-            <option value="@entry.Id">@entry.Label</option>
+            <label class="jev-chip-pick @(entry.Id == Value ? "is-on" : null)">
+                <input type="radio" name="@_group" value="@entry.Id" checked="@(entry.Id == Value)"
+                       @onchange="() => ValueChanged.InvokeAsync(entry.Id)" />
+                <span>@entry.Label</span>
+            </label>
         }
-    </select>
+    </div>
     <span class="jev-muted jev-small">@(Entries.FirstOrDefault(e => e.Id == Value)?.Summary)</span>
-</label>
+</fieldset>
 
 @code {
     [Parameter, EditorRequired] public string Label { get; set; } = "";
     [Parameter, EditorRequired] public ArenaCatalogEntry[] Entries { get; set; } = [];
     [Parameter] public string Value { get; set; } = "";
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
+
+    private readonly string _group = "jevpick-" + Guid.NewGuid().ToString("N")[..8];
 }

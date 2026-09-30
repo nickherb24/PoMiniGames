@@ -65,7 +65,7 @@ export const HANDLERS = {
         release(w, u, a, t, kit) {
             kit.fire(w, u, {
                 kind: 'boulder', target: t.idx, speed: a.def.projectileSpeed, power: a.def.power,
-                knock: 3, ttl: (a.def.rangeMeters * 1.4) / a.def.projectileSpeed,
+                ttl: (a.def.rangeMeters * 1.4) / a.def.projectileSpeed,
             });
         },
     },
@@ -125,7 +125,7 @@ export const HANDLERS = {
         release() { },
     },
 
-    // One-shot: a sideways burst out of the nearest threat's line, briefly untouchable.
+    // One-shot: an explosive sidestep out of the nearest threat's line, briefly untouchable.
     dodge_dash: {
         run(w, u, a, t, kit) {
             const threat = kit.nearest(kit.enemiesOf(w, u), u);
@@ -134,10 +134,10 @@ export const HANDLERS = {
                 // Pick the perpendicular that heads toward the arena centre, so dashes don't pin to walls.
                 let px = -dy / len, py = dx / len;
                 if ((10 - u.x) * px + (7.5 - u.y) * py < 0) { px = -px; py = -py; }
-                const burst = u.speed * 3;
+                // The legs do the rest: sim.js drives an explosive push along this line for 0.25 s.
                 u.dash = 0.25;
-                u.dashVx = px * burst;
-                u.dashVy = py * burst;
+                u.dashDx = px;
+                u.dashDy = py;
                 u.invuln = a.def.durationSeconds;
                 a.cd = a.def.cooldownSeconds;
                 kit.ability(w, u, a.id);

@@ -1,7 +1,7 @@
 ﻿{
   Prompt: {
     State:
-Subject: Blue-01 "Vanguard Tank" (HP: 150/450 [33%], Mass: 4.5, Speed: 3.0 m/s)
+Subject: Blue-01 "Vanguard Tank" (HP: 30/90 [33%], Mass: 4.5, Speed: 3.0 m/s)
 Personality: disciplined_anchor (holds the line and keeps formation); target bias engage_closest (fights whatever is nearest); panic threshold fights_to_death (never breaks)
 Abilities: melee (always), shield_brace (ready)
 Status: Under direct fire, 1 ally within 4 m
@@ -27,7 +27,8 @@ Team Counts: 7 Blue alive vs 9 Red alive,
           fall_back: Back away from the nearest threat without attacking,
           melee_charge: Rush the target and strike it in melee,
           peel_to_ally: Disengage and move to the closest living ally for protection,
-          shield_brace: Stop, dig in and brace for impact
+          shield_brace: Stop, dig in and brace for impact,
+          take_cover: Move behind the nearest pillar so it blocks the nearest threat's line of fire
         }
       },
       target_focus: {

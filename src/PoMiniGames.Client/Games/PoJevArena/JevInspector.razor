@@ -35,6 +35,14 @@
                 }
             </div>
             <div class="jev-hp" aria-hidden="true"><span style="--pct: @Pct(View.Hp, View.MaxHp)%"></span></div>
+            @if (View.Alive)
+            {
+                <div class="jev-inspector__row jev-small">
+                    <span class="jev-muted">Stamina</span>
+                    <span>@View.Stamina% · @StaminaWord(View.Stamina)</span>
+                </div>
+                <div class="jev-stamina" aria-hidden="true"><span style="--pct: @View.Stamina%"></span></div>
+            }
         </div>
 
         @if (View.Decision is { Ok: true } d)
@@ -73,6 +81,7 @@
     private static string F(double v) => v.ToString("0.00", CultureInfo.InvariantCulture);
     private static string Pct(int hp, int max) => (max <= 0 ? 0 : 100.0 * hp / max).ToString("0", CultureInfo.InvariantCulture);
     private static string Pretty(string action) => action.Replace('_', ' ');
+    private static string StaminaWord(int s) => s >= 70 ? "fresh" : s >= 35 ? "tiring" : s >= 15 ? "winded" : "exhausted";
     private static string PanicWord(double p) => p > 0.7 ? "panicking" : p > 0.4 ? "uneasy" : "calm";
     private static string Ago(double s) => s < 1.5
         ? string.Create(CultureInfo.InvariantCulture, $"{s:0.0} s ago")

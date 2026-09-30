@@ -27,6 +27,7 @@ export function createBlackBox(world, { actions, abilityIds, maxFrames = 10_800 
     const castT = new Uint8Array(cap);         // centiseconds
     const strikeT = new Uint8Array(cap);
     const alive = new Uint8Array(cap);
+    const stamina = new Uint8Array(cap);       // percent of the energy reserve
     const deathTime = new Float32Array(n).fill(-1);
 
     let proj = new Float32Array(4096);
@@ -36,6 +37,8 @@ export function createBlackBox(world, { actions, abilityIds, maxFrames = 10_800 
 
     const events = new Map();       // frame → events[]
     const decisions = [];           // { frame, unit, ok, ... } in arrival order
+    let byFrame = null;             // frame → decisions, built once the log is complete
+
     const actionCode = new Map(actions.map((a, i) => [a, i]));
     let frames = 0;
 
@@ -65,6 +68,7 @@ export function createBlackBox(world, { actions, abilityIds, maxFrames = 10_800 
                 if (u.cast) fl |= FLAGS.CAST;
                 if (u.strike.phase === 1) fl |= FLAGS.WINDUP;
                 if (u.strike.phase === 2) fl |= FLAGS.LUNGE;
+                if (u.stagger > 0) fl |= FLAGS.REEL;
                 flags[k] = fl;
                 target[k] = u.intent.target;
                 action[k] = u.intent.decided ? (actionCode.get(u.intent.action) ?? 0) : 0;
@@ -72,6 +76,7 @@ export function createBlackBox(world, { actions, abilityIds, maxFrames = 10_800 
                 castT[k] = u.cast ? Math.min(255, Math.round(u.cast.t * 100)) : 0;
                 strikeT[k] = Math.min(255, Math.round(u.strike.t * 100));
                 alive[k] = u.alive ? 1 : 0;
+                stamina[k] = Math.round(100 * u.reserve / u.reserveMax);
                 if (!u.alive && deathTime[i] < 0) deathTime[i] = u.deathTime;
             }
 
@@ -108,6 +113,7 @@ export function createBlackBox(world, { actions, abilityIds, maxFrames = 10_800 
                 focusProbabilities: decision.focusProbabilities || null,
                 panic: decision.panic ?? 0,
                 latencyMs: decision.latencyMs ?? 0,
+                stamina: request?.state?.stamina ?? null,
             });
         },
 
@@ -133,6 +139,9 @@ export function createBlackBox(world, { actions, abilityIds, maxFrames = 10_800 
 
         eventsAt(frame) { return events.get(frame) || []; },
 
+        /** A unit's recorded HP on a frame (the debrief's per-phase HP). */
+        hpAt(frame, unit) { return frames ? hp[Math.max(0, Math.min(frames - 1, frame)) * n + unit] : 0; },
+
         /** Rebuilds the drawable views for a recorded frame (same shape as render.viewOf). */
         decode(frame, creatures) {
             const f = Math.max(0, Math.min(frames - 1, frame));
@@ -147,6 +156,10 @@ export function createBlackBox(world, { actions, abilityIds, maxFrames = 10_800 
                     deathAge: isAlive ? -1 : Math.max(0, t - deathTime[i]),
                     x: pos[k * 2], y: pos[k * 2 + 1], vx: vel[k * 2], vy: vel[k * 2 + 1],
                     facing: facing[k], hp: hp[k], maxHp: u.maxHp,
+                    // Acceleration is not recorded: it is the velocity change since the frame before.
+                    ax: f > 0 ? (vel[k * 2] - vel[(k - n) * 2]) / DT : 0,
+                    ay: f > 0 ? (vel[k * 2 + 1] - vel[(k - n) * 2 + 1]) / DT : 0,
+                    stamina: stamina[k] / 100,
                     flags: flags[k],
                     castId: cast[k] ? abilityIds[cast[k] - 1] : null,
                     castT: castT[k] / 100,
@@ -167,21 +180,26 @@ export function createBlackBox(world, { actions, abilityIds, maxFrames = 10_800 
             return { views, projectiles, time: t };
         },
 
-        /** Death positions up to a frame, so a scrub jump can restore the arena's decals. */
-        deathsUpTo(frame) {
+        /** Every knockout, in frame order: the scrubber's timeline markers and the kill cam's cue. */
+        deaths() {
             const out = [];
             for (const [f, evs] of events) {
-                if (f > frame) continue;
-                for (const e of evs) if (e.type === 'death') {
-                    const k = f * n + e.u;
-                    out.push({ x: pos[k * 2], y: pos[k * 2 + 1], team: world.units[e.u].team });
-                }
+                for (const e of evs) if (e.type === 'death') out.push({ frame: f, unit: e.u, team: world.units[e.u].team, source: e.source ?? -1 });
             }
-            return out;
+            return out.sort((a, b) => a.frame - b.frame);
+        },
+
+        /** The decisions that arrived on one frame (replay blooms). Indexed on first use, after the match. */
+        decisionsOn(frame) {
+            if (!byFrame) {
+                byFrame = new Map();
+                for (const d of decisions) (byFrame.get(d.frame) || byFrame.set(d.frame, []).get(d.frame)).push(d);
+            }
+            return byFrame.get(frame) || [];
         },
 
         get approxBytes() {
-            return cap * (4 * 6 + 2 + 1 * 6) + proj.byteLength;
+            return cap * (4 * 6 + 2 + 1 * 7) + proj.byteLength;
         },
     };
 }

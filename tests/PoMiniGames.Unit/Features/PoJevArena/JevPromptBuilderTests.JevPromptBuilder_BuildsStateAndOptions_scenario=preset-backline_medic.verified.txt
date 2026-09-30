@@ -1,7 +1,7 @@
 ﻿{
   Prompt: {
     State:
-Subject: Blue-05 "Backline Medic" (HP: 43/130 [33%], Mass: 1.5, Speed: 5.0 m/s)
+Subject: Blue-05 "Backline Medic" (HP: 8/26 [31%], Mass: 1.5, Speed: 5.0 m/s)
 Personality: loyal_guardian (puts allies first); target bias protect_allies (guards whoever is in trouble); panic threshold flees_when_alone (breaks without allies nearby)
 Abilities: melee (always), mend_bolt (ready), hard_shell (2.1 s)
 Status: Under direct fire, 1 ally within 4 m
@@ -28,7 +28,8 @@ Team Counts: 7 Blue alive vs 9 Red alive,
           melee_charge: Rush the target and strike it in melee,
           mend_ally: Move near the most injured ally and heal it,
           peel_to_ally: Disengage and move to the closest living ally for protection,
-          shell_up: Retract into the shell to survive incoming damage
+          shell_up: Retract into the shell to survive incoming damage,
+          take_cover: Move behind the nearest pillar so it blocks the nearest threat's line of fire
         }
       },
       target_focus: {

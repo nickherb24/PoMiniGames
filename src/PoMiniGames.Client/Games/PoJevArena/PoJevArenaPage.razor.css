@@ -31,9 +31,11 @@
 .jev-topbar {
     display: flex;
     align-items: center;
-    gap: 1rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
 }
+
+.jev-topbar__deploy { margin-left: auto; }
 
 .jev-status {
     padding: 0.25rem 0.75rem;
@@ -45,10 +47,6 @@
 .jev-status.is-ok { background: var(--accent-success-soft); color: var(--accent-success); }
 .jev-status.is-off { background: var(--accent-danger-soft); color: var(--accent-danger); }
 
-.jev-score { font-weight: 800; font-size: 1.125rem; }
-.jev-score__blue { color: var(--player-1-ink); }
-.jev-score__red { color: var(--player-2-ink); }
-.jev-clock { font-variant-numeric: tabular-nums; }
 
 .jev-banner {
     padding: 0.625rem 0.875rem;
@@ -91,38 +89,130 @@
     cursor: crosshair;
 }
 
-.jev-result {
+/* postfx.js: the 2D canvas stays the input and the pointer target, the GL pass paints over it. */
+.jev-arena__canvas.is-composited { opacity: 0; }
+
+.jev-arena__gl {
     position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+}
+
+.jev-arena__gl[hidden] { display: none; }
+
+/* The frosted battle HUD over the arena (glassFx composites the live frame behind data-glass). */
+.jev-hud {
+    position: absolute;
+    z-index: 5;
+    top: 0.5rem;
     left: 50%;
-    top: 0.75rem;
     transform: translateX(-50%);
     display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.125rem;
-    padding: 0.5rem 1.25rem;
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--color-bg) 85%, transparent);
-    font-size: 1.25rem;
-}
-
-.jev-deploy, .jev-after {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
     flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 0.375rem 0.625rem;
+    max-width: calc(100% - 9rem);
+
+    padding: 0.375rem 0.75rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, #fff 18%, transparent);
+    background: color-mix(in srgb, #0b1020 45%, transparent);
+    backdrop-filter: var(--glass-2);
+    -webkit-backdrop-filter: var(--glass-2);
+    color: #f4f6f8;
+    font-weight: 700;
+    white-space: nowrap;
 }
 
-.jev-handoff {
-    flex: 1;
+.jev-hud[hidden] { display: none; }
+.jev-hud__team--blue { color: #9dbdff; }
+.jev-hud__team--red { color: #ffaaa8; }
+.jev-hud__clock { font-variant-numeric: tabular-nums; }
+.jev-hud__map { color: #c9ced6; font-weight: 600; }
+
+.jev-hud__bar {
+    width: clamp(4rem, 14vw, 10rem);
+    height: 8px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, var(--jev-blue) 0 var(--blue), var(--jev-red) var(--blue) 100%);
+    transition: background 0.3s;
+}
+
+.jev-hud__cam {
+    min-height: 32px;
+    padding: 0 0.625rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, #fff 25%, transparent);
+    background: transparent;
+    color: inherit;
+    font: 600 0.75rem var(--font-body);
+    cursor: pointer;
+}
+
+.jev-hud__cam[aria-pressed="true"] { background: color-mix(in srgb, #fff 18%, transparent); }
+
+/* The result, said once. */
+.jev-resultbar {
     display: flex;
-    flex-direction: column;
     align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
+    justify-content: space-between;
+    gap: 0.5rem 1rem;
+    flex-wrap: wrap;
+    padding: 0.5rem 0.75rem;
     border-radius: 12px;
     background: var(--color-surface);
-    text-align: center;
+}
+
+.jev-resultbar__text { display: flex; align-items: baseline; gap: 0.25rem 0.75rem; flex-wrap: wrap; min-width: 0; }
+.jev-resultbar__head { font-size: 1.125rem; }
+.jev-resultbar__mvp { font-size: 0.875rem; font-weight: 600; color: var(--accent-warning); }
+.jev-resultbar__actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+
+.jev-root ::deep .jev-segmented,
+.jev-segmented,
+.jev-mobiletabs {
+    display: inline-flex;
+    border-radius: 10px;
+    border: 1px solid var(--color-border);
+    overflow: hidden;
+}
+
+.jev-segmented button,
+.jev-mobiletabs button {
+    min-height: 40px;
+    padding: 0 0.875rem;
+    border: 0;
+    background: transparent;
+    color: var(--color-text-primary);
+    font: 600 0.8125rem var(--font-body);
+    cursor: pointer;
+}
+
+.jev-segmented button[aria-pressed="true"],
+.jev-mobiletabs button[aria-pressed="true"] { background: var(--color-accent-solid); color: var(--color-accent-contrast); }
+
+/* Phones only: one inspector, and these tabs pick its side. */
+.jev-mobiletabs { display: none; align-self: center; }
+
+/* The Factory drawer: over the library's right edge, never replacing it. */
+.jev-drawer {
+    position: fixed;
+    inset: 0 0 0 auto;
+    z-index: var(--z-overlay);
+    width: min(38rem, 100vw);
+    max-height: none;
+    height: 100dvh;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    border-left: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    box-shadow: -12px 0 32px rgb(0 0 0 / 0.35);
+    overflow: auto;
 }
 
 .jev-confirm {
@@ -175,7 +265,8 @@
 .jev-root ::deep .jev-btn--ghost { background: transparent; color: var(--color-text-primary); border: 1px solid var(--color-border); }
 .jev-root ::deep .jev-btn--ghost[aria-pressed="true"] { background: var(--accent-bg); border-color: var(--color-accent); }
 .jev-root ::deep .jev-btn--danger { background: var(--color-error); }
-.jev-root ::deep .jev-btn--big { min-height: 52px; padding: 0 1.75rem; font-size: 1rem; }
+.jev-root ::deep .jev-btn--big { min-height: 48px; padding: 0 1.5rem; font-size: 1rem; }
+.jev-root ::deep .jev-btn--sm { min-height: 36px; padding: 0 0.625rem; font-size: 0.8125rem; }
 
 .jev-root ::deep .jev-link {
     min-height: 44px;
@@ -228,16 +319,59 @@
     border: 2px solid transparent;
 }
 
-.jev-root ::deep .jev-team--blue { border-color: color-mix(in srgb, var(--player-1) 35%, transparent); }
-.jev-root ::deep .jev-team--red { border-color: color-mix(in srgb, var(--player-2) 35%, transparent); }
-.jev-root ::deep .jev-team--blue.is-active { border-color: var(--player-1); }
-.jev-root ::deep .jev-team--red.is-active { border-color: var(--player-2); }
+.jev-root ::deep .jev-team--blue { border-color: color-mix(in srgb, var(--player-1) 45%, transparent); }
+.jev-root ::deep .jev-team--red { border-color: color-mix(in srgb, var(--player-2) 45%, transparent); }
 
 .jev-root ::deep .jev-team__head { display: flex; align-items: baseline; justify-content: space-between; }
 .jev-root ::deep .jev-team__title { margin: 0; font-size: 1rem; }
 .jev-root ::deep .jev-team--blue .jev-team__title { color: var(--player-1-ink); }
 .jev-root ::deep .jev-team--red .jev-team__title { color: var(--player-2-ink); }
-.jev-root ::deep .jev-team__actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.jev-root ::deep .jev-team__actions { display: flex; gap: 0.375rem; flex-wrap: wrap; align-items: flex-start; }
+
+.jev-root ::deep .jev-squads { position: relative; }
+.jev-root ::deep .jev-squads > summary { list-style: none; display: inline-flex; align-items: center; }
+.jev-root ::deep .jev-squads > summary::-webkit-details-marker { display: none; }
+
+.jev-root ::deep .jev-squads__menu {
+    position: absolute;
+    z-index: 5;
+    top: calc(100% + 4px);
+    left: 0;
+    width: 15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.5rem;
+    border-radius: 10px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+}
+
+.jev-root ::deep .jev-squads__row { display: flex; justify-content: space-between; align-items: center; }
+.jev-root ::deep .jev-squads__row .jev-link { min-height: 32px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jev-root ::deep .jev-squads__save { display: flex; gap: 0.375rem; }
+.jev-root ::deep .jev-squads__save .jev-input { flex: 1; min-width: 0; min-height: 36px; }
+
+.jev-root ::deep .jev-points { display: flex; flex-direction: column; gap: 0.25rem; }
+
+.jev-root ::deep .jev-points__bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--color-surface-hover);
+    overflow: hidden;
+}
+
+.jev-root ::deep .jev-points__bar::before {
+    content: "";
+    display: block;
+    width: var(--mine);
+    height: 100%;
+    background: var(--color-text-secondary);
+}
+
+.jev-root ::deep .jev-team--blue .jev-points__bar::before { background: var(--player-1); }
+.jev-root ::deep .jev-team--red .jev-points__bar::before { background: var(--player-2); }
 
 .jev-root ::deep .jev-team__hidden {
     flex: 1;
@@ -303,6 +437,7 @@
     width: var(--pct);
     height: 100%;
     background: var(--accent-success);
+    transition: width 0.3s ease-out;
 }
 
 .jev-root ::deep .jev-dist { display: flex; flex-direction: column; gap: 0.375rem; }
@@ -332,6 +467,7 @@
     width: var(--pct);
     height: 100%;
     background: var(--color-text-secondary);
+    transition: width 0.35s ease-out, background-color 0.35s;
 }
 
 .jev-root ::deep .jev-dist__row.is-chosen .jev-dist__bar > span { background: var(--color-accent); }
@@ -356,58 +492,118 @@
 .jev-root ::deep .jev-card {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    height: 84px;
-    margin-bottom: 8px;
+    gap: 0.625rem;
+    height: 56px;
+    margin-bottom: 6px;
+    padding: 0 0.375rem 0 0.25rem;
     border-radius: 10px;
     background: var(--color-bg);
     border: 1px solid var(--color-border);
 }
 
+.jev-root ::deep .jev-card:hover { background: var(--color-surface-hover); }
 .jev-root ::deep .jev-card.is-preset { border-style: dashed; }
+.jev-root ::deep .jev-card__art { width: 48px; height: 48px; flex-shrink: 0; }
+.jev-root ::deep .jev-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.0625rem; }
+.jev-root ::deep .jev-card__name { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.jev-root ::deep .jev-card__kit { font-size: 0.75rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.jev-root ::deep .jev-card__pick {
-    flex: 1;
-    min-width: 0;
-    height: 100%;
+.jev-root ::deep .jev-card__stats { display: grid; gap: 3px; width: 5.5rem; flex-shrink: 0; }
+
+.jev-root ::deep .jev-stat {
+    position: relative;
+    height: 11px;
+    border-radius: 3px;
+    background: var(--color-surface-hover);
+    overflow: hidden;
+    font: 700 0.5625rem/11px ui-monospace, Consolas, monospace;
+    color: var(--color-text-primary);
+}
+
+.jev-root ::deep .jev-stat::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: var(--v);
+    background: color-mix(in srgb, var(--color-accent) 55%, transparent);
+}
+
+.jev-root ::deep .jev-stat > span { position: relative; padding-left: 3px; }
+
+.jev-root ::deep .jev-card__stat {
     display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0 0.75rem;
+    flex-direction: column;
+    align-items: flex-end;
+    width: 6.5rem;
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    white-space: nowrap;
+}
+
+.jev-root ::deep .jev-card__add { display: flex; gap: 0.25rem; flex-shrink: 0; }
+
+.jev-root ::deep .jev-add {
+    min-width: 3.75rem;
+    min-height: 40px;
+    padding: 0 0.5rem;
+    border-radius: 8px;
     border: 0;
-    background: none;
-    color: inherit;
-    text-align: left;
+    font: 700 0.8125rem var(--font-body);
     cursor: pointer;
 }
 
-.jev-root ::deep .jev-card__pick:hover:not(:disabled) { background: var(--color-surface-hover); border-radius: 10px; }
-.jev-root ::deep .jev-card__art { width: 64px; height: 64px; flex-shrink: 0; }
-.jev-root ::deep .jev-card__body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 0.125rem; }
-.jev-root ::deep .jev-card__name { font-weight: 700; }
-.jev-root ::deep .jev-card__kit { font-size: 0.8125rem; color: var(--color-text-primary); }
-.jev-root ::deep .jev-card__meta { font-size: 0.75rem; color: var(--color-text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.jev-root ::deep .jev-card__stat { font-size: 0.75rem; color: var(--color-text-secondary); white-space: nowrap; }
-.jev-root ::deep .jev-card__own { display: flex; flex-direction: column; padding-right: 0.25rem; }
+.jev-root ::deep .jev-add--blue { background: color-mix(in srgb, var(--player-1) 26%, transparent); color: var(--player-1-ink); }
+.jev-root ::deep .jev-add--red { background: color-mix(in srgb, var(--player-2) 26%, transparent); color: var(--player-2-ink); }
+.jev-root ::deep .jev-add:hover { filter: brightness(1.2); }
+
+.jev-root ::deep .jev-card__more { position: relative; flex-shrink: 0; }
+
+.jev-root ::deep .jev-card__more > summary {
+    list-style: none;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 40px;
+    border-radius: 8px;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    font-weight: 800;
+}
+
+.jev-root ::deep .jev-card__more > summary::-webkit-details-marker { display: none; }
+.jev-root ::deep .jev-card__more > summary:hover { background: var(--color-surface-hover); }
+
+.jev-root ::deep .jev-card__menu {
+    position: absolute;
+    z-index: 5;
+    right: 0;
+    top: calc(100% + 2px);
+    display: flex;
+    flex-direction: column;
+    padding: 0.25rem;
+    border-radius: 10px;
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.3);
+}
+
+.jev-root ::deep .jev-card__menu .jev-link { text-align: left; min-height: 36px; }
 
 /* ── factory ── */
 
 .jev-root ::deep .jev-factory {
-    flex: 1;
-    min-height: 0;
-    overflow: auto;
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-    padding: 0.75rem;
-    border-radius: 12px;
-    background: var(--color-surface);
+    padding: 1rem;
 }
 
 .jev-root ::deep .jev-factory__head { display: flex; align-items: center; justify-content: space-between; }
-.jev-root ::deep .jev-factory__body { display: grid; grid-template-columns: minmax(12rem, 18rem) minmax(0, 1fr); gap: 1rem; }
+.jev-root ::deep .jev-factory__body { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 1rem; }
 
 .jev-root ::deep .jev-factory__preview {
+    position: sticky;
+    top: 0;
     align-self: start;
     display: flex;
     flex-direction: column;
@@ -421,8 +617,28 @@
 .jev-root ::deep .jev-factory__art { width: 100%; aspect-ratio: 1; display: block; }
 .jev-root ::deep .jev-factory__preview .jev-muted { color: #cfe8d4; }
 .jev-root ::deep .jev-factory__form { display: flex; flex-direction: column; gap: 0.75rem; }
-.jev-root ::deep .jev-factory__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; }
 .jev-root ::deep .jev-factory__actions { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+
+.jev-root ::deep .jev-chips { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 0.3rem; min-width: 0; }
+.jev-root ::deep .jev-chips legend { padding: 0; margin-bottom: 0.3rem; font-size: 0.8125rem; }
+.jev-root ::deep .jev-chips__row { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+
+.jev-root ::deep .jev-chip-pick {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 0.625rem;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: var(--color-bg);
+    font-size: 0.8125rem;
+    cursor: pointer;
+}
+
+.jev-root ::deep .jev-chip-pick input { position: absolute; opacity: 0; pointer-events: none; }
+.jev-root ::deep .jev-chip-pick:has(input:focus-visible) { outline: 2px solid var(--color-accent); outline-offset: 2px; }
+.jev-root ::deep .jev-chip-pick small { margin-left: 0.3rem; color: var(--color-text-secondary); font-weight: 700; }
+.jev-root ::deep .jev-chip-pick.is-on { border-color: var(--color-accent); background: var(--accent-bg); font-weight: 700; }
 
 .jev-root ::deep .jev-field { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.8125rem; }
 .jev-root ::deep .jev-slider input { accent-color: var(--color-accent); min-height: 32px; }
@@ -447,9 +663,25 @@
 }
 
 .jev-root ::deep .jev-blackbox__transport { display: flex; align-items: center; gap: 0.375rem; flex-wrap: wrap; }
-.jev-root ::deep .jev-blackbox__speed { display: flex; align-items: center; gap: 0.375rem; margin-left: 0.5rem; }
+.jev-root ::deep .jev-blackbox__play { min-width: 4.5rem; }
 .jev-root ::deep .jev-blackbox__clock { margin-left: auto; font: 600 0.8125rem ui-monospace, Consolas, monospace; }
-.jev-root ::deep .jev-blackbox__slider { width: 100%; min-height: 32px; accent-color: var(--color-accent); }
+.jev-root ::deep .jev-blackbox__track { position: relative; padding-bottom: 12px; }
+.jev-root ::deep .jev-blackbox__slider { width: 100%; min-height: 32px; margin: 0; accent-color: var(--color-accent); }
+.jev-root ::deep .jev-blackbox__marks { position: absolute; left: 8px; right: 8px; bottom: 0; height: 12px; pointer-events: none; }
+
+.jev-root ::deep .jev-mark {
+    position: absolute;
+    left: var(--at);
+    bottom: 1px;
+    width: 3px;
+    height: 10px;
+    border-radius: 2px;
+    transform: translateX(-50%);
+}
+
+.jev-root ::deep .jev-mark--blue { background: var(--player-1); }
+.jev-root ::deep .jev-mark--red { background: var(--player-2); }
+.jev-root ::deep .jev-mark--moment { width: auto; height: auto; bottom: -2px; font-size: 0.6875rem; line-height: 1; color: var(--accent-warning); }
 
 /* ── phones and narrow windows: arena first, the two inspectors side by side beneath ── */
 
@@ -466,25 +698,81 @@
     .jev-root ::deep .jev-team--blue { grid-area: blue; }
     .jev-root ::deep .jev-team--red { grid-area: red; }
     .jev-root ::deep .jev-factory__body { grid-template-columns: 1fr; }
-    .jev-root ::deep .jev-factory__grid { grid-template-columns: 1fr; }
+    .jev-root ::deep .jev-factory__preview { position: static; max-width: 12rem; justify-self: center; }
     .jev-root ::deep .jev-library__list { max-height: 60vh; }
+    .jev-root ::deep .jev-card__stats { display: none; }
+
+    /* In replay a phone gets one inspector, the side its tabs (or the last click) pick. */
+    .jev-root[data-phase="replay"] .jev-mobiletabs { display: inline-flex; }
+    .jev-root[data-phase="replay"] .jev-layout { grid-template-areas: "center center" "focus focus"; }
+    .jev-root[data-phase="replay"] ::deep .jev-team { grid-area: focus; }
+    .jev-root[data-phase="replay"] .jev-layout[data-focus="blue"] ::deep .jev-team--red,
+    .jev-root[data-phase="replay"] .jev-layout[data-focus="red"] ::deep .jev-team--blue { display: none; }
+
+    /* Battle on a phone: the stat overlay is one side at a time, full width, picked by the tabs. */
+    .jev-root[data-phase="battle"][data-stats="on"] .jev-mobiletabs { display: inline-flex; position: absolute; z-index: 5; bottom: 0.75rem; left: 50%; transform: translateX(-50%); background: var(--color-surface); }
+    .jev-root[data-phase="battle"] ::deep .jev-team { width: auto; right: 0.5rem; left: 0.5rem; bottom: 4rem; }
+    .jev-root[data-phase="battle"] .jev-layout[data-focus="blue"] ::deep .jev-team--red,
+    .jev-root[data-phase="battle"] .jev-layout[data-focus="red"] ::deep .jev-team--blue { display: none; }
 }
+
+/* ── battle: the arena owns the screen; Tab (or the Stats button) lays the stat HUD over it ── */
+
+.jev-root[data-phase="battle"] { gap: 0.5rem; }
+.jev-root[data-phase="battle"][data-stats="off"] .jev-topbar { display: none; }
+.jev-root[data-phase="battle"] .jev-layout { display: block; position: relative; }
+.jev-root[data-phase="battle"] .jev-center { height: 100%; }
+.jev-root[data-phase="battle"] .jev-arena { height: 100%; min-height: 0; }
+.jev-root[data-phase="battle"][data-stats="off"] .jev-hud,
+.jev-root[data-phase="battle"][data-stats="off"] ::deep .jev-team { display: none; }
+
+.jev-root[data-phase="battle"] ::deep .jev-team {
+    position: absolute;
+    z-index: 4;
+    top: 3.75rem;
+    bottom: 0.5rem;
+    width: min(19rem, 42%);
+    background: color-mix(in srgb, var(--color-surface) 90%, transparent);
+    backdrop-filter: var(--glass-2);
+    -webkit-backdrop-filter: var(--glass-2);
+    box-shadow: 0 12px 32px rgb(0 0 0 / 0.35);
+}
+
+.jev-root[data-phase="battle"] ::deep .jev-team--blue { left: 0.5rem; }
+.jev-root[data-phase="battle"] ::deep .jev-team--red { right: 0.5rem; }
+
+.jev-statsbtn {
+    position: absolute;
+    z-index: 5;
+    top: 0.5rem;
+    right: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-height: 36px;
+    padding: 0 0.75rem;
+    border-radius: 999px;
+    border: 1px solid color-mix(in srgb, #fff 22%, transparent);
+    background: color-mix(in srgb, #0b1020 55%, transparent);
+    color: #f4f6f8;
+    font: 700 0.8125rem var(--font-body);
+    cursor: pointer;
+}
+
+.jev-statsbtn[aria-pressed="true"] { background: color-mix(in srgb, #fff 22%, transparent); }
+.jev-statsbtn kbd { border-color: color-mix(in srgb, #fff 35%, transparent); color: inherit; }
 
 @media (max-width: 30rem) {
     .jev-layout { grid-template-columns: 1fr; grid-template-areas: "center" "blue" "red"; }
+    .jev-root ::deep .jev-card__stat { display: none; }
+    .jev-hud__map { display: none; }
 }
 
-/* ── replay: Jev debrief / Black Box toggle ── */
+/* ── replay: Jev debrief / Black Box ── */
 
 .jev-center { overflow: auto; }
 .jev-arena.is-hidden { display: none; }
 
-.jev-viewtabs {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
 
 .jev-root ::deep .jev-debrief {
     display: flex;
@@ -527,7 +815,6 @@
 
 .jev-root ::deep .jev-debrief__bars { display: flex; flex-direction: column; gap: 0.375rem; }
 
-.jev-root ::deep .jev-debrief__creatures,
 .jev-root ::deep .jev-debrief__moments {
     margin: 0;
     padding: 0;
@@ -543,3 +830,45 @@
 @media (max-width: 56rem) {
     .jev-root ::deep .jev-debrief__teams { grid-template-columns: 1fr; }
 }
+
+/* ── creature stories (debrief) ── */
+
+.jev-root ::deep .jev-stories { display: flex; flex-direction: column; gap: 0.625rem; margin-top: 0.5rem; }
+.jev-root ::deep .jev-stories__teams { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.75rem; align-items: start; }
+.jev-root ::deep .jev-stories__team { display: flex; flex-direction: column; gap: 0.5rem; }
+.jev-root ::deep .jev-stories__side { margin: 0; font-size: 1rem; }
+.jev-root ::deep .jev-stories__side--blue { color: var(--player-1-ink); }
+.jev-root ::deep .jev-stories__side--red { color: var(--player-2-ink); }
+
+.jev-root ::deep .jev-story {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+    padding: 0.625rem 0.75rem;
+    border-radius: 10px;
+    background: var(--color-surface);
+    border-left: 4px solid transparent;
+}
+
+.jev-root ::deep .jev-story--blue { border-left-color: var(--player-1); }
+.jev-root ::deep .jev-story--red { border-left-color: var(--player-2); }
+.jev-root ::deep .jev-story__head { display: flex; justify-content: space-between; gap: 0.5rem; flex-wrap: wrap; }
+.jev-root ::deep .jev-story__ok { color: var(--accent-success); font-weight: 700; }
+.jev-root ::deep .jev-story__text { margin: 0; font-size: 0.875rem; line-height: 1.45; }
+.jev-root ::deep .jev-story__foot { display: flex; justify-content: space-between; align-items: center; }
+.jev-root ::deep .jev-story__foot .jev-link { min-height: 32px; }
+
+/* The life strip: the whole match left to right, the unit's phases coloured by intent. */
+.jev-root ::deep .jev-story__strip { position: relative; height: 8px; border-radius: 4px; background: var(--color-surface-hover); overflow: hidden; }
+.jev-root ::deep .jev-story__seg { position: absolute; top: 0; bottom: 0; left: var(--from); right: calc(100% - var(--to)); border-right: 1px solid var(--color-surface); }
+.jev-root ::deep .jev-story__seg--attack { background: var(--accent-danger); }
+.jev-root ::deep .jev-story__seg--defend { background: var(--color-accent); }
+.jev-root ::deep .jev-story__seg--support { background: var(--accent-success); }
+
+@media (max-width: 56rem) {
+    .jev-root ::deep .jev-stories__teams { grid-template-columns: 1fr; }
+}
+
+/* The energy reserve under the inspector's HP bar (the arena draws the same strip on the canvas). */
+.jev-root ::deep .jev-stamina { height: 4px; margin-top: 0.25rem; border-radius: 2px; background: var(--color-surface-hover); overflow: hidden; }
+.jev-root ::deep .jev-stamina > span { display: block; width: var(--pct); height: 100%; background: var(--accent-warning); transition: width 0.3s ease-out; }

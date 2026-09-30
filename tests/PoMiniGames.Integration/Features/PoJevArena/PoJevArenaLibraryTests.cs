@@ -115,9 +115,11 @@ public sealed class PoJevArenaLibraryTests : IClassFixture<TestWebApplicationFac
                     var team = Enumerable.Repeat(saved, 10).ToArray();
                     var presets = Enumerable.Repeat(PoJevArenaCatalog.Presets[0], 10).ToArray();
 
-                    // Six matches finishing at once: 3 wins as Blue, 2 losses as Red, 1 draw.
+                    // Six matches finishing at once: 3 wins as Blue, 2 losses as Red, 1 draw. The
+                    // first also carries careers: two units' KOs and damage, and slot 0 as MVP.
+                    ArenaUnitStats[] units = [new(0, 2, 150.4, 0), new(1, 1, 50, 12), new(10, 3, 999, 0)];
                     await Task.WhenAll(
-                        store.ApplyResultAsync(team, presets, "blue"),
+                        store.ApplyResultAsync(team, presets, "blue", units, mvp: 0),
                         store.ApplyResultAsync(team, presets, "blue"),
                         store.ApplyResultAsync(team, presets, "blue"),
                         store.ApplyResultAsync(presets, team, "blue"),
@@ -129,6 +131,12 @@ public sealed class PoJevArenaLibraryTests : IClassFixture<TestWebApplicationFac
                     row.Wins.Should().Be(3);
                     row.Losses.Should().Be(2);
                     row.Draws.Should().Be(1);
+                    // Every match priced the same frozen seed rating against an all-preset (seed)
+                    // side: ±12 at K 24 for a win/loss, 0 for an even draw, applied as increments.
+                    row.Rating.Should().Be(CreatureLibraryStore.SeedRating + 3 * 12 - 2 * 12);
+                    row.Kills.Should().Be(3, "slot 10 is a preset, which keeps no career");
+                    row.DamageDealt.Should().Be(200);
+                    row.Mvps.Should().Be(1);
                     break;
                 }
             case "deleted-not-resurrected":

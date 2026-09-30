@@ -1,7 +1,7 @@
 ﻿{
   Prompt: {
     State:
-Subject: Blue-02 "Berserker Rusher" (HP: 53/160 [33%], Mass: 2.0, Speed: 8.0 m/s)
+Subject: Blue-02 "Berserker Rusher" (HP: 10/32 [31%], Mass: 2.0, Speed: 8.0 m/s)
 Personality: reckless_berserker (charges in, hates to back off); target bias hunt_weakest (finishes off the wounded); panic threshold fights_to_death (never breaks)
 Abilities: melee (always), dodge_dash (ready)
 Status: Under direct fire, 1 ally within 4 m
@@ -26,7 +26,8 @@ Team Counts: 7 Blue alive vs 9 Red alive,
           dodge_dash: Dash sideways out of the threat's line of attack,
           fall_back: Back away from the nearest threat without attacking,
           melee_charge: Rush the target and strike it in melee,
-          peel_to_ally: Disengage and move to the closest living ally for protection
+          peel_to_ally: Disengage and move to the closest living ally for protection,
+          take_cover: Move behind the nearest pillar so it blocks the nearest threat's line of fire
         }
       },
       target_focus: {

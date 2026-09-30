@@ -1,8 +1,10 @@
+@using System.Globalization
 @using PoMiniGames.Shared.Games.PoJevArena
 
-@* The shared public library plus the built-in presets. Clicking a card drafts it into the active
-   team's next free slot; your own creatures can be edited or deleted. Virtualized, so a big
-   library costs only the cards on screen. *@
+@* The shared public library plus the built-in presets, one compact row per creature: portrait,
+   name and kit, three stat bars, its record, and a + Blue / + Red button per side that is taking
+   picks. Fork (any card) and Edit / Delete (your own) sit behind the ⋯ menu. Virtualized, so a
+   big library costs only the cards on screen. *@
 <section class="jev-library" aria-label="Creature library">
     <header class="jev-library__head">
         <h2 class="jev-kicker">Creature library</h2>
@@ -10,11 +12,28 @@
             <label class="jev-visually-hidden" for="jev-lib-q">Search creatures</label>
             <input id="jev-lib-q" class="jev-input" type="search" placeholder="Search by name" value="@Query"
                    @onchange="e => OnQuery.InvokeAsync(e.Value?.ToString())" />
+            <label class="jev-visually-hidden" for="jev-lib-filter">Filter</label>
+            <select id="jev-lib-filter" class="jev-input" value="@Filter" @onchange="e => OnFilter.InvokeAsync(e.Value?.ToString())">
+                <option value="all">All creatures</option>
+                <option value="mine">Mine</option>
+                <optgroup label="Has ability">
+                    @foreach (var a in PoJevArenaCatalog.Abilities)
+                    {
+                        <option value="@($"ability:{a.Id}")">@a.Label</option>
+                    }
+                </optgroup>
+                <optgroup label="Temperament">
+                    @foreach (var t in PoJevArenaCatalog.Temperaments)
+                    {
+                        <option value="@($"temper:{t.Id}")">@t.Label</option>
+                    }
+                </optgroup>
+            </select>
             <label class="jev-visually-hidden" for="jev-lib-sort">Sort</label>
             <select id="jev-lib-sort" class="jev-input" value="@Sort" @onchange="e => OnSort.InvokeAsync(e.Value?.ToString())">
                 <option value="new">Newest</option>
                 <option value="used">Most used</option>
-                <option value="winrate">Win rate</option>
+                <option value="rating">Rating</option>
             </select>
             <button type="button" class="jev-btn" @onclick="OnNew">New creature</button>
         </div>
@@ -26,25 +45,48 @@
     }
 
     <div class="jev-library__list" tabindex="-1">
-        <Virtualize Items="Items" ItemSize="92" Context="c" OverscanCount="4">
-            <article class="jev-card @(c.IsPreset ? "is-preset" : null)" @key="c.Id">
-                <button type="button" class="jev-card__pick" disabled="@(!CanDraft)" @onclick="() => OnPick.InvokeAsync(c)"
-                        aria-label="@($"Draft {c.Name} into {ActiveTeamName}")">
-                    <CreaturePortrait Creature="c" Team="@ActiveTeam" Class="jev-card__art" />
-                    <span class="jev-card__body">
-                        <span class="jev-card__name">@c.Name</span>
-                        <span class="jev-card__kit">@Kit(c)</span>
-                        <span class="jev-card__meta">@c.MaxHp HP · @c.MoveSpeed.ToString("0.0") m/s · mass @c.Mass.ToString("0.0") · @Personality(c)</span>
-                    </span>
-                    <span class="jev-card__stat">@Record(c)</span>
-                </button>
-                @if (c.IsMine)
-                {
-                    <div class="jev-card__own">
-                        <button type="button" class="jev-link" @onclick="() => OnEdit.InvokeAsync(c)" aria-label="@($"Edit {c.Name}")">Edit</button>
-                        <button type="button" class="jev-link jev-danger" @onclick="() => OnDelete.InvokeAsync(c)" aria-label="@($"Delete {c.Name}")">Delete</button>
+        <Virtualize Items="Items" ItemSize="62" Context="c" OverscanCount="6">
+            <article class="jev-card @(c.IsPreset ? "is-preset" : null)" @key="c.Id" title="@Career(c)">
+                <CreaturePortrait Creature="c" Team="blue" Class="jev-card__art" />
+                <span class="jev-card__body">
+                    <span class="jev-card__name">@c.Name</span>
+                    <span class="jev-card__kit">@Kit(c) · @Personality(c)</span>
+                </span>
+                <span class="jev-card__stats" aria-label="@($"{PoJevArenaRules.BattleHp(c.MaxHp)} HP, {c.MoveSpeed:0.0} m/s, mass {c.Mass:0.0}")">
+                    <span class="jev-stat" style="--v: @Pct(c.MaxHp, PoJevArenaRules.MinHp, PoJevArenaRules.MaxHp)%"><span>HP</span></span>
+                    <span class="jev-stat" style="--v: @Pct(c.MoveSpeed, PoJevArenaRules.MinSpeed, PoJevArenaRules.MaxSpeed)%"><span>SPD</span></span>
+                    <span class="jev-stat" style="--v: @Pct(c.Mass, PoJevArenaRules.MinMass, PoJevArenaRules.MaxMass)%"><span>MASS</span></span>
+                </span>
+                <span class="jev-card__stat">
+                    <span>@Record(c)</span>
+                    @if (!c.IsPreset && c.Deployed > 0)
+                    {
+                        <span class="jev-muted">@c.Kills KO · @c.Mvps MVP</span>
+                    }
+                </span>
+                <span class="jev-card__add">
+                    @if (CanBlue)
+                    {
+                        <button type="button" class="jev-add jev-add--blue" @onclick='() => OnPick.InvokeAsync((c, "blue"))'
+                                aria-label="@($"Draft {c.Name} into Blue")">+ Blue</button>
+                    }
+                    @if (CanRed)
+                    {
+                        <button type="button" class="jev-add jev-add--red" @onclick='() => OnPick.InvokeAsync((c, "red"))'
+                                aria-label="@($"Draft {c.Name} into Red")">+ Red</button>
+                    }
+                </span>
+                <details class="jev-card__more">
+                    <summary aria-label="@($"More for {c.Name}")">⋯</summary>
+                    <div class="jev-card__menu">
+                        <button type="button" class="jev-link" @onclick="() => OnFork.InvokeAsync(c)">Fork</button>
+                        @if (c.IsMine)
+                        {
+                            <button type="button" class="jev-link" @onclick="() => OnEdit.InvokeAsync(c)">Edit</button>
+                            <button type="button" class="jev-link jev-danger" @onclick="() => OnDelete.InvokeAsync(c)">Delete</button>
+                        }
                     </div>
-                }
+                </details>
             </article>
         </Virtualize>
     </div>
@@ -54,30 +96,38 @@
     [Parameter, EditorRequired] public ICollection<ArenaCreature> Items { get; set; } = [];
     [Parameter] public string Sort { get; set; } = "new";
     [Parameter] public string? Query { get; set; }
-    [Parameter] public string ActiveTeam { get; set; } = "blue";
-    [Parameter] public bool CanDraft { get; set; } = true;
+    [Parameter] public string Filter { get; set; } = "all";
+    [Parameter] public bool CanBlue { get; set; }
+    [Parameter] public bool CanRed { get; set; }
     [Parameter] public bool Offline { get; set; }
-    [Parameter] public EventCallback<ArenaCreature> OnPick { get; set; }
+    [Parameter] public EventCallback<(ArenaCreature Creature, string Team)> OnPick { get; set; }
     [Parameter] public EventCallback<ArenaCreature> OnEdit { get; set; }
+    [Parameter] public EventCallback<ArenaCreature> OnFork { get; set; }
     [Parameter] public EventCallback<ArenaCreature> OnDelete { get; set; }
     [Parameter] public EventCallback<string?> OnSort { get; set; }
     [Parameter] public EventCallback<string?> OnQuery { get; set; }
+    [Parameter] public EventCallback<string?> OnFilter { get; set; }
     [Parameter] public EventCallback OnNew { get; set; }
-
-    private string ActiveTeamName => ActiveTeam == "blue" ? "Team Blue" : "Team Red";
 
     private static string Kit(ArenaCreature c) => c.Abilities.Length == 0
         ? "Melee only"
-        : "Melee + " + string.Join(" · ", c.Abilities.Select(id => PoJevArenaCatalog.FindAbility(id)?.Label ?? id));
+        : string.Join(" + ", c.Abilities.Select(id => PoJevArenaCatalog.FindAbility(id)?.Label ?? id));
 
     private static string Personality(ArenaCreature c) =>
         PoJevArenaCatalog.Temperaments.FirstOrDefault(t => t.Id == c.Temperament)?.Label ?? c.Temperament;
 
+    private static string Pct(double v, double min, double max) =>
+        Math.Clamp(100 * (v - min) / (max - min), 4, 100).ToString("0", CultureInfo.InvariantCulture);
+
     private static string Record(ArenaCreature c)
     {
         if (c.IsPreset) return "Preset";
-        if (c.Deployed == 0) return $"New · by {c.OwnerName}";
+        if (c.Deployed == 0) return $"New · {c.OwnerName}";
         var rate = (c.Wins + 0.5 * c.Draws) / c.Deployed;
-        return $"{rate:P0} W · {c.Deployed} fights";
+        return string.Create(CultureInfo.InvariantCulture, $"{c.Rating} · {rate:P0} W");
     }
+
+    private static string? Career(ArenaCreature c) => c.IsPreset || c.Deployed == 0 ? null
+        : string.Create(CultureInfo.InvariantCulture,
+            $"Rating {c.Rating} · {c.Deployed} fights · {c.Kills} KOs · {c.DamageDealt:N0} damage · {c.Mvps} MVP · by {c.OwnerName}");
 }

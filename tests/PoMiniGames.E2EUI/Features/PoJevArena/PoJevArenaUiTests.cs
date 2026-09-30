@@ -51,27 +51,30 @@ public class PoJevArenaUiTests
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle, Timeout = 60_000 });
 
         await page.GetByRole(AriaRole.Button, new() { Name = "Start drafting" }).ClickAsync(new() { Timeout = 30_000 });
-        await page.Locator(".jev-card__pick").Nth(4).WaitForAsync(new() { Timeout = 30_000 });
+        await page.Locator(".jev-add--blue").Nth(4).WaitForAsync(new() { Timeout = 30_000 });
         (await page.Locator(".jev-status").InnerTextAsync()).Should().Contain("Jev ready", "the Test host serves the Jev stub");
 
-        // Factory: one preview capture per ability, so every ability's wind-up/stance is reviewable.
+        // Factory (a drawer over the library): one preview capture per ability chip, so every
+        // ability's wind-up/stance is reviewable.
         await page.GetByRole(AriaRole.Button, new() { Name = "New creature" }).ClickAsync();
-        foreach (var (select, id) in new[]
+        var factory = page.Locator(".jev-factory");
+        foreach (var (label, id) in new[]
                  {
-                     ("Offense ability", "spit_glob"), ("Offense ability", "hurl_boulder"), ("Offense ability", "mend_bolt"),
-                     ("Defense ability", "shield_brace"), ("Defense ability", "hard_shell"), ("Defense ability", "dodge_dash"),
+                     ("Spit glob", "spit_glob"), ("Hurl boulder", "hurl_boulder"), ("Mend bolt", "mend_bolt"),
+                     ("Shield brace", "shield_brace"), ("Hard shell", "hard_shell"), ("Dodge dash", "dodge_dash"),
                  })
         {
-            await page.GetByLabel(select).SelectOptionAsync(id);
+            await factory.Locator(".jev-chip-pick", new() { HasText = label }).ClickAsync();
             await page.WaitForTimeoutAsync(1_200);
             await page.Locator(".jev-factory__preview").ScreenshotAsync(new() { Path = Path.Combine(shots, $"factory-{id}.png") });
         }
-        await page.GetByRole(AriaRole.Button, new() { Name = "Close" }).ClickAsync();
+        await factory.GetByRole(AriaRole.Button, new() { Name = "Close" }).ClickAsync();
 
-        // Draft: the five presets, four times over; 1P hands the pick to Red once Blue is full.
-        for (var i = 0; i < 20; i++)
+        // Draft: the five presets twice into each side with the per-card + Blue / + Red buttons.
+        for (var i = 0; i < 10; i++)
         {
-            await page.Locator(".jev-card__pick").Nth(i % 5).ClickAsync();
+            await page.Locator(".jev-add--blue").Nth(i % 5).ClickAsync();
+            await page.Locator(".jev-add--red").Nth(i % 5).ClickAsync();
         }
         (await page.Locator(".jev-team--blue .jev-slot:not(.is-empty)").CountAsync()).Should().Be(10);
         (await page.Locator(".jev-team--red .jev-slot:not(.is-empty)").CountAsync()).Should().Be(10);
@@ -80,17 +83,26 @@ public class PoJevArenaUiTests
         await page.GetByRole(AriaRole.Button, new() { Name = "Deploy battle" }).ClickAsync();
         await page.WaitForFunctionAsync("() => (window.PoJevArena?.state()?.frames ?? 0) > 300", null,
             new() { Timeout = 60_000 });
+        // The battle runs full screen; holding Tab lays the stat HUD over the arena.
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "battle.png") });
+        await page.Keyboard.DownAsync("Tab");
+        await page.Locator(".jev-root[data-stats='on'] .jev-inspector--blue").WaitForAsync(new() { Timeout = 5_000 });
+        await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "battle-stats.png") });
         (await page.Locator(".jev-inspector--blue").InnerTextAsync()).Should().Contain("melee_charge",
             "the blue inspector shows the distribution the stub returned");
+        await page.Keyboard.UpAsync("Tab");
+        await page.Locator(".jev-root[data-stats='off']").WaitForAsync(new() { Timeout = 5_000 });
+
 
         await page.WaitForFunctionAsync("() => window.PoJevArena?.state()?.over === true", null,
             new() { Timeout = 240_000, PollingInterval = 500 });
-        // The debrief opens first and hides the arena, so the result headline is read from the
-        // replay toggle bar, which carries the same line.
-        var result = page.Locator(".jev-viewtabs");
-        await result.WaitForAsync(new() { Timeout = 15_000 });
-        (await result.InnerTextAsync()).Should().MatchRegex("(Blue wins|Red wins|Draw)");
+        // The whistle plays the kill cam and the victory ceremony (~7 s) before the result bar.
+        await page.WaitForTimeoutAsync(2_500);
+        await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "killcam.png") });
+        var result = page.Locator(".jev-resultbar");
+        await result.WaitForAsync(new() { Timeout = 20_000 });
+        (await result.InnerTextAsync()).Should().MatchRegex("(Blue wins|Red wins|Draw)").And.Contain("MVP");
+
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "result.png") });
 
         // Jev debrief: shown first after the whistle, one plain-language card per team, with

@@ -46,7 +46,8 @@ public static class JevPromptBuilder
     {
         var subject = roster.Resolve(state.Unit, out var blue);
         if (subject is null) return Fail("unit");
-        if (state.Hp < 1 || state.Hp > subject.MaxHp) return Fail("hp");
+        // The engine reports battle HP (one fifth of the designed HP the roster stores).
+        if (state.Hp < 1 || state.Hp > PoJevArenaRules.BattleHp(subject.MaxHp)) return Fail("hp");
 
         var cooldowns = state.AbilityCooldowns ?? [];
         if (cooldowns.Length != subject.Abilities.Length
@@ -61,6 +62,14 @@ public static class JevPromptBuilder
         {
             return Fail("counts");
         }
+
+        // -1 means "this arena has no pillars"; anything else is an in-arena distance.
+        if (!double.IsFinite(state.CoverDistanceM) || (state.CoverDistanceM != -1 && state.CoverDistanceM is < 0 or > MaxDistanceM))
+        {
+            return Fail("cover");
+        }
+
+        if (state.Stamina is < -1 or > 100) return Fail("stamina");
 
         var candidates = state.Candidates ?? [];
         var seenFoci = new HashSet<string>(StringComparer.Ordinal);
@@ -104,9 +113,10 @@ public static class JevPromptBuilder
         bool blue)
     {
         var sb = new StringBuilder(640);
-        var hpPct = (int)Math.Round(100.0 * state.Hp / subject.MaxHp);
+        var maxHp = PoJevArenaRules.BattleHp(subject.MaxHp);
+        var hpPct = (int)Math.Round(100.0 * state.Hp / maxHp);
 
-        sb.Append(Inv, $"Subject: {state.Unit} \"{subject.Name}\" (HP: {state.Hp}/{subject.MaxHp} [{hpPct}%], ")
+        sb.Append(Inv, $"Subject: {state.Unit} \"{subject.Name}\" (HP: {state.Hp}/{maxHp} [{hpPct}%], ")
           .Append(Inv, $"Mass: {subject.Mass:0.0}, Speed: {subject.MoveSpeed:0.0} m/s)\n");
 
         sb.Append("Personality: ")
@@ -122,11 +132,20 @@ public static class JevPromptBuilder
         }
         sb.Append('\n');
 
-        var status = new List<string>(3);
+        var status = new List<string>(5);
         if (state.UnderFire) status.Add("Under direct fire");
         if (state.Poisoned) status.Add("poisoned");
+        if (state.InTar) status.Add("stuck in the tar pit (slowed, losing HP)");
+        if (state.InBrush) status.Add("hidden in brush (ranged hits land softer)");
         status.Add(state.AlliesNear == 1 ? "1 ally within 4 m" : $"{state.AlliesNear} allies within 4 m");
         sb.Append("Status: ").Append(string.Join(", ", status)).Append('\n');
+        if (state.CoverDistanceM >= 0) sb.Append(Inv, $"Cover: nearest pillar {state.CoverDistanceM:0.0} m away\n");
+        if (state.Stamina >= 0)
+        {
+            // Sprinting and bursts spend it, resting refills it, and an empty reserve means slow, weak legs.
+            var feel = state.Stamina >= 70 ? "fresh" : state.Stamina >= 35 ? "tiring" : state.Stamina >= 15 ? "winded" : "exhausted, cannot sprint";
+            sb.Append(Inv, $"Stamina: {state.Stamina}% ({feel})\n");
+        }
 
         // Catalog order, not client order, so the same situation always reads the same way.
         foreach (var focus in PoJevArenaCatalog.TargetFoci)

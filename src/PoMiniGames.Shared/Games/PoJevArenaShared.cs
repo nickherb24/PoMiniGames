@@ -84,7 +84,11 @@ public sealed record ArenaCreature(
     int Wins = 0,
     int Losses = 0,
     int Draws = 0,
-    DateTimeOffset? UpdatedUtc = null)
+    DateTimeOffset? UpdatedUtc = null,
+    int Rating = 0,
+    int Kills = 0,
+    int Mvps = 0,
+    long DamageDealt = 0)
 {
     /// <summary>Presets are code constants, never library rows, and carry no stats.</summary>
     [JsonIgnore]
@@ -113,8 +117,16 @@ public sealed record ArenaMatchRequest(ArenaMode Mode, string[] BlueIds, string[
 /// <summary>The frozen rosters the engine plays with: later library edits cannot change a running match.</summary>
 public sealed record ArenaMatchTicket(string MatchId, int Seed, ArenaCreature[] Blue, ArenaCreature[] Red);
 
-/// <summary>Reports a finished match once. <see cref="Winner"/> is <c>blue</c>, <c>red</c> or <c>draw</c>.</summary>
-public sealed record ArenaMatchResult(string Winner, double DurationSeconds);
+/// <summary>
+/// Reports a finished match once. <see cref="Winner"/> is <c>blue</c>, <c>red</c> or <c>draw</c>.
+/// <see cref="Units"/> carries each roster slot's career numbers (Blue 0-9, Red 10-19) and
+/// <see cref="Mvp"/> the slot the engine named MVP (-1 for none). Both are the client's word, like
+/// the winner: the server clamps them and adds them to library careers, nothing more.
+/// </summary>
+public sealed record ArenaMatchResult(string Winner, double DurationSeconds, ArenaUnitStats[]? Units = null, int Mvp = -1);
+
+/// <summary>One roster slot's numbers for a finished match.</summary>
+public sealed record ArenaUnitStats(int Slot, int Kills, double Damage, double Healed);
 
 public sealed record ArenaResultReceipt(bool Recorded, string? Reason = null);
 
@@ -129,7 +141,10 @@ public sealed record ArenaCandidate(string Focus, string Unit, double DistanceM,
 
 /// <summary>
 /// The dynamic state of one unit (numbers and ids only). <see cref="AbilityCooldowns"/> aligns
-/// with the creature's ability list: seconds until ready, 0 meaning ready.
+/// with the creature's ability list: seconds until ready, 0 meaning ready. The arena hazards ride
+/// along as numbers too: <see cref="CoverDistanceM"/> is the edge distance to the nearest pillar
+/// (-1 when the arena has none), and <see cref="InBrush"/> / <see cref="InTar"/> say where the unit stands.
+/// <see cref="Stamina"/> is the percent left of the unit's energy reserve (-1 when not reported).
 /// </summary>
 public sealed record ArenaUnitState(
     string Unit,
@@ -140,7 +155,11 @@ public sealed record ArenaUnitState(
     int AlliesNear,
     ArenaCandidate[] Candidates,
     int BlueAlive,
-    int RedAlive);
+    int RedAlive,
+    double CoverDistanceM = -1,
+    bool InBrush = false,
+    bool InTar = false,
+    int Stamina = -1);
 
 public sealed record ArenaDecideRequest(ArenaUnitState[] Units);
 
@@ -203,6 +222,7 @@ public static class PoJevArenaCatalog
         new("melee_charge", "Melee charge", "Rush the target and strike it in melee"),
         new("peel_to_ally", "Peel to ally", "Disengage and move to the closest living ally for protection"),
         new("fall_back", "Fall back", "Back away from the nearest threat without attacking"),
+        new("take_cover", "Take cover", "Move behind the nearest pillar so it blocks the nearest threat's line of fire"),
     ];
 
     public static readonly ArenaCatalogEntry[] TargetFoci =
@@ -285,6 +305,17 @@ public static class PoJevArenaRules
     public const double BuildBudget = 80;
     public const int MaxCreaturesPerOwner = 25;
     public const int MaxNameChars = DisplayNameSanitizer.MaxLength;
+
+    /// <summary>
+    /// Designed HP (50-500: what the budget prices and the library stores) over battle HP. A
+    /// creature fights with one fifth of it (the user's call, 2026-09-30), and everything a player
+    /// or Jev reads shows the battle number. Mirrored by <c>battleHp</c> in js/pojevarena/sim.js.
+    /// </summary>
+    public const int BattleHpDivisor = 5;
+
+    /// <summary>The HP a creature has in the arena: designed HP / 5, rounded, at least 1.</summary>
+    public static int BattleHp(int designedHp) =>
+        Math.Max(1, (int)Math.Round(designedHp / (double)BattleHpDivisor, MidpointRounding.AwayFromZero));
 
     /// <summary>
     /// Build points spent, rounded to 0.1. Maxing all three stats costs 90 — more than the whole
@@ -391,6 +422,7 @@ public static class ArenaUnits
 [JsonSerializable(typeof(ArenaMatchRequest))]
 [JsonSerializable(typeof(ArenaMatchTicket))]
 [JsonSerializable(typeof(ArenaMatchResult))]
+[JsonSerializable(typeof(ArenaUnitStats[]))]
 [JsonSerializable(typeof(ArenaResultReceipt))]
 [JsonSerializable(typeof(ArenaDecideRequest))]
 [JsonSerializable(typeof(ArenaDecideResponse))]

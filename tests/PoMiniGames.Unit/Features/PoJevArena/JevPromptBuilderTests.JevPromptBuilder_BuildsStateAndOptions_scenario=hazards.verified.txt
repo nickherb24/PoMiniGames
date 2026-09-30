@@ -1,10 +1,12 @@
 ﻿{
   Prompt: {
     State:
-Subject: Blue-03 "Poison Spitter" (HP: 7/22 [32%], Mass: 1.5, Speed: 5.5 m/s)
-Personality: skirmisher (hits and runs, never stands still); target bias hunt_weakest (finishes off the wounded); panic threshold panics_under_25_hp (breaks when badly hurt)
-Abilities: melee (always), spit_glob (ready), dodge_dash (2.1 s)
-Status: Under direct fire, poisoned, 1 ally within 4 m
+Subject: Blue-06 "Plain Claw" (HP: 36/44 [82%], Mass: 3.0, Speed: 4.5 m/s)
+Personality: opportunist (goes where the easy win is); target bias engage_closest (fights whatever is nearest); panic threshold flees_if_outnumbered (breaks when the odds turn)
+Abilities: melee (always)
+Status: Under direct fire, stuck in the tar pit (slowed, losing HP), hidden in brush (ranged hits land softer), 1 ally within 4 m
+Cover: nearest pillar 2.4 m away
+Stamina: 35% (tiring)
 Nearest threat: Red-01 "Vanguard Tank" (Dist: 2.3 m, HP: 85%, Abilities: shield_brace)
 Weakest target: Red-03 "Poison Spitter" (Dist: 6.8 m, HP: 12%, Abilities: spit_glob, dodge_dash)
 Strongest threat: Red-04 "Boulder Brute" (Dist: 9.4 m, HP: 100%, Abilities: hurl_boulder, hard_shell)
@@ -24,9 +26,7 @@ Team Counts: 7 Blue alive vs 9 Red alive,
         Type: choice,
         Instructions: Select the primary manoeuvre for this unit given its stats, abilities, cooldowns and personality.,
         Criteria: {
-          dodge_dash: Dash sideways out of the threat's line of attack,
           fall_back: Back away from the nearest threat without attacking,
-          kite_and_shoot: Back away from the target while spitting poison globs from range,
           melee_charge: Rush the target and strike it in melee,
           peel_to_ally: Disengage and move to the closest living ally for protection,
           take_cover: Move behind the nearest pillar so it blocks the nearest threat's line of fire

@@ -12,6 +12,8 @@
 
 export const FLAGS = {
     PANIC: 1, SHELL: 2, BRACE: 4, INVULN: 8, POISON: 16, STALE: 32, DASH: 64, CAST: 128, WINDUP: 256, LUNGE: 512,
+    CHEER: 1024,   // victory ceremony only: the winners hop
+    REEL: 2048,    // staggered by a blow: leans back off its facing
 };
 
 const TAU = Math.PI * 2;
@@ -195,8 +197,10 @@ export function drawCreature(ctx, look, view, mem, px, py, R, time, dt, reduced)
 
     // ── pose offsets ──
     let ox = 0, oy = 0, sx = 1, sy = 1, rot = view.facing;
-    const breathRate = lowHp ? 0.45 : temperament === 'disciplined_anchor' ? 0.6 : 0.9;
-    const breath = reduced ? 0 : Math.sin(time * TAU * breathRate + look.phase) * (temperament === 'disciplined_anchor' ? 0.015 : 0.03);
+    // Tired bodies pant: faster, deeper breaths as the energy reserve runs down.
+    const tired = 1 - Math.min(1, (view.stamina ?? 1) / 0.5);
+    const breathRate = (lowHp ? 0.45 : temperament === 'disciplined_anchor' ? 0.6 : 0.9) + tired * 1.6;
+    const breath = reduced ? 0 : Math.sin(time * TAU * breathRate + look.phase) * ((temperament === 'disciplined_anchor' ? 0.015 : 0.03) + tired * 0.04);
     sx += breath; sy += breath;
 
     if (!reduced) {
@@ -206,7 +210,16 @@ export function drawCreature(ctx, look, view, mem, px, py, R, time, dt, reduced)
         if (temperament === 'skirmisher') oy += Math.sin(time * TAU * 2.2 + look.phase) * R * 0.06;
         if (temperament === 'reckless_berserker' && speed < 0.4) rot += Math.sin(time * 31 + look.phase) * 0.04;
         if (f & FLAGS.PANIC) { ox += Math.sin(time * 70) * R * 0.05; oy += Math.cos(time * 63) * R * 0.05; }
+        // Lean into the push: a body shifts toward where its legs are driving it (and back when braking).
+        const lean = Math.min(0.16, Math.hypot(view.ax || 0, view.ay || 0) * 0.018);
+        if (lean > 0.01) { const a = Math.atan2(view.ay, view.ax); ox += Math.cos(a) * R * lean; oy += Math.sin(a) * R * lean; }
         if (lowHp) sy *= 0.95;
+        if (f & FLAGS.REEL) { ox -= Math.cos(view.facing) * R * 0.14; oy -= Math.sin(view.facing) * R * 0.14; sx *= 0.92; sy *= 1.05; }
+        if (f & FLAGS.CHEER) {
+            const hop = Math.abs(Math.sin(time * 7 + look.phase));
+            oy -= hop * R * 0.45;
+            sx *= 1 - hop * 0.04; sy *= 1 + hop * 0.08;
+        }
     }
 
     const strikeT = view.strikeT || 0;
@@ -499,7 +512,8 @@ function drawFace(ctx, look, view, R, f, time, mem, reduced) {
     ctx.lineWidth = Math.max(1, R * 0.07);
     ctx.beginPath();
     const mx = R * 0.8;
-    const open = (f & FLAGS.LUNGE) || (f & FLAGS.PANIC);
+    const open = (f & FLAGS.LUNGE) || (f & FLAGS.PANIC) || (f & FLAGS.CHEER);
+
     if (open) {
         ctx.fillStyle = '#3a1016';
         ctx.ellipse(mx, 0, R * 0.12, R * 0.22, 0, 0, TAU);

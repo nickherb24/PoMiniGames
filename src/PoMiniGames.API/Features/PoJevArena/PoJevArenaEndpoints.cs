@@ -72,7 +72,7 @@ public static class PoJevArenaEndpoints
         // ── Shared creature library ───────────────────────────────────────
         group.MapGet("/creatures", ListCreaturesAsync)
             .WithName("PoJevArenaListCreatures")
-            .WithSummary("The public creature library (sort=new|used|winrate, q=name filter)")
+            .WithSummary("The public creature library (sort=new|used|winrate|rating, q=name filter)")
             .Produces<ArenaCreature[]>()
             .RequireRateLimiting("leaderboard-read");
 
@@ -176,10 +176,11 @@ public static class PoJevArenaEndpoints
         var owner = Owner(http);
         if (owner is null) return Results.Unauthorized();
 
-        if (result.Winner is not ("blue" or "red" or "draw") || !double.IsFinite(result.DurationSeconds) || result.DurationSeconds < 0)
+        if (result.Winner is not ("blue" or "red" or "draw") || !double.IsFinite(result.DurationSeconds) || result.DurationSeconds < 0
+            || result.Units is { Length: > PoJevArenaCatalog.TeamSize * 2 } || result.Mvp is < -1 or >= PoJevArenaCatalog.TeamSize * 2)
         {
             return Results.Problem(statusCode: StatusCodes.Status400BadRequest, title: "result",
-                detail: "Winner must be blue, red or draw.");
+                detail: "Winner must be blue, red or draw, with at most one stats row per unit.");
         }
 
         var match = registry.Find(matchId, owner.Value.UserId);
@@ -201,7 +202,7 @@ public static class PoJevArenaEndpoints
                     detail: "That result does not fit how long this match has been running.");
         }
 
-        if (!await library.ApplyResultAsync(match.Roster.Blue, match.Roster.Red, result.Winner, ct))
+        if (!await library.ApplyResultAsync(match.Roster.Blue, match.Roster.Red, result.Winner, result.Units, result.Mvp, ct))
         {
             // Hand the claim back: the write failed, so a retry must be able to land.
             match.ReleaseResultClaim();

@@ -39,6 +39,7 @@ public sealed class JevPromptBuilderTests
     [InlineData("preset-backline_medic")]
     [InlineData("no-abilities")]
     [InlineData("no-candidates")]
+    [InlineData("hazards")]
     [InlineData("reject-bad-unit")]
     [InlineData("reject-hp-over-max")]
     [InlineData("reject-cooldown-length")]
@@ -48,6 +49,7 @@ public sealed class JevPromptBuilderTests
     [InlineData("reject-distance-nan")]
     [InlineData("reject-duplicate-focus")]
     [InlineData("reject-team-count")]
+    [InlineData("reject-cover-range")]
     public Task JevPromptBuilder_BuildsStateAndOptions(string scenario)
     {
         var state = Scenario(scenario);
@@ -63,7 +65,7 @@ public sealed class JevPromptBuilderTests
             var preset = PoJevArenaCatalog.Presets[slot];
             // First ability ready, second cooling down, so both renderings are pinned.
             var cooldowns = preset.Abilities.Select((_, i) => i == 0 ? 0 : 2.1).ToArray();
-            return Base(ArenaUnits.Label(blue: true, slot), preset.MaxHp / 3, cooldowns) with
+            return Base(ArenaUnits.Label(blue: true, slot), PoJevArenaRules.BattleHp(preset.MaxHp) / 3, cooldowns) with
             {
                 Candidates = slot == 1 ? AllCandidates.Where(c => c.Unit != "Blue-02").ToArray() : AllCandidates,
             };
@@ -71,20 +73,22 @@ public sealed class JevPromptBuilderTests
 
         return scenario switch
         {
-            "no-abilities" => Base("Blue-06", 180, []),
-            "no-candidates" => Base("Blue-06", 180, []) with { Candidates = [], RedAlive = 0 },
+            "no-abilities" => Base("Blue-06", 36, []),
+            "no-candidates" => Base("Blue-06", 36, []) with { Candidates = [], RedAlive = 0 },
             "reject-bad-unit" => Base("Green-01", 100, []),
-            "reject-hp-over-max" => Base("Blue-06", 221, []),
-            "reject-cooldown-length" => Base("Blue-06", 100, [1.0]),
-            "reject-candidate-unknown" => Base("Blue-06", 100, []) with { Candidates = [new("nearest_threat", "Red-11", 2, 50)] },
-            "reject-protect-enemy" => Base("Blue-06", 100, []) with { Candidates = [new("protect_ally", "Red-02", 2, 50)] },
-            "reject-attack-ally" => Base("Blue-06", 100, []) with { Candidates = [new("nearest_threat", "Blue-02", 2, 50)] },
-            "reject-distance-nan" => Base("Blue-06", 100, []) with { Candidates = [new("nearest_threat", "Red-02", double.NaN, 50)] },
-            "reject-duplicate-focus" => Base("Blue-06", 100, []) with
+            "reject-hp-over-max" => Base("Blue-06", PoJevArenaRules.BattleHp(220) + 1, []),
+            "reject-cooldown-length" => Base("Blue-06", 30, [1.0]),
+            "reject-candidate-unknown" => Base("Blue-06", 30, []) with { Candidates = [new("nearest_threat", "Red-11", 2, 50)] },
+            "reject-protect-enemy" => Base("Blue-06", 30, []) with { Candidates = [new("protect_ally", "Red-02", 2, 50)] },
+            "reject-attack-ally" => Base("Blue-06", 30, []) with { Candidates = [new("nearest_threat", "Blue-02", 2, 50)] },
+            "reject-distance-nan" => Base("Blue-06", 30, []) with { Candidates = [new("nearest_threat", "Red-02", double.NaN, 50)] },
+            "reject-duplicate-focus" => Base("Blue-06", 30, []) with
             {
                 Candidates = [new("nearest_threat", "Red-02", 2, 50), new("nearest_threat", "Red-03", 3, 50)],
             },
-            "reject-team-count" => Base("Blue-06", 100, []) with { BlueAlive = 11 },
+            "reject-team-count" => Base("Blue-06", 30, []) with { BlueAlive = 11 },
+            "hazards" => Base("Blue-06", 36, []) with { CoverDistanceM = 2.4, InBrush = true, InTar = true, Stamina = 35 },
+            "reject-cover-range" => Base("Blue-06", 30, []) with { CoverDistanceM = 26 },
             _ => throw new ArgumentOutOfRangeException(nameof(scenario), scenario, null),
         };
     }

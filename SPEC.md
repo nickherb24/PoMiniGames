@@ -517,9 +517,9 @@ mapper. Canvas rendering is checked visually with screenshots, not unit tests.
 ## 12. Out of Scope (v1)
 
 1. Online multiplayer or spectating (the simulation is local to one browser).
-2. Saving or sharing Black Box replays.
-3. Leaderboards, player Elo, or pairwise creature Elo (win rate only).
-4. Free-text personality or quirks; custom arenas, obstacles or terrain.
+2. Saving or sharing Black Box replays (only the kill-cam clip is shareable, since 2026-09-30).
+3. Leaderboards or player Elo. *(Creature Elo landed 2026-09-30, see §15.)*
+4. Free-text personality or quirks; player-built arenas. *(Three fixed hazard maps landed 2026-09-30, see §15.)*
 5. Abilities beyond the six in §4.1.1, and a third ability slot. The registry is built for both, but neither ships in
    v1. Status effects other than poison.
 6. Moderation tooling beyond the name sanitizer and owner delete (no reporting or admin UI).
@@ -575,3 +575,41 @@ mapper. Canvas rendering is checked visually with screenshots, not unit tests.
 6. **Build budget** — without one, a library sorted by win rate converges on "max everything plus shell". *Default:
    80 points as in §4.1. The costs are registry and constant data, so tuning later is a data change, and existing
    creatures that go over a lowered budget stay playable but can't be re-saved until trimmed.*
+
+---
+
+## 15. Additions (2026-09-30)
+
+- **Hazard maps.** `sim.js` `ARENAS`: three fixed layouts (Four Pillars, The Diamond, Tar Mire), picked by
+  `seed % 3` so a replay rebuilds the same map. Pillars block bodies and projectiles; brush softens ranged hits
+  (×0.7); tar slows to half speed and burns 2 HP/s. Jev gets a fourth base option, `take_cover` ("move behind the
+  nearest pillar"), and the state carries `coverDistanceM` / `inBrush` / `inTar`, which the server validates and
+  words (`JevPromptBuilder`, pinned by the `hazards` snapshot). Pillar avoidance keeps its dodge side per pillar,
+  or units dither against the stone when their target circles it.
+- **Creature rating and careers.** Each library creature carries a head-to-head Elo (`PairwiseEloCalculator`,
+  own default instance: seed 1000, K 24, floor 100), priced against the average rating of the ten it faced, applied
+  as an increment under the ETag like the win counters. The result report adds per-slot kills/damage/heals and the
+  engine's MVP; the server clamps them and adds them to careers (`Kills`, `DamageDealt`, `Mvps`). The library sorts
+  by `rating` (unrated rows count as the seed until they have 3 fights).
+- **Drafting.** `+ Blue` / `+ Red` on every card replace the active-team mode; per-team Fill, Copy Blue (1P), and
+  named Squads in localStorage (`pojevarena.squads.v1`, 20 max); Fork any card into the Factory; library filter by
+  owner, ability or temperament. The Factory is a drawer with chip pickers. Hot-seat is Lock & pass → Lock & deploy.
+- **Presentation (render/audio only; the sim never reads any of it).** Synthesized SFX and creature voices on the
+  `PoAudioBus` sfx bus (`audio.js`); `PoMusicDirector` tension from the share of units in melee; Jev decision blooms;
+  a WebGL2 grade pass over the 2D canvas (`postfx.js`, optional); auto camera and late-knockout slow motion (sim time,
+  so no extra Jev calls); a floor stain canvas that keeps the whole fight; and at the whistle a kill cam (recorded as a
+  shareable WebM) and a victory ceremony before `OnMatchEnded`. Both are skippable and skipped under reduced motion.
+- **Feel and length (later the same day).** Every blow that lands (not poison or tar) shoves its victim along the
+  blow's line: impulse ÷ effective mass (bracing and shelling resist), the victim's closing speed cancelled, and a
+  0.18–0.45 s stagger with no steering or new swings; the striker's follow-through stops on contact. Colliders are
+  1.15× the drawn body and contacts relax over 3 passes. Creatures fight on one fifth of their designed HP (`BattleHp`; the
+  factory, cards, inspectors and Jev's prompt all show battle HP), so matches last seconds, not minutes. The live battle is full screen; Tab (or the Stats button) shows the
+  telemetry columns and the HUD pill. The debrief closes with a story per creature: lifetime, killer, phases of
+  thinking with HP at each change, confidence, targeting, panics and numbers.
+- **Real locomotion (later still).** Movement is forces on Earth: legs push (grip-limited at μ·m·g and power-limited at
+  P/v), bodies without footing skid on kinetic friction, air drag and tar resist, and masses are 24–120 kg. Leg work
+  drains a critical-power/W′ reserve: cruising is sustainable, sprints and every burst of acceleration spend it, and an
+  empty reserve leaves 40% leg power and no sprinting until it recovers. Jev reads `Stamina: 35% (tiring)`; the arena
+  shows it as a strip under the HP bar, and creatures lean into acceleration and pant when tired. Measured: a
+  48 kg cruiser reaches 9 m/s in ~2 s and stops from 9 m/s in 1.45 s over 4.8 m. Boulders fly a ballistic arc
+  (½·g·t·(T−t)), clearing bodies mid-flight and landing where they were aimed.

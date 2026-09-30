@@ -17,13 +17,20 @@
     }
     else
     {
-        <div class="jev-root" data-phase="@_phase.ToString().ToLowerInvariant()">
+        <div class="jev-root" data-phase="@_phase.ToString().ToLowerInvariant()" data-stats="@(_statsOpen ? "on" : "off")">
+            @* One bar for the whole page: the Jev chip (what it says follows the phase) and, while
+               drafting, the one primary action. The score lives on the arena's glass HUD. *@
             <header class="jev-topbar">
                 <span class="jev-status @(Configured ? "is-ok" : "is-off")" role="status">@StatusText</span>
-                @if (_phase is Phase.Battle or Phase.Replay && _hud is not null)
+                @if (Drafting)
                 {
-                    <span class="jev-score"><span class="jev-score__blue">Blue @_hud.BlueAlive</span> · <span class="jev-clock">@Clock(_hud.Time)</span> · <span class="jev-score__red">@_hud.RedAlive Red</span></span>
-                    <span class="jev-muted jev-small">@_hud.Calls Jev calls</span>
+                    @if (DeployNote is not null)
+                    {
+                        <span class="jev-muted jev-small">@DeployNote</span>
+                    }
+                    <button type="button" class="jev-btn jev-btn--big jev-topbar__deploy" disabled="@(!CanDeploy)" title="@DeployHint" @onclick="DeployAsync">
+                        @(_deploying ? "Deploying…" : "Deploy battle")
+                    </button>
                 }
             </header>
 
@@ -32,37 +39,58 @@
                 <div class="jev-banner" role="alert">@Banner</div>
             }
 
-            <div class="jev-layout">
-                <TeamColumn Team="blue" Slots="_blue" Drafting="Drafting" Active="@(_activeTeam == "blue")"
-                            Hidden="@(IsTwoPlayer && Drafting && _twoPlayerStep is TwoPlayerStep.Handoff or TwoPlayerStep.Red)"
-                            Locked="_blueLocked" ShowLock="@(IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Blue)"
+            @if (_phase == Phase.Replay && _result is not null)
+            {
+                @* The result, said once: headline, MVP, the debrief/Black Box switch and what to do next. *@
+                <div class="jev-resultbar" role="status">
+                    <div class="jev-resultbar__text">
+                        <strong class="jev-resultbar__head">@ResultHeadline</strong>
+                        <span class="jev-muted jev-small">@ResultDetail</span>
+                        @if (MvpLine is not null)
+                        {
+                            <span class="jev-resultbar__mvp"><span aria-hidden="true">★</span> @MvpLine</span>
+                        }
+                    </div>
+                    <div class="jev-resultbar__actions">
+                        @if (_result.Debrief is not null)
+                        {
+                            <div class="jev-segmented" role="group" aria-label="Result view">
+                                <button type="button" aria-pressed="@Pressed(ShowDebrief)" @onclick="() => _showDebrief = true">Jev debrief</button>
+                                <button type="button" aria-pressed="@Pressed(!ShowDebrief)" @onclick="() => _showDebrief = false">Black Box</button>
+                            </div>
+                        }
+                        @if (_result.Clip)
+                        {
+                            <button type="button" class="jev-btn jev-btn--ghost" @onclick="ShareClipAsync">Share final blow</button>
+                        }
+                        @if (!IsDemo)
+                        {
+                            <button type="button" class="jev-btn" @onclick="RematchAsync">Rematch</button>
+                            <button type="button" class="jev-btn jev-btn--ghost" @onclick="BackToDraftAsync">Change teams</button>
+                        }
+                    </div>
+                </div>
+            }
+
+            <div class="jev-layout" data-focus="@_mobileTeam">
+                <TeamColumn Team="blue" Slots="_blue" Drafting="Drafting"
+                            Hidden="@(IsTwoPlayer && Drafting && _twoPlayerStep != TwoPlayerStep.Blue)"
+                            Locked="@(!CanDraftFor("blue"))"
+                            LockLabel="@(IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Blue ? "Lock & pass" : null)"
                             PlayerLabel="@(IsTwoPlayer ? "Player 1" : null)"
-                            Inspector="_inspectBlue"
-                            OnActivate='() => SetActive("blue")' OnClear='() => ClearTeam("blue")' OnLock='() => LockAsync("blue")'
+                            OtherPoints="@(IsTwoPlayer ? null : Points(_red))"
+                            Squads="_squads" Inspector="_inspectBlue"
+                            OnClear='() => ClearTeam("blue")' OnLock='() => LockAsync("blue")' OnFill='() => FillAsync("blue")'
+                            OnSaveSquad='name => SaveSquadAsync("blue", name)' OnLoadSquad='name => LoadSquadAsync("blue", name)' OnDeleteSquad="DeleteSquadAsync"
                             OnSlot='slot => OnSlotAsync("blue", slot)' />
 
                 <main class="jev-center">
                     @if (Drafting)
                     {
-                        @if (IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Handoff)
-                        {
-                            <section class="jev-handoff" aria-live="polite">
-                                <h2>Pass the device to Player 2</h2>
-                                <p class="jev-muted">Blue is locked and hidden. Player 2 drafts Red.</p>
-                                <button type="button" class="jev-btn" @onclick="StartRedDraft">I'm Player 2</button>
-                            </section>
-                        }
-                        else if (_factoryOpen)
-                        {
-                            <CreatureFactory Editing="_editing" OnSaved="OnCreatureSavedAsync" OnClose="CloseFactory" />
-                        }
-                        else
-                        {
-                            <CreatureLibrary Items="VisibleLibrary" Sort="@_sort" Query="@_query" ActiveTeam="@_activeTeam"
-                                             CanDraft="CanDraft" Offline="_libraryOffline"
-                                             OnPick="Draft" OnEdit="Edit" OnDelete="AskDelete"
-                                             OnSort="OnSortAsync" OnQuery="OnQueryAsync" OnNew="NewCreature" />
-                        }
+                        <CreatureLibrary Items="VisibleLibrary" Sort="@_sort" Query="@_query" Filter="@_filter"
+                                         CanBlue="@CanDraftFor("blue")" CanRed="@CanDraftFor("red")" Offline="_libraryOffline"
+                                         OnPick="DraftAsync" OnEdit="Edit" OnFork="Fork" OnDelete="AskDelete"
+                                         OnSort="OnSortAsync" OnQuery="OnQueryAsync" OnFilter="f => _filter = f ?? FilterAll" OnNew="NewCreature" />
 
                         @if (_pendingDelete is not null)
                         {
@@ -72,68 +100,69 @@
                                 <button type="button" class="jev-btn jev-btn--ghost" @onclick="() => _pendingDelete = null">Keep</button>
                             </div>
                         }
-
-                        <div class="jev-deploy">
-                            <button type="button" class="jev-btn jev-btn--big" disabled="@(!CanDeploy)" @onclick="DeployAsync">
-                                @(_deploying ? "Deploying…" : "Deploy battle")
-                            </button>
-                            <span class="jev-muted jev-small">@DeployHint</span>
-                        </div>
                     }
                     else
                     {
-                        @if (_phase == Phase.Replay && _result?.Debrief is not null)
-                        {
-                            <div class="jev-viewtabs">
-                                <button type="button" class="jev-btn @(ShowDebrief ? null : "jev-btn--ghost")" aria-pressed="@ShowDebrief"
-                                        @onclick="() => _showDebrief = true">Jev debrief</button>
-                                <button type="button" class="jev-btn @(ShowDebrief ? "jev-btn--ghost" : null)" aria-pressed="@(!ShowDebrief)"
-                                        @onclick="() => _showDebrief = false">Black Box</button>
-                                <span class="jev-muted jev-small">@ResultHeadline · @ResultDetail</span>
-                            </div>
-                        }
-
-                        @* The canvas stays mounted while the debrief shows: the engine keeps its Black Box,
-                           and the ResizeObserver re-fits it when the arena comes back. *@
+                        @* The canvases stay mounted while the debrief shows: the engine keeps its Black Box,
+                           and the ResizeObserver re-fits it when the arena comes back. The GL canvas is the
+                           optional post-processing layer (postfx.js); it stays hidden when WebGL2 is off. *@
                         <div class="jev-arena @(ShowDebrief ? "is-hidden" : null)">
                             <canvas id="@CanvasId" class="jev-arena__canvas" aria-label="Arena. Click a creature to inspect it."></canvas>
-                            @if (_result is not null)
+                            <canvas id="@(CanvasId + "Gl")" class="jev-arena__gl" hidden aria-hidden="true"></canvas>
+                            <div class="jev-hud" data-glass hidden="@(_phase != Phase.Battle || _hud is null)">
+                                <span class="jev-hud__team jev-hud__team--blue">Blue @_hud?.BlueAlive</span>
+                                <span class="jev-hud__bar" role="img" aria-label="@HpShareLabel" style="--blue: @BlueSharePct%"></span>
+                                <span class="jev-hud__team jev-hud__team--red">@_hud?.RedAlive Red</span>
+                                <span class="jev-hud__clock">@Clock(_hud?.Time ?? 0)</span>
+                                <span class="jev-hud__map jev-small">@_hud?.Arena</span>
+                                <button type="button" class="jev-hud__cam" aria-pressed="@Pressed(_autoCamera)" @onclick="ToggleCameraAsync">Auto camera</button>
+                            </div>
+                            @if (_phase == Phase.Battle)
                             {
-                                <div class="jev-result" role="status">
-                                    <strong>@ResultHeadline</strong>
-                                    <span class="jev-small">@ResultDetail</span>
-                                </div>
+                                @* Hold Tab for the stat HUD; this is the same toggle for touch, where there is no Tab. *@
+                                <button type="button" class="jev-statsbtn" aria-pressed="@Pressed(_statsOpen)" @onclick="() => _statsOpen = !_statsOpen"
+                                        title="Hold Tab to show the stats">Stats <kbd>Tab</kbd></button>
                             }
+                        </div>
+
+                        <div class="jev-mobiletabs" role="group" aria-label="Inspector side">
+                            <button type="button" aria-pressed="@Pressed(_mobileTeam == "blue")" @onclick='() => _mobileTeam = "blue"'>Blue inspector</button>
+                            <button type="button" aria-pressed="@Pressed(_mobileTeam == "red")" @onclick='() => _mobileTeam = "red"'>Red inspector</button>
                         </div>
 
                         @if (_phase == Phase.Replay)
                         {
                             @if (ShowDebrief)
                             {
-                                <JevDebrief Debrief="_result!.Debrief!" Winner="@_result.Winner" IsTwoPlayer="IsTwoPlayer" OnJump="JumpToMomentAsync" />
+                                <JevDebrief Debrief="_result!.Debrief!" Winner="@_result.Winner" IsTwoPlayer="IsTwoPlayer" Frames="_result.Frames" OnJump="JumpToMomentAsync" />
                             }
                             else
                             {
-                                <BlackBoxScrubber State="_blackBox" OnCommand="OnBlackBoxCommandAsync" />
-                            }
-                            @if (!IsDemo)
-                            {
-                                <div class="jev-after">
-                                    <button type="button" class="jev-btn" @onclick="RematchAsync">Rematch</button>
-                                    <button type="button" class="jev-btn jev-btn--ghost" @onclick="BackToDraftAsync">Change teams</button>
-                                </div>
+                                <BlackBoxScrubber State="_blackBox" Kos="@(_result?.Kos ?? [])" Moments="Moments" OnCommand="OnBlackBoxCommandAsync" />
                             }
                         }
                     }
                 </main>
 
-                <TeamColumn Team="red" Slots="_red" Drafting="Drafting" Active="@(_activeTeam == "red")"
-                            Locked="@(_redLocked || (IsTwoPlayer && _twoPlayerStep != TwoPlayerStep.Red))"
-                            ShowLock="@(IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Red)" PlayerLabel="@(IsTwoPlayer ? "Player 2" : null)"
-                            Inspector="_inspectRed"
-                            OnActivate='() => SetActive("red")' OnClear='() => ClearTeam("red")' OnLock='() => LockAsync("red")'
+                <TeamColumn Team="red" Slots="_red" Drafting="Drafting"
+                            Locked="@(!CanDraftFor("red"))"
+                            LockLabel="@(IsTwoPlayer && _twoPlayerStep == TwoPlayerStep.Red ? "Lock & deploy" : null)"
+                            PlayerLabel="@(IsTwoPlayer ? "Player 2" : null)"
+                            OtherPoints="@(IsTwoPlayer ? null : Points(_blue))"
+                            Squads="_squads" Inspector="_inspectRed"
+                            OnClear='() => ClearTeam("red")' OnLock='() => LockAsync("red")' OnFill='() => FillAsync("red")'
+                            ShowCopy="@(!IsTwoPlayer)" OnCopy="CopyBlueAsync"
+                            OnSaveSquad='name => SaveSquadAsync("red", name)' OnLoadSquad='name => LoadSquadAsync("red", name)' OnDeleteSquad="DeleteSquadAsync"
                             OnSlot='slot => OnSlotAsync("red", slot)' />
             </div>
+
+            @if (_factoryOpen)
+            {
+                @* A drawer, not a replacement for the library: the list keeps its place behind it. *@
+                <dialog open class="jev-drawer" aria-label="Creature factory" @onkeydown="OnDrawerKey">
+                    <CreatureFactory Editing="_editing" Template="_template" OnSaved="OnCreatureSavedAsync" OnClose="CloseFactory" />
+                </dialog>
+            }
         </div>
     }
 </GameShell>
@@ -148,9 +177,9 @@
     private RenderFragment HowToPlay => @<div>
         <ul>
             <li>Build creatures in the <strong>Factory</strong>: stats, one offense and one defense ability, a personality. Everyone melees.</li>
-            <li>Draft ten per side from the public library, then <strong>Deploy</strong>.</li>
-            <li>Click a creature to inspect Jev's probabilities. <kbd>[</kbd> <kbd>]</kbd> cycle Blue, <kbd>;</kbd> <kbd>'</kbd> cycle Red.</li>
-            <li>After the match, scrub the <strong>Black Box</strong>: <kbd>Space</kbd> play, <kbd>←</kbd> <kbd>→</kbd> step.</li>
+            <li>Draft ten per side from the public library with <strong>+ Blue</strong> / <strong>+ Red</strong>, then <strong>Deploy</strong>. Pillars, brush and tar change every map.</li>
+            <li>The battle runs full screen: hold <kbd>Tab</kbd> for the stats. Click a creature to inspect Jev's probabilities. <kbd>[</kbd> <kbd>]</kbd> cycle Blue, <kbd>;</kbd> <kbd>'</kbd> cycle Red.</li>
+            <li>After the match, scrub the <strong>Black Box</strong>: <kbd>Space</kbd> play, <kbd>←</kbd> <kbd>→</kbd> step, <kbd>Home</kbd> <kbd>End</kbd> jump.</li>
         </ul>
     </div>;
 }

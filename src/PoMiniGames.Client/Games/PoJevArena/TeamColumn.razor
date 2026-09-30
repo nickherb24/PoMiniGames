@@ -1,9 +1,11 @@
+@using System.Globalization
 @using PoMiniGames.Shared.Games.PoJevArena
 
 @* One side of the Dual Inspector layout: the team's 5×2 roster and, once the battle starts, the
-   Jev Inspector for this side's selected unit. In 2P hot-seat the column is covered while the
-   other player drafts. *@
-<section class="jev-team jev-team--@Team @(Active ? "is-active" : null)" aria-label="@($"Team {TeamName}")">
+   Jev Inspector for this side's selected unit. While drafting it also carries the side's tools
+   (fill, copy, saved squads) and its build points against the other side's. In 2P hot-seat the
+   column is covered while the other player drafts. *@
+<section class="jev-team jev-team--@Team" aria-label="@($"Team {TeamName}")">
     <header class="jev-team__head">
         <h2 class="jev-team__title">@Heading</h2>
         <span class="jev-muted jev-small">@Filled / 10</span>
@@ -13,7 +15,7 @@
     {
         <div class="jev-team__hidden">
             <p><strong>@TeamName is drafting in secret.</strong></p>
-            <p class="jev-muted jev-small">Revealed when both teams are locked.</p>
+            <p class="jev-muted jev-small">Revealed when the battle starts.</p>
         </div>
     }
     else
@@ -23,14 +25,34 @@
             <div class="jev-team__actions">
                 @if (!Locked)
                 {
-                    <button type="button" class="jev-btn jev-btn--ghost" aria-pressed="@Active" @onclick="OnActivate">
-                        @(Active ? "Adding here" : "Add to this team")
-                    </button>
-                    <button type="button" class="jev-btn jev-btn--ghost" @onclick="OnClear" disabled="@(Filled == 0)">Clear</button>
+                    <button type="button" class="jev-btn jev-btn--ghost jev-btn--sm" @onclick="OnFill" disabled="@(Filled == 10)">Fill</button>
+                    @if (ShowCopy)
+                    {
+                        <button type="button" class="jev-btn jev-btn--ghost jev-btn--sm" @onclick="OnCopy" title="Copy Blue's roster into Red">Copy Blue</button>
+                    }
+                    <button type="button" class="jev-btn jev-btn--ghost jev-btn--sm" @onclick="OnClear" disabled="@(Filled == 0)">Clear</button>
+                    <details class="jev-squads">
+                        <summary class="jev-btn jev-btn--ghost jev-btn--sm">Squads</summary>
+                        <div class="jev-squads__menu">
+                            @foreach (var s in Squads)
+                            {
+                                <div class="jev-squads__row">
+                                    <button type="button" class="jev-link" @onclick="() => OnLoadSquad.InvokeAsync(s.Name)"
+                                            aria-label="@($"Load squad {s.Name} into {TeamName}")">@s.Name</button>
+                                    <button type="button" class="jev-link jev-danger" @onclick="() => OnDeleteSquad.InvokeAsync(s.Name)"
+                                            aria-label="@($"Delete squad {s.Name}")">×</button>
+                                </div>
+                            }
+                            <form class="jev-squads__save" @onsubmit="SaveAsync" @onsubmit:preventDefault>
+                                <input class="jev-input" maxlength="32" placeholder="Squad name" aria-label="Squad name" @bind="_squadName" />
+                                <button type="submit" class="jev-btn jev-btn--sm" disabled="@(Filled == 0)">Save</button>
+                            </form>
+                        </div>
+                    </details>
                 }
-                @if (ShowLock)
+                @if (LockLabel is not null)
                 {
-                    <button type="button" class="jev-btn" @onclick="OnLock" disabled="@(Filled < 10 || Locked)">@(Locked ? "Locked" : $"Lock {TeamName}")</button>
+                    <button type="button" class="jev-btn jev-btn--sm" @onclick="OnLock" disabled="@(Filled < 10)">@LockLabel</button>
                 }
             </div>
         }
@@ -62,7 +84,13 @@
 
         @if (Drafting && Filled > 0)
         {
-            <p class="jev-muted jev-small">Total HP @Slots.Sum(s => s?.MaxHp ?? 0) · @Slots.Count(s => s?.IsPreset == false) from the library</p>
+            <div class="jev-points">
+                <span class="jev-small">Build points <strong>@Own.ToString("0", CultureInfo.InvariantCulture)</strong>@PointsLead</span>
+                @if (OtherPoints is { } other && Own + other > 0)
+                {
+                    <span class="jev-points__bar" aria-hidden="true" style="--mine: @((100 * Own / (Own + other)).ToString("0", CultureInfo.InvariantCulture))%"></span>
+                }
+            </div>
         }
     }
 </section>
@@ -71,23 +99,47 @@
     [Parameter, EditorRequired] public string Team { get; set; } = "blue";
     [Parameter, EditorRequired] public ArenaCreature?[] Slots { get; set; } = new ArenaCreature?[10];
     [Parameter] public bool Drafting { get; set; }
-    [Parameter] public bool Active { get; set; }
     [Parameter] public bool Hidden { get; set; }
     [Parameter] public bool Locked { get; set; }
-    [Parameter] public bool ShowLock { get; set; }
+
+    /// <summary>The lock button's label ("Lock &amp; pass", "Lock &amp; deploy"); null hides it (1P).</summary>
+    [Parameter] public string? LockLabel { get; set; }
+
     [Parameter] public string? PlayerLabel { get; set; }
     [Parameter] public ArenaInspectorView? Inspector { get; set; }
-    [Parameter] public EventCallback OnActivate { get; set; }
+
+    /// <summary>The other side's build points, for the comparison bar; null hides it (hot-seat keeps rosters secret).</summary>
+    [Parameter] public double? OtherPoints { get; set; }
+
+    [Parameter] public IReadOnlyList<ArenaSquad> Squads { get; set; } = [];
+    [Parameter] public bool ShowCopy { get; set; }
     [Parameter] public EventCallback OnClear { get; set; }
     [Parameter] public EventCallback OnLock { get; set; }
+    [Parameter] public EventCallback OnFill { get; set; }
+    [Parameter] public EventCallback OnCopy { get; set; }
+    [Parameter] public EventCallback<string> OnSaveSquad { get; set; }
+    [Parameter] public EventCallback<string> OnLoadSquad { get; set; }
+    [Parameter] public EventCallback<string> OnDeleteSquad { get; set; }
 
     /// <summary>Drafting: removes the creature in that slot. In battle: selects that unit for this side's inspector.</summary>
     [Parameter] public EventCallback<int> OnSlot { get; set; }
+
+    private string _squadName = "";
 
     private string TeamName => Team == "blue" ? "Blue" : "Red";
     private string Heading => PlayerLabel is null ? $"Team {TeamName}" : $"{PlayerLabel} · {TeamName}";
     private int Filled => Slots.Count(s => s is not null);
     private int SlotIndexBase => Team == "blue" ? 0 : 10;
+    private double Own => Slots.Sum(s => s?.BuildCost ?? 0);
+
+    private string PointsLead => OtherPoints is not { } other || Math.Abs(Own - other) < 0.5 ? ""
+        : string.Create(CultureInfo.InvariantCulture, $" · {(Own > other ? "+" : "−")}{Math.Abs(Own - other):0} vs {(Team == "blue" ? "Red" : "Blue")}");
+
+    private async Task SaveAsync()
+    {
+        await OnSaveSquad.InvokeAsync(_squadName);
+        _squadName = "";
+    }
 
     private string SlotLabel(int slot, ArenaCreature? c) => c is null
         ? $"{TeamName} slot {slot + 1}, empty"

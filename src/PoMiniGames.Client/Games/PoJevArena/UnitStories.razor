@@ -1,0 +1,131 @@
+@using System.Globalization
+
+@* The end-of-match story of every creature, one card each, grouped by side: how long it lived and
+   what ended it, what Jev had it doing over its life (phases, with the HP it had at each change),
+   how sure Jev was, what it went after, whether it broke, and what it did to the other side. The
+   numbers come from debrief.js; every word is here. A strip under each card shows its phases
+   across the match, coloured by intent, and Jump opens the Black Box on its last moment. *@
+<section class="jev-stories" aria-label="Creature stories">
+    <h2 class="jev-kicker">Each creature's story: what Jev had it thinking</h2>
+    <div class="jev-stories__teams">
+        @foreach (var team in new[] { "blue", "red" })
+        {
+            <div class="jev-stories__team">
+                <h3 class="jev-stories__side jev-stories__side--@team">@(team == "blue" ? "Blue" : "Red")</h3>
+                @foreach (var s in Units.Where(u => u.Team == team))
+                {
+                    <article class="jev-story jev-story--@team @(s.Survived ? "is-alive" : null)">
+                        <header class="jev-story__head">
+                            <strong>@s.Unit @s.Name</strong>
+                            <span class="jev-small @(s.Survived ? "jev-story__ok" : "jev-muted")">@Fate(s)</span>
+                        </header>
+                        <p class="jev-story__text">@Narrative(s)</p>
+                        <div class="jev-story__strip" aria-hidden="true">
+                            @foreach (var p in s.Phases)
+                            {
+                                <span class="jev-story__seg jev-story__seg--@Family(p.Action)" style="--from: @At(p.FromFrame)%; --to: @At(p.ToFrame)%" title="@Pretty(p.Action)"></span>
+                            }
+                        </div>
+                        <footer class="jev-story__foot jev-small">
+                            <span class="jev-muted">@Numbers(s)</span>
+                            <button type="button" class="jev-link" @onclick="() => Jump(s)"
+                                    aria-label="@($"Show {s.Unit}'s last moment in the Black Box")">Jump</button>
+                        </footer>
+                    </article>
+                }
+            </div>
+        }
+    </div>
+</section>
+
+@code {
+    [Parameter, EditorRequired] public ArenaUnitStory[] Units { get; set; } = [];
+
+    /// <summary>The match length in frames, so the strips share one time axis.</summary>
+    [Parameter] public int Frames { get; set; }
+
+    [Parameter] public EventCallback<ArenaMoment> OnJump { get; set; }
+
+    private static readonly HashSet<string> Aggressive = ["melee_charge", "kite_and_shoot", "lob_boulder"];
+    private static readonly HashSet<string> Supportive = ["mend_ally", "peel_to_ally"];
+
+    private string At(int frame) => (Frames <= 1 ? 0 : 100.0 * Math.Clamp(frame, 0, Frames) / Frames).ToString("0.##", CultureInfo.InvariantCulture);
+
+    private static string Family(string action) =>
+        Aggressive.Contains(action) ? "attack" : Supportive.Contains(action) ? "support" : "defend";
+
+    private static string Fate(ArenaUnitStory s) =>
+        s.Survived ? $"survived · {s.HpPercent}% HP"
+        : s.Killer is null ? $"fell at {Clock(s.DiedAtFrame)} (poison or tar)"
+        : $"fell at {Clock(s.DiedAtFrame)} to {s.Killer}";
+
+    private static string Narrative(ArenaUnitStory s)
+    {
+        if (s.Decisions == 0)
+        {
+            return s.Failures > 0
+                ? $"Jev never got through for it ({s.Failures} failed call{Plural(s.Failures)}); it held its first orders all game."
+                : "It fell before Jev's first answer arrived.";
+        }
+
+        var parts = new List<string>
+        {
+            $"Jev made {s.Decisions} call{Plural(s.Decisions)} for it, {Sureness(s.AverageConfidence)} (average confidence {F(s.AverageConfidence)}"
+                + (s.CoinFlips > 0 ? $", {s.CoinFlips} coin-flip{Plural(s.CoinFlips)})." : ")."),
+        };
+
+        // The plan: how it opened, then each change, with the HP that went with it.
+        var phases = s.Phases;
+        var plan = $"It opened with {Pretty(phases[0].Action)}";
+        foreach (var p in phases.Skip(1).Take(3))
+        {
+            plan += $", {(p == phases[^1] ? "then" : "switched to")} {Pretty(p.Action)} at {Clock(p.FromFrame)}{Hp(p.HpPercent)}";
+        }
+        if (phases.Length > 4) plan += $", and changed course {phases.Length - 4} more time{Plural(phases.Length - 4)}";
+        var wobbles = s.Switches - (phases.Length - 1);
+        plan += wobbles > 1 ? $" ({wobbles} brief second thoughts along the way)." : ".";
+        parts.Add(plan);
+
+        if (s.TopFocus is { } focus)
+        {
+            parts.Add(s.TopFocusShare >= 0.6
+                ? $"It {Focus(focus)} ({Pct(s.TopFocusShare)}% of target calls)."
+                : $"Its targeting wandered; most often it {Focus(focus)} ({Pct(s.TopFocusShare)}%).");
+        }
+
+        if (s.WindedFrame >= 0) parts.Add($"It ran itself winded by {Clock(s.WindedFrame)}.");
+        if (s.Panics > 0) parts.Add($"It broke {s.Panics} time{Plural(s.Panics)}, first at {Clock(s.FirstPanicFrame)}.");
+        if (s.Failures > 0) parts.Add($"{s.Failures} call{Plural(s.Failures)} failed, so it held its last orders then.");
+        return string.Join(" ", parts);
+    }
+
+    private static string Numbers(ArenaUnitStory s)
+    {
+        var bits = new List<string> { $"{s.Kills} KO{Plural(s.Kills)}", $"{s.Damage} dmg" };
+        if (s.Healed > 0) bits.Add($"{s.Healed} healed");
+        return string.Join(" · ", bits);
+    }
+
+    private static string Sureness(double c) => c >= 0.7 ? "decisively" : c >= 0.5 ? "fairly surely" : "hesitantly";
+
+    private static string Focus(string focus) => focus switch
+    {
+        "nearest_threat" => "went for whoever was closest",
+        "weakest_target" => "hunted the wounded",
+        "strongest_threat" => "took on the biggest threat",
+        "ranged_threat" => "chased the shooters",
+        "protect_ally" => "stayed close to protect its allies",
+        _ => $"focused on {Pretty(focus)}",
+    };
+
+    private Task Jump(ArenaUnitStory s) => OnJump.InvokeAsync(new ArenaMoment(
+        "story", s.Survived ? Math.Max(0, s.EndFrame) : Math.Max(0, s.DiedAtFrame - 30), s.Index, s.Unit, s.Name,
+        s.Phases.LastOrDefault()?.Action, 0, null, 0, 0));
+
+    private static string Hp(int? pct) => pct is { } p ? $" with {p}% HP" : "";
+    private static string Plural(int n) => n == 1 ? "" : "s";
+    private static string Pretty(string? action) => action?.Replace('_', ' ') ?? "—";
+    private static string Pct(double share) => (share * 100).ToString("0", CultureInfo.InvariantCulture);
+    private static string F(double v) => v.ToString("0.00", CultureInfo.InvariantCulture);
+    private static string Clock(int frame) => TimeSpan.FromSeconds(Math.Max(0, frame) / 60.0).ToString(@"m\:ss", CultureInfo.InvariantCulture);
+}

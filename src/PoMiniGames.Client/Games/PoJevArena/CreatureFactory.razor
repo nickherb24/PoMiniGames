@@ -2,12 +2,13 @@
 @using PoMiniGames.Shared.Games.PoJevArena
 @inject PoJevArenaApiClient Api
 
-@* Design (or edit) a creature. Validation is PoJevArenaRules — the same code the server runs — so
-   the budget meter and error messages are live, and a save only fails for server-side reasons
-   (name moderation, the 25-creature cap, storage). The preview animates the creature as built. *@
+@* Design (or edit, or fork) a creature. Validation is PoJevArenaRules — the same code the server
+   runs — so the budget meter and error messages are live, and a save only fails for server-side
+   reasons (name moderation, the 25-creature cap, storage). The preview animates the creature as
+   built. Every choice is a row of chips, so the whole kit is visible without opening a menu. *@
 <section class="jev-factory" aria-label="Creature factory">
     <header class="jev-factory__head">
-        <h2 class="jev-kicker">@(Editing is null ? "New creature" : $"Edit {Editing.Name}")</h2>
+        <h2 class="jev-kicker">@(Editing is not null ? $"Edit {Editing.Name}" : Template is not null ? $"Fork of {Template.Name}" : "New creature")</h2>
         <button type="button" class="jev-link" @onclick="OnClose">Close</button>
     </header>
 
@@ -23,38 +24,21 @@
                 <input class="jev-input" maxlength="@PoJevArenaRules.MaxNameChars" @bind="_name" @bind:event="oninput" />
             </label>
 
-            <Slider Label="HP" Value="_hp" Min="PoJevArenaRules.MinHp" Max="PoJevArenaRules.MaxHp" Step="10" Unit=""
-                    ValueChanged="v => _hp = (int)v" />
+            @* The slider speaks battle HP (designed HP / 5, what the arena and Jev show); the draft
+               keeps designed HP, which the budget prices and the library stores. *@
+            <Slider Label="HP" Value="PoJevArenaRules.BattleHp(_hp)" Min="PoJevArenaRules.BattleHp(PoJevArenaRules.MinHp)"
+                    Max="PoJevArenaRules.BattleHp(PoJevArenaRules.MaxHp)" Step="2" Unit=""
+                    ValueChanged="v => _hp = (int)Math.Round(v) * PoJevArenaRules.BattleHpDivisor" />
             <Slider Label="Speed" Value="_speed" Min="PoJevArenaRules.MinSpeed" Max="PoJevArenaRules.MaxSpeed" Step="0.5" Unit=" m/s"
                     ValueChanged="v => _speed = v" />
             <Slider Label="Mass" Value="_mass" Min="PoJevArenaRules.MinMass" Max="PoJevArenaRules.MaxMass" Step="0.5" Unit=""
                     ValueChanged="v => _mass = v" />
 
-            <div class="jev-factory__grid">
-                <label class="jev-field">
-                    <span>Offense ability</span>
-                    <select class="jev-input" @bind="_offense">
-                        <option value="">None (melee only)</option>
-                        @foreach (var a in PoJevArenaCatalog.Abilities.Where(a => a.Slot == ArenaAbilitySlot.Offense))
-                        {
-                            <option value="@a.Id">@a.Label · @a.Cost pts</option>
-                        }
-                    </select>
-                </label>
-                <label class="jev-field">
-                    <span>Defense ability</span>
-                    <select class="jev-input" @bind="_defense">
-                        <option value="">None</option>
-                        @foreach (var a in PoJevArenaCatalog.Abilities.Where(a => a.Slot == ArenaAbilitySlot.Defense))
-                        {
-                            <option value="@a.Id">@a.Label · @a.Cost pts</option>
-                        }
-                    </select>
-                </label>
-                <CatalogPick Label="Temperament" Entries="PoJevArenaCatalog.Temperaments" @bind-Value="_temperament" />
-                <CatalogPick Label="Target bias" Entries="PoJevArenaCatalog.TargetBiases" @bind-Value="_bias" />
-                <CatalogPick Label="Panic threshold" Entries="PoJevArenaCatalog.PanicThresholds" @bind-Value="_panic" />
-            </div>
+            @AbilityChips("Offense ability", ArenaAbilitySlot.Offense, _offense, "Melee only", v => _offense = v)
+            @AbilityChips("Defense ability", ArenaAbilitySlot.Defense, _defense, "None", v => _defense = v)
+            <CatalogPick Label="Temperament" Entries="PoJevArenaCatalog.Temperaments" @bind-Value="_temperament" />
+            <CatalogPick Label="Target bias" Entries="PoJevArenaCatalog.TargetBiases" @bind-Value="_bias" />
+            <CatalogPick Label="Panic threshold" Entries="PoJevArenaCatalog.PanicThresholds" @bind-Value="_panic" />
 
             <div class="jev-budget @(Cost > PoJevArenaRules.BuildBudget ? "is-over" : null)">
                 <div class="jev-budget__row">
@@ -81,6 +65,9 @@
 
 @code {
     [Parameter] public ArenaCreature? Editing { get; set; }
+
+    /// <summary>Fork: a creature (anyone's, or a preset) to start a new design from.</summary>
+    [Parameter] public ArenaCreature? Template { get; set; }
     [Parameter] public EventCallback<ArenaCreature> OnSaved { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
 
@@ -99,22 +86,56 @@
 
     protected override void OnParametersSet()
     {
-        var key = Editing?.Id ?? "(new)";
+        var key = Editing?.Id ?? (Template is null ? "(new)" : "fork:" + Template.Id);
         if (key == _loadedFor) return;
         _loadedFor = key;
         _serverError = null;
-        if (Editing is null) return;
+        if ((Editing ?? Template) is not { } source) return;
 
-        _name = Editing.Name;
-        _hp = Editing.MaxHp;
-        _speed = Editing.MoveSpeed;
-        _mass = Editing.Mass;
-        _offense = Editing.Abilities.FirstOrDefault(id => PoJevArenaCatalog.FindAbility(id)?.Slot == ArenaAbilitySlot.Offense) ?? "";
-        _defense = Editing.Abilities.FirstOrDefault(id => PoJevArenaCatalog.FindAbility(id)?.Slot == ArenaAbilitySlot.Defense) ?? "";
-        _temperament = Editing.Temperament;
-        _bias = Editing.TargetBias;
-        _panic = Editing.PanicThreshold;
+        // A fork is a new creature of your own: same design, a name that says where it came from.
+        _name = Editing is not null ? source.Name : ForkName(source.Name);
+        _hp = source.MaxHp;
+        _speed = source.MoveSpeed;
+        _mass = source.Mass;
+        _offense = source.Abilities.FirstOrDefault(id => PoJevArenaCatalog.FindAbility(id)?.Slot == ArenaAbilitySlot.Offense) ?? "";
+        _defense = source.Abilities.FirstOrDefault(id => PoJevArenaCatalog.FindAbility(id)?.Slot == ArenaAbilitySlot.Defense) ?? "";
+        _temperament = source.Temperament;
+        _bias = source.TargetBias;
+        _panic = source.PanicThreshold;
     }
+
+    private static string ForkName(string name)
+    {
+        const string suffix = " II";
+        var room = PoJevArenaRules.MaxNameChars - suffix.Length;
+        return (name.Length > room ? name[..room].TrimEnd() : name) + suffix;
+    }
+
+    private static readonly Dictionary<string, string> Icons = new(StringComparer.Ordinal)
+    {
+        ["spit_glob"] = "💧", ["hurl_boulder"] = "🪨", ["mend_bolt"] = "✚",
+        ["shield_brace"] = "🛡️", ["hard_shell"] = "🐢", ["dodge_dash"] = "💨",
+    };
+
+    /// <summary>One ability slot as radio chips: "none" first, then each registry row with its cost.</summary>
+    private RenderFragment AbilityChips(string label, ArenaAbilitySlot slot, string value, string none, Action<string> set) => @<fieldset class="jev-chips">
+        <legend>@label</legend>
+        <div class="jev-chips__row">
+            <label class="jev-chip-pick @(value.Length == 0 ? "is-on" : null)">
+                <input type="radio" name="@($"jev-ability-{slot}")" checked="@(value.Length == 0)" @onchange="() => set(string.Empty)" />
+                <span>@none</span>
+            </label>
+            @foreach (var a in PoJevArenaCatalog.Abilities.Where(a => a.Slot == slot))
+            {
+                <label class="jev-chip-pick @(value == a.Id ? "is-on" : null)" title="@a.Summary">
+                    <input type="radio" name="@($"jev-ability-{slot}")" checked="@(value == a.Id)" @onchange="() => set(a.Id)" />
+                    <span><span aria-hidden="true">@Icons.GetValueOrDefault(a.Id)</span> @a.Label <small>@a.Cost</small></span>
+                </label>
+            }
+        </div>
+        <span class="jev-muted jev-small">@(PoJevArenaCatalog.FindAbility(value)?.Summary ?? (slot == ArenaAbilitySlot.Offense ? "Every creature melees." : "No defensive trick."))</span>
+    </fieldset>;
+
 
     private string[] Abilities => new[] { _offense, _defense }.Where(a => a.Length > 0).ToArray();
 
@@ -152,7 +173,7 @@
     private static string Explain(string? code) => code switch
     {
         "name" => "That name can't be used in the public library. Pick another.",
-        "hp" => $"HP must be {PoJevArenaRules.MinHp}–{PoJevArenaRules.MaxHp}.",
+        "hp" => $"HP must be {PoJevArenaRules.BattleHp(PoJevArenaRules.MinHp)}–{PoJevArenaRules.BattleHp(PoJevArenaRules.MaxHp)}.",
         "speed" => $"Speed must be {PoJevArenaRules.MinSpeed}–{PoJevArenaRules.MaxSpeed} m/s in 0.5 steps.",
         "mass" => $"Mass must be {PoJevArenaRules.MinMass}–{PoJevArenaRules.MaxMass} in 0.5 steps.",
         "budget" => $"Over the {PoJevArenaRules.BuildBudget}-point budget: trade some bulk, pace, weight or an ability.",
