@@ -2,7 +2,6 @@ using System.Text.Json.Serialization;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
 using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
-using PoBrawlFighterRating = PoMiniGames.Domain.Models.PoBrawlFighterRating;
 using PoMiniGamesClient.Models;
 using PoMiniGames.Shared.Games;
 
@@ -63,8 +62,6 @@ namespace PoMiniGamesClient.Services.Http;
 // (the unified /api/leaderboards/pobrawl route serves it). The array registration went
 // with GetPoBrawlLadderAsync on 2026-08-11.
 [JsonSerializable(typeof(PoBrawlLadderEntry))]
-[JsonSerializable(typeof(PoBrawlFighterRating))]
-[JsonSerializable(typeof(PoBrawlFighterRating[]))]
 [JsonSerializable(typeof(PoBrawlDemoResultRequest))]
 [JsonSerializable(typeof(PoSportsHighScore))]
 [JsonSerializable(typeof(PoSportsHighScore[]))]
@@ -98,12 +95,8 @@ namespace PoMiniGamesClient.Services.Http;
 // PoRacer
 [JsonSerializable(typeof(PoRacerScoreDto))]
 [JsonSerializable(typeof(List<PoRacerScoreDto>))]
-// §PoBrawlOnline (2026-09-14): match result ingest + the live player-Elo board.
-// The result POSTs through MatchHistory internally, so a generic MatchRecordRequest
-// already covers the read path; only the DTO shapes for the new endpoint are new here.
+// §PoBrawlOnline: the 1v1 result ingest (write only; it answers 204).
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlMatchResultDto))]
-[JsonSerializable(typeof(PoMiniGames.Domain.Models.PoBrawlPlayerRating))]
-[JsonSerializable(typeof(List<PoMiniGames.Domain.Models.PoBrawlPlayerRating>))]
 // PoBrawl post-fight press conference (2026-09-23).
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlPresserRequest))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlPresserReply))]

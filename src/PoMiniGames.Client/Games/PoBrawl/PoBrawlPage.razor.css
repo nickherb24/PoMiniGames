@@ -1,9 +1,60 @@
-/* One display face for every piece of fight chrome (it was the same four-font stack
-   spelled out thirteen times). Custom properties inherit into the engine's DOM, which
-   is appended inside .pb-canvas-host, and through .pb-intro (display: contents). */
+/* Fight chrome tokens. Custom properties inherit into the HUD (rendered inside .pb-top),
+   the engine's DOM (appended inside .pb-canvas-host) and through .pb-intro (display:
+   contents). The arena is dark in both schemes, so everything drawn over it reads these
+   scheme-invariant --pb-* colours; theme surfaces (intro card, result modal) use app tokens. */
 .pb-wrap,
 .pb-intro {
     --pb-display: 'Bungee', 'Russo One', 'Impact', sans-serif;
+    --pb-arena: #0d0f1a;
+    --pb-white: #fff;
+    --pb-ink: #f4f6ff;
+    --pb-ink-soft: #dfe6ff;
+    --pb-ink-muted: #c7cbe8;
+    --pb-ink-dim: #9aa6c8;
+    --pb-ink-faint: #8f96b8;
+    --pb-gold: #ffd166;
+    --pb-gold-bright: #ffd257;
+    --pb-p1: #22c55e;
+    --pb-p1-deep: #16a34a;
+    --pb-p1-light: #86efac;
+    --pb-p2: #ef4444;
+    --pb-p2-light: #f87171;
+    --pb-go: #34d17c;
+    --pb-go-ink: #7ee2a8;
+    --pb-seg-ink: #e8eeff;
+    --pb-touch-ink: #e8ecff;
+    --pb-pill-ink: #cbd5e1;
+    --pb-pill-watch: #bfdbfe;
+    --pb-pill-warn-ink: #fff7ed;
+    --pb-card-ink: #e2e8f0;
+    --pb-card-muted: #94a3b8;
+    --pb-btn: #6366f1;
+    --pb-btn-ring: #c7d2fe;
+    --pb-dmg: #ffe9b0;
+    --pb-dmg-head: #ff8a7a;
+    --pb-dmg-heavy: #ff5530;
+    --pb-versus-ink: #2a1c04;
+    --pb-splash-ink: #e8eaf6;
+    --pb-foil-pink: #ff6b8b;
+    --pb-foil-blue: #7aa2ff;
+    --pb-foil-mint: #7dffd0;
+    --pb-seal-hi: #fff3c4;
+    --pb-seal-lo: #b8862a;
+    --pb-seal-rim-dark: #8a5f12;
+    --pb-seal-rim-light: #ffe08a;
+    --pb-news-red: #e53935;
+    --pb-news-red-deep: #a3151a;
+    --pb-news-navy: #0b1330;
+    --pb-chip-hi: #fff4dc;
+    --pb-chip-lo: #ffb08a;
+    --pb-energy: #5b7cfa;
+    --pb-energy-light: #8aa4ff;
+    --pb-energy-hot: #ffb020;
+    --pb-energy-spent: #c2354a;
+    --pb-energy-spent-light: #f2637a;
+    --pb-region-crit: #e03131;
+    --pb-region-mid: #fab005;
+    --pb-region-ok: #4adeb2;
 }
 
 .pb-wrap {
@@ -13,12 +64,8 @@
     padding: var(--pb-gutter);
     position: relative;
     width: 100%;
-    /* Review #2: the old cap (var(--content-max, 960px)) letterboxed the ring
-       with ~200px of dead dark gutter per side on anything wider than a laptop —
-       measured 960px of canvas in a 1366px well. The engine already re-frames to
-       any aspect (_onResize sets camera.aspect from the container), so give the
-       ring the well and let the camera use it. Still capped, because a side-view
-       boxing ring stretched across an ultrawide panorama stops reading as a ring. */
+    /* The engine re-frames to any aspect, so give the ring the well — but capped, because a
+       side-view ring stretched across an ultrawide stops reading as a ring. */
     max-width: min(1400px, 100%);
     margin: 0 auto;
 }
@@ -26,17 +73,12 @@
 .pb-canvas-host {
     position: relative;
     width: 100%;
-    /* Review #3: --gps-area-h is the shell's published viewport-minus-chrome
-       figure (games.css). Subtracting the game-area's own 1.5rem×2 padding keeps
-       the host exactly inside the visible well — the old min(86vh, 820px)
-       measured 9px of page scroll at 960×636 because it ignored the header row
-       entirely. Same clamp floor and ceiling as before. */
+    /* --gps-area-h is the shell's viewport-minus-chrome figure (games.css). No min-height:
+       a floor beat the calc on a landscape phone and the page scrolled. */
     height: min(calc(var(--gps-area-h, 100dvh) - 2 * var(--pb-gutter)), 820px);
-    /* No min-height: a 384px floor beat the calc on a landscape phone (~326px of well)
-       and the page scrolled by ~100px. --gps-area-h already floors at 18rem. */
     border-radius: 12px;
     overflow: hidden;
-    background: #0d0f1a;
+    background: var(--pb-arena);
 }
 
 .pb-canvas-host ::deep canvas {
@@ -55,14 +97,9 @@
     pointer-events: none;
 }
 
-/* Countdown / KO banner created by the JS engine inside the container.
-   Anchored to the strip just below the top nav bar (viewport-fixed) so the
-   K.O. / "X WINS!" text never covers the fighters in the ring. */
 .pb-canvas-host ::deep .pb-banner {
-    /* Anchored to the CANVAS (not the viewport) so the yellow FIGHT! / K.O.
-       text sits symmetrically inside the arena's black band above the ring,
-       centred both horizontally and vertically in the dead strip below the
-       HP-bar HUD and above the fighters' heads — never covering the players. */
+    /* Engine-created. Anchored to the CANVAS so FIGHT! / K.O. sits in the dead band
+       between the HUD and the fighters' heads, never covering the players. */
     position: absolute;
     top: 8%;
     height: 26%;
@@ -76,14 +113,12 @@
     font-size: clamp(2rem, 7vw, 4rem);
     font-weight: 900;
     letter-spacing: 0.08em;
-    color: #ffd166;
+    color: var(--pb-gold);
     text-shadow: 0 4px 24px rgba(0, 0, 0, 0.7), 0 0 12px rgba(255, 209, 102, 0.25);
 }
 
-/* Caption bar (commentary.js): every line the PA speaks, written out — ringside commentary,
-   the count, the KO call, the press conference. Sits low over the ring floor, never over the
-   fighters' heads, and shows while muted, which is when it matters most. Canvas chrome, so
-   scheme-invariant like the banner above. */
+/* Caption bar (commentary.js): every line the PA speaks, written out. Sits low over the
+   ring floor, never over the fighters' heads, and shows while muted, when it matters most. */
 .pb-canvas-host ::deep .pb-caption {
     position: absolute;
     left: 50%;
@@ -93,7 +128,7 @@
     padding: 0.35rem 0.85rem;
     border-radius: 0.5rem;
     background: rgba(8, 10, 20, 0.72);
-    color: #f4f6ff;
+    color: var(--pb-ink);
     font-size: clamp(0.85rem, 1.9vw, 1.05rem);
     line-height: 1.35;
     text-align: center;
@@ -119,15 +154,10 @@
     }
 }
 
-/* Virtual touch controls created by the JS engine (game.js _buildTouchControls) —
-   hidden on desktop, shown on coarse-pointer devices and narrow portrait windows.
-   Docked INSIDE the arena along its bottom edge: it used to be position:fixed to
-   the viewport, over a "strip below the canvas" that does not exist, so it sat on
-   top of the training bar, the caption, the news package's clip button — and at
-   seven 58px buttons in one row it ran off the right edge of a 390px phone.
-
-   The engine tags the host .pb-has-pad; --pb-pad-h is the pad's height, and every
-   other piece of bottom-docked chrome adds it to its own offset. */
+/* Virtual touch controls (input.js buildTouchControls) — hidden on desktop, shown on
+   coarse-pointer devices and narrow portrait windows, docked inside the arena along its
+   bottom edge. The engine tags the host .pb-has-pad; --pb-pad-h is the pad's height, and
+   every other piece of bottom-docked chrome adds it to its own offset. */
 .pb-canvas-host ::deep .pb-touch {
     display: none;
 }
@@ -170,7 +200,7 @@
         border-radius: 50%;
         border: 2px solid rgba(150, 160, 220, 0.45);
         background: rgba(20, 24, 44, 0.6);
-        color: #e8ecff;
+        color: var(--pb-touch-ink);
         font-size: 1.5rem;
         display: flex;
         align-items: center;
@@ -246,32 +276,28 @@
     font-family: var(--pb-display);
     font-size: 1.05rem;
     font-weight: 900;
-    color: #ffe9b0;
+    color: var(--pb-dmg);
     text-shadow: 0 2px 6px rgba(0, 0, 0, 0.85);
     will-change: transform, opacity;
     animation: pb-dmg-rise 0.75s cubic-bezier(.22, 1, .36, 1) forwards;
 }
 
 .pb-canvas-host ::deep .pb-dmg--head {
-    color: #ff8a7a;
+    color: var(--pb-dmg-head);
 }
 
 .pb-canvas-host ::deep .pb-dmg--heavy {
     font-size: 1.5rem;
-    color: #ff5530;
+    color: var(--pb-dmg-heavy);
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9), 0 0 14px rgba(255, 85, 48, 0.5);
 }
 
-/* PERFECT! / COUNTER! — the same floating node as a damage number, carrying a
-   word instead of a figure (game.js `_spawnCallout`). Gold and wider-tracked so
-   it never reads as another number in a flurry: these two are the only pieces
-   of feedback in the game that exist to TEACH rather than to report, and a
-   player who does not notice the perfect guard land has not learned anything
-   from having made it. */
+/* PERFECT! / COUNTER! — a floating word instead of a figure (game.js `_spawnCallout`).
+   Gold and wider-tracked so it never reads as another number in a flurry. */
 .pb-canvas-host ::deep .pb-dmg--callout {
     font-size: 1.25rem;
     letter-spacing: 0.08em;
-    color: #ffd257;
+    color: var(--pb-gold-bright);
     text-shadow: 0 2px 10px rgba(0, 0, 0, 0.9), 0 0 16px rgba(255, 210, 87, 0.55);
 }
 
@@ -288,7 +314,7 @@
     align-items: baseline;
     gap: 4px;
     font-family: var(--pb-display);
-    color: #ffd166;
+    color: var(--pb-gold);
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.85);
     opacity: 0;
 }
@@ -322,8 +348,6 @@
         animation: pb-dmg-fade 0.6s linear forwards;
     }
 
-    /* The three .pb-su-* selectors that used to be listed here went with the
-       super bar (2026-08-11) — nothing renders them any more. */
     .pb-canvas-host ::deep .pb-combo--on,
     .pb-rung--now {
         animation: none;
@@ -349,7 +373,7 @@
     background: radial-gradient(ellipse at center,
                 rgba(8, 10, 24, 0.30) 0%,
                 rgba(2, 4, 12, 0.55) 70%);
-    color: #ffd166;
+    color: var(--pb-gold);
     pointer-events: none;
     opacity: 0;
     transition: opacity 0.35s ease-out;
@@ -380,11 +404,12 @@
     100% { transform: translateY(0)    scale(1);    opacity: 1; }
 }
 
+/* The splash heading (game.js _showSplash: TRAINING / DEMO / NEXT ROUND). */
 .pb-canvas-host ::deep .pb-splash__round {
     font-family: 'Bungee Inline', var(--pb-display);
     font-size: clamp(1.2rem, 3.2vw, 1.8rem);
     letter-spacing: 0.16em;
-    color: #e8eaf6;
+    color: var(--pb-splash-ink);
     text-shadow: 0 0 18px rgba(255, 209, 102, 0.35);
     margin-bottom: 0.4rem;
 }
@@ -394,7 +419,7 @@
     font-family: var(--pb-display);
     font-size: clamp(1.6rem, 5vw, 2.4rem);
     letter-spacing: 0.06em;
-    color: #ffd166;
+    color: var(--pb-gold);
     text-shadow: 0 4px 18px rgba(0, 0, 0, 0.7);
     line-height: 1.05;
 }
@@ -402,17 +427,16 @@
 .pb-canvas-host ::deep .pb-splash__versus {
     font-family: 'Bungee Inline', 'Russo One', 'Impact', sans-serif;
     font-size: clamp(1rem, 2.4vw, 1.4rem);
-    color: #2a1c04;
+    color: var(--pb-versus-ink);
     letter-spacing: 0.04em;
     text-shadow: 0 1px 0 rgba(255, 255, 255, 0.45);
 }
 
-/* ── VS fight card (GFX/SOUND #8, 2026-09-23) ─────────────────────────
-   A split-colour field (P1's green, P2's red — the HUD's own corner colours),
-   two foil-edged name cards that slam in from either side, and a seal that
-   spins down between them. The cards arrive at ~0.45 s, which is where
-   audio.vsSting() lands its boom. When the splash closes, the name spans fly
-   into the HUD nameplates by View Transition (game.js _hideSplash). */
+/* ── VS fight card ────────────────────────────────────────────────────
+   A split-colour field in the HUD's corner colours, two foil-edged name cards that slam in
+   from either side, and a seal that spins down between them. The cards arrive at ~0.45 s,
+   where audio.vsSting() lands its boom; when the splash closes the name spans fly into the
+   HUD nameplates by View Transition (game.js _hideSplash). */
 @property --pb-foil {
     syntax: '<angle>';
     inherits: false;
@@ -459,10 +483,10 @@
     inset: 0;
     padding: 2px;
     border-radius: inherit;
-    background: conic-gradient(from var(--pb-foil), #ffd166, #ff6b8b, #7aa2ff, #7dffd0, #ffd166);
-    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    background: conic-gradient(from var(--pb-foil), var(--pb-gold), var(--pb-foil-pink), var(--pb-foil-blue), var(--pb-foil-mint), var(--pb-gold));
+    -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0);
     -webkit-mask-composite: xor;
-    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0);
     animation: pb-foil-spin 2.6s linear infinite;
     pointer-events: none;
 }
@@ -498,8 +522,8 @@
     place-items: center;
     /* Gold medallion with a rope-knurled rim — repeating-conic draws the rim. */
     background:
-        radial-gradient(circle at 35% 30%, #fff3c4, #ffd166 45%, #b8862a 100%) content-box,
-        repeating-conic-gradient(#8a5f12 0 6deg, #ffe08a 6deg 12deg);
+        radial-gradient(circle at 35% 30%, var(--pb-seal-hi), var(--pb-gold) 45%, var(--pb-seal-lo) 100%) content-box,
+        repeating-conic-gradient(var(--pb-seal-rim-dark) 0 6deg, var(--pb-seal-rim-light) 6deg 12deg);
     padding: 4px;
     box-shadow: 0 0 22px rgba(255, 209, 102, 0.55), 0 6px 18px rgba(0, 0, 0, 0.6);
 }
@@ -522,9 +546,7 @@
     }
 }
 
-/* ── Top of the arena: HUD, then the ladder rail, then the online pills, stacked
-   in normal flow. They were three absolute layers at fixed tops (10/62/64px),
-   so a HUD that grew (a wrapped name on a phone) ran into the rail. ── */
+/* ── Top of the arena: HUD, ladder rail, online pills, stacked in normal flow. ── */
 .pb-top {
     position: absolute;
     top: calc(var(--pb-gutter) + 10px);
@@ -538,9 +560,7 @@
     z-index: 5;
 }
 
-/* ── 1P ladder rail ───────────────────────────────────────────────────
-   Fifteen pips under the HUD: cleared, current, still to come. Sits in the
-   arena's dead strip below the bars, so it follows the same raw-hex rule. */
+/* ── 1P ladder rail: fifteen pips under the HUD — cleared, current, to come. ── */
 
 .pb-ladder {
     display: flex;
@@ -548,19 +568,17 @@
     justify-content: center;
     gap: 8px;
     pointer-events: none;
-    /* Review #6: 0.62rem (~10px) is under any comfortable reading floor for the
-       one piece of text that says how far through the gauntlet you are. The
-       count stays tabular so digits don't shuffle as it climbs. */
+    /* The count stays tabular so digits don't shuffle as it climbs. */
     font-size: 0.75rem;
     letter-spacing: 0.06em;
-    color: #c7cbe8;
+    color: var(--pb-ink-muted);
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.9);
 }
 
 .pb-ladder-count {
     font-variant-numeric: tabular-nums;
     font-weight: 700;
-    color: #f4f6ff;
+    color: var(--pb-ink);
 }
 
 .pb-ladder-rail {
@@ -578,31 +596,26 @@
 }
 
 .pb-rung--done {
-    background: linear-gradient(180deg, #22c55e, #16a34a);
+    background: linear-gradient(180deg, var(--pb-p1), var(--pb-p1-deep));
 }
 
-/* The pulse was `pb-su-pulse`, borrowed from the super bar. That bar and its
-   keyframes were removed 2026-08-11, which would have silently killed this
-   animation — an undefined animation-name is not an error, the pip just stops
-   pulsing. Own keyframe now, named for the thing that actually uses it. */
 @keyframes pb-rung-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.55; }
 }
 
 .pb-rung--now {
-    background: #ffd166;
+    background: var(--pb-gold);
     box-shadow: 0 0 7px rgba(255, 209, 102, 0.9);
     animation: pb-rung-pulse 1.4s ease-in-out infinite;
 }
 
 .pb-ladder-now {
     font-family: var(--pb-display);
-    color: #ffd166;
+    color: var(--pb-gold);
 }
 
-/* ── Online (2026-09-29): room + corner pills over the arena, and the "no fight here" card.
-   Canvas chrome like the demo badge — scheme-invariant. */
+/* ── Online: room + corner pills over the arena, and the "no fight here" card. ── */
 .pb-net-status {
     display: flex;
     flex-wrap: wrap;
@@ -614,7 +627,7 @@
 
 .pb-net-pill {
     background: rgba(0, 0, 0, 0.6);
-    color: #cbd5e1;
+    color: var(--pb-pill-ink);
     font-size: 0.78rem;
     padding: 3px 10px;
     border-radius: var(--radius-pill);
@@ -622,12 +635,12 @@
 }
 
 .pb-net-pill--watch {
-    color: #bfdbfe;
+    color: var(--pb-pill-watch);
 }
 
 .pb-net-pill--warn {
     background: rgba(146, 64, 14, 0.85);
-    color: #fff7ed;
+    color: var(--pb-pill-warn-ink);
 }
 
 .pb-net-missing {
@@ -640,7 +653,7 @@
     justify-content: center;
     gap: 0.5rem;
     background: rgba(8, 10, 20, 0.82);
-    color: #e2e8f0;
+    color: var(--pb-card-ink);
     text-align: center;
     padding: 1rem;
     z-index: 6;
@@ -653,21 +666,21 @@
 
 .pb-net-missing p {
     margin: 0;
-    color: #94a3b8;
+    color: var(--pb-card-muted);
 }
 
 .pb-net-btn {
     margin-top: 0.5rem;
     padding: 0.5rem 1rem;
     border-radius: var(--radius-pill);
-    background: #6366f1;
-    color: #fff;
+    background: var(--pb-btn);
+    color: var(--pb-white);
     text-decoration: none;
     font-weight: 600;
 }
 
 .pb-net-btn:focus-visible {
-    outline: 2px solid #c7d2fe;
+    outline: 2px solid var(--pb-btn-ring);
     outline-offset: 2px;
 }
 
@@ -771,7 +784,7 @@
     left: 50%;
     transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.6);
-    color: #cbd5e1;
+    color: var(--pb-pill-ink);
     font-size: 0.8rem;
     padding: 4px 12px;
     border-radius: var(--radius-pill);
@@ -802,9 +815,7 @@
     100% { opacity: 0; box-shadow: inset 0 0 0 0 rgba(0, 0, 0, 0), inset 0 0 0 0 rgba(0, 0, 0, 0); }
 }
 
-/* ── "Know your opponent" scouting card (1P intro) ────────────────────
-   Rendered into <GameIntro Options>, which sits on a real theme surface — so
-   unlike the HUD above, this reads its colours from the tokens. */
+/* ── 1P intro options: training choice + the rung (theme surface — tokens) ── */
 
 .pb-scout {
     text-align: left;
@@ -819,9 +830,6 @@
     align-items: baseline;
     justify-content: space-between;
     gap: 10px;
-    margin-bottom: 8px;
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: 6px;
 }
 
 .pb-scout-rung {
@@ -835,26 +843,6 @@
     font-family: var(--pb-display);
     font-size: 1.15rem;
     color: var(--accent-ink);
-}
-
-.pb-scout-list {
-    margin: 0;
-    display: grid;
-    /* Label column sized to the longer of the two labels so both descriptions
-       start on the same line; the description column takes the rest. */
-    grid-template-columns: auto 1fr;
-    gap: 4px 10px;
-    font-size: var(--text-sm);
-}
-
-.pb-scout-list dt {
-    white-space: nowrap;
-    color: var(--color-text-secondary);
-}
-
-.pb-scout-list dd {
-    margin: 0;
-    color: var(--color-text-primary);
 }
 
 /* "Training first" — the start-mode checkbox on the 1P intro card, first thing
@@ -934,10 +922,7 @@
     text-align: left;
 }
 
-/* ── Training controls (2026-09-23) ───────────────────────────────────
-   The bar and its pills float over the arena like .pb-hud, so they follow the
-   same raw-hex rule (see the note on .pb-hp-name): the arena is scheme-
-   invariant and a light-theme token here would put pale chrome on a dark ring. */
+/* ── Training bar (floats over the arena) ───────────────────────────── */
 
 .pb-seg {
     font: inherit;
@@ -947,7 +932,7 @@
     border-radius: var(--radius-pill);
     border: 1px solid rgba(255, 255, 255, 0.18);
     background: rgba(8, 12, 28, 0.72);
-    color: #e8eeff;
+    color: var(--pb-seg-ink);
     cursor: pointer;
     backdrop-filter: blur(var(--gfx-blur, 6px));
 }
@@ -957,28 +942,21 @@
 }
 
 .pb-seg:focus-visible {
-    outline: 2px solid #ffd166;
+    outline: 2px solid var(--pb-gold);
     outline-offset: 2px;
 }
 
-.pb-seg--on {
-    background: rgba(255, 209, 102, 0.2);
-    border-color: #ffd166;
-    color: #ffd166;
-}
-
-/* The training bar's exit: reads as "go", not as another dummy mode. */
+/* The training bar's exit: reads as "go". */
 .pb-seg--ladder {
     border-color: rgba(34, 197, 94, 0.55);
-    color: #7ee2a8;
+    color: var(--pb-go-ink);
 }
 
 .pb-seg--ladder:hover {
-    border-color: #34d17c;
+    border-color: var(--pb-go);
 }
 
-/* Training controls: the dummy's mode plus the room's switches, docked at the
-   bottom of the arena where the fight never needs to be read. */
+/* Docked at the bottom of the arena, where the fight never needs to be read. */
 .pb-trainbar {
     position: absolute;
     bottom: calc(var(--pb-gutter) + 12px);
@@ -994,27 +972,8 @@
     padding: 6px 8px;
     border-radius: 14px;
     background: rgba(8, 12, 28, 0.6);
-    color: #dfe6ff;
+    color: var(--pb-ink-soft);
     font-size: 0.78rem;
-}
-
-.pb-trainbar-label {
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    font-size: 0.75rem;
-    color: #ffd166;
-}
-
-.pb-trainbar-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    cursor: pointer;
-}
-
-.pb-trainbar-toggle input {
-    accent-color: #ffd166;
 }
 
 /* The training readout is engine DOM (training.js), hence ::deep. */
@@ -1028,7 +987,7 @@
     padding: 8px 10px;
     border-radius: 10px;
     background: rgba(8, 12, 28, 0.62);
-    color: #dfe6ff;
+    color: var(--pb-ink-soft);
     font-size: 0.74rem;
     line-height: 1.3;
     pointer-events: none;
@@ -1043,113 +1002,18 @@
     font-family: var(--pb-display);
     font-size: 0.78rem;
     letter-spacing: 0.05em;
-    color: #ffd166;
+    color: var(--pb-gold);
 }
 
 .pb-canvas-host ::deep .pb-train__frames {
     margin-top: 2px;
     font-size: 0.75rem;
-    color: #9aa6c8;
+    color: var(--pb-ink-dim);
     font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 640px) {
     .pb-canvas-host ::deep .pb-train { top: 74px; max-width: 58%; font-size: 0.75rem; }
-}
-
-/* ── Tale of the tape (1P intro) ──────────────────────────────────────
-   Inside the intro card, on a real theme surface — tokens, like .pb-scout. */
-
-.pb-tape {
-    margin-top: 10px;
-    padding-top: 8px;
-    border-top: 1px solid var(--color-border);
-}
-
-.pb-tape-title {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-text-secondary);
-    margin-bottom: 6px;
-}
-
-.pb-tape-grid {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 3px 10px;
-    align-items: center;
-    font-size: var(--text-sm);
-}
-
-.pb-tape-corner {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-}
-
-.pb-tape-corner--right {
-    justify-content: flex-end;
-}
-
-.pb-tape-name {
-    font-family: var(--pb-display);
-    color: var(--accent-ink);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.pb-tape-avatar {
-    flex: 0 0 40px;
-    width: 40px;
-    height: 40px;
-    border-radius: 50%;
-    object-fit: cover;
-    object-position: top;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--surface-3);
-    border: 2px solid var(--color-border);
-    color: var(--color-text-primary);
-    font-weight: 700;
-}
-
-.pb-tape-avatar--bob {
-    background: var(--accent-soft);
-}
-
-.pb-tape-vs {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    color: var(--color-text-secondary);
-}
-
-.pb-tape-l { text-align: left; color: var(--color-text-primary); }
-.pb-tape-r { text-align: right; color: var(--color-text-primary); }
-
-.pb-tape-k {
-    text-align: center;
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--color-text-secondary);
-}
-
-.pb-tape-quote {
-    margin: 8px 0 0;
-    text-align: right;
-    font-style: italic;
-    color: var(--color-text-primary);
-}
-
-.pb-tape-credit {
-    margin: 2px 0 0;
-    text-align: right;
-    font-size: var(--text-xs);
-    color: var(--color-text-secondary);
 }
 
 /* ── Post-fight press conference (result modal) ───────────────────── */
@@ -1192,11 +1056,10 @@
     font-size: var(--text-sm);
 }
 
-/* ── Breaking News result package (GFX/SOUND #9, 2026-09-23) ──────────
-   Engine DOM (news.js), hence ::deep. A cable-news lower third over the result
-   frame: it floats over the scheme-invariant arena like the HUD, so it follows
-   the same raw-hex rule (see .pb-hp-name). Slides in, never blinks; the only
-   continuous motion is the ticker crawl, which reduced-motion stops. */
+/* ── Breaking News result package ─────────────────────────────────────
+   Engine DOM (news.js), hence ::deep. A cable-news lower third over the result frame.
+   Slides in, never blinks; the only continuous motion is the ticker crawl, which
+   reduced-motion stops. */
 .pb-canvas-host ::deep .pb-news {
     position: absolute;
     inset: 0;
@@ -1206,7 +1069,7 @@
     opacity: 0;
     transition: opacity 0.25s ease-out, visibility 0s linear 0.25s;
     font-family: 'Russo One', 'Bungee', 'Impact', sans-serif;
-    color: #f4f6ff;
+    color: var(--pb-ink);
 }
 
 /* Demo lifts the package clear of the page's centred demo badge. */
@@ -1245,7 +1108,7 @@
     display: flex;
     align-items: center;
     padding: 0 0.8rem;
-    background: linear-gradient(180deg, #e53935, #a3151a);
+    background: linear-gradient(180deg, var(--pb-news-red), var(--pb-news-red-deep));
     font-size: clamp(0.7rem, 1.6vw, 0.95rem);
     letter-spacing: 0.08em;
     white-space: nowrap;
@@ -1254,7 +1117,7 @@
 .pb-canvas-host ::deep .pb-news__headline {
     padding: 0.45rem 0.8rem;
     background: linear-gradient(180deg, rgba(248, 250, 255, 0.97), rgba(214, 222, 240, 0.97));
-    color: #0b1330;
+    color: var(--pb-news-navy);
     font-size: clamp(0.8rem, 2.2vw, 1.25rem);
     line-height: 1.15;
     /* Wipes on after the bar has arrived, like a real graphics package. */
@@ -1272,8 +1135,8 @@
 .pb-canvas-host ::deep .pb-news__ticker {
     grid-column: 1 / -1;
     overflow: hidden;
-    background: #0b1330;
-    color: #ffd166;
+    background: var(--pb-news-navy);
+    color: var(--pb-gold);
     font-size: clamp(0.75rem, 1.4vw, 0.85rem);
     letter-spacing: 0.06em;
     padding: 0.28rem 0;
@@ -1289,7 +1152,7 @@
 
 .pb-canvas-host ::deep .pb-news__track i {
     font-style: normal;
-    color: #e53935;
+    color: var(--pb-news-red);
 }
 
 @keyframes pb-ticker {
@@ -1315,7 +1178,7 @@
 }
 
 .pb-canvas-host ::deep .pb-news__live {
-    background: #e53935;
+    background: var(--pb-news-red);
 }
 
 .pb-canvas-host ::deep .pb-news__vote {
@@ -1331,13 +1194,13 @@
 
 .pb-canvas-host ::deep .pb-news__vote-head {
     letter-spacing: 0.1em;
-    color: #c7cbe8;
+    color: var(--pb-ink-muted);
     margin-bottom: 3px;
 }
 
 .pb-canvas-host ::deep .pb-news__vote-head small {
     font-size: 1em;
-    color: #8f96b8;
+    color: var(--pb-ink-faint);
     letter-spacing: 0.04em;
     margin-left: 4px;
 }
@@ -1354,14 +1217,14 @@
     height: 8px;
     border-radius: 4px;
     overflow: hidden;
-    background: #ef4444; /* P2's share is the red remainder */
+    background: var(--pb-p2); /* P2's share is the red remainder */
 }
 
 .pb-canvas-host ::deep .pb-news__vote-fill {
     display: block;
     height: 100%;
     width: 50%;
-    background: #22c55e;
+    background: var(--pb-p1);
     transition: width 0.9s cubic-bezier(.2, .9, .2, 1) 0.5s;
 }
 
@@ -1370,7 +1233,7 @@
     width: var(--share, 50%);
 }
 
-/* Save-clip button (#10): the one interactive thing in the package. */
+/* Save-clip button: the one interactive thing in the package. */
 .pb-canvas-host ::deep .pb-news__clip {
     position: absolute;
     right: 12px;
@@ -1380,9 +1243,9 @@
     font-size: 0.8rem;
     padding: 7px 12px;
     border-radius: var(--radius-pill, 999px);
-    border: 1px solid #ffd166;
+    border: 1px solid var(--pb-gold);
     background: rgba(8, 12, 28, 0.85);
-    color: #ffd166;
+    color: var(--pb-gold);
     cursor: pointer;
 }
 
@@ -1391,7 +1254,7 @@
 }
 
 .pb-canvas-host ::deep .pb-news__clip:focus-visible {
-    outline: 2px solid #ffd166;
+    outline: 2px solid var(--pb-gold);
     outline-offset: 2px;
 }
 
@@ -1435,9 +1298,8 @@
     display: contents;
 }
 
-/* Start stays on screen however long the card is: on a phone the 1P card (controls,
-   scouting report, tale of the tape) is taller than the viewport and scrolls inside
-   itself, and Start used to sit below that fold. The 2P card already did this. */
+/* Start stays on screen however long the card is: on a phone the 1P card is taller than
+   the viewport and scrolls inside itself. */
 .pb-intro ::deep .gps-intro-card--oneplayer .gps-intro-actions {
     position: sticky;
     bottom: calc(-1 * (1.25rem + env(safe-area-inset-bottom)));
@@ -1449,9 +1311,6 @@
     z-index: 2;
 }
 
-/* Wide screens: controls | scouting report | tale of the tape, side by side, so the
-   whole 1P card fits a 1366×768 laptop without scrolling. It was a 440px column
-   with ~900px of content and two-thirds of the screen empty around it. */
 @media (min-width: 1024px) {
     .pb-intro ::deep .gps-intro-card--oneplayer {
         width: min(94vw, 1080px);
@@ -1479,29 +1338,6 @@
         padding: 0.35rem 0 0;
         border-top: 0;
         background: none;
-    }
-
-    .pb-scout {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-        grid-template-areas:
-            "train train"
-            "head  tape"
-            "list  tape";
-        column-gap: 16px;
-        align-content: start;
-    }
-
-    .pb-intro-train { grid-area: train; }
-    .pb-scout-head { grid-area: head; }
-    .pb-scout-list { grid-area: list; align-self: start; }
-
-    .pb-tape {
-        grid-area: tape;
-        margin-top: 0;
-        padding: 0 0 0 16px;
-        border-top: 0;
-        border-left: 1px solid var(--color-border);
     }
 }
 
@@ -1665,8 +1501,3 @@
 .pb-select-mark--p1 { left: 4px; background: var(--accent-success); }
 .pb-select-mark--p2 { right: 4px; background: var(--accent-danger, var(--accent-warning)); }
 
-@media (pointer: coarse) {
-    .pb-trainbar-toggle {
-        min-height: 44px;
-    }
-}

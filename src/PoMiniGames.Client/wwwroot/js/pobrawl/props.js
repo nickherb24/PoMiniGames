@@ -1,26 +1,16 @@
 // props.js — destructible corner crates, persistent debris, and the physics
 // glue that lets fighters interact with them.
 //
-// Each corner of the ring gets a 10-crate pyramid (4 base + 3 + 2 + 1) of
-// wooden crates built as REAL cannon-es dynamic bodies (G_PROP). They rest
-// on the mat, stack on each other, and stay put until something disturbs
-// them:
-//
+// Each corner gets a 10-crate pyramid of cannon-es dynamic bodies (G_PROP):
 //   • A fighter walking into a stack nudges it apart (explicit shove impulses,
-//     so it reads even though fighters are kinematic in the solver).
-//   • A fighter KNOCKED into a stack at speed smashes crates: each takes HP
-//     damage and, once spent, splinters into smaller debris boxes.
-//   • The debris are themselves dynamic bodies that tumble, settle on the
-//     canvas and PERSIST for the rest of the round (idea #8).
-//   • A crate sent flying into the opposing fighter chips them and shoves
-//     them back — the knock-into-object chain reaction (idea #5).
-//   • A KO ragdoll launched into a corner crashes the whole stack (its mask
-//     includes G_PROP).
+//     since fighters are kinematic in the solver).
+//   • A fighter KNOCKED into a stack at speed damages crates, which splinter
+//     into debris bodies that persist for the rest of the round.
+//   • A crate flung into the opposing fighter chips them and shoves them back.
+//   • A KO ragdoll crashes the stack (its mask includes G_PROP).
 //
-// Everything here runs OUTSIDE world.step (called from the per-frame section
-// of the game loop), so adding/removing bodies mid-shatter is safe — the
-// cannon-es "mutate the world during a contact callback" hazard does not
-// apply. See [[cannon-es-event-removal]].
+// Everything here runs OUTSIDE world.step, so adding/removing bodies
+// mid-shatter is safe.
 
 import * as CANNON from 'cannon-es';
 import * as THREE from 'three';
@@ -35,29 +25,13 @@ const CRATE_MASS = 1.6;
 const CRATE_HP = 100;
 
 const MAX_BODIES = 96;         // hard cap on live prop bodies (crates + debris)
-                                // — raised from 56 because the corner stacks
-                                //   now hold 10 crates each (40 total) and a
-                                //   full shatter spawns up to ~160 debris.
 const SMASH_KB = 3.6;          // fighter knockback magnitude that starts damaging crates
 const PUSH_K = 0.85;           // shove-impulse gain for a fighter walking into a crate
 const MAX_PUSH = 15;           // clamp on a single shove impulse
 const CHAIN_SPEED = 3.0;       // crate speed that can chip a fighter on contact
 
-// Per-corner local stack layout — a 10-crate pyramid (4 base + 3 + 2 + 1):
-//   ┌───┐
-//   │   │   tier 3: 1 centred crate
-//   ├─┬─┤
-//   │ │ │   tier 2: 2 side-by-side crates
-//   ├─┼─┤
-//   │▒│▒│   tier 1: 3 crates in a triangle (front-left, front-right, back)
-//   ├─┼─┤
-//   │▒│▒│
-//   │▒│▒│   tier 0: 2×2 base of 4 crates
-//   └───┘
-// The base spreads ±0.20 from the stack centre (~0.76 wide overall) and the
-// stack rises ~1.44 (4 tiers × BOX) — tall enough to match the corner posts
-// for visual balance, wide enough that a knocked fighter catches a shoulder
-// or two before piling through.
+// Per-corner local stack layout (4 base + 3 + 2 + 1), ~0.76 wide and ~1.44
+// tall — matches the corner posts.
 const STACK = [
   // Tier 0 (bottom): 2×2 base of 4 crates
   { x: -0.20, y: HALF,            z: -0.20 },
@@ -186,15 +160,11 @@ export function buildProps(world, mats, scene) {
   return props;
 }
 
-// Restore the corner stacks for a fresh round. To avoid an allocation/GC
-// spike at countdown (which showed up as a sound + camera stutter exactly when
-// the intro plays), this REUSES the existing crate bodies/meshes wherever it
-// can — only debris is torn down; crates are repositioned, re-stacked and
-// their HP/tint reset. Missing crates (ones that shattered last round) are
-// respawned; any surplus is removed.
+// Restore the corner stacks for a fresh round. REUSES existing crate
+// bodies/meshes to avoid a GC spike (audible/visible stutter) during the intro;
+// only debris is torn down, shattered crates are respawned.
 export function resetProps(props) {
   if (!props) return;
-  // Target stack positions — 10 crates per corner × 4 corners = 40 crates.
   const targets = [];
   for (const sx of [-1, 1]) {
     for (const sz of [-1, 1]) {
@@ -225,7 +195,6 @@ export function resetProps(props) {
       spawnBox(props, t, BOX, CRATE_MASS, CRATE_HP, false);
     }
   }
-  // Remove any surplus crates beyond the 12 targets.
   for (let i = targets.length; i < crates.length; i++) removeEntry(props, crates[i]);
 }
 
@@ -292,10 +261,8 @@ export function updateProps(props, dt, fighters, hooks) {
       const approach = fvx * nx + fvz * nz;      // fighter speed toward the crate
       if (approach <= 0.15) continue;
 
-      // Shove impulse (applied a touch above centre → the crate topples).
-      // NB: applyImpulse's second arg is the offset FROM the centre of mass
-      // (world frame), not a world point — a small +Y offset induces topple
-      // torque without launching the crate off its axis.
+      // applyImpulse's second arg is the offset FROM the centre of mass, not a
+      // world point — a small +Y offset makes the crate topple.
       const imp = Math.min(MAX_PUSH, approach * body.mass * PUSH_K);
       body.wakeUp();
       body.applyImpulse(
@@ -307,8 +274,6 @@ export function updateProps(props, dt, fighters, hooks) {
       if (kbMag > SMASH_KB && !ud.isDebris) {
         const dmg = THREE.MathUtils.clamp((kbMag - SMASH_KB) * 22, 12, 100);
         damageCrate(props, entry, dmg, { x: fvx, y: 2, z: fvz }, hooks);
-        // Chain reaction back onto the fighter: chip + dampened rebound so a
-        // ram into the corner stack actually costs them.
         f.knockback.multiplyScalar(0.55);
         hooks?.onChip?.(f, Math.min(3, kbMag - SMASH_KB), -nx, -nz);
         break; // this crate is gone/handled for this fighter
@@ -335,7 +300,6 @@ export function updateProps(props, dt, fighters, hooks) {
       }
     }
 
-    // Mirror body → mesh.
     entry.mesh.position.set(bx, by, bz);
     entry.mesh.quaternion.set(
       body.quaternion.x, body.quaternion.y, body.quaternion.z, body.quaternion.w);

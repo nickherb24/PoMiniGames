@@ -1,30 +1,10 @@
-/* PoBrawlHud — the fight HUD. Moved out of PoBrawlPage.razor.css with the markup
-   (2026-09-29) so the engine's 4×/sec pump re-renders only this component.
-   Positioned by the page's .pb-top column; nothing here is absolutely placed. */
+/* PoBrawlHud — the fight HUD, positioned by the page's .pb-top column. Colours are the
+   page's scheme-invariant --pb-* tokens (PoBrawlPage.razor.css), inherited through .pb-wrap.
 
-/* ── HUD ─────────────────────────────────────────────── */
-
-/* ── Glassmorphic, audio-reactive chrome (GFX/SOUND #8) ────────────────────
-   The HUD was flat rectangles on a transparent layer. It is now a glass plate:
-   a frosted, saturated backdrop, a specular highlight raked across the top
-   edge, and a rim light that breathes on the music's low end.
-
-   TWO PLATFORM VARIABLES DRIVE THIS, AND BOTH NEED FALLBACKS:
-
-   --gfx-blur is published by visualRuntime.js's adaptive-quality tier, but ONLY
-   from applyTier(), which early-returns when the tier has not changed — and the
-   tier starts at 'high'. So on a machine that never drops a frame the variable
-   is NEVER SET. Every use here carries its own fallback; do not remove them
-   assuming the tier will provide one.
-
-   --audio-bass is published by the same module's §8 pump, which PoBrawl now
-   switches on in game.js start(). It is 0 whenever audio is muted or the
-   context has not been unlocked, and unset if the pump is off — so it is only
-   ever used to ADD glow on top of a value that stands on its own.
-
-   Everything is raw hex, like the rest of this HUD: .pb-hud floats over the
-   scheme-invariant arena and must not follow the theme. See the long note on
-   .pb-hp-name. */
+   Glass plate chrome driven by two platform variables, both of which need fallbacks:
+   --gfx-blur (visualRuntime.js applyTier) is NEVER SET on a machine that stays on the
+   'high' tier, so every use carries its own fallback. --audio-bass is 0 when muted and
+   unset when the pump is off, so it only ever ADDS glow to a value that stands alone. */
 .pb-hud {
     display: flex;
     align-items: center;
@@ -116,20 +96,10 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    /* 2026-08-08 audit #3 — this is the SECOND fix here; the first one made it
-       worse, so read before changing.
-
-       The 2026-08-07 pass assumed ".pb-hud IS a theme surface" and switched this
-       to var(--color-text-primary). It is not: .pb-hud is `position: absolute`
-       with no background of its own (see the rule above), so it floats over the
-       dark fight arena in BOTH schemes. Following the theme therefore painted
-       near-black ink on the near-black arena in light mode — measured #0f172a on
-       #0d0f1a = 1.06:1, worse than the 1.20:1 it was meant to repair.
-
-       The arena is scheme-invariant, so the text over it must be too: a fixed
-       near-white plus the shadow that lifts it off bright sprite pixels, in both
-       schemes. Do not re-point this at a theme token. */
-    color: #f4f6ff;
+    /* .pb-hud has no background of its own and floats over the dark arena in BOTH
+       schemes, so this text must be scheme-invariant (a theme token measured 1.06:1 in
+       light mode). Do not re-point it at a theme token. */
+    color: var(--pb-ink);
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85);
 }
 
@@ -182,30 +152,27 @@
 .pb-hp-p1 {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 55%),
-        linear-gradient(90deg, #22c55e, #86efac);
+        linear-gradient(90deg, var(--pb-p1), var(--pb-p1-light));
 }
 
 .pb-hp-p2 {
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.32), rgba(255, 255, 255, 0) 55%),
-        linear-gradient(90deg, #f87171, #ef4444);
+        linear-gradient(90deg, var(--pb-p2-light), var(--pb-p2));
     margin-left: auto;
 }
 
-/* ── Damage chip (GFX/SOUND #1, 2026-09-23) ───────────────────────────
-   The ghost sits under the fill at the SAME --hp, but its width transition
-   waits 0.45 s and then drains over 0.6 s. So a hit snaps the coloured bar
-   down, leaves a pale sliver showing exactly what that hit cost, and the sliver
-   burns away to meet it — the fighting-game health bar every player already
-   reads. Healing (a round reset) runs the same curve upward, harmlessly hidden
-   under the fill. No JS: the HUD pump already writes --hp. */
+/* ── Damage chip ────────────────────────────────────────────────────────
+   The ghost sits under the fill at the SAME --hp, but its width transition waits 0.45 s
+   and then drains over 0.6 s: a hit snaps the bar down and leaves a pale sliver showing
+   what it cost. No JS: the HUD pump already writes --hp. */
 .pb-hp-ghost {
     position: absolute;
     top: 0;
     bottom: 0;
     left: 0;
     width: var(--hp, 100%);
-    background: linear-gradient(180deg, #fff4dc, #ffb08a);
+    background: linear-gradient(180deg, var(--pb-chip-hi), var(--pb-chip-lo));
     transition: width 0.6s cubic-bezier(.4, 0, .2, 1) 0.45s;
 }
 
@@ -214,11 +181,9 @@
     right: 0;
 }
 
-/* ── In the red (GFX/SOUND #4) ──────────────────────────────────────────
-   Under 25% the plate cracks and its rim runs red. Deliberately STATIC: the
-   heartbeat pulse lives in the arena (the screen-edge tint on this fighter's
-   side, game.js _updateDanger) and in the audio; a blinking HUD is what the
-   2026-09-12 flicker pass removed, and this does not bring it back. */
+/* ── In the red ─────────────────────────────────────────────────────────
+   Under 25% the plate cracks and its rim runs red. Deliberately STATIC: the heartbeat
+   pulse lives in the arena (game.js _updateDanger) and the audio, not in a blinking HUD. */
 .pb-hp-side--danger {
     border-color: rgba(255, 110, 110, 0.6);
     box-shadow:
@@ -256,54 +221,30 @@
     width: var(--en, 50%);
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.3), rgba(255, 255, 255, 0) 60%),
-        linear-gradient(90deg, #5b7cfa, #8aa4ff);
+        linear-gradient(90deg, var(--pb-energy), var(--pb-energy-light));
     transition: width 0.25s linear;
 }
 
-/* P2's whole side is right-aligned (`.pb-hp-right { align-items: flex-end }`),
-   so both of its bars anchor to the right edge and drain inward toward the
-   centre clock — mirroring P1, which anchors left and drains inward too.
-   2026-08-07 browser audit: only the energy fill carried this, so P2's HP bar
-   drained the opposite way to the energy bar sitting directly under it. */
+/* P2's side is right-aligned, so both of its bars anchor right and drain inward toward
+   the centre clock, mirroring P1. */
 .pb-hp-right .pb-en-fill,
 .pb-hp-right .pb-hp-fill {
     margin-left: auto;
 }
 
 .pb-en-hot {
-    background: linear-gradient(90deg, #ffb020, #ffd257);
+    background: linear-gradient(90deg, var(--pb-energy-hot), var(--pb-gold-bright));
     box-shadow: 0 0 6px rgba(255, 210, 87, 0.75);
 }
 
-/* Gassed out (2026-09-12). Under ~40% the engine refuses to start a punch or a
-   kick at all (game.js ENERGY_ATTACK_FLOOR / ENERGY_RECOVER_TO), so the bar has
-   to say so — otherwise a dead attack button reads as dropped input rather than
-   as a mechanic.
-
-   This carried a 0.7 s opacity pulse when it was added. It came straight back
-   out in the flicker pass later the same day: the whole point of that pass was
-   that PoBrawl blinks too much, and answering it by adding one more blinking
-   element — in the HUD, which is the part of the frame a player's eye rests on
-   — is the wrong trade. The colour change alone is unambiguous, and it is
-   already the only red bar on screen. */
+/* Gassed out: under ~40% the engine refuses to start a punch or a kick (game.js
+   ENERGY_ATTACK_FLOOR / ENERGY_RECOVER_TO), so the bar has to say so — otherwise a dead
+   attack button reads as dropped input. Colour only, no pulse: the HUD is where the eye
+   rests, and PoBrawl must not blink more. */
 .pb-en-spent {
-    background: linear-gradient(90deg, #c2354a, #f2637a);
+    background: linear-gradient(90deg, var(--pb-energy-spent), var(--pb-energy-spent-light));
     box-shadow: 0 0 6px rgba(242, 99, 122, 0.7);
 }
-
-/* ── Super meter — REMOVED 2026-08-11 ─────────────────────────────────
-   The .pb-su / .pb-su-track / .pb-su-fill / .pb-su-fill--ready / .pb-su-prompt
-   rules and their two keyframes (pb-su-sweep, pb-su-pulse) lived here. The HUD
-   is two bars now — health and energy — so the violet third track, its conic
-   "armed" sweep and the "⚡ PRESS E/O" prompt all went with the markup in
-   PoBrawlPage.razor. Signature moves still fire; they just fire themselves.
-
-   The stack is now: health (thick, green/red) → energy (thin, gold when
-   banked).
-
-   Note for anyone re-adding a third readout: the ladder pip (.pb-rung--now)
-   used to borrow this block's `pb-su-pulse` keyframe. It owns a `pb-rung-pulse`
-   copy now, so deleting this section again cannot silently stop that pulse. */
 
 /* Region-damage body diagram: one 4-zone silhouette per fighter, flanking the
    clock. Zones tint teal → amber → red as damage accrues; a zone past the
@@ -324,8 +265,8 @@
        the gameplay effects use sitting inside those bands. The page passes --dmg
        (0-100); the two nested mixes are the two halves of the old C# lerp. */
     fill: color-mix(in srgb,
-        #e03131 calc(clamp(0, var(--dmg, 0) - 50, 50) * 2%),
-        color-mix(in srgb, #fab005 calc(clamp(0, var(--dmg, 0), 50) * 2%), #4adeb2));
+        var(--pb-region-crit) calc(clamp(0, var(--dmg, 0) - 50, 50) * 2%),
+        color-mix(in srgb, var(--pb-region-mid) calc(clamp(0, var(--dmg, 0), 50) * 2%), var(--pb-region-ok)));
 }
 
 .pb-reg-crit {
@@ -344,7 +285,7 @@
     font-size: 1.3rem;
     letter-spacing: 0.06em;
     font-weight: 800;
-    color: #fff;
+    color: var(--pb-white);
     background: rgba(0, 0, 0, 0.5);
     border-radius: 8px;
     padding: 2px 6px;

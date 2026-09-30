@@ -1,4 +1,4 @@
-// clip.js — the shareable KO clip (GFX/SOUND #10, 2026-09-23).
+// clip.js — the shareable KO clip.
 //
 // Keeps the last several seconds of the fight recorded at all times and, when a
 // match ends, keeps the file: the lead-up, the finishing blow and the fall, with

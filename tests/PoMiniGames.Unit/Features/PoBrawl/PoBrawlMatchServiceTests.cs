@@ -64,14 +64,6 @@ public class PoBrawlMatchServiceTests
     }
 
     [Fact]
-    public void SideFor_ReturnsPinnedSide()
-    {
-        var match = StartedMatch();
-        match.SideFor("conn-1").Should().Be(PoBrawlSide.Player1);
-        match.SideFor("conn-2").Should().Be(PoBrawlSide.Player2);
-    }
-
-    [Fact]
     public void Tick_LandsOnlyInRange_OncePerPress_AndBlockNegatesPunch()
     {
         // Three behaviours in one test (would be three Facts without the ceiling pressure).

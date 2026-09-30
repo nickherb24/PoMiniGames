@@ -1,15 +1,8 @@
-// spectacle.js — the 2026-09-29 GFX/SOUND pass: screen shockwave, the comic-book
-// KO panel, ringside press bursts, victory pyro, the kicked house light, the tape
-// rewind into a rematch and the result-screen shatter.
-//
-// Same mixin pattern as vfx.js / cinematics.js (see mixin.js). Everything here is
-// presentation: nothing reads or writes match state the sim depends on, and all
-// randomness is Math.random, never the seeded match RNG, so demo replays and
-// online lockstep are untouched.
-//
-// Flicker rule (see the 2026-09-12 note in game.js): none of these changes the
-// whole frame's brightness. The shockwave moves pixels; the comic panel's dot
-// screen lifts and drops by the same amount; pyro and press flashes are local.
+// spectacle.js — shockwave, comic-book KO panel, press bursts, victory pyro, house
+// light kick, rematch rewind and result-screen shatter. Mixin (see mixin.js).
+// Presentation only: never touches sim state, and uses Math.random, never the
+// seeded match RNG, so demo replays and online lockstep are untouched.
+// Flicker rule: nothing here changes whole-frame brightness.
 import * as THREE from 'three';
 import { pressBurst } from './arena.js';
 
@@ -65,8 +58,7 @@ class SpectacleMethods {
   /** The killing blow: freeze, print the frame as a comic panel, slam a word in. */
   _comicKO(point, attackName) {
     this._comicT = COMIC_HOLD + COMIC_FADE;
-    // Freeze the sim. The KO branch of _tick does not honour hitstopT, so this
-    // parks timeScale instead and _updateSpectacle hands back the slow-mo.
+    // The KO branch of _tick ignores hitstopT, so park timeScale; _updateSpectacle restores slow-mo.
     this._comicFreeze = COMIC_FREEZE;
     this.timeScale = 0;
     const list = Math.random() < 0.33 ? WORDS.flavor
@@ -81,7 +73,6 @@ class SpectacleMethods {
     const g = c.getContext('2d');
     g.translate(256, 128);
     g.rotate(-0.08 + Math.random() * 0.06);
-    // Starburst behind the lettering.
     g.beginPath();
     for (let i = 0; i < 28; i++) {
       const a = (i / 28) * Math.PI * 2;
@@ -210,7 +201,6 @@ class SpectacleMethods {
     const ctx = cv.getContext('2d');
     const W = cv.width, H = cv.height;
 
-    // Crack origin: the fallen fighter if we know where they are on screen.
     const loser = this.fighters?.find((f) => f.state === 'ko');
     let ox = W / 2, oy = H / 2;
     if (loser) {
@@ -219,8 +209,7 @@ class SpectacleMethods {
       if (_proj.z < 1) { ox = (_proj.x + 1) * 0.5 * W; oy = (1 - _proj.y) * 0.5 * H; }
     }
 
-    // Shards: rings of jittered points around the origin, joined into
-    // triangles — radial cracks with a few concentric ones, like struck glass.
+    // Radial + concentric cracks, like struck glass.
     const RAYS = 12, RINGS = 4, reach = Math.hypot(W, H);
     const pts = [];
     for (let r = 1; r <= RINGS; r++) {
@@ -262,7 +251,6 @@ class SpectacleMethods {
       const t = (now - t0) / 1000;
       if (t >= SHATTER_SEC) { cv.remove(); if (this._shatterEl === cv) this._shatterEl = null; return; }
       ctx.clearRect(0, 0, W, H);
-      // The gaps behind the glass start dark and clear as the pieces go.
       ctx.fillStyle = `rgba(4,6,14,${0.55 * Math.max(0, 1 - t / 0.9)})`;
       ctx.fillRect(0, 0, W, H);
       for (const s of shards) {
@@ -318,7 +306,6 @@ class SpectacleMethods {
       const w = this._word;
       w.t += dt;
       const t = w.t;
-      // Pop in with an overshoot, hold, fade. Calm mode: no pop.
       const pop = this._calm() ? 1 : t < 0.12 ? 0.3 + (t / 0.12) * 0.9 : t < 0.22 ? 1.2 - ((t - 0.12) / 0.1) * 0.2 : 1;
       w.sprite.scale.set(2.3 * pop, 1.15 * pop, 1);
       w.sprite.material.opacity = t < WORD_LIFE - 0.3 ? 1 : Math.max(0, (WORD_LIFE - t) / 0.3);

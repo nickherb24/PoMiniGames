@@ -1,26 +1,22 @@
 // hitResolution.js — what happens between a striker touching a body and the round
-// deciding what that touch meant: the cannon contact hooks, the clash, the hit test,
-// the block / perfect-guard branch, the damage roll with every personality
-// multiplier, the landed-hit reactions, dismemberment, and the KO hand-off.
+// deciding what that touch meant: the clash, the hit test, the block / perfect-guard
+// branch, the damage roll with every personality multiplier, the landed-hit
+// reactions, dismemberment, and the KO hand-off.
 //
-// Split out of game.js 2026-09-23. _tryHit alone was ~550 lines — the single largest
-// method in the engine — and it is also the method every new combat rule has to
-// thread through, so it now reads as a short pipeline over named steps
-// (_resolveBlock, _rollHitDamage, _landHit, _resolveCombatEvents, _heavyHitStagger).
-// Mixed into BrawlGame's prototype like the other subsystems (see mixin.js), so
-// `this` is the live game and every `this._foo()` call site is unchanged.
+// _tryHit is a short pipeline over named steps (_resolveBlock, _rollHitDamage,
+// _landHit, _resolveCombatEvents, _heavyHitStagger). Mixed into BrawlGame's
+// prototype like the other subsystems (see mixin.js), so `this` is the live game.
 //
 // ORDER IS LOAD-BEARING. The seeded RNG draws in this file (Obama's dodge, Nixon's
-// dirty swing, the damage jitter, the blood roll, the KO shot, the celebration) run
-// in exactly the order they ran inside the old monolith, which is what keeps a demo
-// replay reproducible across the split. Reordering the steps reorders the draws.
+// dirty swing, the damage jitter, the blood roll, the KO shot, the celebration) must
+// keep their order for a seeded match to reproduce. Reordering the steps reorders
+// the draws.
 
 import * as THREE from 'three';
 import { setExpression } from './fighters.js';
 import { COMBAT_EVENTS, REGIONS, regionEffect } from './combat.js';
 import { PERSONALITIES } from './personalities.js';
-import { testAttackHit, testAttackBlocked, regionForHurtBone } from './hitboxes.js';
-import { applyRecoil } from './physics.js';
+import { testAttackHit, testAttackBlocked, testAttackClash, regionForHurtBone } from './hitboxes.js';
 import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
 
 // ── Dismemberment ─────────────────────────────────────────────────────────
@@ -32,27 +28,20 @@ import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
 // no arms and can only kick.
 const ARM_SEVER_L = 50;
 const ARM_SEVER_R = 78;
-// (Severed limbs are simulated by cannon now — see SeveredArm in
-// ragdollPhysics.js — so the hand-rolled tumble/ground constants that used to
-// live here are gone. The canvas plane and the ragdoll contact material own
-// clearance, bounce and damping.)
 
 // How much harder a CHARGED "power" hit chews the struck limb vs a tap. Region
 // (limb) damage is what reddens the body-diagram section and eventually tears an
 // arm off; a full-charge blow adds this multiple of extra region damage on top
 // of the base so a couple of power shots to one arm sever it before the KO. The
-// bonus scales with charge (0 at a tap, full at max charge) — see the region
-// damage line in _resolveHit. Without it, region damage tracked HP too closely
-// and the match always ended before any single limb reddened enough (the
-// symptom the demo showed: limbs never fell off).
+// bonus scales with charge (0 at a tap, full at max charge). Without it, region
+// damage tracks HP too closely and the match ends before any limb reddens enough.
 const REGION_CHARGE_BONUS = 1.8;
 // A charged power blow that lands elsewhere still rattles the defender's
 // guarding arms — this fraction of the hit bleeds into the arms region so a
 // sustained power beating reddens and eventually tears an arm off even without
 // clean arm hits (which are geometrically rare: a straight strike lands on the
 // torso/head, not the arms hanging at the sides). Scales with charge; a tap
-// does nothing. Without this, arms plateaued after the odd incidental hit and a
-// limb never came off in a full CPU-vs-CPU demo.
+// does nothing.
 const ARM_SPLASH_FRAC = 0.7;
 
 // ── Hit-pause ceiling ────────────────────────────────────────────────────
@@ -75,22 +64,11 @@ const IMPACT_LIGHT_MAX = 9;
 // blocked full-power haymaker pays 0.24 — over a third of the bar, taken
 // straight out of the swing that was meant to end the round. Absorbing a big
 // commitment is therefore the fastest refill in the game, and the attacker has
-// paid their own energy for the privilege of donating it. See the blocked
-// branch of _applyHit.
+// paid their own energy for the privilege of donating it.
 const BLOCK_ENERGY_REWARD = 0.06;
 
-// How long ANY blocked swing freezes the attacker out of their own recovery.
-//
-// 2026-09-13: this used to be spelled inline as a literal 0.5 guarded by
-// `attack.name === 'punch'`, so a blocked KICK cost the attacker nothing at all
-// — they recovered on their normal schedule and were free to swing again before
-// the defender could answer. That made the guard a coin-flip mechanic: reading a
-// punch was a turn, reading a kick was a shrug, and since kicks are also the
-// swing that beats a standing guard (the guard capsules only cover the forearms,
-// see testAttackBlocked) the AI's whole answer to a defensive player was the one
-// attack blocking did not punish. Every blocked swing now pays the same freeze.
-//
-// 0.5 s is roughly one attack's full cycle, so a block is unambiguously the
+// How long ANY blocked swing — kicks included — freezes the attacker out of
+// their own recovery. 0.5 s is roughly one attack's full cycle, so a block is unambiguously the
 // defender's turn: enough for a jab plus its recovery, not enough for a free
 // three-hit string. A PERFECT guard still buys more (PERFECT_GUARD_STUN) plus
 // the energy, the plant and the counter window — the read is still worth more
@@ -98,14 +76,10 @@ const BLOCK_ENERGY_REWARD = 0.06;
 const BLOCK_STUN = 0.5;
 
 // ── Perfect guard ────────────────────────────────────────────────────────
-// 2026-09-12, same brief as the energy rework above ("force the player to
-// learn to use the block action"). The energy economy already made blocking
-// the correct long-run play, but it paid the same whether you read the swing
-// or simply stood there holding guard all round — and a button you can hold is
-// not a skill anyone learns. So the reward is split in two:
+// A held guard is not a skill, so the block reward is split in two:
 //
-//   • an ORDINARY block (guard already up when the strike lands) keeps exactly
-//     what it paid before: absorb the hit, bank BLOCK_ENERGY_REWARD × charge;
+//   • an ORDINARY block (guard already up when the strike lands): absorb the
+//     hit, bank BLOCK_ENERGY_REWARD × charge;
 //   • a PERFECT guard — the guard went up inside PERFECT_GUARD_WINDOW of the
 //     strike connecting, i.e. you reacted to the wind-up rather than camping —
 //     banks several times the energy, freezes the attacker long enough for a
@@ -136,88 +110,30 @@ const PERFECT_GUARD_STUN = 0.65;
 const COUNTER_WINDOW = 1.5;
 const COUNTER_ATK_MUL = 1.5;
 
-// Scratch vector for sweat spray. (The strike-trail sampler's own scratch vector
-// moved to vfx.js with the trail code.)
+// Scratch vectors.
 const _sweatPos = new THREE.Vector3();
-// Scratch vectors for contact-impulse resolution.
 const _leverArm = new THREE.Vector3();
 const _impLocal = new THREE.Vector3();
 
 class HitResolutionMethods {
-  // Hook cannon's `collide` event so a real physics intersection
-  // between a striker sphere and a hurt sphere fires the existing
-  // _tryHit pipeline. Registered once on the world; we resolve which
-  // fighter owns which body via body.userData.
-  _setupPhysicsCollisions() {
-    if (!this._physics) return;
-    this._physics.world.addEventListener('beginContact', (event) => {
-      const a = event.bodyA, b = event.bodyB;
-      // A body removed by an earlier event in this same dispatch loop makes
-      // cannon's getBodyById return undefined for later pairs.
-      if (!a || !b) return;
-      const striker = a.userData?.kind === 'striker' ? a
-                   : b.userData?.kind === 'striker' ? b : null;
-      const hurt = a.userData?.kind === 'hurt' ? a
-                 : b.userData?.kind === 'hurt' ? b : null;
-      // Two strikers meeting mid-air = a parry clash.
-      if (a.userData?.kind === 'striker' && b.userData?.kind === 'striker') {
-        this._handleClash(a, b);
-        return;
-      }
-      if (!striker || !hurt) return;
-      this._handlePhysicsHit(striker, hurt, event);
-    });
-  }
-
-  _handlePhysicsHit(strikerBody, hurtBody, event) {
-    // Find which fighter owns the striker body.
-    const attacker = this.fighters.find((f) =>
-      f.swingPhysics && f.swingPhysics.spheres.includes(strikerBody));
-    const defender = this.fighters.find((f) =>
-      f.fighterPhysics && f.fighterPhysics.hurtSpheres.includes(hurtBody));
-    if (!attacker || !defender) return;
-    if (attacker === defender) return;
-    if (attacker.hasHit) return;
-    if (attacker.state !== 'punch' && attacker.state !== 'kick') return;
-
-    // Recoil on the striker — visible "fist bounced off body" feedback.
-    const normal = event.contact?.ni ?? { x: 0, z: 1 };
-    applyRecoil(strikerBody, normal);
-
-    // Trigger the existing _tryHit pipeline so damage / knockback / sparks
-    // / KO all run with the same logic as before. The cannon contact normal
-    // and striker velocity ride along so the reaction springs whip in the
-    // ACTUAL direction of the blow.
-    const attack = ATTACKS[attacker.state];
-    this._tryHit(attacker, defender, attack, {
-      normal: { x: normal.x, y: normal.y ?? 0, z: normal.z },
-      strikerVel: strikerBody.velocity
-        ? { x: strikerBody.velocity.x, y: strikerBody.velocity.y, z: strikerBody.velocity.z }
-        : null,
-    });
-  }
-
-  // Striker-vs-striker contact: both fighters threw at once and the limbs
-  // met mid-air. Resolved as an elastic clash — both rebound by mass ratio,
-  // neither strike lands, big spark flash and double hitstop.
-  _handleClash(bodyA, bodyB) {
+  // Both fighters threw at once and their striking limbs met mid-air: an
+  // elastic clash — both rebound by mass ratio, neither strike lands, big spark
+  // flash and double hitstop. Polled once per sim tick after both fighters move.
+  _checkClash() {
     if (this._clashCooldown > 0) return;
-    const fa = this.fighters.find((f) => f.swingPhysics && f.swingPhysics.spheres.includes(bodyA));
-    const fb = this.fighters.find((f) => f.swingPhysics && f.swingPhysics.spheres.includes(bodyB));
-    if (!fa || !fb || fa === fb) return;
+    const [fa, fb] = this.fighters;
     const inActive = (f) => f.attack && (f.state === 'punch' || f.state === 'kick')
       && f.stateT <= f.attack.windup + f.attack.active + 0.04;
     if (!inActive(fa) || !inActive(fb)) return;
+    const phase = (f) => f.stateT > f.attack.windup + f.attack.active ? 'recover' : 'active';
+    const mid = testAttackClash(fa.rig, fa.state, phase(fa), fb.rig, fb.state, phase(fb));
+    if (!mid) return;
     this._clashCooldown = 0.35;
 
     // Neither strike lands out of this swing — the clash IS the resolution.
     fa.hasHit = true;
     fb.hasHit = true;
 
-    const mid = new THREE.Vector3(
-      (bodyA.position.x + bodyB.position.x) / 2,
-      (bodyA.position.y + bodyB.position.y) / 2,
-      (bodyA.position.z + bodyB.position.z) / 2);
     for (const [f, o] of [[fa, fb], [fb, fa]]) {
       const away = new THREE.Vector3()
         .subVectors(f.rig.root.position, o.rig.root.position);
@@ -234,9 +150,6 @@ class HitResolutionMethods {
     this.hitstopT = 6 * SIM_DT;
     this.shakeT = 0.16;
     this.shakeAmp = 0.1;
-    // Radial streak on a block removed 2026-08-07 alongside the per-hit pulses
-    // in _hitFeedback — blocks come in bursts too, so this was the same flicker.
-    // Chromatic-aberration colour pulse removed per user request.
     this.audio.block(mid);
     this.excited = Math.max(this.excited, 0.5);
   }
@@ -244,8 +157,7 @@ class HitResolutionMethods {
   // Route a world-space impulse direction into the struck region's reaction
   // springs. The direction is converted to the defender's root-local frame:
   // local +Z = the blow came from the front (whip backward, −rot.x), local
-  // ±X = lateral (roll/turn the region away). Magnitudes stay in the same
-  // band the old hand-tuned constants used; only the DIRECTION is now real.
+  // ±X = lateral (roll/turn the region away).
   _applyImpulseReactions(defender, region, rSide, impulseDir, rPow) {
     const yaw = defender.rig.root.rotation.y;
     // World → defender-local (rotate by −yaw about Y). Defender faces +Z
@@ -273,7 +185,7 @@ class HitResolutionMethods {
     }
   }
 
-  _tryHit(attacker, defender, attack, contact = null) {
+  _tryHit(attacker, defender, attack) {
     // Capsule-vs-capsule polygon hit detection. We test the attacker's
     // striker capsules (punch = right arm + fist, kick = right leg + foot)
     // against the defender's full body hurt set. A hit is registered only
@@ -283,7 +195,7 @@ class HitResolutionMethods {
     // unfair and looks broken.
     if (defender.state === 'ko') return;
     // Online the server already decided this swing (netplay.js): land its verdict instead.
-    if (this.online) return this._tryHitNet(attacker, defender, attack, contact);
+    if (this.online) return this._tryHitNet(attacker, defender, attack);
 
     // Phase detection honors per-fighter swing timing multipliers (Eisenhower
     // "Overlord" stretches windup and compresses active). windup and active
@@ -305,8 +217,6 @@ class HitResolutionMethods {
       // ── LBJ "The Johnson Treatment" — opponent missed in range ─────
       // Whenever the swinging fighter MISSES in range and the OPPONENT is
       // LBJ, arm LBJ's "Treatment" knockback bonus for the next 3.5 s.
-      // The enginner intent-wise reads the defender (potential LBJ) and
-      // checks the in-range predicate; if so, flag the knockback window.
       if (defender?.personality?.id === 'lbj'
           && PERSONALITIES.lbj?.onOpponentMissCharge) {
         const lpos = defender.rig.root.position;
@@ -326,18 +236,9 @@ class HitResolutionMethods {
     const knockDir = new THREE.Vector3(dpos.x - apos.x, 0, dpos.z - apos.z);
     if (knockDir.lengthSq() > 1e-6) knockDir.normalize(); else knockDir.set(1, 0, 0);
 
-    // Real impulse direction: cannon's contact normal (sign-aligned so it
-    // always points INTO the defender), falling back to root-to-root when
-    // the hit came through the capsule tester without a physics contact.
-    const impulseDir = new THREE.Vector3();
-    if (contact && contact.normal) {
-      impulseDir.set(contact.normal.x, contact.normal.y, contact.normal.z);
-      if (impulseDir.lengthSq() < 1e-6) impulseDir.copy(knockDir);
-      else if (impulseDir.dot(knockDir) < 0) impulseDir.negate();
-      impulseDir.normalize();
-    } else {
-      impulseDir.copy(knockDir);
-    }
+    // Direction the reaction springs whip and the spin torque acts along.
+    // Offline it is root-to-root; netplay.js can supply its own.
+    const impulseDir = knockDir.clone();
 
     // ── Mass-scaled knockback & visual lean ──────────────────────────
     const atkMass = attacker.rig.config.mass;
@@ -357,7 +258,7 @@ class HitResolutionMethods {
     // Everything the steps below share about this one strike. `baseDmg` is filled
     // by _rollHitDamage and `torqueY` by _landHit; the KO hand-off reads both.
     const s = {
-      attacker, defender, attack, contact, hit, phase, region, regionMod, effect,
+      attacker, defender, attack, hit, phase, region, regionMod, effect,
       knockDir, impulseDir, chargeMul, atkMass, defMass, powerScale, dpos,
       baseDmg: 0, torqueY: 0,
     };
@@ -375,7 +276,7 @@ class HitResolutionMethods {
   // and the strike is fully resolved; false when it goes on to the damage roll.
   _resolveBlock(s) {
     const { attacker, defender, attack, hit, phase, knockDir, chargeMul, defMass } = s;
-    // #2 — a guard taking a blow is felt as a short high buzz, never the big motor.
+    // A guard taking a blow is felt as a short high buzz, never the big motor.
     this._rumble(defender, 0, 0.35, 45);
     // If the defender is blocking, only the guard capsules count — the hurt
     // capsules still register the "near-miss" but the striker must explicitly
@@ -391,15 +292,13 @@ class HitResolutionMethods {
       attacker._dirtySwing = false;
     }
     if (blocked) {
-      // ── Block reward (2026-09-12) ─────────────────────────────────
+      // ── Block reward ──────────────────────────────────────────────
       // Holding guard already regenerates energy fastest of any state; landing
       // an actual block pays a bonus on top, scaled by how hard the swing was.
       // Absorbing a fully charged haymaker is the single best way to fill the
       // bar in the game, which is the point: it makes reading an attack and
       // eating it on the guard strictly better than trading, and it hands the
       // defender the power for the counter out of the attacker's own commitment.
-      // (This comment used to read "blocking no longer banks energy" — that was
-      // true of the old spend-it-all meter, which the rework replaced.)
       //
       // A PERFECT guard is that same absorb, paid at several times the rate,
       // when the guard went up inside PERFECT_GUARD_WINDOW of the strike
@@ -407,7 +306,6 @@ class HitResolutionMethods {
       // holding block all round must stay survivable but must not be the best
       // play, or the block button is a toggle rather than a skill.
       const perfect = (this.t - defender.guardAt) <= PERFECT_GUARD_WINDOW;
-      if (this.training) this._onTrainingBlock(defender, attacker, perfect, this.t - defender.guardAt);
       const reward = BLOCK_ENERGY_REWARD * chargeMul
         * (perfect ? PERFECT_GUARD_ENERGY_MUL : 1);
       defender.energy = Math.min(1, defender.energy + reward);
@@ -418,24 +316,14 @@ class HitResolutionMethods {
         const blockDamp = 1 / defMass;
         defender.knockback.add(knockDir.clone().multiplyScalar(2.0 * blockDamp * chargeMul));
       }
-      // Who eats the recovery. EVERY blocked swing freezes the attacker — see
-      // the BLOCK_STUN comment for why this used to be punch-only and why that
-      // made the guard worth about half of what it looked like it was worth. A
-      // perfect guard freezes them longer still, so the read stays the better
-      // outcome of the two.
+      // EVERY blocked swing freezes the attacker (see BLOCK_STUN); a perfect
+      // guard freezes them longer still, so the read stays the better outcome.
       attacker.blockStunT = perfect ? PERFECT_GUARD_STUN : BLOCK_STUN;
       attacker.state = 'idle';
       attacker.stateT = 0;
       attacker.attack = null;
       attacker.animator.setCharge(null, 0);
       attacker.animator.play('idle');
-      // Jumping straight to 'idle' skips the swing's normal completion branch,
-      // which is where the striker body is normally torn down — there is no
-      // 'idle' case in _tickFighter to catch it. `hasHit` keeps the orphan from
-      // registering a second hit, so this was only ever a leaked body until the
-      // next swing, but it is one line and this branch now runs on every
-      // blocked attack rather than only on punches.
-      this._destroySwingPhysics(attacker);
       if (perfect) {
         // Arm the counter. Read in the damage roll below, so the answer the
         // freeze just handed the defender also hits harder than a normal swing.
@@ -486,20 +374,10 @@ class HitResolutionMethods {
     // 2) The attacker may be in a retaliate window (Ford after being hit
     //    during his stumble). Multiply baseDmg by retaliateMul.
     // 3) The attacker may have a koStacks ramp (Trump: +5% per KO).
-    // 4) Once-per-round Trump haymaker (1.5×), Trump flag set on
-    //    swing commit in the AI tick already, so we read it here.
-    //
-    // Compute the combined personality damage mul: aggregates ALL president
-    // modifiers into a single scalar that gets folded into baseDmg. Includes:
-    //   - active modes (decider/morningInAmerica/dayOfInfamy/fourTerm)
-    //   - Ford retaliate window + KO-stack ramp (Trump)
-    //   - haymaker tag (Trump)
-    //   - miss-charge (LBJ "The Treatment") — knockback only
-    //   - LBJ pump swing counter
-    //   - JFK Camelot Glint + Profiles in Courage
-    //   - Eisenhower next-swing bonus
-    //   - Truman Buck Stops Here stacks
-    //   - FDR startup boost (subsumed via _applyOnHitPersonalities)
+    // 4) Trump haymaker (1.5×), tagged on swing commit in _enterAttack.
+    // 5) Eisenhower / JFK next-swing bonuses.
+    // LBJ pump, JFK Glint, Truman stacks and FDR come from
+    // _applyOnHitPersonalities below.
     const attPer = attacker.personality;
 
     // Quick dmg mul: reset on the swing commit so we accumulate fresh.
@@ -549,10 +427,6 @@ class HitResolutionMethods {
       attPer.jfkNextSwingAtkMul = 1.0;
     }
 
-    // The "_applyOnHitPersonalities" helper accumulates the remaining new-
-    // president muls (LBJ pump, JFK Glint, Truman stacks, FDR day/speed)
-    // and is called BELOW right before the damage roll. We forward-declare
-    // here for inline pre-computation:
     let personalityDmgMul = attacker._personalityDmgMul;
     baseDmg *= personalityDmgMul;
 
@@ -611,7 +485,7 @@ class HitResolutionMethods {
   // dismemberment, and every piece of feedback the contact point earns.
   _landHit(s) {
     const { attacker, defender, attack, hit, region, knockDir, impulseDir, chargeMul,
-            atkMass, defMass, contact, dpos, baseDmg } = s;
+            atkMass, defMass, dpos, baseDmg } = s;
     const attPer = attacker.personality;
     // The training room never lets a hit kill (training.js): it tops the bar back up first.
     if (this.training) this._trainingCushion(defender, baseDmg);
@@ -622,8 +496,8 @@ class HitResolutionMethods {
     // into the number the player is shown.
     this._registerLandedHit(attacker, defender, baseDmg, hit.point, region);
     if (this.training) this._onTrainingHit(attacker, defender, baseDmg, region, chargeMul, attack);
-    // A hit interrupts a wind-up (state → hitstun below) but no longer drains
-    // the energy bar — per the rule that only winding up or attacking moves it.
+    // A hit interrupts a wind-up (state → hitstun below) but does not drain
+    // the energy bar — only winding up or attacking moves it.
     defender.state = 'hitstun';
     defender.stateT = 0;
     defender.chargeName = null;
@@ -644,15 +518,9 @@ class HitResolutionMethods {
     // request the model's materials never change on hits).
     defender.squashT = 0.14;
 
-    // Impulse-correct reactions: the struck region whips in the ACTUAL
-    // direction of the blow (cannon contact normal), scaled by relative
-    // strike speed and the mass ratio — a glancing jab and a stepped-in
-    // cross now read differently with no per-case tuning.
+    // The struck region whips along the blow's direction, scaled by damage.
     const rSide = hit.capsule.endsWith('L') ? 'L' : hit.capsule.endsWith('R') ? 'R' : null;
-    const strikeSpeed = contact && contact.strikerVel
-      ? Math.min(2, Math.hypot(contact.strikerVel.x, contact.strikerVel.z) / 6)
-      : 1;
-    const rPow = Math.min(2.2, (baseDmg / 8.75) * (0.6 + 0.4 * strikeSpeed));
+    const rPow = Math.min(2.2, baseDmg / 8.75);
     this._applyImpulseReactions(defender, region, rSide, impulseDir, rPow);
 
     // Rotational knockback: torque about the vertical axis from the contact
@@ -722,15 +590,9 @@ class HitResolutionMethods {
     };
     const hitColor = regionHitColors[region] || 0xffa050;
     const flashDur = region === REGIONS.HEAD ? 0.25 : 0.18;
-    // 2026-09-12 flicker pass: this peak used to be `(kick ? 12 : 8) * chargeMul`
-    // with chargeMul running 1..4, so a charged kick lit a 48-intensity point
-    // light next to the fighters. Three of these can be alight at once (the pool
-    // is 3) and each fades linearly over ~0.2 s, so a normal exchange swung the
-    // whole arena's brightness up and down several times a second — the single
-    // biggest contributor to the flicker, because unlike a screen-space effect
-    // it relights the actual geometry. Charge now adds a fraction of the base
-    // rather than multiplying it, capped at IMPACT_LIGHT_MAX, which keeps the
-    // local glow on the contact point without the room breathing.
+    // Charge adds a fraction of the base rather than multiplying it, capped at
+    // IMPACT_LIGHT_MAX: these relight real geometry, so a multiplied peak makes
+    // the whole arena flicker through an exchange.
     this._flashImpactLight(hit.point,
       Math.min(IMPACT_LIGHT_MAX,
         (attack.name === 'kick' ? 6 : 4) * (1 + 0.4 * (chargeMul - 1))),
@@ -772,10 +634,9 @@ class HitResolutionMethods {
                   < (PERSONALITIES.trump.maxStacks || 5)) {
             winner.personality.koStacks += 1;
           }
-          // Queue the rigid-body ragdoll. Built next tick in _buildPendingKO
-          // — this handler can run inside cannon's contact dispatch, where
-          // adding/removing bodies is unsafe. Momentum carries into the
-          // launch so a KO mid-dash tumbles with the motion.
+          // Queue the rigid-body ragdoll. Built next tick in _buildPendingKO,
+          // outside world.step. Momentum carries into the launch so a KO
+          // mid-dash tumbles with the motion.
           downed.pendingKO = {
             knockDir: knockDir.clone(),
             velocity: downed.vel.clone().add(downed.knockback),
@@ -795,10 +656,10 @@ class HitResolutionMethods {
         this.cameraModeT = 0;
         // Shot selection: ~40% of KOs get the overhead face close-up (the
         // dazed expression as the body drops); the rest keep the low side
-        // push-in. Seeded RNG keeps demo replays reproducible.
+        // push-in.
         this.koShot = this.rng.random() < 0.4 ? 'overhead' : 'side';
         this.winner = ev.winnerTeamId ? Number(ev.winnerTeamId) : 0;
-        // ── KO presentation (GFX/SOUND #3, #5, #6, #7, #10) ──────────
+        // ── KO presentation ──────────────────────────────────────────
         // The one moment in the match where every layer fires at once, and
         // the only place the full-strength concussion is allowed.
         const loser = this.fighters.find((f) => f !== (this.winner ? this.fighters[this.winner - 1] : null));
@@ -815,9 +676,8 @@ class HitResolutionMethods {
         // (expressionT stays 0 so nothing resets either one).
         const wf = this.winner ? this.fighters[this.winner - 1] : null;
         if (wf) { setExpression(wf.rig, 'grin'); wf.expressionT = 0; }
-        // Sometimes the victor celebrates — decided here (seeded RNG keeps
-        // demo replays reproducible) but the hopping starts at the 'result'
-        // transition so the slow-mo KO fall keeps its drama.
+        // Sometimes the victor celebrates — decided here, but the hopping
+        // starts at the 'result' transition so the slow-mo KO fall keeps its drama.
         this.pendingCelebration = (wf && this.rng.random() < 0.55) ? wf : null;
         this._setBanner('K.O.!');
         this.audio.ko();
@@ -831,7 +691,7 @@ class HitResolutionMethods {
         this.caPulse = 0;
         this.bloomPulse = 0;
         this.exposurePulse = 0.35;
-        // §GFX-2 — rack onto the fallen fighter. Focus distance is measured to
+        // Rack onto the fallen fighter. Focus distance is measured to
         // the actual body rather than assumed, because the KO camera has two
         // shots (low side push-in and overhead) at very different ranges, and a
         // fixed distance would put the subject out of focus on one of them.
@@ -846,26 +706,21 @@ class HitResolutionMethods {
           new THREE.Vector3(dpos.x, dpos.y + 1.0, dpos.z), 22, 0xfff0d0, 0.4);
         this.excited = 1;
         this._spawnConfetti();
-        // 2026-09-29: the comic-book panel (freeze, halftone, a word), a
-        // shockwave out of the contact point and every camera at ringside.
+        // The comic-book panel (freeze, halftone, a word), a shockwave out of
+        // the contact point and every camera at ringside.
         this._comicKO(hit.point, attack.name);
         this._shockwave(hit.point, 1.1);
         this._pressBurst(10);
-        // GFX/SOUND top-10 (2026-09-23):
-        //  #7 — the body reaches the mat ~0.55 s into the slow-mo fall; game.js
-        //       _updateMatWear spends this on dust and a scrape where it lands.
-        //  #2 — every human's pad gets the long KO rumble, winner or loser.
-        //  #10 — stop recycling the clip recorder now, so the lead-up to the
-        //       finishing blow cannot be thrown away before the result closes it.
+        // The body reaches the mat ~0.55 s into the slow-mo fall (game.js
+        // _updateMatWear: dust and a scrape); every human's pad gets the long
+        // KO rumble; the clip recorder stops recycling so the lead-up to the
+        // finishing blow is kept.
         this._koDust = loser ? { t: 0.55, fighter: loser } : null;
         for (const f of this.fighters) this._rumble(f, 1, 0.8, 650);
         this.clip?.freeze();
 
-        // The KO limelight went with the lights-down cinematic (2026-08-07).
-        // A 6.0-intensity white spot only reads as "dramatic" against a dark
-        // hall; with the house lights now staying up it was just a blown-out
-        // hotspot on the fallen fighter. Left disarmed rather than deleted so
-        // the rig is still there if the cinematic is ever wanted back.
+        // The KO limelight stays disarmed: with the house lights up it is
+        // just a blown-out hotspot.
         this._limelightActive = 0;
       }
     }
@@ -888,7 +743,7 @@ class HitResolutionMethods {
       // Sweat spray whips off the rocked head.
       defender.rig.joints.head.getWorldPosition(_sweatPos);
       this._spawnSweat(_sweatPos);
-      // Stagger ragdoll (#4): the heaviest non-lethal hits throw a brief
+      // Stagger ragdoll: the heaviest non-lethal hits throw a brief
       // whole-body flail — arms fling, elbows whip, torso pitches, the head
       // snaps — driven through the reaction-spring system so it recovers on
       // its own. Reads as a momentary loss of control without a knockdown.
@@ -933,14 +788,14 @@ class HitResolutionMethods {
     const skin = f.rig.materials.skinMat;
     skin.roughness = 0.55 - 0.3 * sweat;
     f.rig.materials.suitMat.roughness = 0.95 - 0.3 * sweat;
-    // Wet-sheen ramp (idea #6): a rising clearcoat lobe + a hotter skin sheen
+    // Wet-sheen ramp: a rising clearcoat lobe + a hotter skin sheen
     // is what actually reads as SWEAT — a lowered roughness alone just makes
     // the skin a flatter matte. The clearcoat gives the glistening second
     // specular highlight of a sweat film; sheen widens the grazing-angle
     // glow. Both ride the same sweat value the roughness drop uses.
     skin.clearcoat = 0.55 * sweat;
     skin.sheen = 0.32 + 0.25 * sweat;
-    // The face has its own materials now (tinted skin + painted detail
+    // The face has its own materials (tinted skin + painted detail
     // plate) — they glisten with the rest of the skin.
     if (f.rig.materials.faceMat) {
       const fm = f.rig.materials.faceMat;
@@ -961,44 +816,21 @@ class HitResolutionMethods {
       return;
     }
     // Hit-pause scales with attack weight and stored charge — a fully charged
-    // release lands with a heavier stop, shake and lens kick.
-    //
-    // 2026-09-12: this used to be `round(base * chargeMul)` with chargeMul
-    // running 1..CHARGE_MAX_MUL (4). A fully charged kick therefore froze the
-    // match for round(5 * 4) = 20 frames = 333 ms, and a charged punch for
-    // 200 ms — _tickFighting returns outright while hitstopT > 0, so that is
-    // the WHOLE fight sim stopped, input included. It read as the game hanging
-    // mid-exchange rather than as impact weight (the comment claiming "roughly
-    // double" had quietly become quadruple). Charge now adds a fraction of the
-    // base instead of multiplying it, hard-capped at HITSTOP_MAX_FRAMES, so the
-    // worst case is 8 frames / 133 ms and a jab still stops for 3.
+    // release lands with a heavier stop, shake and lens kick. Charge adds a
+    // fraction of the base, hard-capped at HITSTOP_MAX_FRAMES (see there).
     const base = attack.name === 'kick' ? 5 : 3;
     const frames = Math.min(
       HITSTOP_MAX_FRAMES,
       Math.round(base * (1 + HITSTOP_CHARGE_BONUS * (chargeMul - 1)))
     );
     this.hitstopT = frames * SIM_DT;
-    // Random jitter is halved — the directional spring impulse (injected at
-    // the _tryHit call site) now carries most of the camera reaction.
+    // Random jitter stays small — the directional spring impulse (in
+    // _landHit) carries most of the camera reaction.
     this.shakeT = 0.14;
     this.shakeAmp = (attack.name === 'kick' ? 0.09 : 0.06) * chargeMul;
     this.fovPunch = (attack.name === 'kick' ? 5.0 : 3.0) * chargeMul;
-    // Post-FX spikes on impact: REMOVED 2026-08-07 (user request).
-    //
-    // A hit used to flare the bloom, blow the exposure open and fire a radial
-    // streak that darkened the frame edges. Each one is a full-frame luminance
-    // change lasting a few hundred ms, and in a normal exchange — several hits a
-    // second, each re-arming the pulse via Math.max before the previous had
-    // decayed — they overlapped into a continuous flicker across the whole
-    // image. The chromatic-aberration pulse went earlier for the same reason,
-    // and bloom/radial had already been halved twice without fixing it, so they
-    // are off rather than dialled down again.
-    //
-    // The hit still lands hard: hitstop, camera shake, the FOV punch, the
-    // directional spring impulse, the impact spark light, audio and haptics are
-    // all untouched above. What is gone is only the part that strobed the
-    // picture. _updateFx still decays these fields, so nothing else needs to
-    // know they are now always zero.
+    // No full-frame post-FX pulses per hit: several hits a second overlap
+    // into a continuous flicker.
   }
 }
 

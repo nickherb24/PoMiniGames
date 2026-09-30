@@ -29,37 +29,14 @@ public sealed record PoBrawlLobbyPlayer(
     bool IsReady,
     PoBrawlFighter Fighter) : ILobbyPlayer;
 
-// ─────────────────────────  Match result  ───────────────────────────
-//
-// POSTed by the winning client (or both, on a draw — each submits its own
-// record with their own outcome). The server applies claim identity,
-// dedupes by MatchId, increments the per-player Elo via PairwiseEloCalculator,
-// and writes a MatchRecordEntity so /api/matches reflects the result.
-
 /// <summary>
-/// Result payload the server stores after a 1v1 PoBrawl fight ends. Either player
-/// may POST one of these; the server folds it into MatchHistory + the Elo table.
+/// A finished 1v1 fight, reported by either corner to POST /api/pobrawl/matches. Only the id:
+/// outcome, opponent and duration are read from the server's own copy of the match.
 /// </summary>
 public sealed class PoBrawlMatchResultDto
 {
     /// <summary>Stable id for the match (GUID the lobby stamped on Start). Dedupes retries.</summary>
     public string MatchId { get; set; } = "";
-    /// <summary>The submitting player's principal id. Server overrides with claim identity.</summary>
-    public string OwnerId { get; set; } = "";
-    public string OwnerDisplayName { get; set; } = "";
-    /// <summary>The opponent's principal id. Server-supplied at match-start so the Elo
-    /// increment can land on the opponent's row without a second round-trip.</summary>
-    public string OpponentId { get; set; } = "";
-    /// <summary>The opponent's display name. Free-text — there's no server-side player roster for humans.</summary>
-    public string OpponentDisplayName { get; set; } = "";
-    /// <summary>Fighter the owner used.</summary>
-    public PoBrawlFighter OwnerFighter { get; set; } = new("", "");
-    /// <summary>Fighter the opponent used.</summary>
-    public PoBrawlFighter OpponentFighter { get; set; } = new("", "");
-    /// <summary>Win / Loss / Draw, from the owner's perspective.</summary>
-    public PoBrawlOutcome Outcome { get; set; }
-    /// <summary>Wall-clock match duration in seconds. Used for the plausibility guard.</summary>
-    public double DurationSeconds { get; set; }
 }
 
 public enum PoBrawlOutcome

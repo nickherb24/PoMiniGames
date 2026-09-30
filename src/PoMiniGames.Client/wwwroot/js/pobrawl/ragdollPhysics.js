@@ -268,7 +268,7 @@ export class CannonRagdoll {
 // A torn-off arm is its own two-bone ragdoll: the upper arm and the forearm
 // are separate rigid boxes linked at the elbow by a loose cone-twist, so the
 // limb flops instead of tumbling as one rigid stick. Nothing drives it —
-// the animator no longer owns these joints (game.js unregisters them from
+// the animator does not own these joints (vfx.js _severArm drops them from
 // rig.joints at sever time), so the arm is purely limp from the moment it
 // comes off until it settles on the canvas.
 //

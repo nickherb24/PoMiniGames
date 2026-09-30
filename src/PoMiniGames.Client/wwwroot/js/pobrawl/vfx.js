@@ -1,23 +1,40 @@
 // vfx.js — the transient visual layer: impact frames and impact lights, strike
 // trails, the GPU particle pool, dismemberment and blood, sweat and confetti.
 //
-// Split out of game.js 2026-08-11 (PoBrawl audit #9). Mixed into BrawlGame's
-// prototype, so every method here runs with `this` bound to the live game exactly
-// as it did when these bodies sat in the class — see mixin.js for why.
+// Mixed into BrawlGame's prototype, so `this` is the live game — see mixin.js.
 
 import * as THREE from 'three';
 import { SeveredArm } from './ragdollPhysics.js';
 import { stepWorld } from './physics.js';
-// SIM_DT went with the flat-white impact silhouette (2026-09-12) — it was only
-// ever used to express that effect's two-frame duration.
 
-// Scratch vector, reused so the trail sampler allocates nothing per frame.
-// Module-local: nothing outside this file reads it.
+// Scratch objects so the trail sampler and particle spawns allocate nothing.
 const _trailPos = new THREE.Vector3();
-// Scratch colour for particle spawns (the old pool allocated one per particle).
 const _pColor = new THREE.Color();
 
 class VfxMethods {
+  // Effects built mid-fight (blood droplets, stains, callout words) make their
+  // materials on the spot and dispose them after. three frees a shader program when
+  // its last material goes, so each fight re-linked them on the first hit: a
+  // 50-400 ms freeze. One hidden keeper per program holds it alive; _warmupRender
+  // compiles the keepers with everything else, and the per-effect materials reuse it.
+  _initShaderKeepers() {
+    const geo = new THREE.PlaneGeometry(0.01, 0.01);
+    const tex = new THREE.CanvasTexture(document.createElement('canvas'));
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this._keeperTex = tex;
+    this._shaderKeepers = new THREE.Group();
+    this._shaderKeepers.visible = false;
+    this._shaderKeepers.add(
+      // _spawnBlood / _bloodSquirt droplets and the _addBloodStain decal (same program).
+      new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x7e120e, transparent: true, opacity: 0.95 })),
+      // spectacle.js _spawnWord.
+      new THREE.Sprite(new THREE.SpriteMaterial({
+        map: tex, transparent: true, depthTest: false, depthWrite: false, toneMapped: false, fog: false,
+      })),
+    );
+    this.scene.add(this._shaderKeepers);
+  }
+
   _initImpactFrames() {
     // Three rings is enough for a flurry — a fourth heavy hit inside 200 ms
     // recycles the oldest, which is invisible at that rate.
@@ -37,9 +54,7 @@ class VfxMethods {
     // Shared geometry — the per-ring material is what differs. Held so dispose
     // can release it once rather than three times through the traverse.
     this._shockGeo = geo;
-    // _flatT (the flat-white silhouette timer) went with the effect itself.
-    // The two below are still driven by the KO and the super cinematic; only
-    // the per-hit arming was removed. See _impactFrame.
+    // Driven by the KO and the super cinematic only, never per hit.
     this._speedPulse = 0; // speedline intensity, decayed in _updateFx
     this._smearT = 0;     // seconds left on the afterimage smear
     this._smearAmt = 0;   // 0..1 target damp for the afterimage pass
@@ -51,24 +66,9 @@ class VfxMethods {
    */
   _impactFrame(point, power = 1) {
     const p = Math.max(0, Math.min(1, power));
-    // ── 2026-09-12: the full-frame half of this effect is GONE ────────
-    // This used to fire three things on a heavy connect: a flat-white
-    // silhouette over both fighters (uFlat, 2 frames), a speedline fan raked
-    // across the frame, and an afterimage smear. All three were whole-image
-    // luminance changes on a per-HIT cadence, and the comment below them
-    // conceded the rule they broke — "anything this loud has to stay rare to
-    // stay readable". Heavy hits are not rare: HEAVY_HIT_DMG is 13 and a
-    // charged swing clears it easily, so in any real exchange these re-armed
-    // (via Math.max, before the previous had decayed) several times a second
-    // and the picture strobed. That is exactly why the bloom / exposure /
-    // radial pulses were deleted in 2026-08-07; these three simply survived
-    // that pass and went on doing the same thing.
-    //
-    // What remains is the shock ring below: it is anchored to the contact
-    // POINT in world space rather than painted over the whole frame, so it
-    // marks the hit without changing the brightness of everything else. The
-    // KO and the super cinematic keep their own flat/speedline/smear beats —
-    // those are one-off, and rare is what made them legible in the first place.
+    // Per-hit feedback must stay local: heavy hits land several times a second,
+    // so any whole-frame luminance change here strobes. The shock ring is
+    // anchored to the contact POINT in world space instead.
     if (!this._shockRings) return;
     const slot = this._shockRings[this._shockCursor++ % this._shockRings.length];
     slot.mesh.position.copy(point);
@@ -76,10 +76,7 @@ class VfxMethods {
     // this it edge-ons into an invisible line at exactly the wrong moment.
     slot.mesh.quaternion.copy(this.camera.quaternion);
     slot.mesh.scale.setScalar(0.25);
-    // Peak opacity dropped 0.9 -> 0.5 in the same flicker pass. The ring is
-    // additive and the pool is 3, so in a flurry three of them overlap on top
-    // of the bloom threshold and the "local" stamp stops being local. At 0.5 it
-    // still reads as a snap of force without blowing out what is behind it.
+    // Additive and pooled ×3: higher peaks overlap past the bloom threshold in a flurry.
     slot.mesh.material.opacity = 0.5;
     slot.mesh.visible = true;
     slot.power = p;
@@ -95,9 +92,6 @@ class VfxMethods {
   }
 
   _updateImpactFrames(dt) {
-    // The flat-white silhouette timer that used to drive the per-fighter uFlat
-    // uniforms was removed with the uniform itself (2026-09-12) — see
-    // _impactFrame. Only the shock rings are left to advance.
     for (const s of this._shockRings || []) {
       if (s.life <= 0) continue;
       s.life -= dt;
@@ -166,10 +160,7 @@ class VfxMethods {
       const joint = f.rig.joints[f.state === 'kick' ? 'footR' : 'fistR'];
       if (!joint) { t.points.length = 0; t.mesh.visible = false; return; }
       joint.getWorldPosition(_trailPos);
-      // Per-point limb speed (idea #9) → drives a velocity motion-blur smear:
-      // the faster the fist/foot travels this frame, the wider and hotter the
-      // ribbon reads, so a committed strike leaves a real blur, not a thin
-      // ribbon. Slow repositioning barely trails at all.
+      // Per-point limb speed widens and brightens the ribbon (see below).
       const prev = t.points[t.points.length - 1];
       let spd = 0;
       if (prev) {
@@ -194,8 +185,7 @@ class VfxMethods {
     for (let i = 0; i < n; i++) {
       const p = t.points[i];
       const a = i / (n - 1);          // 0 tail → 1 head
-      // Velocity smear (idea #9): a fast-moving section of the arc widens and
-      // brightens toward a motion-blur streak; ~9 m/s saturates the boost.
+      // Velocity smear: ~9 m/s saturates the boost.
       const boost = Math.min(1, (p.spd || 0) / 9);
       const w = (0.012 + 0.05 * a) * (1 + boost * 1.7);  // half-width grows to head
       const o = i * 6;
@@ -212,24 +202,16 @@ class VfxMethods {
     t.mesh.visible = true;
   }
 
-  // ── GPU particles (GFX/SOUND #6, rebuilt 2026-09-23) ─────────────────
-  // One Points draw call, and now no per-frame CPU work either. The old pool
-  // integrated every live particle in JS each frame and re-uploaded the whole
-  // position and colour buffers; at 320 slots that capped how much could fly.
-  //
-  // Now a particle is written ONCE, at spawn: start position, velocity, colour,
-  // birth time, life, gravity, drag and size. The vertex shader evaluates the
-  // closed-form trajectory at `uTime` —
+  // ── GPU particles ────────────────────────────────────────────────────
+  // One Points draw call. A particle is written ONCE at spawn; the vertex
+  // shader evaluates the closed-form trajectory at `uTime` —
   //     p(t) = p0 + v * (1 - e^(-k*t)) / k  +  0.5 * g * t^2      (k -> 0: p0 + v*t)
-  // — fades it over its life, and parks it off-screen once dead. The CPU's only
-  // per-frame job is to advance one uniform and upload the slots written since
-  // the last frame (addUpdateRange), so the pool can be six times larger for
-  // less than the old loop cost. Slots are a ring: the oldest recycles first,
-  // which at this size is always long dead.
+  // — fades it over its life, and parks it off-screen once dead. Per frame the
+  // CPU only advances the uniform and uploads slots written since last frame.
+  // Slots are a ring; the oldest recycles first.
   //
-  // `uTime` runs on the RENDER clock (it advances in _updateEffects, like the
-  // old integrator did), so sparks keep flying through hitstop the way they
-  // always have.
+  // `uTime` runs on the RENDER clock (advanced in _updateEffects), so sparks
+  // keep flying through hitstop.
   _initParticles() {
     const N = this._particleMax = 2048;
     this._pCursor = 0;
@@ -316,8 +298,8 @@ class VfxMethods {
   }
 
   /**
-   * Write one particle. `size` is world metres (the old PointsMaterial used 0.11
-   * for everything); `drag` is an exponential velocity damping rate, 0 = none.
+   * Write one particle. `size` is world metres; `drag` is an exponential
+   * velocity damping rate, 0 = none.
    */
   _spawnParticle(x, y, z, vx, vy, vz, color, life, gravity = -8, size = 0.11, drag = 0) {
     if (!this._particlePoints) return;
@@ -387,9 +369,7 @@ class VfxMethods {
         dir.x, dir.y, dir.z,
         color, 0.35 + Math.random() * 0.15, -8, 0.08 + Math.random() * 0.06);
     }
-    // Embers: the pool can afford them now. A few slow, tiny, long-lived motes
-    // that drift down off the contact point after the sparks have gone — they
-    // are what makes the hit feel like it happened in air, not on a screen.
+    // Embers: slow, tiny, long-lived motes drifting down after the sparks.
     const embers = Math.round(count * 0.6);
     for (let i = 0; i < embers; i++) {
       this._spawnParticle(
@@ -431,17 +411,12 @@ class VfxMethods {
   // objects, and hand them to a two-bone rigid-body ragdoll so the limb flops
   // limply to the canvas with a silly blood squirt from stump and limb.
   //
-  // Unregistering the arm's joints from `rig.joints` is the load-bearing part:
-  // the animator, the KO ragdoll, the hitbox capsules and
-  // the hurt-sphere sync all iterate that map and all guard on a missing
-  // joint. While the joints stayed registered, every one of those systems kept
-  // writing the fighter's live pose onto a limb that was supposed to be lying
-  // on the mat — which is why a severed arm went on animating along with its
-  // owner instead of going limp.
+  // Unregistering the arm's joints from `rig.joints` is load-bearing: the
+  // animator, KO ragdoll and hitbox capsules all iterate that map and skip a
+  // missing joint; otherwise they keep posing the severed limb.
   //
-  // Runs inside cannon's beginContact dispatch (via _handlePhysicsHit), so it
-  // must not touch the world — body creation/removal is queued for
-  // _buildPendingSevers, which runs outside world.step.
+  // Must not touch the world — body creation is queued for _buildPendingSevers,
+  // which runs outside world.step.
   _severArm(fighter, side, dir) {
     if (!fighter.armsLost) fighter.armsLost = new Set();
     if (fighter.armsLost.has(side)) return;
@@ -509,40 +484,13 @@ class VfxMethods {
     this.hudDirty = true;
   }
 
-  // Deferred half of _severArm: build the limb's rigid bodies and retire the
-  // arm's hurt spheres. Called right after every stepWorld, so we're always
-  // outside cannon's step when bodies are added or removed.
+  // Deferred half of _severArm: build the limb's rigid bodies. Called right after
+  // every stepWorld, so we're always outside cannon's step when bodies are added.
   _buildPendingSevers() {
     if (!this._pendingSevers || !this._pendingSevers.length) return;
     if (!this._physics) { this._pendingSevers.length = 0; return; }
     const world = this._physics.world;
     for (const p of this._pendingSevers) {
-      // The arm's hurt capsules go with it — otherwise their spheres stay
-      // frozen mid-air (the sync skips them now that the joints are gone) and
-      // keep registering hits on a body part that isn't there any more.
-      const fp = p.fighter.fighterPhysics;
-      if (fp) {
-        const dead = new Set();
-        for (const s of fp.hurtSpheres) {
-          const cap = (s.userData.jointName || '').split(':')[0];
-          if (cap === 'upperArm' + p.side || cap === 'forearm' + p.side) dead.add(s);
-        }
-        for (const c of fp.constraints.slice()) {
-          if (!dead.has(c.bodyA) && !dead.has(c.bodyB)) continue;
-          if (world.constraints.includes(c)) world.removeConstraint(c);
-          fp.constraints.splice(fp.constraints.indexOf(c), 1);
-        }
-        for (const s of dead) {
-          if (world.bodies.includes(s)) world.removeBody(s);
-          fp.hurtSpheres.splice(fp.hurtSpheres.indexOf(s), 1);
-        }
-      }
-      // Losing the right arm mid-swing orphans that swing's striker spheres —
-      // the sync skips them once fistR is gone, so they'd sit frozen in the
-      // air still dealing hits. Retire the swing with the limb.
-      if (p.side === 'R' && p.fighter.swingPhysics && p.fighter.state === 'punch') {
-        this._destroySwingPhysics(p.fighter);
-      }
       p.limb.arm = new SeveredArm(world, this._physics.materials.ragdoll, {
         shoulder: p.limb.shoulder,
         elbow: p.limb.elbow,
@@ -576,13 +524,10 @@ class VfxMethods {
     }
   }
 
-  // Drive each severed arm from its rigid bodies. The limb is limp the whole
-  // way down — cannon owns gravity, the bounce off the canvas, the friction
-  // slide and the flop at the elbow — and once it has come to rest we retire
-  // its bodies and leave the meshes lying where they landed. (The world has
-  // allowSleep = false, so a settled limb would otherwise jitter on solver
-  // noise forever.) Limbs linger until the next match clears them
-  // (_spawnFighters).
+  // Drive each severed arm from its rigid bodies; once at rest, retire the
+  // bodies and leave the meshes where they landed (the world has
+  // allowSleep = false, so a settled limb would jitter forever). Limbs linger
+  // until _spawnFighters clears them.
   _updateSeveredLimbs(dt) {
     if (!this._severedLimbs || !this._severedLimbs.length) return;
     for (const l of this._severedLimbs) {
@@ -641,7 +586,7 @@ class VfxMethods {
         (Math.random() - 0.5) * 3.2, 1.2 + Math.random() * 1.6, (Math.random() - 0.5) * 3.2,
         0xbfd8ff, 0.4 + Math.random() * 0.2, -9);
     }
-    // ...and it lands: the droplets darken the vinyl and dry off (matWear.js, #7).
+    // The droplets darken the vinyl and dry off (matWear.js).
     this.matWear?.sweat(headPos.x, headPos.z, 0.55, count);
   }
 

@@ -1,25 +1,16 @@
 // arena.js — the fight ring, breakable props, low-poly crowd and lighting.
-// Materials are MeshStandardMaterial so they read the key/rim lights and (optionally)
-// the env map that the engine can attach at startup.
 import * as THREE from 'three';
 import { RectAreaLightUniformsLib } from 'three/addons/lights/RectAreaLightUniformsLib.js';
 
 export const RING_HALF = 5.2; // playable clamp radius (ring is 12x12, keep a margin)
 
 /**
- * No-op retained for API compatibility with game.js's teardown, which calls this
- * before its generic scene.traverse() walk.
- *
- * It used to release the planar-reflection floor's WebGLRenderTarget — a resource
- * a geometry/material traverse can never find, hence the dedicated hook. The
- * reflection floor is gone (2026-08-07), so there is nothing left to release, but
- * the export stays rather than being deleted along with its caller: the ordering
- * requirement it documents is the kind that gets silently reintroduced.
+ * Teardown hook game.js calls before its scene.traverse() walk, for render targets
+ * a geometry/material traverse cannot find. Currently nothing to release.
  */
 export function disposeArenaReflector() { /* no reflector to dispose */ }
 
-// Procedural ring-canvas texture: lavender-blue vinyl with scuff noise, a
-// worn (lighter) center from footwork, and a faint center-ring logo.
+// Procedural ring-canvas texture: vinyl with a worn center, faint logo, scuff noise.
 let _canvasTex = null;
 function ringCanvasTexture() {
   if (_canvasTex) return _canvasTex;
@@ -28,19 +19,16 @@ function ringCanvasTexture() {
   const g = c.getContext('2d');
   g.fillStyle = '#3d4680';
   g.fillRect(0, 0, 256, 256);
-  // Worn center: fighters shuffle here, the vinyl lightens.
   const wear = g.createRadialGradient(128, 128, 10, 128, 128, 120);
   wear.addColorStop(0, 'rgba(200,205,235,0.16)');
   wear.addColorStop(1, 'rgba(200,205,235,0)');
   g.fillStyle = wear;
   g.fillRect(0, 0, 256, 256);
-  // Faint center-ring logo.
   g.strokeStyle = 'rgba(255,255,255,0.10)';
   g.lineWidth = 4;
   g.beginPath();
   g.arc(128, 128, 42, 0, Math.PI * 2);
   g.stroke();
-  // Scuff noise.
   for (let i = 0; i < 2200; i++) {
     const v = Math.random();
     g.fillStyle = v > 0.5
@@ -57,27 +45,15 @@ function ringCanvasTexture() {
  * @param {THREE.Scene} scene
  * @param {{rectAreaLights?: number}} [quality]
  *        rectAreaLights: how many of the two studio rig panels to build (0-2).
- *        Build-time only, and deliberately so — scene light counts are shader
- *        #defines, so adding or removing one recompiles every lit material in the
- *        scene at once. That stall is exactly what you must not introduce on a
- *        machine already dropping frames, so the count is fixed by the tier the
- *        game booted at rather than tracking live tier changes. See quality.js.
+ *        Build-time only: light counts are shader #defines, so changing one live
+ *        recompiles every lit material. See quality.js.
  */
 export function buildArena(scene, quality = {}) {
-  // 2026-07-26 browser audit #4: brighten the empty-hall background from
-  // #0d0f1a to #1a2040. When the camera flies outside the ring edge and
-  // points at empty space, the original near-black background read as "the
-  // screen went black mid-match" to the user — even though the canvas was
-  // rendering correctly. The new colour is still in the moody-arena
-  // family but distinguishable from black on every monitor.
+  // Not near-black: an off-ring camera must not read as "the screen went black".
   scene.background = new THREE.Color(0x1a2040);
-  // Exponential haze instead of the old far-plane linear fog: the fighters
-  // (4-6 m from camera) stay clean while the crowd rows and hall edges melt
-  // progressively into the dark — "smoky arena air". Slightly thinned (0.022
-  // → 0.018) so the ring reads brighter after the env-map fill was removed.
+  // Exponential haze: fighters (4-6 m out) stay clean, crowd and hall melt away.
   scene.fog = new THREE.FogExp2(0x1a2040, 0.018);
 
-  // Outer floor.
   const floor = new THREE.Mesh(
     new THREE.PlaneGeometry(120, 120),
     new THREE.MeshStandardMaterial({ color: 0x14172a, roughness: 0.95, metalness: 0.0 })
@@ -87,19 +63,12 @@ export function buildArena(scene, quality = {}) {
   floor.receiveShadow = true;
   scene.add(floor);
 
-  // The §GFX-2 planar-reflection floor was removed per user request (2026-08-07),
-  // completing the reflection removal that had already taken out the IBL / env-map
-  // pass (see game.js). The floor is now plainly opaque: it no longer goes
-  // transparent to let a mirrored render show through from underneath, so nothing
-  // else in the arena needs to compensate.
-
   const grid = new THREE.GridHelper(80, 40, 0x232848, 0x1a1e38);
   grid.position.y = -0.49;
   grid.material.opacity = 0.55;
   grid.material.transparent = true;
   scene.add(grid);
 
-  // Ring platform.
   const ringMat = new THREE.MeshStandardMaterial({
     color: 0x2a3160, roughness: 0.85, metalness: 0.05,
   });
@@ -108,9 +77,7 @@ export function buildArena(scene, quality = {}) {
   ring.receiveShadow = true;
   scene.add(ring);
 
-  // Ring canvas: procedurally textured matte vinyl — worn center, faint
-  // ring logo, scuff noise. High roughness keeps the mat flat so it doesn't
-  // mirror the house lights during the fight.
+  // High roughness so the mat doesn't mirror the house lights.
   const canvasMat = new THREE.MeshStandardMaterial({
     color: 0xffffff, roughness: 0.95, metalness: 0.0,
     map: ringCanvasTexture(),
@@ -141,7 +108,6 @@ export function buildArena(scene, quality = {}) {
       scene.add(post);
       posts.push(post);
 
-      // Foam topper for the post so it doesn't look like a bare pipe.
       const cap = new THREE.Mesh(
         new THREE.CylinderGeometry(0.12, 0.12, 0.1, 12),
         new THREE.MeshStandardMaterial({ color: 0xd0d4f0, roughness: 0.85 })
@@ -151,10 +117,7 @@ export function buildArena(scene, quality = {}) {
       cap.userData.attachedTo = post;
       scene.add(cap);
 
-      // Turnbuckle pads (idea #9): three cushioned pads wrapping each corner
-      // post at the rope heights, in the corner's identity colour (red −X /
-      // blue +X). Visual anchor for the corner HAZARD — the engine deals bonus
-      // damage + a hard rebound when a fighter is knocked into a corner.
+      // Turnbuckle pads in corner colour (red −X / blue +X): marks the corner hazard.
       const padColor = x < 0 ? 0xd23b30 : 0x3b6bff;
       const padMat = new THREE.MeshStandardMaterial({
         color: padColor, roughness: 0.55, metalness: 0.05,
@@ -171,9 +134,7 @@ export function buildArena(scene, quality = {}) {
     }
   }
 
-  // Ropes: bendable bezier tubes with a spring-loaded midpoint. A fighter
-  // pressed against the ring boundary bows the ropes on that side outward;
-  // a hard rebound twangs them (see updateRopes / twangRope).
+  // Ropes: spring-loaded bezier tubes (see updateRopes / twangRope).
   const ropeMat = new THREE.MeshStandardMaterial({
     color: 0xd0d4f0, roughness: 0.85, metalness: 0.0,
   });
@@ -194,50 +155,26 @@ export function buildArena(scene, quality = {}) {
     }
   }
 
-  // Lights — slightly warmer key, bluer rim, plus a low ambient bounce so
-  // PBR materials in shadow still read some colour. All handles are returned
-  // so the engine can dim the house for the KO "lights down" cinematic.
-  //
-  // Intensity baseline bumped vs the previous pass: with the env-map fill
-  // gone (no scene.environment, no IBL speculars) the rig has to carry the
-  // scene's full ambient level on its own. The runtime values in
-  // game.js::_updateLighting match these baselines — arena.js values are the
-  // first-frame peak before the per-frame multiplier takes over.
-  // Hemisphere is a flat, directionless fill: every unit of it raises the floor
-  // of the image without ever creating a highlight. At 0.42 it was lifting the
-  // whole frame into a mid-grey haze with no true blacks. Slightly raised
-  // from the old 0.14 to 0.22 to compensate for the lost IBL fill, still well
-  // below the old "haze" threshold so the contrast lever keeps working.
+  // All light handles are returned so the engine can dim the house for the KO.
+  // These are first-frame values; game.js _updateLighting's baselines must match.
+  // Hemisphere fill kept low: much higher washes the frame into grey haze.
   const hemi = new THREE.HemisphereLight(0x9aa4ff, 0x1a1030, 0.22);
   scene.add(hemi);
   const key = new THREE.DirectionalLight(0xfff1d0, 3.4);
   key.position.set(6, 12, 4);
   key.castShadow = true;
-  // 2048 over the tight ±6.5 frustum. This was 4096 (idea #7, chasing a crisper
-  // contact edge at the feet), which is a ~64 MB depth target re-rendering the
-  // whole scene every frame — the second-largest fixed cost in the renderer after
-  // the post chain. Over this frustum 2048 still lands ~157 texels per world metre
-  // under the fighters, which is finer than PCFSoft's fixed kernel can resolve at
-  // this camera distance, so the 4× memory and fill bought no visible edge.
-  //
-  // This is the BUILD-TIME default and equals the 'high' tier. quality.js retunes
-  // it per tier immediately after buildArena — see BrawlGame._applyQuality.
+  // Build-time default = 'high' tier; _applyQuality retunes per tier. Over the ±6.5
+  // frustum 2048 already exceeds what PCFSoft's kernel resolves, so 4096 buys nothing.
   key.shadow.mapSize.set(2048, 2048);
-  // Frustum hugs the ring (fight area is ±5.2, posts at ±5.8) — tighter
-  // bounds roughly double the effective shadow resolution vs the old ±10.
+  // Frustum hugs the ring (fight area ±5.2, posts at ±5.8).
   key.shadow.camera.left = -6.5;
   key.shadow.camera.right = 6.5;
   key.shadow.camera.top = 6.5;
   key.shadow.camera.bottom = -6.5;
   key.shadow.bias = -0.0005;
-  // normalBias trades shadow acne for peter-panning: too high and contact
-  // shadows detach from the feet, which is most of why the fighters read as
-  // floating. 0.02 over this frustum is more than the geometry needs.
+  // Too high and contact shadows detach from the feet (fighters look like they float).
   key.shadow.normalBias = 0.008;
-  // NOTE: shadow.radius is ignored by PCFSoftShadowMap (it only applies to
-  // PCFShadowMap/VSM), so the old radius=4 here was dead config — the softness
-  // you see is PCFSoft's fixed kernel scaled by texel size. Penumbra is
-  // therefore controlled by mapSize vs frustum extent, not by this value.
+  // PCFSoftShadowMap ignores shadow.radius; penumbra comes from mapSize vs frustum.
   scene.add(key);
 
   const rim = new THREE.DirectionalLight(0x6070ff, 1.0);
@@ -248,22 +185,13 @@ export function buildArena(scene, quality = {}) {
   fill.position.set(0, 6, 0);
   scene.add(fill);
 
-  // Overhead ring spotlight — the classic bright-pool-over-the-ring look.
-  // Casts its own shadow so the KO close-up gets a tight overhead shadow
-  // under the fallen body; during the KO cinematic the engine brightens it
-  // and retargets it onto the loser. Bumped from 1.1 → 1.6 to compensate for
-  // the lost IBL speculars and to give the swinging rig a stronger read.
+  // Overhead spot; the KO cinematic brightens it and retargets it onto the loser.
   const spot = new THREE.SpotLight(0xfff4e0, 1.6, 30, Math.PI / 4.5, 0.45, 1.2);
   spot.position.set(0, 11, 0);
   spot.target.position.set(0, 0, 0);
   spot.castShadow = true;
-  // 1024, down from 2048. This map only ever reads during the KO push-in, but it
-  // was rendering a second full shadow pass on every frame of every fight to stay
-  // ready for it. 1024 holds up at that framing (the body fills the frame, so the
-  // shadow is a few metres of world space, not the whole ring) at a quarter the cost.
-  //
-  // BUILD-TIME default = the 'high' tier; below high the spot stops casting
-  // altogether. See quality.js.
+  // Only matters for the KO push-in, where 1024 holds up. Build-time default =
+  // 'high' tier; below high the spot stops casting. See quality.js.
   spot.shadow.mapSize.set(1024, 1024);
   spot.shadow.bias = -0.0005;
   spot.shadow.normalBias = 0.02;
@@ -271,20 +199,9 @@ export function buildArena(scene, quality = {}) {
   scene.add(spot);
   scene.add(spot.target);
 
-  // Studio rig panels: two RectAreaLights angled over the ring give the
-  // broad soft speculars on the vinyl and gradient falloff on the fighters
-  // that point/spot lights can't fake. No shadows (RectArea can't cast) —
-  // the key/spot still own shadowing. Intensity bumped (2.6/1.8 → 3.4/2.6)
-  // so the rig still reads "studio panels" without the IBL contribution.
-  //
-  // They are also the most expensive light type in the scene: each one adds a
-  // linearly-transformed-cosine texture lookup to EVERY lit fragment of every
-  // MeshPhysicalMaterial, and the fighters — the most-drawn objects in the frame —
-  // are all physical. Hence the tier budget: two at 'high', one at 'medium', none
-  // at 'low'. `rectA` is dropped before `rectB` so the surviving panel is the
-  // cooler back-right one, which is what separates the fighters from the dark
-  // backdrop; losing the warm front-left panel only flattens the key side, where
-  // the directional key is already doing the work.
+  // Studio RectAreaLights: broad soft speculars, no shadows. The costliest light
+  // type (an LTC lookup on every physical fragment), so tiered 2/1/0. rectA goes
+  // first: the cool back-right rectB is what separates fighters from the backdrop.
   const rectCount = quality.rectAreaLights ?? 2;
   let rectA = null;
   let rectB = null;
@@ -303,8 +220,6 @@ export function buildArena(scene, quality = {}) {
   }
 
   // Corner identity lighting: red vs blue side, matching the HUD bars.
-  // Fighters pick up a warm/cool gradient as they cross the ring. Bumped
-  // (1.3 → 1.7) so the side tint still reads with the extra-direct rig.
   const cornerA = new THREE.PointLight(0xff3b30, 1.7, 8, 1.8);
   cornerA.position.set(-6.2, 1.4, 0);
   scene.add(cornerA);
@@ -312,8 +227,7 @@ export function buildArena(scene, quality = {}) {
   cornerB.position.set(6.2, 1.4, 0);
   scene.add(cornerB);
 
-  // Emissive apron trim: unlit strips along the canvas edges glow against
-  // the dark arena (red side / blue side / dim violet ends).
+  // Unlit apron trim strips (red side / blue side / violet ends).
   const trimRed = new THREE.MeshBasicMaterial({ color: 0xff5a4a });
   const trimBlue = new THREE.MeshBasicMaterial({ color: 0x4a7dff });
   const trimEnd = new THREE.MeshBasicMaterial({ color: 0x584a9c });
@@ -330,56 +244,33 @@ export function buildArena(scene, quality = {}) {
     scene.add(strip);
   }
 
-  // Fake volumetrics: additive gradient cone under the spotlight + drifting
-  // dust motes inside the beam.
   const atmo = buildAtmosphere(scene);
-
-  // Backdrop architecture (idea #3): overhead truss rig, hanging banners and a
-  // jumbotron fill the black void behind the crowd so the ring reads as an
-  // event in a hall, not a lit island in a vacuum. All dim/emissive and far
-  // from the camera — cheap, and the fog swallows their edges.
   const backdrop = buildBackdrop(scene);
-
-  // Crowd: 4 rows of low-poly silhouettes around the ring.
-  // They're tagged userData.crowd so we can bounce them on KOs (wave animation).
   const crowd = buildCrowd(scene);
   scene.add(crowd);
 
-  // Camera-flash sprites sparkle in the crowd (a storm of them on KO).
   const flashes = buildCrowdFlashes(scene);
-  // Phone screens held up in the stands for the last ten seconds and the result.
+  // Held up for the last ten seconds and the result.
   const phones = buildPhoneLights(scene, crowd.userData.spots);
 
   return {
     posts, crowd, atmo, flashes, phones, ropes, backdrop,
-    // The ring-mat material, so the engine can inject its knockdown ripple
-    // (GFX/SOUND #10). Returned rather than looked up by traversal: `top` is
-    // one of three boxes stacked at the ring and picking the right one from
-    // outside would mean matching on dimensions.
+    // For the engine's knockdown ripple; not findable by traversal without matching dimensions.
     canvasMat,
     lights: { hemi, key, rim, fill, spot, cornerA, cornerB, rectA, rectB },
   };
 }
 
-// ── Backdrop architecture (idea #3) ─────────────────────────────────────────
-// Everything here lives well outside the crowd ring and mostly above the
-// fighters, so it never crowds the fight but gives the frame depth and a
-// "big event" read: a square lighting truss overhead with rig-light blocks,
-// four hanging banners, and a pair of emissive jumbotron screens. The
-// jumbotron material is returned so the engine could pulse it, but it's fine
-// left static.
+// ── Backdrop: overhead truss with rig lenses, hanging banners, jumbotrons ───
 function buildBackdrop(scene) {
   const group = new THREE.Group();
   group.userData.kind = 'backdrop';
 
-  // Dark structural metal for trusses/frames — reads as silhouette against
-  // the fog, catching only a little of the rig lights.
   const steel = new THREE.MeshStandardMaterial({
     color: 0x12141f, roughness: 0.7, metalness: 0.6,
   });
 
-  // Overhead lighting truss: a square ring of box beams up in the rafters,
-  // with cross-braces. Sits above the spotlight so its shadow never matters.
+  // Sits above the spotlight so its shadow never matters.
   const trussY = 9.4;
   const trussHalf = 7.5;
   const beamLong = new THREE.BoxGeometry(trussHalf * 2, 0.22, 0.22);
@@ -394,7 +285,6 @@ function buildBackdrop(scene) {
     beam.position.set(x, trussY, 0);
     group.add(beam);
   }
-  // A few cross-braces so the truss reads as a lattice, not a bare square.
   const braceGeo = new THREE.BoxGeometry(trussHalf * 2, 0.1, 0.1);
   for (const z of [-3.5, 0, 3.5]) {
     const brace = new THREE.Mesh(braceGeo, steel);
@@ -402,8 +292,7 @@ function buildBackdrop(scene) {
     group.add(brace);
   }
 
-  // Rig-light blocks clamped to the truss — small emissive lenses pointing
-  // down at the ring. Purely decorative (the real lights are in buildArena).
+  // Decorative rig lenses (the real lights are in buildArena).
   const lensGeo = new THREE.BoxGeometry(0.3, 0.18, 0.3);
   const lensColors = [0xfff2d0, 0xbcd0ff, 0xfff2d0, 0xffd0d0];
   let li = 0;
@@ -414,9 +303,7 @@ function buildBackdrop(scene) {
         emissiveIntensity: 1.4, roughness: 0.4,
       }));
       lens.position.set(x, trussY - 0.28, z);
-      // Tagged so the engine can find them without matching on geometry or
-      // material shape (GFX/SOUND #10 — audio-reactive rig LEDs). Each lens
-      // owns its own material, which is what lets them pulse independently.
+      // Tag for the engine's audio-reactive pulse; per-lens material so each pulses independently.
       lens.userData.rigLens = true;
       lens.userData.baseEmissive = 1.4;
       group.add(lens);
@@ -424,11 +311,7 @@ function buildBackdrop(scene) {
     }
   }
 
-  // Hanging banners: tall vertical panels dropping from the truss on all four
-  // sides, alternating red/blue to echo the corner identity. Unlit-ish
-  // standard material so they sit back in the gloom.
-  // Segmented so the cloth can ripple (idea #10): each banner gets its own
-  // clone of this geometry and a stored rest pose that updateBanners waves.
+  // Segmented so updateBanners can ripple each banner's own geometry clone.
   const bannerGeo = new THREE.PlaneGeometry(2.2, 4.0, 4, 12);
   const bannerRed = new THREE.MeshStandardMaterial({
     color: 0x6a1f22, roughness: 0.9, side: THREE.DoubleSide,
@@ -457,9 +340,7 @@ function buildBackdrop(scene) {
     group.add(banner);
   }
 
-  // Jumbotron: two big emissive screens on the far ends (behind the crowd on
-  // the ±Z sides, high up). A dim procedural "static" texture reads as a live
-  // feed from a distance without needing to render one.
+  // Jumbotrons on the ±Z ends, high up.
   const screenTex = jumbotronTexture();
   const screenMat = new THREE.MeshBasicMaterial({ map: screenTex, fog: true });
   const frameGeo = new THREE.BoxGeometry(6.4, 3.4, 0.3);
@@ -468,8 +349,7 @@ function buildBackdrop(scene) {
     const frame = new THREE.Mesh(frameGeo, steel);
     frame.position.set(0, 6.4, sign * 14);
     group.add(frame);
-    // Screen sits 0.16 toward the ring from its frame so the frame never
-    // occludes it, and faces inward (the −z screen faces +z, and vice-versa).
+    // 0.16 toward the ring so the frame never occludes it; faces inward.
     const screen = new THREE.Mesh(screenGeo, screenMat);
     screen.position.set(0, 6.4, sign * 13.84);
     screen.rotation.y = sign > 0 ? Math.PI : 0;
@@ -481,8 +361,7 @@ function buildBackdrop(scene) {
   return group;
 }
 
-// Procedural jumbotron screen: a dim bluish glow with scanline banding and a
-// blocky "crowd cam" smear — legible as a big screen only from across the hall.
+// Procedural jumbotron feed: blocky colour smears plus scanlines.
 let _jumboTex = null;
 function jumbotronTexture() {
   if (_jumboTex) return _jumboTex;
@@ -491,13 +370,11 @@ function jumbotronTexture() {
   const g = c.getContext('2d');
   g.fillStyle = '#0a1428';
   g.fillRect(0, 0, 128, 64);
-  // Blocky colour smears — a fuzzy, unreadable live feed.
   for (let i = 0; i < 60; i++) {
     const hue = 200 + Math.random() * 60;
     g.fillStyle = `hsla(${hue}, 40%, ${30 + Math.random() * 30}%, 0.5)`;
     g.fillRect(Math.random() * 128, Math.random() * 64, 4 + Math.random() * 10, 3 + Math.random() * 8);
   }
-  // Scanlines.
   g.fillStyle = 'rgba(0,0,0,0.35)';
   for (let y = 0; y < 64; y += 2) g.fillRect(0, y, 128, 1);
   _jumboTex = new THREE.CanvasTexture(c);
@@ -505,10 +382,7 @@ function jumbotronTexture() {
   return _jumboTex;
 }
 
-// ── Rope physics ──────────────────────────────────────────────────────────
-// Each rope is a quadratic-bezier tube whose midpoint control rides a
-// damped spring. Pressing bows it outward (and slightly down); releasing
-// twangs it back with an underdamped snap.
+// ── Rope physics: quadratic-bezier tube, midpoint control on a damped spring ──
 const _ropeA = new THREE.Vector3();
 const _ropeM = new THREE.Vector3();
 const _ropeB = new THREE.Vector3();
@@ -534,8 +408,7 @@ export function updateRopes(arena, dt, fighters, t = 0) {
   if (!arena.ropes) return;
   const pressStart = RING_HALF - 0.55; // bodies this far out start pressing
   for (const rope of arena.ropes) {
-    // Idle sway (idea #10): a gentle continuous breathing so the ropes never
-    // sit dead-still. Tiny amplitude — the press response below dominates.
+    // Tiny idle sway; the press response below dominates.
     let target = 0.012 * Math.sin(t * 1.25 + rope.y * 3.1 + (rope.axis === 'x' ? 0 : 1.6));
     if (fighters) {
       for (const f of fighters) {
@@ -575,11 +448,8 @@ export function twangRope(arena, clampAxis, sign, power = 1) {
   }
 }
 
-// ── Banner cloth ripple (idea #10) ─────────────────────────────────────────
-// A cheap "soft-body" pass over the hanging banners: each vertex is pushed
-// out-of-plane by a traveling wave whose amplitude grows toward the free
-// bottom edge (the top hem is pinned to the truss). No solver, no constraints
-// — a driven wave reads as a banner breathing in the hall's air currents.
+// ── Banner ripple: a driven traveling wave, amplitude growing toward the free
+// bottom edge (top hem pinned). No solver.
 export function updateBanners(backdrop, t) {
   if (!backdrop) return;
   backdrop.traverse((o) => {
@@ -594,21 +464,14 @@ export function updateBanners(backdrop, t) {
       const amp = 0.22 * droop * droop;
       const z = amp * Math.sin(t * 1.7 + bx * 1.6 + by * 0.7 + ph);
       pos.array[i * 3 + 2] = base[i * 3 + 2] + z;
-      // A little lateral drift near the bottom so it doesn't wave like a flag
-      // on a rigid pole.
       pos.array[i * 3] = bx + amp * 0.4 * Math.sin(t * 1.1 + by * 0.9 + ph);
     }
     pos.needsUpdate = true;
-    // Normals are intentionally NOT recomputed each frame — these are dim
-    // backdrop banners, and per-frame computeVertexNormals was a needless
-    // main-thread cost (it contributed to countdown-time frame hitches). The
-    // silhouette ripple reads fine with static normals.
+    // Normals deliberately not recomputed: a per-frame main-thread cost for dim banners.
   });
 }
 
-// ── Atmosphere: light shaft + dust ────────────────────────────────────────
-// The cone is a cheap "volumetric" — an open cylinder with a vertical
-// alpha-gradient, additive-blended so it reads as light in smoky air.
+// ── Atmosphere: fake volumetric light shaft (additive open cone, alpha gradient) ──
 function buildAtmosphere(scene) {
   const c = document.createElement('canvas');
   c.width = 1; c.height = 64;
@@ -631,20 +494,14 @@ function buildAtmosphere(scene) {
   cone.position.y = 5.6;
   cone.renderOrder = 2;
   scene.add(cone);
-
-  // (Floating dust motes removed per user request — the shaft alone carries
-  // the volumetric read.)
   return { cone };
 }
 
-// Pool of billboard sprites reused as crowd camera flashes. Kept in their
-// own group (same coordinate space — the crowd group has no transform) so
-// animateCrowd's child loop never touches them.
+// Pooled crowd camera-flash sprites (also borrowed by pressBurst).
 function buildCrowdFlashes(scene) {
   const group = new THREE.Group();
   const pool = [];
-  // Soft round glow. Without a map a sprite is a hard square — invisible at the
-  // crowd's 0.14 m, obvious at the press row's 0.4 m (pressBurst).
+  // Round glow map: a mapless sprite is a hard square, obvious at press-row size.
   const c = document.createElement('canvas');
   c.width = c.height = 32;
   const g = c.getContext('2d');
@@ -669,9 +526,8 @@ function buildCrowdFlashes(scene) {
   return pool;
 }
 
-// Phone lights (2026-09-29): small cool-white sprites a little above random
-// heads. One pool, faded as a group by the `phones` level updateAtmosphere gets;
-// each sways on its own phase so the stands look held, not pinned.
+// Phone lights above random heads: one shared material faded by updateAtmosphere's
+// `phones` level; each sways on its own phase.
 function buildPhoneLights(scene, spots) {
   const group = new THREE.Group();
   const pool = [];
@@ -693,9 +549,8 @@ function buildPhoneLights(scene, spots) {
   return { group, pool, mat };
 }
 
-// Press row (2026-09-29): a burst of bigger, HDR-bright flashes at ringside —
-// heavy hits, supers and the KO. Borrows the crowd-flash pool; `delay` staggers
-// the pops so a burst reads as several photographers, not one strobe.
+// Ringside press burst: bigger HDR flashes from the crowd-flash pool; `delay`
+// staggers them so it reads as several photographers.
 const PRESS_R = 6.6;
 export function pressBurst(arena, n) {
   const flashes = arena?.flashes;
@@ -715,9 +570,7 @@ export function pressBurst(arena, n) {
   }
 }
 
-// Per-frame atmosphere update: dust drifts down the beam and wraps; crowd
-// flashes fire occasionally at rest and in a storm while `excited` > 0; phone
-// lights fade with `phones` (0..1).
+// Per-frame: crowd flashes (a storm while `excited` > 0); phone lights fade with `phones` (0..1).
 export function updateAtmosphere(arena, dt, t, excited, phones = 0) {
   const { flashes, crowd } = arena;
   if (flashes && crowd) {
@@ -764,12 +617,8 @@ export function updateAtmosphere(arena, dt, t, excited, phones = 0) {
   }
 }
 
-// GPU-instanced crowd: all torsos in one InstancedMesh, all heads in another
-// (2 draw calls total, was ~290 as individual meshes). The idle sway and the
-// excited bounce moved into the vertex shader — a per-instance phase
-// attribute plus shared uTime/uExcited uniforms displace each spectator.
-// Instances only rotate about Y, so an object-space +Y offset in
-// begin_vertex IS a world-space bounce.
+// Instanced crowd (torsos + heads = 2 draw calls); sway/bounce in the vertex shader
+// via per-instance aPhase. Instances only rotate about Y, so object +Y is world +Y.
 function crowdBounceMaterial(uniforms) {
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.9 });
   mat.onBeforeCompile = (shader) => {
@@ -866,9 +715,7 @@ function buildCrowd(scene) {
   return group;
 }
 
-// Animate the crowd: the sway/bounce runs in the vertex shader now — this
-// just feeds the clock and excitement uniforms. Called from the engine's
-// _updateCrowd at render rate.
+// Feeds the crowd shader's clock and excitement uniforms.
 export function animateCrowd(crowd, dt, t, excited) {
   if (!crowd || !crowd.userData.uniforms) return;
   crowd.userData.uniforms.uTime.value = t;
@@ -885,7 +732,6 @@ export function damagePost(post, dmg, scene) {
   const debris = [];
   if (post.userData.hp <= 0 && post.userData.hp > -1000) {
     post.userData.hp = -1000; // sentinel to avoid re-spawning
-    // Spawn 3-5 wood chunks that fly outward and fall.
     const chunks = 4 + Math.floor(Math.random() * 2);
     for (let i = 0; i < chunks; i++) {
       const chunk = new THREE.Mesh(_debrisGeo, _debrisMat.clone());
@@ -905,9 +751,7 @@ export function damagePost(post, dmg, scene) {
       scene.add(chunk);
       debris.push(chunk);
     }
-    // Hide the post so it doesn't visually remain.
     post.visible = false;
-    // Remove attached cap.
     post.parent && post.parent.traverse?.((o) => {
       if (o.userData && o.userData.attachedTo === post) o.visible = false;
     });

@@ -1,13 +1,13 @@
 // game.js — PoBrawl match orchestrator.
 // Owns: scene, camera, fixed-timestep sim, per-fighter state machine, momentum +
-// per-region damage + hit-pause + screen shake + cinematic camera + replay buffer,
+// per-region damage + hit-pause + screen shake + cinematic camera,
 // audio bus, and the Blazor interop callbacks.
 import * as THREE from 'three';
 import { buildArena, animateCrowd, updateAtmosphere, updateRopes, updateBanners, twangRope, damagePost, disposeArenaReflector, RING_HALF } from './arena.js';
 import { buildProps, resetProps, updateProps, disposeProps } from './props.js';
 import { buildFighter, updateJiggles, setExpression, CHARACTERS, CHARACTER_IDS } from './fighters.js';
 import { Animator } from './animation.js';
-import { KeyboardController } from './input.js';
+import { KeyboardController, buildTouchControls } from './input.js';
 import { AiController } from './ai.js';
 import { RandomGenerator } from './rng.js';
 import { CombatPlay, REGIONS, regionEffect } from './combat.js';
@@ -16,20 +16,14 @@ import * as PostFx from '../postFx.js';
 import * as VisualRuntime from '../visualRuntime.js';
 import * as Quality from './quality.js';
 import { AudioBus } from './audio.js';
-import { ReplayBuffer } from './replay.js';
 import { CannonRagdoll } from './ragdollPhysics.js';
 import {
-  createPhysicsWorld, stepWorld, buildArenaColliders,
-  buildFighterPhysics, syncHurtSpheres, syncRigRoot,
-  buildSwingPhysics, syncStrikerSpheres, destroySwingPhysics,
-  G_HURT, G_STRIKER,
+  createPhysicsWorld, stepWorld, buildArenaColliders, createRootBody, syncRigRoot,
 } from './physics.js';
-// ── Subsystem mixins (2026-08-11 audit #9) ──────────────────────────────────
-// BrawlGame was one 5,400-line class. These modules hold its personality/super
-// system, its transient VFX layer, its KO-sequence + camera code and (since
-// 2026-09-23) the whole hit-resolution pipeline, mixed into the prototype below so
-// `this` and every call site are unchanged. mixin.js explains why prototypes
-// rather than free functions or Object.assign.
+// ── Subsystem mixins ────────────────────────────────────────────────────────
+// Personality/supers, VFX, KO sequence + camera and hit resolution are mixed
+// into BrawlGame's prototype below, so `this` is the live game in each.
+// mixin.js explains why prototypes rather than free functions or Object.assign.
 import { mixin } from './mixin.js';
 import { PersonalityEffects } from './personalityEffects.js';
 import { Vfx } from './vfx.js';
@@ -38,8 +32,6 @@ import { HitResolution } from './hitResolution.js';
 import { Training } from './training.js';
 import { SIM_DT, MAX_HP, ATTACKS, HEAVY_HIT_DMG } from './constants.js';
 import { SceneSetup, ENV_INTENSITY } from './sceneSetup.js';
-// GFX/SOUND top-10 pass (2026-09-23): each a self-contained module the engine
-// drives, rather than more methods on an already very large class.
 import { GamepadBridge } from './gamepad.js';
 import { MatWear } from './matWear.js';
 import { NewsDesk } from './news.js';
@@ -51,9 +43,8 @@ import { Spectacle, REWIND_SEC } from './spectacle.js';
 const MAX_FRAME_DT = 0.05;
 
 // The app-wide reduced-motion flag (user toggle OR OS preference), stamped by
-// appPrefs.js on <html data-motion="reduce">. This is the ONLY switch left
-// after the per-game comfort panel was removed (2026-09-23): gore is always on
-// and the calm presentation follows the platform setting alone.
+// appPrefs.js on <html data-motion="reduce">. The only comfort switch: gore is
+// always on and the calm presentation follows this alone.
 function motionReduced() {
   try {
     return document.documentElement.getAttribute('data-motion') === 'reduce';
@@ -62,9 +53,7 @@ function motionReduced() {
   }
 }
 
-// One round, sixty seconds. The UI and end condition now read as a countdown
-// from 60 down to 0, but the raw engine clock still tracks elapsed fight time
-// so KO / timeout decisions and replay capture remain stable.
+// One round, sixty seconds. The UI counts down; the engine clock counts up.
 const TIME_LIMIT = 60;
 
 // Lateral orbit speed for the circle keys, in the same units as the 2.4 / 1.9
@@ -75,13 +64,9 @@ const CIRCLE_SPEED = 2.0;
 
 // How close the two health bars have to be at TIME! for the decision to be a
 // draw rather than a win, in HP points out of MAX_HP (100) — so this reads as
-// "within a tenth of a bar".
-//
-// It is a band, not an exact tie. An exact-equal-HP requirement is what the old
-// rule effectively had, and it made draws unreachable: two fighters who traded
-// for a minute land a couple of points apart, and awarding that the full win
-// misrepresents a fight nobody won. Ten points is roughly one clean hit, which
-// is the smallest margin a player can actually see on the bars.
+// "within a tenth of a bar". A band, not an exact tie: exact ties are
+// unreachable, and ten points (about one clean hit) is the smallest margin a
+// player can actually see on the bars.
 const DRAW_HP_BAND = 10;
 
 // ── Spawn X by HUD side ────────────────────────────────────────────────────
@@ -89,32 +74,21 @@ const DRAW_HP_BAND = 10;
 // is drawn on by the Blazor HUD:
 //   • index 1 → HUD `.pb-hp-side` (no right class) → renders on the LEFT
 //   • index 2 → HUD `.pb-hp-side.pb-hp-right`     → renders on the RIGHT
-// The world-space spawn X mirrors that screen side: negative X projects to
-// the left of the camera (which sits at +Z looking toward −Z), positive X
-// projects to the right. Single source of truth — change here, not in
-// `_spawnFighters`, so the spawn and the HUD can never desync.
+// Negative X projects to the left of the camera (which sits at +Z looking
+// toward −Z). Change here, not in `_spawnFighters`, so spawn and HUD agree.
 const SPAWN_X_BY_SIDE = { left: -1.6, right: 1.6 };
 
 // ── Overhead house light swing ────────────────────────────────────────────
-// The ring spotlight (arena.js `lights.spot`) sweeps a wide elongated
-// ellipse over the ring (mostly along Z, with a smaller X amplitude and a
-// pronounced vertical bob), aimed down at the midpoint between the fighters.
-// The pool of light, the cast shadows and the volumetric shaft therefore all
-// sweep visibly back and forth across the canvas — the rig lamp is no longer
-// nailed above the centre, it swings like a hanging studio fixture. See the
-// "Room light swing" block in _updateLighting.
-const HOUSE_LIGHT_RADIUS = 4.4;              // wide Z swing (was 2.6)
+// The ring spotlight sweeps an ellipse (mostly along Z, with a vertical bob)
+// aimed at the fighters' midpoint, so the light pool, shadows and shaft swing
+// like a hanging studio fixture. See "Room light swing" in _updateLighting.
+const HOUSE_LIGHT_RADIUS = 4.4;              // Z swing
 const HOUSE_LIGHT_RADIUS_X = 1.6;            // narrower X swing for an ellipse, not a circle
 const HOUSE_LIGHT_BOB = 1.8;                 // vertical bobbing amplitude
 const HOUSE_LIGHT_HEIGHT = 11;
-const HOUSE_LIGHT_SPEED = (Math.PI * 2) / 12; // rad/s — one lap per ~12 s (was 26)
+const HOUSE_LIGHT_SPEED = (Math.PI * 2) / 12; // rad/s — one lap per ~12 s
 
 const MIN_SEPARATION = 0.95;
-
-// The frame-data table (ATTACKS) and HEAVY_HIT_DMG are in constants.js, because
-// hitResolution.js reads them too. The block / perfect-guard / counter economy,
-// dismemberment thresholds and hit-pause ceiling moved to hitResolution.js with the
-// only code that reads them (2026-09-23).
 
 const HITSTUN = 0.35;
 
@@ -122,8 +96,7 @@ const HITSTUN = 0.35;
 // Press-and-hold punch/kick winds the attack up; release throws it. Charge
 // scales damage/knockback from a quick tap (1x) to a full hold (CHARGE_MAX_MUL)
 // over CHARGE_TIME seconds. Held attacks are intentionally a huge upgrade over
-// quick taps, so the timing reward is clear and the choice to commit to a full
-// charge feels meaningful.
+// quick taps, so committing to a full charge is worth the risk.
 const CHARGE_TIME = 1.0;
 const CHARGE_MAX_MUL = 4.0;
 
@@ -131,16 +104,8 @@ const CHARGE_MAX_MUL = 4.0;
 // ── Energy meter ─────────────────────────────────────────────────────────
 // One 0..1 pool per fighter — the blue bar under the HP bar in the Blazor HUD.
 // It is BOTH how hard this fighter's strikes land and whether they are allowed
-// to throw one at all.
-//
-// 2026-09-12 rework (user request: "make blocking more rewarded and pure
-// offensive a bad strategy"). The old pool was filled by the wind-up itself and
-// emptied in full on release, which made offence free: an attack at an empty
-// bar was still a legal attack at the 1x multiplier, so mashing punch threw
-// unlimited weak strikes forever and there was no reason to ever stop swinging.
-// "Holding the attack button refills the bar" is also flatly incompatible with
-// "throwing lots of punches drains the bar", so the wind-up no longer creates
-// energy — it SPENDS it:
+// to throw one at all. Design goal: blocking is rewarded and pure offence is a
+// losing strategy.
 //
 //   • winding up drains the pool into the strike (chargeAmt), so the coil is
 //     paid for out of the bar and the bar visibly empties as you load up;
@@ -151,14 +116,8 @@ const CHARGE_MAX_MUL = 4.0;
 //   • blocking refills it fast, idling refills it slowly, and swinging refills
 //     it not at all.
 //
-// The net effect is that a pure-offence rush runs itself out of the ability to
-// fight inside a few seconds and then stands there defenceless, while guarding
-// is how a fighter buys the power for the next exchange.
-// Both fighters come out of the corner fresh. The old 1/3 bank made sense when
-// the wind-up REFILLED the bar (you were expected to charge it up yourself);
-// now that attacking is what drains it, opening at 1/3 would gas a fighter out
-// after two jabs before the round had really started. A full bar is worth
-// roughly four spammed punches, or one fully committed haymaker.
+// Fighters open with a full bar — roughly four spammed punches, or one fully
+// committed haymaker. Less would gas a fighter out after two jabs.
 const ENERGY_DEFAULT = 1.0;
 
 // Flat toll charged on every swing release, on top of whatever the wind-up
@@ -177,8 +136,8 @@ const ENERGY_ATTACK_FLOOR = 0.22;
 const ENERGY_RECOVER_TO = 0.40;
 
 // Regen, as a fraction of a full bar per second, by state. Blocking is ~3.4x
-// idle: guarding is the deliberate, rewarded way back into the fight, which is
-// the whole point of the rework. Swinging (the punch/kick states) regenerates
+// idle: guarding is the deliberate, rewarded way back into the fight. Swinging
+// (the punch/kick states) regenerates
 // nothing — you do not catch your breath mid-combination. The KO state is
 // exempt entirely; a bar still moving behind the K.O. banner reads as a bug.
 const ENERGY_REGEN_PER_SEC = 0.16;
@@ -202,21 +161,24 @@ const COMBO_MIN_SHOWN = 2;
 // cost of unbounded absolutely-positioned text is real. Oldest is evicted.
 const MAX_DAMAGE_NUMBERS = 14;
 
-// VS splash hold (#8). resetMatch always used 1300 ms; the first match of an
-// engine now opens on the same splash, so the figure lives in one place.
+// VS splash hold, shared by the first match and resetMatch.
 const SPLASH_HOLD_MS = 1300;
+// Demo reshuffle: the name cards spin like slot reels for this long, then land.
+const SLOT_REEL_MS = 2000;
+// How long the landed names stay up before the countdown.
+const SLOT_LAND_HOLD_MS = 800;
 
 // Half-width of the ring canvas (arena.js builds it as an 11.6 m box). The mat
-// wear map (#7) spans exactly this, so its texels land where the vinyl is.
+// wear map spans exactly this, so its texels land where the vinyl is.
 const MAT_HALF = 5.8;
 
-// Danger state (#4): below this share of max HP a fighter is "in the red"; the
+// Danger state: below this share of max HP a fighter is "in the red"; the
 // effect is full strength DANGER_RAMP below it.
 const DANGER_HP = 0.25;
 const DANGER_RAMP = 0.2;
 
 // The view-transition pseudo-elements live on the document root, which a
-// Blazor-scoped stylesheet cannot reach, so the timing for the #8 name flight is
+// Blazor-scoped stylesheet cannot reach, so the timing for the name flight is
 // injected once, globally. Namespaced to pb-name-* and harmless when unused.
 function ensureViewTransitionStyle() {
   if (document.getElementById('pb-vt-style')) return;
@@ -237,16 +199,13 @@ function ensureViewTransitionStyle() {
 }
 
 
-// Scratch vector for the blob-shadow tracker.
+// Scratch vectors.
 const _blobPos = new THREE.Vector3();
-// Scratch vectors for contact-impulse resolution.
 const _dmgProj = new THREE.Vector3();
-// Scratch vectors for the lighting updater.
 const _spotTarget = new THREE.Vector3();
 const _blDir = new THREE.Vector3();
 const _beamDir = new THREE.Vector3();
 const _upY = new THREE.Vector3(0, 1, 0);
-// Scratch vectors for posture (look-at / momentum) updates.
 const _animVel = new THREE.Vector3();
 const _lookA = new THREE.Vector3();
 const _lookB = new THREE.Vector3();
@@ -287,19 +246,8 @@ export class BrawlGame {
     this.atmoT = 0;
     // ── Simulation clock ────────────────────────────────────────────────
     // Monotonic seconds accumulated in _tick, the fixed-step sim tick. This is
-    // the "now" that every timed personality effect is written against:
-    // `per.modeExpiresAt = this.t + cfg.durationSecs`, `this.t < per.iframesUntil`,
-    // `_inputBlindUntil`, `lbjMissKBUntil`, Ford's stumble/retaliate windows,
-    // JFK's dash, FDR's startup boost, and the super meter's prompt window.
-    //
-    // It was never declared and never assigned. Roughly forty sites read it, so
-    // every one of them was evaluating against `undefined`: the comparisons
-    // (`this.t < X`) were uniformly false and the arithmetic (`this.t + X`)
-    // produced NaN, which then made its own comparisons false as well. The net
-    // effect was that no timed personality effect in the game had ever applied —
-    // including every signature super, which is why the feature looked inert
-    // even after the meter and the input path were connected.
-    //
+    // the "now" that every timed personality effect is written against
+    // (`this.t + cfg.durationSecs`, `this.t < per.iframesUntil`, …).
     // Deliberately NOT reset between rounds: it only has to be monotonic, and
     // per-round state is rebuilt by makePersonalityState on respawn anyway.
     // Advancing on the sim tick rather than alongside atmoT keeps effect
@@ -309,39 +257,32 @@ export class BrawlGame {
     // The PA's ring introduction for the next splash (PoBrawlPage fetches it; PoBrawl.next
     // hands in the next rung's). One-shot: _introHold speaks it and clears it.
     this._introLine = (options && options.introLine) || null;
-    // Cinematic state: KO zoom + replay buffer.
-    this.cameraMode = 'normal'; // 'normal' | 'ko' | 'replay'
+    // Cinematic state: KO zoom.
+    this.cameraMode = 'normal'; // 'normal' | 'ko' | 'super'
     this.cameraModeT = 0;
     this.koShot = 'side'; // per-KO camera variant: 'side' | 'overhead'
-    this.replayT = 0;
     this.excited = 0; // crowd excitement
     this.audio = new AudioBus();
-    this.replay = new ReplayBuffer();
-    // Seeded RNG: pass options.seed to reproduce a match. Without one, every page load
-    // used to fall back to the same 1337, so the "random" news headlines, KO shots and
-    // demo pairings replayed identically on every visit (2026-09-29).
+    // Seeded RNG: pass options.seed to reproduce a match; otherwise a random seed
+    // so headlines, KO shots and demo pairings differ per visit.
     this.rng = new RandomGenerator((options && options.seed) || (1 + Math.floor(Math.random() * 0x7ffffffe)));
-    // The training room (training.js), 1-player only. The comfort switches went
-    // with their panel — gore is always on and calm follows motionReduced() above.
+    // The training room (training.js), 1-player only.
     this.training = options && options.training && options.mode === '1p'
-      ? this._makeTraining(options.training)
+      ? this._makeTraining()
       : null;
-    // GFX quality is pinned to the maximum tier (MSAA×4 + GTAO + bloom + CA).
-    // The auto-stepdown and the on-screen "FX" tier badge were removed per user
-    // request — the game always renders at full quality regardless of framerate.
   }
 
   start() {
     const w = this.container.clientWidth || 800;
     const h = this.container.clientHeight || 540;
+    // Cached host size (kept by _onResize). Per-frame code reads these, never
+    // clientWidth: that read forces a synchronous layout of the whole page.
+    this._hostW = w;
+    this._hostH = h;
 
-    // ── Audio-reactive HUD (GFX/SOUND #8) ────────────────────────────────
-    // visualRuntime.js has published --audio-bass/mid/treble/peak since it was
-    // written, but `_audioReactive` defaults to FALSE and nothing in the app
-    // had ever called this — the analyser pump was dead code and every
-    // stylesheet reading those variables was reading an unset value. Switched
-    // on here (and off again in dispose) so the cost is paid only by the page
-    // that consumes it, which is the contract that module documents.
+    // ── Audio-reactive HUD ──────────────────────────────────────────────
+    // Publishes --audio-bass/mid/treble/peak (visualRuntime.js). Off by default
+    // there; switched on here and off in dispose so only this page pays for it.
     try { VisualRuntime.enableAudioReactive(true); } catch { /* never block the game on chrome */ }
 
     // antialias:false is deliberate. Every frame is rendered into the
@@ -351,15 +292,13 @@ export class BrawlGame {
     // against any geometry. The `samples` on composerRT is the real AA.
     this.renderer = new THREE.WebGLRenderer({ antialias: false });
     // Tier-aware DPR through the SHARED pixel budget (quality.js → PoCanvasDpr.resolve).
-    // This used to be PoCanvasDpr.ceiling(), which applies no total-pixel cap at all —
-    // see the note on Quality.pixelRatio for what that cost on a large window.
     this.renderer.setPixelRatio(Quality.pixelRatio(w, h));
     this.renderer.setSize(w, h);
     this.renderer.shadowMap.enabled = true;
     // PCFSoft: percentage-closer soft edges — the fighters' shadows get a
     // real penumbra instead of the stepped PCF look.
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    // KNOWN WARNING, not ours (2026-09-29): on Windows/ANGLE the first program compile logs
+    // KNOWN WARNING, not ours: on Windows/ANGLE the first program compile logs
     //   THREE.WebGLProgram: Program Info Log: warning X4000: use of potentially
     //   uninitialized variable (dyn_index_vec4_float4_int)
     // The `dyn_index_*` temporaries are emitted by ANGLE's D3D backend when it lowers a
@@ -379,43 +318,26 @@ export class BrawlGame {
     // just makes a flat image a brighter flat image. Measured: at 1.9 the frame
     // went 99.8% midtones with 0% shadows, visibly worse than 1.15. The real
     // lever is the hemisphere cut + hotter key in arena.js; exposure only takes
-    // the small step needed to keep overall level after that cut.
-    //
-    // Was bumped 1.3 → 1.5 when the IBL fill was removed, because the rig then
-    // had to carry the full ambient level alone. #1 puts a (much dimmer,
-    // arena-coloured) environment back, so the compensation comes back off —
-    // leaving exposure at 1.5 on top of env fill would re-flatten exactly the
-    // contrast the hemisphere cut was protecting. Tied to ENV_INTENSITY so the
-    // two can never drift: zero the env and the exposure returns on its own.
+    // the small step needed to keep overall level after that cut. Tied to
+    // ENV_INTENSITY: without the env fill the rig carries the ambient level alone
+    // and needs 1.5; with it, 1.5 would re-flatten the contrast.
     this.exposureBase = ENV_INTENSITY > 0 ? 1.36 : 1.5;
     this.renderer.toneMappingExposure = this.exposureBase;
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    // ── IBL (GFX/SOUND #1) ──────────────────────────────────────────────
-    // Re-added 2026-08-09 by request, but NOT the way it was before.
-    //
-    // History matters here: IBL was removed once already because
-    // RoomEnvironment's bright white boxes laid softbox speculars over
-    // everything and washed the hall out. Handing a PBR renderer a generic
-    // studio and hoping is what failed — not image-based lighting itself.
-    //
-    // What goes in now is an environment built FROM this arena's own palette
-    // (see _buildEnvironment): a dark hall, one warm pool overhead where the
-    // house light actually hangs, cool bounce off the canvas below, and the
-    // red/blue corner accents in the right places. The wardrobe's sheen and
-    // clearcoat lobes finally have something to reflect, and what they reflect
-    // is the room they are standing in.
-    //
-    // Held well under 1 so it fills rather than lights. Set ENV_INTENSITY to 0
-    // to get the pre-2026-08-09 look back — nothing else needs changing.
+    // ── IBL ─────────────────────────────────────────────────────────────
+    // An environment built FROM this arena's own palette (see
+    // _buildEnvironment), not a generic studio: RoomEnvironment's white
+    // softboxes washed the hall out. Held well under 1 so it fills rather than
+    // lights; ENV_INTENSITY 0 disables it with nothing else to change.
     this._buildEnvironment();
     // Light COUNT is fixed at boot from the tier — it is a shader #define, so it
     // cannot track live tier changes without recompiling every material. Shadow map
     // sizes and the post chain are retuned live in _applyQuality below.
     this.arena = buildArena(this.scene, { rectAreaLights: Quality.settings().rectAreaLights });
-    // #10 — before _applyTextureAnisotropy, so the jumbotron canvas texture it
+    // Before _applyTextureAnisotropy, so the jumbotron canvas texture it
     // installs gets filtered along with everything else.
     this._initReactiveArena();
 
@@ -427,12 +349,12 @@ export class BrawlGame {
     this._buildComposer(w, h);
 
     // GPU particle pool: one THREE.Points draw call for every spark, sweat
-    // droplet and confetti fleck (the old system built a SphereGeometry mesh
-    // per spark). Additive blending means "fade" is just color → black, so
-    // no per-particle alpha attribute is needed.
+    // droplet and confetti fleck. Additive blending means "fade" is just
+    // color → black, so no per-particle alpha attribute is needed.
     this._initParticles();
 
-    // Pooled shock rings + the flat-silhouette / speedline / smear timers (#3).
+    // Pooled shock rings + the flat-silhouette / speedline / smear timers.
+    this._initShaderKeepers();
     this._initImpactFrames();
     // Shockwave, comic KO, pyro, light kick, rewind, shatter (spectacle.js).
     this._initSpectacle();
@@ -512,21 +434,23 @@ export class BrawlGame {
     // tap-vs-hold block key — works unchanged. Demo mode is CPU vs CPU,
     // so no controls there.
     const spectating = this.options.mode === 'online' && !this.options.localSide;
-    if (this.options.mode !== 'demo' && !spectating) this._buildTouchControls();
+    if (this.options.mode !== 'demo' && !spectating) {
+      this.touchEl = buildTouchControls(this.container, this.options.mode === 'online');
+    }
 
-    // #2 — controllers drive the same key codes as the keyboard (gamepad.js).
+    // Controllers drive the same key codes as the keyboard (gamepad.js).
     // 1P: the first pad is player 1. 2P: first pad P1, second P2. Demo: none.
     if (this.options.mode !== 'demo') {
       this.gamepads = new GamepadBridge(this.options.mode === '2p' ? [1, 2] : [1]);
     }
 
-    // #9 — the Breaking News result package (news.js).
+    // The Breaking News result package (news.js).
     this.news = new NewsDesk(this.container, {
       onSaveClip: () => this.saveClip(),
       demo: this.options.mode === 'demo',
     });
 
-    // #10 — rolling KO clip (clip.js). Not in demo (nobody to hand it to), not
+    // Rolling KO clip (clip.js). Not in demo (nobody to hand it to), not
     // in the training room (no KO), not on the low tier (encoding costs frames).
     if ((this.options.mode === '1p' || this.options.mode === '2p' || this.options.mode === 'online') && !this.training
         && Quality.tier() !== 'low') {
@@ -538,10 +462,9 @@ export class BrawlGame {
     // browser doesn't pay the cost of mounting a new DOM node every match.
     this.splash = document.createElement('div');
     this.splash.className = 'pb-splash';
-    // #8 (2026-09-23): a fight-card layout — two foil-edged name cards slam in
-    // from either side and meet at a spinning seal. The name spans keep their
-    // classes (and so their _showSplash wiring); they are also what the View
-    // Transition in _hideSplash flies up into the HUD.
+    // Fight-card layout: two name cards slam in and meet at a spinning seal.
+    // The name spans are what the View Transition in _hideSplash flies up
+    // into the HUD.
     this.splash.innerHTML = `
       <div class="pb-splash__inner">
         <div class="pb-splash__round"></div>
@@ -557,6 +480,8 @@ export class BrawlGame {
     this._onResize = () => {
       const cw = this.container.clientWidth, ch = this.container.clientHeight;
       if (!cw || !ch) return;
+      this._hostW = cw;
+      this._hostH = ch;
       this.camera.aspect = cw / ch;
       this.camera.updateProjectionMatrix();
       // The pixel budget is a function of the CSS size, so a resize can change the
@@ -579,23 +504,22 @@ export class BrawlGame {
     this._resizeObs = new ResizeObserver(this._onResize);
     this._resizeObs.observe(this.container);
 
-    // Track the measured tier for the rest of the match. visualRuntime's monitor
-    // is already running (PoBrawl itself starts it via enableAudioReactive above,
-    // and the module self-starts on import), so this is a live signal, not a
-    // one-shot read of a value that never moves.
+    // Track the measured tier for the rest of the match (visualRuntime's
+    // monitor self-starts on import, so this is a live signal).
+    // Mid-match only the pixel ratio follows the tier; the rest recompiles shaders,
+    // so it waits for the next warm-up (resetMatch).
     this._offTierChange = Quality.onTierChange(() => {
       if (this.disposed) return;
-      this._applyQuality();
+      this._applyQuality(true);
     });
     // Seed from the boot tier. Shadow sizes and post-pass enables built above use
     // the same settings object, so this is normally a no-op — it matters when the
     // tier has ALREADY dropped during Blazor boot, before the engine started.
     this._applyQuality();
 
-    // Build the physics world before spawning fighters — per-fighter bodies
-    // (kinematic rig-root + dynamic hurt spheres) are created in _spawnFighters.
+    // Build the physics world before spawning fighters — each fighter's
+    // kinematic rig root is created in _spawnFighters.
     this._physics = createPhysicsWorld();
-    this._setupPhysicsCollisions();
     // Static post/rope colliders — only the KO ragdoll interacts with them.
     buildArenaColliders(this._physics.world, this._physics.materials);
     // Destructible corner crates + debris (props.js). The hooks let the module
@@ -606,22 +530,16 @@ export class BrawlGame {
     this._initTraining();
     if (this.options.mode === 'online') this._initNet();
     // Textures are built by arena.js/fighters.js as module-level cached
-    // singletons with no renderer handle, so none of them could set anisotropy
-    // themselves — every map was sampling at 1x. Apply it once here, after the
-    // first arena+fighter build has created them; later rounds reuse the same
-    // cached texture objects and stay filtered.
+    // singletons with no renderer handle, so they cannot set anisotropy
+    // themselves. Apply it once here, after the first arena+fighter build;
+    // later rounds reuse the same cached textures and stay filtered.
     this._applyTextureAnisotropy();
-    // #8 — the first match opens on the VS splash too (it used to be reserved for
-    // resetMatch, so the very first fight — the one a new player sees — started
-    // cold on "3"). Training skips it: the room is for getting straight to work.
-    // The warm-up goes FIRST on the splash path, as it does in resetMatch: it
-    // blocks the main thread for the whole shader compile, and a splash timer
-    // armed before it would spend its hold behind that stall and close unseen.
+    // The first match opens on the VS splash too; training skips it. Either way the
+    // count waits for the shader warm-up.
+    const ready = this._warmupRender();
     if (this.training) {
-      this._startCountdown();
-      this._warmupRender();
+      ready.then(() => { if (!this.disposed) this._startCountdown(); });
     } else {
-      this._warmupRender();
       this._beginWithSplash(this.fighters[0].charId, this.fighters[1].charId,
         this.options.mode === '2p' ? 'ONE ROUND · 60 SECONDS'
           : this.options.mode === 'demo' ? 'EXHIBITION'
@@ -632,12 +550,11 @@ export class BrawlGame {
     // Kick the audio context the first time the user interacts with the page —
     // .razor lifecycle alone doesn't always satisfy autoplay policy.
     // An instance field so dispose() can drop it: a kiosk demo nobody touches
-    // never fires it, and each rotation used to leave a disposed game behind that
-    // resumed a closed AudioContext on the first real keypress.
+    // never fires it, and a leftover listener would resume a closed AudioContext.
     this._resumeAudio = () => {
       this.audio.resume();
       this.audio.startMusic();
-      // #6 — the hall bed can only start once the context is unsuspended;
+      // The hall bed can only start once the context is unsuspended;
       // starting looping sources on a suspended context leaves them silently
       // stalled and they never recover on resume.
       this.audio.startCrowd();
@@ -666,12 +583,11 @@ export class BrawlGame {
       const rawDt = (now - this.lastFrame) / 1000;
       // Floored at 0: a rAF timestamp can predate `lastFrame` when _warmupRender stamped it from
       // performance.now() after a long shader compile (or a background tab delivers a stale frame
-      // time). A negative dt drove the accumulator seconds below zero and froze the sim until it
-      // climbed back — measured at 11 s on a software-GL client, with the online fight running on.
+      // time). A negative dt drives the accumulator below zero and freezes the sim until it climbs back.
       let dt = Math.max(0, Math.min(rawDt, MAX_FRAME_DT));
       this.lastFrame = now;
 
-      // #2 — sample the pads before the sim so a press lands on this frame's tick.
+      // Sample the pads before the sim so a press lands on this frame's tick.
       if (this.gamepads) this.gamepads.poll();
       this.accumulator += dt * this.timeScale;
       while (this.accumulator >= SIM_DT) {
@@ -689,7 +605,6 @@ export class BrawlGame {
       updateBanners(this.arena.backdrop, this.atmoT);
       if (this.props) updateProps(this.props, dt, this.fighters, this._propHooks);
       this._updateBlobShadows();
-      this._updateTrainingOverlay();
       this._updateMatWear(dt);
       if (this.fighters) {
         for (const f of this.fighters) {
@@ -705,8 +620,11 @@ export class BrawlGame {
           }
         }
       }
+      // While programs link in the background a render would block on them, so the
+      // canvas keeps its last frame until the warm-up settles.
+      if (this._compiling) return;
       this.composer.render();
-      // #10 — same task as the render, or the WebGL canvas is already cleared.
+      // Same task as the render, or the WebGL canvas is already cleared.
       if (this.clip) this.clip.mirror(now);
       // The result shatter snapshots the frame, so it has the same constraint.
       if (this._shatterPending) this._shatterNow();
@@ -715,10 +633,8 @@ export class BrawlGame {
   }
 
 
-  // ══ Reactive arena (GFX/SOUND #10) ═══════════════════════════════════
-  // The hall was scenery: a jumbotron showing procedural static, rig lenses at
-  // a constant emissive, and a ring mat that never acknowledged a body hitting
-  // it. All three now respond to the match.
+  // ══ Reactive arena ═══════════════════════════════════════════════════
+  // The jumbotron, the rig lenses and the ring mat respond to the match.
 
   _initReactiveArena() {
     // ── Rig LEDs ──────────────────────────────────────────────────────
@@ -750,11 +666,9 @@ export class BrawlGame {
 
     // ── Ring-mat ripple ───────────────────────────────────────────────
     // A SHADING ripple, not a displacement: the mat is a BoxGeometry with one
-    // segment per face, so there are no interior vertices to push and adding
-    // them would mean re-tessellating the ring to animate a few centimetres
-    // nobody would see at this camera distance. Concentric bands of light and
-    // shadow racing out from the impact read as the canvas taking the weight,
-    // and cost one branch in a fragment shader that already runs.
+    // segment per face, so there are no interior vertices to push. Bands of
+    // light and shadow racing out from the impact read as the canvas taking
+    // the weight, for one branch in a fragment shader that already runs.
     this._ripple = {
       origin: new THREE.Vector2(0, 0),
       t: { value: 99 },          // seconds since the strike; >2 = idle
@@ -762,7 +676,7 @@ export class BrawlGame {
       originU: { value: new THREE.Vector2(0, 0) },
     };
     const mat = this.arena.canvasMat;
-    // ── Mat wear (GFX/SOUND #7) ─────────────────────────────────────────
+    // ── Mat wear ────────────────────────────────────────────────────────
     // Built here because the canvas shader below is the one place both the
     // ripple and the wear lookup get injected — two onBeforeCompile hooks on
     // one material would overwrite each other.
@@ -872,9 +786,8 @@ export class BrawlGame {
       if (this._ripple.t.value > 2.2) this._ripple.amp.value = 0;
     }
 
-    // Jumbotron: redraw at ~8 Hz. It is a texture upload, so it does NOT want
-    // to be on the frame clock — at 60 fps that is 60 canvas repaints and 60
-    // GPU uploads a second for a screen the size of a postage stamp on screen.
+    // Jumbotron: redraw at ~8 Hz. Each redraw is a texture upload, so it stays
+    // off the frame clock.
     this._jumboT = (this._jumboT || 0) + dt;
     if (this._jumboFlashT > 0) this._jumboFlashT -= dt;
     if (this._jumboT >= 0.125) { this._jumboT = 0; this._drawJumbotron(); }
@@ -950,13 +863,12 @@ export class BrawlGame {
     // Each AI controller also learns its charId so it can pull personality
     // additive AI knobs (HW Bush's blockP/baitP/punishP bump). The SPAWNED id wins
     // over options: a demo reshuffle (resetMatch(true)) never writes the new pair
-    // back into options, so reading options there handed every reshuffled CPU the
-    // first match's personality.
+    // back into options.
     const charIdForIndex = spawnedCharId ?? (playerIndex === 1
       ? this.options.p1Character
       : this.options.p2Character);
     // The training room (1P) claims the dummy's slot. Null means "not a training slot".
-    const trainingController = this._trainingController(playerIndex, charIdForIndex);
+    const trainingController = this._trainingController(playerIndex);
     if (trainingController) return trainingController;
     // Online both corners are puppets of the server's snapshots (netplay.js).
     if (mode === 'online') return new NetController(playerIndex === this.options.localSide);
@@ -971,13 +883,9 @@ export class BrawlGame {
   _spawnFighters(p1Char, p2Char) {
     if (this.fighters) {
       for (const f of this.fighters) {
-        // Tear down any active swing physics before disposing the fighter.
-        if (f.swingPhysics) destroySwingPhysics(this._physics.world, f.swingPhysics);
-        // Dispose cannon bodies we created for this fighter.
         this._removeFighterPhysics(f);
         if (f.koRagdoll) f.koRagdoll.dispose();
         this.scene.remove(f.rig.root);
-        f.rig.disposePortrait?.();
         if (f.blob) {
           this.scene.remove(f.blob);
           f.blob.geometry.dispose();
@@ -1003,7 +911,7 @@ export class BrawlGame {
       for (const s of this._bloodStains) this.scene.remove(s);
       this._bloodStains.length = 0;
     }
-    // …and so do the scuffs, skids and sweat (#7).
+    // …and so do the scuffs, skids and sweat.
     if (this.matWear) this.matWear.clear();
     this._koDust = null;
 
@@ -1025,7 +933,6 @@ export class BrawlGame {
     }
 
     this.combat = new CombatPlay({ maxHealth: MAX_HP });
-    this.replay.start();
 
     this.fighters = [1, 2].map((index) => {
       const charId = index === 1 ? p1Char : p2Char;
@@ -1037,31 +944,24 @@ export class BrawlGame {
       // dropped mid-match is picked up at the next spawn.
       const rig = buildFighter(resolvedId, {
         physicalMaterials: Quality.settings().physicalMaterials,
-      }, this.options.mode === '1p' && index === 1 ? this.options.playerHead : null);
-      // #4 — must run before the first render: onBeforeCompile only fires on
+      });
+      // Must run before the first render: onBeforeCompile only fires on
       // initial program compile, so injecting after a material has been drawn
       // once does nothing until something else dirties it.
       const inkUniforms = this._applyInkEdge(rig);
-      // Spawn on the same side as this fighter's energy bar in the Blazor HUD
-      // (see SPAWN_X_BY_SIDE at the top of the file). The camera at +Z
-      // looking toward −Z renders negative X on the screen-left and positive
-      // X on the screen-right, matching `pb-hp-side` (P1) and `pb-hp-right`
-      // (P2) respectively.
+      // Spawn on the same side as this fighter's HUD bar (SPAWN_X_BY_SIDE).
       const side = index === 1 ? 'left' : 'right';
       rig.root.position.set(SPAWN_X_BY_SIDE[side], 0, 0);
       this.scene.add(rig.root);
       const playerId = `p${index}`;
       this.combat.addPlayer({ playerId, teamId: String(index) });
 
-      // Build cannon-es bodies for this fighter. The kinematic rig-root
-      // handles push-apart with the opponent; the dynamic hurt spheres +
-      // DistanceConstraints are what the strikers collide with.
-      const initialXZ = { x: rig.root.position.x, z: rig.root.position.z };
-      const fighterPhysics = buildFighterPhysics(this._physics.world, this._physics.materials, { rig }, initialXZ);
+      const rigBody = createRootBody(this._physics.world, this._physics.materials,
+        { x: rig.root.position.x, z: rig.root.position.z });
 
       // Soft contact shadow + ambient-occlusion disc. Two stacked planes:
-      //   • blob — the existing shadow blob (radial gradient that darkens
-      //     and widens as the fighter drops; sells vertical grounding)
+      //   • blob — radial gradient that darkens and widens as the fighter
+      //     drops; sells vertical grounding
       //   • aoDisc — a tight, near-pitch-black inner ring that hugs the
       //     planted foot. Reads as ambient occlusion, not cast shadow —
       //     sells horizontal contact (the fighter isn't floating).
@@ -1093,18 +993,15 @@ export class BrawlGame {
       return {
         index,
         playerId,
-        // 'left' | 'right' — mirrors the side this fighter's HUD bar is drawn
-        // on by Blazor, and the X coordinate they spawned at. Single source of
-        // truth for any code that needs "which side am I on?" (camera framing,
-        // KO camera, replay, future AI hints). Set above; do not mutate after
-        // spawn — moving across the ring is tracked separately on `vel.x`.
+        // 'left' | 'right' — the side this fighter's HUD bar is drawn on and
+        // the X they spawned at. Do not mutate after spawn.
         side,
         // Resolved character id (demo mode reshuffles these every reset — the
         // HUD reads it back via the OnMatchStart callback so the on-screen
         // names always match the actual fighters).
         charId: resolvedId,
         rig,
-        // #4 — the ink-edge uniform objects for this rig's materials, so the
+        // The ink-edge uniform objects for this rig's materials, so the
         // super cinematic can spike the edge to the character's accent colour
         // and let it fall back without re-walking the hierarchy every frame.
         inkUniforms,
@@ -1134,12 +1031,8 @@ export class BrawlGame {
         blockStunT: 0,     // frozen out of our own recovery by the guard we hit
         counterUntil: -99, // perfect guard armed a bonus swing until this time
 
-        // The super meter is NOT here. It lives on `personality.superMeter`
-        // (makePersonalityState), which is where _applyHit fills it and
-        // _fireSuper consumes it. A duplicate field on the fighter used to sit
-        // at this line, and because it read plausibly the HUD push and the AI's
-        // superMeterFull check both bound to it instead — the dead copy — which
-        // is what kept the whole signature-super feature inert. Don't add it back.
+        // The super meter is NOT here: it lives on `personality.superMeter`.
+        // Don't add a copy on the fighter — the HUD and AI would bind to it.
         // ── Per-round scorecard ───────────────────────────────────────
         // Counters for the end-of-fight recap and the on-screen combo readout.
         // Every round (including a best-of-3 rematch) goes through
@@ -1153,8 +1046,6 @@ export class BrawlGame {
         vel: new THREE.Vector3(),
         targetVel: new THREE.Vector3(),
         knockback: new THREE.Vector3(),
-        // sideVel removed 2026-08-11: the sidestep impulse it carried became
-        // held circling, which steers through `vel` like ordinary movement.
         // ── Per-region damage ─────────────────────────────────────────
         regionDmg: { head: 0, torso: 0, arms: 0, legs: 0 },
         // ── Dismemberment ─────────────────────────────────────────────
@@ -1200,15 +1091,12 @@ export class BrawlGame {
         trail: this._makeTrail(),
         // Track the last frame's windup flag for the AI to read.
         lastWasWindup: false,
-        // Rigid-body ragdoll — the real cannon-es skeleton used for the KO.
-        // Built lazily (pendingKO) because KOs can fire inside world.step.
+        // Rigid-body ragdoll — the cannon-es skeleton used for the KO.
+        // Built lazily (pendingKO), outside world.step.
         koRagdoll: new CannonRagdoll(this._physics.world, this._physics.materials.ragdoll, rig),
         pendingKO: null,
-        // Cannon-es physics — kinematic rig root + dynamic hurt spheres.
-        fighterPhysics,
-        // Active swing bodies (striker spheres). Created on _enterAttack,
-        // destroyed when swing transitions to idle or KO interrupts.
-        swingPhysics: null,
+        // Kinematic cannon body for shoving ragdolls/props; null once KO'd.
+        rigBody,
       };
     });
     this.hudDirty = true;
@@ -1220,11 +1108,9 @@ export class BrawlGame {
       this.dotnet.invokeMethodAsync('OnMatchStart',
         this.fighters[0].charId, this.fighters[1].charId).catch(() => {});
       // Whether this match is a training session, so the page can drop the
-      // ladder chrome. Its own call rather than a third
-      // OnMatchStart argument: interop fails silently on an arity change (see the
-      // OnHud note), and a new method simply does not bind on a stale page.
-      this.dotnet.invokeMethodAsync('OnTrainingState',
-        !!this.training, this.training ? this.training.dummy : '').catch(() => {});
+      // ladder chrome. Its own call rather than a third OnMatchStart argument:
+      // interop fails silently on an arity change.
+      this.dotnet.invokeMethodAsync('OnTrainingState', !!this.training).catch(() => {});
     }
   }
 
@@ -1251,21 +1137,17 @@ export class BrawlGame {
     this.cameraMode = 'normal';
     this.cameraModeT = 0;
     // A super fired on the last frame of the previous round would otherwise
-    // still own timeScale and the camera into this countdown (#2).
+    // still own timeScale and the camera into this countdown.
     this._superT = 0;
     this._superFighter = null;
-    // Re-arm the PA count (#7); without this the new round's "3" matches the
+    // Re-arm the PA count; without this the new round's "3" matches the
     // remembered value and the announcer sits out the whole countdown.
     this._lastCount = null;
     this._resetCommentary();
     // Snap the boom back to the canonical +Z side before the round starts.
-    // The KO cinematic swings the camera around to the −Z side of the ring
-    // (see _updateCamera 'ko' branch), and the normal spring camera's
-    // perp-flip keeps whatever side it's already on — so without this reset
-    // the next round is filmed from behind, mirroring the arena: P1 (world
-    // −X, drawn on the screen-left in the HUD) would render on the right and
-    // the left/right names read swapped against the fighters. Resetting here
-    // guarantees screen-left always maps to P1.
+    // The KO cinematic swings the camera to the −Z side and the spring
+    // camera keeps whatever side it's on, so without this the next round is
+    // filmed from behind and P1 renders on the right, against its HUD name.
     this._snapCameraToFraming();
     // Kick the personality entrance for each fighter. The track lasts ~1.5 s
     // (3-4 keyframes); the countdown is 3.7 s, so the entrance resolves to
@@ -1281,7 +1163,7 @@ export class BrawlGame {
       }
     }
     this._setBanner('3');
-    // #9 / #10 — the previous result's lower third goes, and the clip recorder
+    // The previous result's lower third goes, and the clip recorder
     // starts cycling again for the new fight.
     if (this.news) this.news.hide();
     if (this.clip) this.clip.resume();
@@ -1289,7 +1171,7 @@ export class BrawlGame {
   }
 
   /**
-   * Opening VS splash for an engine's first match (#8): the same card
+   * Opening VS splash for an engine's first match: the same card
    * resetMatch shows between rounds, then the countdown. The fighters idle under
    * it — phase 'intro' matches none of _tick's branches, so nothing fights,
    * scores or times out until the countdown takes over.
@@ -1300,17 +1182,23 @@ export class BrawlGame {
     this.clock = 0;
     this.winner = 0;
     this._snapCameraToFraming();
-    this._roundLabel = label;
-    this._showSplash(p1Char, p2Char, SPLASH_HOLD_MS);
+    this._showSplash(p1Char, p2Char, SPLASH_HOLD_MS, label);
     const hold = this._introHold();
     // Online the server's pre-roll starts the count (netplay.js applyNet), so both screens say
     // "FIGHT!" on the same tick.
     if (this.options.mode === 'online') return;
-    this._splashTimer = setTimeout(() => {
-      if (this.disposed) return;
+    this._armSplashTimer(hold);
+  }
+
+  // Close the splash into the countdown once the hold has run AND the shader warm-up
+  // has settled. The phase check drops a stale timer (netplay or a newer reset took over).
+  _armSplashTimer(hold) {
+    clearTimeout(this._splashTimer);
+    this._splashTimer = setTimeout(() => this._ready.then(() => {
+      if (this.disposed || this.phase !== 'intro') return;
       this._hideSplash();
       this._startCountdown();
-    }, hold);
+    }), hold);
   }
 
   /**
@@ -1330,29 +1218,68 @@ export class BrawlGame {
   // clock. three compiles a material's shader lazily, on its first render;
   // with this many distinct materials (arena + backdrop + crowd + props + two
   // freshly built fighters + the whole post chain) that lands as one long
-  // stall on the first animated frame of a match. It doesn't just drop the
-  // opening camera move — a main-thread block that long also starves the
-  // music scheduler's setInterval past its lookahead window, so the bass line
-  // hiccups at the same moment. That combination is the "everything stutters
-  // at the start of a round" symptom. Warming up here spends the same time,
-  // but spends it before the clock starts / behind the round splash.
+  // stall on the first animated frame of a match, which also starves the
+  // music scheduler past its lookahead. Warming up here spends the same
+  // time, but before the clock starts / behind the round splash.
+  //
+  // compileAsync links the scene's programs without blocking the page
+  // (KHR_parallel_shader_compile); the loop skips rendering until it settles.
+  // Then one render with the passes the match switches on later (afterimage
+  // smear, KO rack focus) compiles those too, instead of on the frame they appear.
+  // Returns (and stores as _ready) a promise that settles when it is done.
   _warmupRender() {
+    this._compiling = true;
+    // compile() only walks visible objects, and much of the scene waits hidden until
+    // it is needed (strike trails, shock rings, flash bulbs, the shader keepers). Show
+    // them for the synchronous compile pass inside the call, then hide them again.
+    const hidden = [];
+    this.scene.traverse((o) => { if (!o.visible) { hidden.push(o); o.visible = true; } });
+    // Compile against the composer's buffer, where RenderPass draws the scene. With no
+    // target bound, three builds the on-screen variants (tone mapping + sRGB output
+    // baked in), which the composer never uses, and the real ones still compile on
+    // first draw.
+    const prevTarget = this.renderer.getRenderTarget();
+    this.renderer.setRenderTarget(this.composer.readBuffer);
+    let compiled;
     try {
-      this.renderer.compile(this.scene, this.camera);
-      this.composer.render();
-    } catch { /* best effort — never block the match on the warm-up */ }
-    // Don't bill the warm-up to the simulation: the next frame's dt is
-    // measured from here, and no catch-up ticks are owed.
-    this.lastFrame = performance.now();
-    this.accumulator = 0;
+      compiled = this.renderer.compileAsync
+        ? this.renderer.compileAsync(this.scene, this.camera)
+        : Promise.resolve(this.renderer.compile(this.scene, this.camera));
+    } catch (e) {
+      compiled = Promise.reject(e);
+    } finally {
+      this.renderer.setRenderTarget(prevTarget);
+      for (const o of hidden) o.visible = false;
+    }
+    this._ready = compiled.catch(() => {}).then(() => {
+      this._compiling = false;
+      if (this.disposed) return;
+      const transient = [this.afterimage, this.rackFocus?.pass].filter((p) => p && !p.enabled);
+      try {
+        for (const p of transient) p.enabled = true;
+        this.composer.render();
+      } catch { /* best effort — never block the match on the warm-up */ }
+      for (const p of transient) p.enabled = false;
+      // Don't bill the warm-up to the simulation: the next frame's dt is
+      // measured from here, and no catch-up ticks are owed.
+      this.lastFrame = performance.now();
+      this.accumulator = 0;
+    });
+    return this._ready;
   }
 
   resetMatch(randomize) {
+    // Out of 'result' at once: the demo calls this from the result tick, and a phase
+    // left at 'result' re-ran the whole reset (fighter rebuild + recompile) every tick.
+    this.phase = 'intro';
+    this.phaseT = 0;
     let p1 = this.options.p1Character, p2 = this.options.p2Character;
     if (randomize) {
       const ids = this.rng.shuffle(CHARACTER_IDS);
       [p1, p2] = ids;
     }
+    // A tier change deferred mid-match lands here, ahead of the warm-up that compiles it.
+    if (this._qualityDirty) this._applyQuality();
     this._spawnFighters(p1, p2);
     this._initTraining();
     this._renderTrainingHud();
@@ -1364,46 +1291,61 @@ export class BrawlGame {
     // match's physics + arena are ready under it, so the transition reads
     // as "next round" rather than "page reload".
     this._showSplash(p1, p2, SPLASH_HOLD_MS);
+    if (randomize) this._spinSplashNames(p1, p2);
     // The tape rewinds into the next fight under the splash (spectacle.js).
     this._rewindT = REWIND_SEC;
     this.audio?.rewind(REWIND_SEC);
     const hold = this._introHold();
-    // Guarded: a navigation inside the hold used to fire this on a disposed game.
-    clearTimeout(this._splashTimer);
-    this._splashTimer = setTimeout(() => {
-      if (this.disposed) return;
-      this._hideSplash();
-      this._startCountdown();
-    }, hold);
+    this._armSplashTimer(randomize ? Math.max(hold, SLOT_REEL_MS + SLOT_LAND_HOLD_MS) : hold);
   }
 
-  _showSplash(p1Char, p2Char, holdMs) {
+  // The demo reshuffle: both name cards flick through the roster like slot reels,
+  // slowing from 50 ms to 250 ms a flick, and land on the real pair at SLOT_REEL_MS.
+  // Text only, so the spin costs nothing; the fighters were built once, up front.
+  _spinSplashNames(p1Char, p2Char) {
+    const els = [this.splash.querySelector('.pb-splash__p1'), this.splash.querySelector('.pb-splash__p2')];
+    const finals = [p1Char, p2Char].map((id) => CHARACTERS[id]?.name ?? id);
+    const t0 = performance.now();
+    const step = () => {
+      if (this.disposed) return;
+      const t = performance.now() - t0;
+      if (t >= SLOT_REEL_MS) {
+        els.forEach((el, i) => { el.textContent = finals[i]; });
+        return;
+      }
+      // Two distinct fighters per flick: a mirror match on the reels reads as a bug.
+      const n = CHARACTER_IDS.length;
+      const a = Math.floor(Math.random() * n);
+      const b = (a + 1 + Math.floor(Math.random() * (n - 1))) % n;
+      [a, b].forEach((i, k) => { els[k].textContent = CHARACTERS[CHARACTER_IDS[i]]?.name ?? CHARACTER_IDS[i]; });
+      this._reelTimer = setTimeout(step, 50 + 200 * (t / SLOT_REEL_MS) ** 2);
+    };
+    clearTimeout(this._reelTimer);
+    step();
+  }
+
+  _showSplash(p1Char, p2Char, holdMs, label = null) {
     const p1 = CHARACTERS[p1Char]?.name ?? p1Char;
     const p2 = CHARACTERS[p2Char]?.name ?? p2Char;
-    // `roundLabel` is a one-shot override set by PoBrawl.next() — the 2-player
-    // best-of-3 uses it to name the round ("ROUND 2"), where the generic
-    // "NEXT ROUND" would leave the players unable to tell which round is
-    // starting. Consumed here so it can never leak into the following match.
-    const label = this._roundLabel
-      || (this.training ? 'TRAINING'
-        : this.options.mode === 'demo' ? 'DEMO' : 'NEXT ROUND');
-    this._roundLabel = null;
+    // `label` is the first match's heading (_beginWithSplash); rounds after it get the generic one.
+    label ||= this.training ? 'TRAINING'
+      : this.options.mode === 'demo' ? 'DEMO' : 'NEXT ROUND';
     this.splash.querySelector('.pb-splash__round').textContent = label;
     this.splash.querySelector('.pb-splash__p1').textContent = p1;
     this.splash.querySelector('.pb-splash__p2').textContent = p2;
     this.splash.classList.remove('pb-splash--instant');
     this.splash.classList.add('pb-splash--visible');
-    // #8 — riser into a boom timed to the cards slamming together.
+    // Riser into a boom timed to the cards slamming together.
     this.audio?.vsSting();
   }
 
-  // #8 — the names FLY into the HUD. With the View Transitions API the splash's
+  // The names FLY into the HUD. With the View Transitions API the splash's
   // two name spans and the page's two .pb-hp-name labels swap a shared
   // view-transition-name across the DOM update, so the browser morphs each name
   // from the centre card to its health bar. Only one element per name may carry
   // it at a time, which is why it moves from the splash to the HUD INSIDE the
   // update callback. Without the API (Firefox, Safari < 18), under reduced
-  // motion, or if the HUD is not on the page, the splash just fades as before.
+  // motion, or if the HUD is not on the page, the splash just fades.
   _hideSplash() {
     const splash = this.splash;
     if (!splash.classList.contains('pb-splash--visible')) return;
@@ -1425,7 +1367,7 @@ export class BrawlGame {
         huds[0].style.viewTransitionName = 'pb-name-1';
         huds[1].style.viewTransitionName = 'pb-name-2';
         // The new state must have the splash fully gone, not mid-fade — the
-        // root cross-fade is what fades it now.
+        // root cross-fade is what fades it.
         splash.classList.add('pb-splash--instant');
         splash.classList.remove('pb-splash--visible');
       });
@@ -1444,15 +1386,14 @@ export class BrawlGame {
   // ── simulation ──────────────────────────────────────────────────────────
 
   _tick(dt) {
-    // The sim clock every timed personality effect is written against. See the
-    // declaration in the constructor — it was missing entirely until now.
+    // The sim clock every timed personality effect is written against.
     this.t += dt;
     this.phaseT += dt;
 
     if (this.phase === 'countdown') {
       const remaining = 3 - Math.floor(this.phaseT);
       this._setBanner(remaining > 0 ? String(remaining) : 'FIGHT!');
-      // #7 — the PA calls the count. Edge-triggered off the banner value rather
+      // The PA calls the count. Edge-triggered off the banner value rather
       // than a timer of its own, so the voice can never drift out of step with
       // the number on screen.
       if (remaining !== this._lastCount) {
@@ -1481,12 +1422,6 @@ export class BrawlGame {
         const h1 = this._hp(this.fighters[0]), h2 = this._hp(this.fighters[1]);
         // Decision on health. A clear health lead wins; bars within DRAW_HP_BAND
         // of each other is a DRAW.
-        //
-        // This reverses the previous rule, which forced a winner out of every
-        // no-KO finish and broke exact ties toward P1 by index. That rule made
-        // the 60 seconds decide something the fight had not: a one-point gap
-        // after a minute of even trading was reported as a victory, and in 1P it
-        // advanced the ladder on the strength of rounding.
         const margin = Math.abs(h1 - h2);
         let winner;
         if (margin <= DRAW_HP_BAND) winner = 0;   // too close to call
@@ -1503,7 +1438,6 @@ export class BrawlGame {
       this._buildPendingSevers();
       if (this._physics) stepWorld(this._physics.world, dt);
       this._tickKoFall(dt);
-      this._tickReplay(dt);
       if (this.phaseT >= 1.4) {
         this.timeScale = 1;
         this.phase = 'result';
@@ -1543,13 +1477,6 @@ export class BrawlGame {
       });
       f.animator.decayLean(dt);
       f.hpCur = this._hp(f);
-
-      // NOTE: the experimental hitstun ragdoll-blend was removed after joint
-      // telemetry showed its per-tick quaternion slerp COMPOUNDS against the
-      // animator's lerp — the spine converged toward the flying verlet pose
-      // (70°+ folds) instead of adding a subtle flavor on top. The reaction
-      // springs + hitstun track are the hit reaction now, tuned to a
-      // realistic 5-15° deflection.
 
       // Cartoon squash: compress the whole body for a couple of frames on impact.
       if (f.squashT > 0) {
@@ -1600,7 +1527,6 @@ export class BrawlGame {
     }
 
     this._pushHud(dt);
-    this.replay.record({ clock: this.clock, fighters: this.fighters });
   }
 
   _tickFighting(dt) {
@@ -1621,13 +1547,9 @@ export class BrawlGame {
       if (f.blockStunT > 0) {
         intent = { ...intent, punch: false, kick: false, block: false, side: 0 };
       }
-      // ── Nixon "I Am Not a Crook" eye-gouge ──────────────────────────
-      // 30% of block presses drop during the 0.3 s blind window. The simplest
-      // realization is to clear the `block` flag with miss-rate probability.
-      // Ford "PARDON ME" super: same channel, higher miss-rate (60%), longer
-      // window (1.0 s). The runtime miss rate is read from
-      // f._inputBlindMissRate so future supers can reuse this without a
-      // new branch.
+      // ── Nixon "I Am Not a Crook" eye-gouge / Ford "PARDON ME" ───────
+      // Block presses drop with the blind window's miss rate
+      // (f._inputBlindMissRate, 30% Nixon / 60% Ford).
       if (f._inputBlindUntil && this.t < f._inputBlindUntil) {
         const missRate = f._inputBlindMissRate
           || PERSONALITIES.nixon?.oncePerRound?.blindMissRate
@@ -1656,11 +1578,9 @@ export class BrawlGame {
       const rawX = pos.x, rawZ = pos.z;
       pos.x = THREE.MathUtils.clamp(rawX, -RING_HALF, RING_HALF);
       pos.z = THREE.MathUtils.clamp(rawZ, -RING_HALF, RING_HALF);
-      // Elastic rope rebound (#3): the ropes catch a launched fighter and
-      // spring them back INTO the ring. Harder impacts snap back harder
-      // (restitution ramps 0.55 → 0.9 with incoming speed) instead of the old
-      // flat 0.65 — a hard knockback into the ropes now rebounds like a real
-      // rope-a-dope bounce rather than a dead stop.
+      // Elastic rope rebound: the ropes catch a launched fighter and spring
+      // them back INTO the ring. Restitution ramps 0.55 → 0.9 with incoming
+      // speed, so harder impacts snap back harder.
       if (pos.x !== rawX && Math.abs(f.knockback.x) > 1.2) {
         const speed = Math.abs(f.knockback.x);
         const power = Math.min(2.6, speed / 3.5);
@@ -1684,7 +1604,7 @@ export class BrawlGame {
         if (power > 1.8) this._kickRig(0.25, pos.x, pos.z);
       }
 
-      // Turnbuckle hazard (#9): a fighter knocked into a CORNER takes bonus
+      // Turnbuckle hazard: a fighter knocked into a CORNER takes bonus
       // damage and is flung back toward ring-center harder than a plain rope
       // bounce. Cooldown-gated so a body wedged in the corner isn't shredded.
       f._cornerCd = Math.max(0, (f._cornerCd || 0) - dt);
@@ -1731,44 +1651,33 @@ export class BrawlGame {
     //    the solver sees the fighter where the controllers put them.
     if (this._physics) {
       for (const f of this.fighters) {
-        if (f.state !== 'ko' && f.fighterPhysics) {
-          syncHurtSpheres(f, f.fighterPhysics.hurtSpheres);
-          syncRigRoot(f.fighterPhysics.rigRoot, f);
-          if (f.swingPhysics) {
-            const phase = (f.stateT > (f.attack?.windup ?? 0) + (f.attack?.active ?? 0))
-              ? 'recover' : 'active';
-            syncStrikerSpheres(f, f.swingPhysics.spheres, f.state, phase);
-          }
-        }
+        if (f.state !== 'ko' && f.rigBody) syncRigRoot(f.rigBody, f);
       }
       stepWorld(this._physics.world, dt);
-      // An arm torn off inside this step's beginContact dispatch gets its
-      // bodies built here, now that we're safely outside world.step.
+      this._checkClash();
+      // Arms torn off by this tick's hits get their bodies built here,
+      // outside world.step.
       this._buildPendingSevers();
 
-      // 3. Push-apart via cannon-es contact events. When two kinematic
-      //    rig-roots overlap, cannon reports a contact but doesn't move
-      //    them by itself. We translate each root by half the deficit
-      //    along the contact normal — same effect as the old
-      //    MIN_SEPARATION code, but driven by cannon's broadphase +
-      //    narrowphase instead of a single point-distance check.
+      // 3. Push-apart via cannon-es contact events: translate each root by
+      //    half the overlap along the contact normal.
       for (const f of this.fighters) {
-        if (f.state !== 'ko' && f.fighterPhysics) {
+        if (f.state !== 'ko' && f.rigBody) {
           for (const c of this._physics.world.contacts) {
             const a = c.bi, b = c.bj;
-            if (a === f.fighterPhysics.rigRoot || b === f.fighterPhysics.rigRoot) {
-              const other = a === f.fighterPhysics.rigRoot ? b : a;
+            if (a === f.rigBody || b === f.rigBody) {
+              const other = a === f.rigBody ? b : a;
               if (!other.userData || other.userData.kind !== 'rigRoot') continue;
-              const dx = f.fighterPhysics.rigRoot.position.x - other.position.x;
-              const dz = f.fighterPhysics.rigRoot.position.z - other.position.z;
+              const dx = f.rigBody.position.x - other.position.x;
+              const dz = f.rigBody.position.z - other.position.z;
               const d = Math.hypot(dx, dz) || 1e-4;
-              const overlap = (f.fighterPhysics.rigRoot.shapes[0].radius +
+              const overlap = (f.rigBody.shapes[0].radius +
                               other.shapes[0].radius) - d;
               if (overlap > 0) {
                 const nx = dx / d, nz = dz / d;
                 const push = overlap * 0.5;
-                f.fighterPhysics.rigRoot.position.x += nx * push;
-                f.fighterPhysics.rigRoot.position.z += nz * push;
+                f.rigBody.position.x += nx * push;
+                f.rigBody.position.z += nz * push;
                 other.position.x -= nx * push;
                 other.position.z -= nz * push;
               }
@@ -1784,9 +1693,9 @@ export class BrawlGame {
       //    directly: half the deficit each, XZ only.
       const [fA, fB] = this.fighters;
       if (fA.state !== 'ko' && fB.state !== 'ko'
-          && fA.fighterPhysics && fB.fighterPhysics) {
-        const pa = fA.fighterPhysics.rigRoot.position;
-        const pb = fB.fighterPhysics.rigRoot.position;
+          && fA.rigBody && fB.rigBody) {
+        const pa = fA.rigBody.position;
+        const pb = fB.rigBody.position;
         const dx = pa.x - pb.x, dz = pa.z - pb.z;
         const d = Math.hypot(dx, dz) || 1e-4;
         if (d < MIN_SEPARATION) {
@@ -1795,7 +1704,7 @@ export class BrawlGame {
           pa.x += nx * push; pa.z += nz * push;
           pb.x -= nx * push; pb.z -= nz * push;
 
-          // Body-check shove (#2): the part of each fighter's knockback driving
+          // Body-check shove: the part of each fighter's knockback driving
           // INTO the other is transferred, so charging/knocked into an opponent
           // shoves them instead of both sliding to a dead stop at the clamp.
           const aInto = -(fA.knockback.x * nx + fA.knockback.z * nz); // A → B
@@ -1818,8 +1727,8 @@ export class BrawlGame {
       // 4. Read rig-root positions back into the THREE rigs so the visual
       //    matches the kinematic body.
       for (const f of this.fighters) {
-        if (f.state !== 'ko' && f.fighterPhysics) {
-          const p = f.fighterPhysics.rigRoot.position;
+        if (f.state !== 'ko' && f.rigBody) {
+          const p = f.rigBody.position;
           f.rig.root.position.x = p.x;
           f.rig.root.position.z = p.z;
         }
@@ -1890,19 +1799,9 @@ export class BrawlGame {
       opponentRecover: oppInRecover,
       opponentState: opp.state,
       ownAttacks: ATTACKS,
-      // Super meter full? Exposed so the AI's super-activation block knows
-      // when it has a budget to spend. Player controllers don't read this —
-      // their intent.super is driven by the super key directly.
-      //
-      // Reads `f.personality.superMeter`, NOT `f.superMeter`. The meter is
-      // filled (_applyHit) and consumed (_fireSuper) on the personality state,
-      // but this check and _pushHud both used to read a same-named field on the
-      // fighter that is initialised to 0 and never written again — so the flag
-      // was permanently false and no CPU president ever fired its signature
-      // super in the game's history. The fighter-level `superMeter` field is
-      // gone; personality state is the one home for it.
+      // Super meter full? Only the AI reads this; players fire on the key.
       superMeterFull: (f.personality?.superMeter || 0) >= 1.0,
-      // Energy gate (2026-09-12). The engine enforces this regardless — a
+      // Energy gate. The engine enforces this regardless — a
       // gassed fighter's punch/kick intent is simply dropped in _tickFighter —
       // but the AI needs to KNOW, or it spends the whole recovery mashing
       // attack inputs into a closed gate and standing there wide open. Reading
@@ -1915,9 +1814,6 @@ export class BrawlGame {
       // up it — so this is the AI's cue to load a full coil (ai.js `punishGas`)
       // and ask the player whether they have learned to block yet.
       opponentExhausted: !!opp.gassed,
-      // The freeze a blocked swing costs its thrower (BLOCK_STUN). The training
-      // room's punisher dummy answers into it; ai.js does not read it.
-      opponentBlockStunned: opp.blockStunT > 0,
     };
   }
 
@@ -1925,8 +1821,7 @@ export class BrawlGame {
     f.stateT += dt;
 
     // ── Energy regen ──────────────────────────────────────────────────
-    // Replaces the old idle bleed (2026-09-12). See the ENERGY_* block for the
-    // design: guarding refills fast, standing refills slowly, swinging refills
+    // See the ENERGY_* block: guarding refills fast, standing refills slowly, swinging refills
     // nothing, and the charge state is exempt because it is actively DRAINING
     // the pool into the strike — regenerating there would refund the wind-up.
     //
@@ -1934,12 +1829,9 @@ export class BrawlGame {
     // continuous change reaches the HUD four times a second without flagging a
     // push on every single frame.
     //
-    // Biden's "THE BIG GUY" super is exempt for the length of its lock window:
-    // its whole payload is a *guaranteed* max-power strike (it sets energy to
-    // 1.0 once on activation), and letting the regen logic touch the bar before
-    // he can throw it risks quietly converting that guarantee into something
-    // less. Regen could only ever help him, but the gassed bookkeeping below
-    // must not fire mid-lock either, so the whole block is skipped.
+    // Biden's "THE BIG GUY" super is exempt for its lock window: its payload
+    // is a *guaranteed* max-power strike, so neither regen nor the gassed
+    // bookkeeping may touch the bar before he throws it.
     const bigGuyLocked = f.personality?._bigGuyLockUntil
       && this.t < f.personality._bigGuyLockUntil;
     if (f.state !== 'charge' && f.state !== 'ko' && !bigGuyLocked) {
@@ -2004,21 +1896,12 @@ export class BrawlGame {
 
     // ── Circling (camera depth) ───────────────────────────────────────
     // `intent.side` is a HELD direction along the CAMERA's forward axis
-    // (W/↑ = +1, into the screen; S/↓ = −1, out toward the viewer), not the
-    // edge-triggered dodge it used to be. Because the fighters stand side-on to
-    // the camera, walking that axis is what carries you around your opponent.
-    //
-    // Screen-relative, deliberately. The first cut derived the axis from the
-    // line between the fighters — rotationally consistent, but it flipped on
-    // screen whenever the two swapped sides of the ring, so the same key walked
-    // you into the screen in one exchange and out of it in the next. A movement
-    // key that reverses under the player is worse than one that is merely
-    // arbitrary, so the axis is the one the player can see.
-    //
-    // It feeds `desired` — the same lerped velocity `move` uses — rather than
-    // the old `sideVel` impulse. That impulse was sized for a single tap; held
-    // down it accumulated against its own decay and converged on several times
-    // sprint speed.
+    // (W/↑ = +1, into the screen; S/↓ = −1, out toward the viewer). Because the
+    // fighters stand side-on to the camera, walking that axis carries you
+    // around your opponent. Screen-relative, deliberately: an axis derived
+    // from the fighters' line flips on screen whenever they swap sides.
+    // It feeds `desired` (the same lerped velocity `move` uses), not an
+    // impulse — a held impulse accumulates against its own decay.
     if (intent.side !== 0 && canSteer) {
       const camFwd = this._cameraForward();
       desired.add(camFwd.multiplyScalar(
@@ -2033,9 +1916,7 @@ export class BrawlGame {
     const k = 1 - Math.exp(-dt * a);
     f.vel.lerp(desired, k);
 
-    // Knockback impulse. The `sideVel` term that used to sit beside it is gone:
-    // circling is steering now, so it belongs in `desired` above rather than in
-    // a separate decaying impulse channel.
+    // Knockback impulse decays.
     f.knockback.multiplyScalar(Math.max(0, 1 - dt * 8));
 
     // Integrate position.
@@ -2060,19 +1941,10 @@ export class BrawlGame {
         }
         // Signature super activation: only from idle so the pose read is clean
         // ("He lines up. He fires."). No-op if the meter isn't full or this
-        // fighter has no onSuper config.
-        //
-        // 2026-08-11: the super key and the HUD's super bar are gone — the game
-        // is down to two bars, health and energy. A HUMAN fighter therefore
-        // fires the instant the meter fills; there is no longer any input that
-        // could spend it, so holding it back would strand the mechanic exactly
-        // the way the dead E/O key used to.
-        //
-        // The AI deliberately keeps its own gate (see ai.js: rung-scaled chance
-        // plus a 4 s cooldown) rather than auto-firing too. That pacing is a
-        // DIFFICULTY knob — low rungs hoard the meter, high rungs spend it well
-        // — and firing every CPU the moment it filled would make the early
-        // ladder harder, which is the opposite of simplifying the game.
+        // fighter has no onSuper config. A HUMAN fighter has no super key and
+        // fires the instant the meter fills; the AI keeps its own gate (ai.js:
+        // rung-scaled chance plus a cooldown) because that pacing is a
+        // DIFFICULTY knob.
         if (intent.super || this._autoSuperReady(f)) this._fireSuper(f);
         if (intent.block) {
           f.state = 'block';
@@ -2088,7 +1960,7 @@ export class BrawlGame {
         // CHARGE_TIME; you can hold at max forever). Release throws the
         // attack scaled by the stored charge.
         const held = f.chargeName === 'punch' ? intent.punchHeld : intent.kickHeld;
-        // Holding POURS the pool into the strike (2026-09-12 rework): the bar
+        // Holding POURS the pool into the strike: the bar
         // drains at the same rate the coil loads, so a fighter watching their
         // own energy bar can see exactly what the swing is costing them, and a
         // full-power release is only available to someone who banked a full
@@ -2143,22 +2015,15 @@ export class BrawlGame {
         else if (intent.block && f.stateT >= a.cancelInto.block) {
           f.state = 'block'; f.stateT = 0; f.guardAt = this.t;
           f.animator.setBlocking(true);
-          this._destroySwingPhysics(f);
         } else if (f.stateT >= a.windup + a.active + a.recover) {
           f.state = 'idle'; f.stateT = 0; f.attack = null;
-          this._destroySwingPhysics(f);
         }
         break;
       }
       case 'hitstun': {
         if (f.stateT >= HITSTUN) f.state = 'idle';
-        if (f.state === 'idle') this._destroySwingPhysics(f);
         break;
       }
-      case 'ko':
-        // KO: drop any swing physics so the ragdoll has clean state.
-        this._destroySwingPhysics(f);
-        break;
     }
   }
 
@@ -2170,14 +2035,12 @@ export class BrawlGame {
     f.stateT = 0;
     f.chargeName = name;
     // Coil starts EMPTY and is filled out of the energy bar while the button is
-    // held (see the 'charge' case). It used to start at the already-banked
-    // power, back when the wind-up created energy rather than spending it.
+    // held (see the 'charge' case).
     f.chargeAmt = 0;
     f.chargeCued = false;
     f.chargeSparkT = 0;
     f.animator.setBlocking(false);
     f.animator.setCharge(name, f.chargeAmt);
-    this._destroySwingPhysics(f);
   }
 
   _enterAttack(f, name, chargeAmt = 0) {
@@ -2205,7 +2068,7 @@ export class BrawlGame {
       f.swingWindupMul = PERSONALITIES.eisenhower.onSwingP.overWindupMul || 1.0;
       f.swingActiveMul = PERSONALITIES.eisenhower.onSwingP.overActiveMul || 1.0;
     }
-    // The flat swing toll (2026-09-12 rework). The wind-up has already drained
+    // The flat swing toll. The wind-up has already drained
     // whatever charge this strike carries; this is the additional per-swing cost
     // that makes tap-spam unsustainable, since a jab banks almost no charge but
     // still pays the toll. Scaled by the attack's own energyMul — a punch pays
@@ -2265,15 +2128,13 @@ export class BrawlGame {
         return;
       }
     }
-    // Trail color: cool steel normally, hot gold on a charged release —
-    // "charged" means wound up well past the 1/3 starting bank, so gold still
-    // reads as earned bonus power rather than lighting up every tap.
+    // Trail color: cool steel normally, hot gold on a well-charged release, so
+    // gold reads as earned bonus power rather than lighting up every tap.
     if (f.trail) f.trail.color.setHex(chargeAmt > 0.65 ? 0xffd257 : 0xcfe0ff);
     this.audio.whoosh();
     if (name === 'kick' || chargeAmt > 0.65) this.audio.effort(f.charId, chargeAmt);
     // Attack lunge: a real step into the strike, scaled by charge. This is
-    // where the "reach" lives now that the hitboxes track the actual limb —
-    // a charged release lunges dramatically further.
+    // where the "reach" lives, since the hitboxes track the actual limb.
     const opp = this.fighters.find((o) => o !== f);
     if (opp) {
       const dir = new THREE.Vector3().subVectors(opp.rig.root.position, f.rig.root.position);
@@ -2288,31 +2149,13 @@ export class BrawlGame {
         f.knockback.add(dir.multiplyScalar(lunge));
       }
     }
-    // Tear down any prior swing physics and build the new striker bodies.
-    // These are the cannon-es spheres that actually register hits via
-    // the `collide` event during the active window.
-    if (f.swingPhysics) destroySwingPhysics(this._physics.world, f.swingPhysics);
-    f.swingPhysics = buildSwingPhysics(this._physics.world, this._physics.materials, f, name, 'active');
   }
-
-  _destroySwingPhysics(f) {
-    if (f.swingPhysics) {
-      destroySwingPhysics(this._physics.world, f.swingPhysics);
-      f.swingPhysics = null;
-    }
-  }
-
-
 
   // The camera's forward direction, flattened to the ground plane: the axis the
   // circle keys walk along. +1 on `intent.side` follows this vector (into the
   // screen, away from the viewer); −1 walks back against it, toward the viewer.
-  //
-  // Was named _sideDirection and used to aim a one-shot sidestep impulse; it is
-  // now the steering axis for held circling. The fallback matters on the first
-  // frame or two, before the camera has been aimed at the ring — returning a
-  // zero vector there would drop the input silently instead of picking a
-  // direction the player can correct.
+  // The fallback covers the first frames before the camera is aimed; a zero
+  // vector would drop the input silently.
   _cameraForward() {
     const dir = new THREE.Vector3();
     this.camera.getWorldDirection(dir);
@@ -2320,11 +2163,9 @@ export class BrawlGame {
     return dir.lengthSq() > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 0, -1);
   }
 
-
-
   // Decay the post-FX pulses and push them into the passes.
   _updateFx(dt) {
-    // #2 runs on WALL-CLOCK dt, which is why it lives here rather than in
+    // The super cinematic runs on WALL-CLOCK dt, which is why it lives here rather than in
     // _tick: the cinematic's own time dilation would otherwise stretch its
     // timeline, and a beat that slows itself down never ends.
     this._tickSuperCinematic(dt);
@@ -2332,7 +2173,7 @@ export class BrawlGame {
     this.bloomPulse *= Math.exp(-dt * 5);
     this.exposurePulse *= Math.exp(-dt * 5);
     this.radialPulse *= Math.exp(-dt * 7);
-    // #3 speedlines decay fast — they are a stamp, not a state. The super
+    // Speedlines decay fast — they are a stamp, not a state. The super
     // cinematic re-arms them every frame while it runs, which is what keeps
     // them up for its duration without needing a second code path.
     this._speedPulse = (this._speedPulse || 0) * Math.exp(-dt * 6.5);
@@ -2340,13 +2181,13 @@ export class BrawlGame {
     this._updateImpactFrames(dt);
     this._updateSpectacle(dt);
 
-    // #5 — the room drops out for the length of the freeze. Driven from the
+    // The room drops out for the length of the freeze. Driven from the
     // renderer rather than from _hitFeedback so it tracks the ACTUAL pause
     // (which _tick decrements) instead of the requested one; every path that
     // sets hitstopT — hits, clashes, supers — gets it for free.
     if (this.audio) this.audio.setHitstop(this.hitstopT > 0);
 
-    // #9 afterimage. The pass is switched off (not just faded to 0) the moment
+    // Afterimage. The pass is switched off (not just faded to 0) the moment
     // the window closes, because a damp-0 AfterimagePass still costs a full
     // screen blit and a target swap every frame; a disabled one costs nothing.
     if (this.afterimage) {
@@ -2364,45 +2205,33 @@ export class BrawlGame {
       }
     }
 
-    // §GFX-2 — no-op unless a KO is running.
+    // No-op unless a KO is running.
     if (this.rackFocus) this.rackFocus.update(dt);
     if (this.fxPass) {
       // The shared impact envelope is ADDED to this game's own pulses rather
       // than replacing them. PoBrawl's per-attack feedback is tuned to the
       // attack (a kick smears more than a jab) and that nuance is worth
       // keeping; impactBus contributes the part that is common to every game,
-      // so a hit now punches the 3D image and shakes the DOM chrome on one
-      // shared curve instead of two that drift apart.
+      // so a hit punches the 3D image and shakes the DOM chrome on one curve.
       this.fxPass.uniforms.uCA.value = this.caPulse + PostFx.punchAberration(0.8);
       this.fxPass.uniforms.uRadial.value = this.radialPulse + PostFx.punchRadial(0.35);
       // KO color drain rides the lights-down blend (keeps the reds hot).
       this.fxPass.uniforms.uDesat.value = this.lightsDim * 0.55;
-      // #3 / #2 — one uniform serves both the impact stamp and the super, which
+      // One uniform serves both the impact stamp and the super, which
       // simply keeps re-arming _speedPulse while its cinematic runs.
       this.fxPass.uniforms.uSpeed.value = this._speedPulse || 0;
 
-      // Film grain clock (idea #10). atmoT always advances, even between
+      // Film grain clock. atmoT always advances, even between
       // rounds, so the grain never freezes on a paused frame.
       this.fxPass.uniforms.uTime.value = this.atmoT;
-      // Vignette breathing (idea #10): a slow ±0.04 swell around the 0.5 base,
+      // Vignette breathing: a slow ±0.04 swell around the 0.5 base,
       // tightening hard as the house lights drop for the KO so the frame
       // closes in on the fallen fighter.
       this.fxPass.uniforms.uVignette.value =
         0.5 + 0.04 * Math.sin(this.atmoT * 0.7) + this.lightsDim * 0.35;
 
-      // ── Godrays (idea #10) — REMOVED 2026-08-07 (user request) ───────
-      // This was a 16-tap radial smear from every pixel toward the overhead
-      // spotlight's projected screen position, so it drew visible streaks
-      // fanning out from wherever that light happened to land — usually the
-      // upper-left of the frame. It ran at a constant 0.07 baseline during
-      // normal play ("keeps the overhead shaft reading as volumetric") on top
-      // of the KO ramp, so it never actually switched off; killing the KO
-      // lights-down left the streaks behind.
-      //
-      // Held at 0 so the shader's `if (uGodrays > 0.003)` branch is skipped
-      // outright — that also drops 16 texture samples per pixel per frame.
-      // The projection maths that fed uGodraysOrig went with it; nothing else
-      // reads that uniform.
+      // Godrays stay off (visible streaks from the spotlight): held at 0 so the
+      // shader's `if (uGodrays > 0.003)` branch skips its 16 taps per pixel.
       this.fxPass.uniforms.uGodrays.value = 0;
     }
     if (this.bloomPass) this.bloomPass.strength = 0.32 + this.bloomPulse;
@@ -2418,7 +2247,7 @@ export class BrawlGame {
     this._updateDanger(dt);
   }
 
-  // ══ Danger state (GFX/SOUND #4, 2026-09-23) ═══════════════════════════
+  // ══ Danger state ══════════════════════════════════════════════════════
   // A fighter under DANGER_HP is in the red: a heartbeat starts under the mix,
   // quickening as they drop; the music sinks under a lowpass; and the screen
   // edge on THEIR side of the frame tints red on each beat. The side is taken
@@ -2477,7 +2306,7 @@ export class BrawlGame {
     }
   }
 
-  // ══ Mat wear (GFX/SOUND #7) ═══════════════════════════════════════════
+  // ══ Mat wear ══════════════════════════════════════════════════════════
   // Footwork scuffs the vinyl where a moving fighter plants; knockback drags
   // skid streaks; a KO'd body leaves a scrape and a puff of canvas dust.
   _updateMatWear(dt) {
@@ -2539,7 +2368,7 @@ export class BrawlGame {
     }
   }
 
-  // ══ Result package: news + clip (GFX/SOUND #9, #10) ═══════════════════
+  // ══ Result package: news + clip ═══════════════════════════════════════
   // Called from _reportResult once the winner is known.
   _presentResult() {
     const [f1, f2] = this.fighters;
@@ -2576,41 +2405,14 @@ export class BrawlGame {
     }
   }
 
-  /** #10 — save or share the last KO clip (the news button and the result modal). */
+  /** Save or share the last KO clip (the news button and the result modal). */
   saveClip() {
     return this.clip ? this.clip.save() : Promise.resolve(false);
   }
 
-  // ══ Anime impact frames (GFX/SOUND #3) ═══════════════════════════════
-  // On a heavy connect only. This used to fire three things on the frame the
-  // hitstop starts — a flat-white silhouette over both fighters, a shock ring,
-  // and speedlines raking in from the frame edges, plus an afterimage smear.
-  //
-  // 2026-09-12: everything except the shock ring is gone. The note that used to
-  // close this block said the bloom/exposure pulses had been deleted because
-  // "they fired on EVERY hit and overlapped into a continuous flicker; anything
-  // this loud has to stay rare to stay readable" — and then failed to notice
-  // that "heavy connect" is not rare. HEAVY_HIT_DMG is 13 out of 100 HP, which
-  // any charged swing clears, so these ran several times a second in a normal
-  // exchange and strobed the picture exactly as their predecessors had.
-  //
-  // The surviving ring is anchored to the contact point in world space, so it
-  // marks WHERE the hit landed instead of changing the brightness of the whole
-  // frame. See _impactFrame in vfx.js.
-
-
   // House-light choreography. Backlights track their fighters every frame for
-  // rim separation.
-  //
-  // 2026-08-07 (user request): the KO "lights-down" cinematic is removed. It
-  // used to ramp `lightsDim` to 1 on a KO, which cut hemi/key/fill by 75-85%,
-  // pulled the vignette from 0.50 to 0.85, drained 55% of the colour and blew
-  // the godrays out to a full shaft. On anything but a bright display the
-  // result was a screen that simply went black for a second and came back
-  // washed-out and grainy. Pinned to 0 so every consumer of `lightsDim`
-  // (uDesat, uVignette, uGodrays and the four house lights below) collapses to
-  // its neutral, lights-up value. The KO still reads through the flash, the
-  // slow-mo fall, the replay and the banner.
+  // rim separation. `lightsDim` is pinned to 0 (a KO lights-down went black on
+  // most displays), so every consumer collapses to its lights-up value.
   _updateLighting(dt) {
     const L = this.arena && this.arena.lights;
     if (!L) return;
@@ -2682,14 +2484,7 @@ export class BrawlGame {
     }
 
     // ── Room light swing ──────────────────────────────────────────────
-    // The overhead house light isn't nailed above the ring centre: it traces
-    // a wide elongated ellipse up in the rig (mostly along Z, with a smaller
-    // X amplitude and a strong vertical bob), aimed down at the two fighters,
-    // so the pool of light, the cast shadows and the volumetric shaft all
-    // sweep visibly back and forth across the canvas over the course of a
-    // round instead of sitting dead still. One full cycle takes ~12 s — fast
-    // enough to read as a swinging rig fixture, slow enough that it doesn't
-    // feel like a strobe.
+    // See HOUSE_LIGHT_*: an ellipse plus vertical bob, one cycle per ~12 s.
     this._houseT = (this._houseT || 0) + dt;
     const orbit = this._houseT * HOUSE_LIGHT_SPEED;
     // Plus the pendulum a heavy landing knocks into it (spectacle.js _kickRig).
@@ -2723,10 +2518,6 @@ export class BrawlGame {
       atmo.cone.quaternion.setFromUnitVectors(_upY, _beamDir);
       atmo.cone.position.copy(L.spot.position).addScaledVector(_beamDir, -5.4);
     }
-
-    // (The godray blade's screen-space origin was fed from L.spot.position
-    // here. Godrays were removed 2026-08-07 — see the uGodrays note in
-    // _updateFx — so nothing consumes it any more.)
 
     // Backlights: behind each fighter, opposite the camera.
     if (this.fighters && this._backlights) {
@@ -2942,122 +2733,19 @@ export class BrawlGame {
     f.expressionT = Math.max(f.expressionT, 0.4);
   }
 
-  // Remove a fighter's live-fight cannon bodies (rig root, hurt spheres,
-  // constraints). Used at KO handoff (the ragdoll replaces them), respawn
-  // and dispose. Never call from inside a physics step.
+  // Remove a fighter's live-fight rig root. Used at KO handoff (the ragdoll
+  // replaces it), respawn and dispose. Never call from inside a physics step.
   _removeFighterPhysics(f) {
-    if (!this._physics || !f.fighterPhysics) return;
+    if (!this._physics || !f.rigBody) return;
     const world = this._physics.world;
-    for (const s of f.fighterPhysics.hurtSpheres) {
-      if (world.bodies.includes(s)) world.removeBody(s);
-    }
-    for (const c of f.fighterPhysics.constraints) {
-      if (world.constraints.includes(c)) world.removeConstraint(c);
-    }
-    if (world.bodies.includes(f.fighterPhysics.rigRoot)) {
-      world.removeBody(f.fighterPhysics.rigRoot);
-    }
-    f.fighterPhysics = null;
+    if (world.bodies.includes(f.rigBody)) world.removeBody(f.rigBody);
+    f.rigBody = null;
   }
 
-
-  // ── Touch controls ───────────────────────────────────────────────────
-  // Docked along the bottom of the arena. Left cluster: walk in/out plus the two
-  // circle keys. Right cluster: block (hold), punch, kick (hold to charge). Each
-  // cluster stacks its small keys over its big ones, so the pad fits a 360px
-  // phone (one flat row of seven was ~440px, and kick sat off-screen). The host
-  // gets .pb-has-pad so the page's bottom-docked chrome (training bar, caption,
-  // news package) can lift clear of it. Synthetic key events feed the normal
-  // input path, so the touch panel has no control semantics of its own —
-  // rebinding a key in input.js rebinds the button.
-  _buildTouchControls() {
-    const panel = document.createElement('div');
-    panel.className = 'pb-touch';
-    const mk = (code, label, name, small = false) => {
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.textContent = label;
-      b.setAttribute('aria-label', name); // the glyphs alone read as "black left-pointing triangle"
-      if (small) b.className = 'pb-touch-small';
-      const down = (e) => {
-        e.preventDefault();
-        b.classList.add('pb-touch-held');
-        window.dispatchEvent(new KeyboardEvent('keydown', { code }));
-        // §7 Haptic tick on press — heavier for strikes (punch/kick) than movement.
-        // Bug fix (2026-08-07): skip on kiosk/demo routes — no user gesture
-        // means every call below would emit a console error.
-        try {
-          const onKiosk = (location.search || '').indexOf('kiosk=') >= 0
-            || /\/demo(\b|\/|$)/i.test(location.pathname || '');
-          // The Profile haptics opt-out, not mute ("sound off, buzz on" is a real choice) —
-          // this read pomini_muted until 2026-09-29, so the haptics toggle did nothing here.
-          if (!onKiosk && localStorage.getItem('pomini_haptics') !== '0' && navigator.vibrate) {
-            navigator.vibrate((code === 'KeyF' || code === 'KeyG') ? 16 : 8);
-          }
-        } catch { }
-      };
-      const up = () => {
-        if (!b.classList.contains('pb-touch-held')) return;
-        b.classList.remove('pb-touch-held');
-        window.dispatchEvent(new KeyboardEvent('keyup', { code }));
-      };
-      b.addEventListener('pointerdown', down);
-      b.addEventListener('pointerup', up);
-      b.addEventListener('pointercancel', up);
-      b.addEventListener('pointerleave', up); // finger slid off = release
-      b.addEventListener('contextmenu', (e) => e.preventDefault());
-      return b;
-    };
-    // Left cluster is the movement axis: walk in/out, and the two circle keys
-    // beside them. All four are hold-to-act, matching the keyboard exactly —
-    // these dispatch synthetic keydown/keyup for the very same codes.
-    const cluster = (small, big) => {
-      const c = document.createElement('div');
-      c.className = 'pb-touch-cluster';
-      const top = document.createElement('div');
-      top.className = 'pb-touch-row pb-touch-row--small';
-      top.append(...small);
-      const bottom = document.createElement('div');
-      bottom.className = 'pb-touch-row';
-      bottom.append(...big);
-      c.append(top, bottom);
-      return c;
-    };
-    const left = cluster(
-      [mk('KeyW', '↺', 'Circle counter-clockwise', true), mk('KeyS', '↻', 'Circle clockwise', true)],
-      [mk('KeyA', '◀', 'Move left'), mk('KeyD', '▶', 'Move right')]);
-    // 2026-08-11: the ⚡ super button went with the super key it pressed, and
-    // the 🛡 moved from KeyS to KeyR — S is a circle key now, so leaving the
-    // shield on it would have had touch players orbiting when they meant to
-    // guard, with no way to block at all.
-    const guard = [mk('KeyR', '🛡', 'Block (hold)', true)];
-    // Online has a special (full energy); the local modes fire theirs by themselves.
-    if (this.options.mode === 'online') guard.push(mk('KeyH', '⚡', 'Special', true));
-    const right = cluster(guard,
-      [mk('KeyF', '👊', 'Punch (hold to charge)'), mk('KeyG', '🦵', 'Kick (hold to charge)')]);
-    panel.append(left, right);
-    this.container.appendChild(panel);
-    this.container.classList.add('pb-has-pad');
-    this.touchEl = panel;
-  }
-
-  // _syncTouchSuper removed 2026-08-11 with the touch ⚡ button it drove. It
-  // mirrored the super meter onto that button the way the HUD bar mirrored it
-  // for keyboard players; with the meter no longer surfaced anywhere, there is
-  // nothing to mirror.
-
-  // Should this fighter's signature super fire on its own this frame?
-  //
-  // True only for HUMAN-driven fighters with a full meter. Since the super key
-  // was removed there is no input that can spend the meter, so a human's super
-  // fires automatically — the president still does their signature thing, the
-  // player just doesn't manage a third resource. AI fighters return false here
-  // and keep firing through `intent.super`, which preserves ai.js's rung-scaled
-  // pacing (see the note at the call site in _tickFighter).
-  //
-  // `_fireSuper` re-checks the meter and the onSuper config and no-ops if
-  // either is missing, so BOB — who has no signature move by design — can never
-  // trigger anything here.
+  // Should this fighter's signature super fire on its own this frame? True
+  // only for HUMAN-driven fighters with a full meter (there is no super key).
+  // AI fighters fire through `intent.super`, keeping ai.js's rung-scaled
+  // pacing. `_fireSuper` no-ops without an onSuper config (BOB has none).
   _autoSuperReady(f) {
     return f?.controller?.isHuman === true
       && (f.personality?.superMeter || 0) >= 1.0;
@@ -3072,7 +2760,7 @@ export class BrawlGame {
   }
 
   /**
-   * The energy gate (2026-09-12). False means this fighter may not START a
+   * The energy gate. False means this fighter may not START a
    * punch or kick — not a weaker one, none at all — because they have gassed
    * themselves out. Blocking and movement are deliberately still allowed: the
    * guard is the way back up the bar, so the punishment is "you must defend
@@ -3138,10 +2826,10 @@ export class BrawlGame {
         && (TIME_LIMIT - (this.clock || 0) <= 10 || (this._dangerPushed || 0) > 0.3) ? 1 : 0;
     this._phoneLevel += (phonesWanted - this._phoneLevel) * (1 - Math.exp(-dt * 1.5));
     this.excited = Math.max(0, this.excited - dt * 0.4);
-    // #10 — the reactive hall shares the crowd's clock because it is driven by
+    // The reactive hall shares the crowd's clock because it is driven by
     // the same two signals (excitement and the audio envelope).
     this._updateReactiveArena(dt);
-    // #6 — the crowd you HEAR is fed the same excitement value as the crowd you
+    // The crowd you HEAR is fed the same excitement value as the crowd you
     // SEE, plus a floor that rises as the round wears on and a lift when either
     // fighter is nearly out. One signal, so the hall can never look tense and
     // sound bored.
@@ -3192,16 +2880,13 @@ export class BrawlGame {
     this._showCombo(attacker);
     this._showCombo(defender);
     this._spawnDamageNumber(point, dmg, region);
-    // #3 — the run rings up the scale in the music's key.
+    // The run rings up the scale in the music's key.
     if (attacker.comboN >= 2) this.audio?.comboNote(attacker.comboN, point);
     this._commentOnHit(attacker, defender, dmg);
 
-    // ── Reaction layer (GFX/SOUND #3, #5, #6) ─────────────────────────
-    // Every landed hit already had a sound; what it did not have was a mix and
-    // a room that reacted to it. All of it hangs off this one call site so the
-    // visual stamp, the sidechain and the crowd can never disagree about what
-    // counted as a hit — the bug that would follow from wiring each of them
-    // into its own place in the damage path.
+    // ── Reaction layer ───────────────────────────────────────────────
+    // The mix, the crowd and the visual stamp all hang off this one call site
+    // so they can never disagree about what counted as a hit.
     //
     // `power` normalises damage against twice the heavy threshold, so a jab is
     // ~0.35 and a fully-charged head kick saturates at 1.
@@ -3220,13 +2905,13 @@ export class BrawlGame {
       this.audio.crowdGasp();
     }
     if (dmg >= HEAVY_HIT_DMG) this._impactFrame(point, power);
-    // #2 — rumble: the one hit carries the full motor, the one landing it a
+    // Rumble: the one hit carries the full motor, the one landing it a
     // light buzz in the hand.
     this._rumble(defender, 0.3 + 0.6 * power, 0.5, 80 + 140 * power);
     this._rumble(attacker, 0.08, 0.2 + 0.35 * power, 55);
   }
 
-  /** #2 — dual-rumble on the pad driving `f`, if a person is driving it with one. */
+  /** Dual-rumble on the pad driving `f`, if a person is driving it with one. */
   _rumble(f, strong, weak, ms) {
     if (!this.gamepads || !f || f.controller?.isHuman !== true) return;
     this.gamepads.rumble(this.fighters.indexOf(f) + 1, strong, weak, ms);
@@ -3251,7 +2936,7 @@ export class BrawlGame {
   _tickCombos() {
     for (const f of this.fighters) {
       if (f.comboN > 0 && (this.t - f.comboT) > COMBO_WINDOW) {
-        // #3 — a run of 4+ that ends on its own terms gets its resolving chord.
+        // A run of 4+ that ends on its own terms gets its resolving chord.
         // (One broken by a counter-hit is zeroed in _registerLandedHit instead,
         // so it never gets here with a count — no reward for being interrupted.)
         if (f.comboN >= 4) this.audio?.comboFinisher(f.comboN);
@@ -3283,7 +2968,7 @@ export class BrawlGame {
   // only one of which is obvious enough to be re-derived correctly by hand.
   _spawnFloater(point, text, extraClass) {
     if (!this.fx) return;
-    const w = this.container.clientWidth, h = this.container.clientHeight;
+    const w = this._hostW, h = this._hostH;
     if (!w || !h) return;
     _dmgProj.copy(point).project(this.camera);
     // A point behind the near plane projects to a mirrored on-screen position,
@@ -3333,16 +3018,8 @@ export class BrawlGame {
       // ARITY CONTRACT with PoBrawlPage.OnHud — seven arguments, and both sides
       // move together or the HUD dies silently. invokeMethodAsync rejects on an
       // argument-count mismatch and this call swallows it in .catch(() => {}),
-      // so a mismatch produces no console error and no exception: just a HUD
-      // frozen at its C# field initializers. That has already happened once,
-      // when the four super arguments below were ADDED here and not there.
-      //
-      // 2026-08-11: those same four (superPct/superReady per fighter) are now
-      // REMOVED, in step with the C# signature, because the super bar they fed
-      // is gone — the HUD is health and energy only. The meter still exists in
-      // the engine and still gates the signature moves; it simply is no longer
-      // a number the player is shown. Do not re-add an argument here without
-      // widening OnHud in the same commit.
+      // so a mismatch produces no console error: just a HUD frozen at its C#
+      // field initializers. Change OnHud in the same commit.
       // The training room has no clock; the page renders its own ∞ there, and a
       // pinned full value keeps the HUD from counting down to a limit that never fires.
       const timeLeft = this.training ? TIME_LIMIT : Math.max(0, TIME_LIMIT - (this.clock || 0));
@@ -3363,8 +3040,9 @@ export class BrawlGame {
     this.disposed = true;
     cancelAnimationFrame(this.raf);
     clearTimeout(this._splashTimer);
+    clearTimeout(this._reelTimer);
     clearTimeout(this._clipTimer);
-    // GFX/SOUND top-10 modules. The pads first: releasing their held keys has to
+    // The pads first: releasing their held keys has to
     // reach the controllers before those are disposed below.
     if (this.gamepads) { this.gamepads.dispose(); this.gamepads = null; }
     if (this.clip) { this.clip.dispose(); this.clip = null; }
@@ -3375,7 +3053,7 @@ export class BrawlGame {
     // touches the renderer and the arena lights, and a `po-gfx-tier` firing during
     // teardown would reach both after they are gone.
     if (this._offTierChange) { this._offTierChange(); this._offTierChange = null; }
-    // #8 — hand the analyser pump back. Leaving it on would keep a rAF loop
+    // Hand the analyser pump back. Leaving it on would keep a rAF loop
     // alive on every page the player visits afterwards, writing CSS variables
     // nothing reads.
     try { VisualRuntime.enableAudioReactive(false); } catch { /* */ }
@@ -3389,11 +3067,9 @@ export class BrawlGame {
     if (this.touchEl) { this.touchEl.remove(); this.container.classList.remove('pb-has-pad'); }
     if (this.fighters) for (const f of this.fighters) f.controller.dispose();
     if (this.audio) this.audio.close();
-    // Drop any swing physics and per-fighter bodies, then dispose the world.
     if (this.props) { disposeProps(this.props); this.props = null; }
     if (this.fighters) {
       for (const f of this.fighters) {
-        if (f.swingPhysics) destroySwingPhysics(this._physics.world, f.swingPhysics);
         this._removeFighterPhysics(f);
         if (f.koRagdoll) f.koRagdoll.dispose();
       }
@@ -3411,12 +3087,12 @@ export class BrawlGame {
       });
     }
     if (this.composer) this.composer.dispose?.();
-    // PMREM output target (#1) — a WebGLRenderTarget, invisible to the
-    // geometry/material traverse above, exactly like the old reflector.
+    // PMREM output target — a WebGLRenderTarget, invisible to the
+    // geometry/material traverse above.
     if (this._envRT) { this._envRT.dispose(); this._envRT = null; }
     if (this.scene) this.scene.environment = null;
     if (this._blobTex) this._blobTex.dispose();
-    // #10 — the live jumbotron canvas texture. The traverse above disposes
+    // The live jumbotron canvas texture. The traverse above disposes
     // materials but never their maps, and this one is ours (arena.js's cached
     // static texture, which we replaced, deliberately is not touched).
     if (this._jumboTex) { this._jumboTex.dispose(); this._jumboTex = null; }

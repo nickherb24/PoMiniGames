@@ -1,6 +1,6 @@
 // input.js — keyboard → fight intents for the two local layouts.
 // Intent shape (shared with ai.js): { move: -1|0|1 (+1 = toward opponent),
-// side: -1|0|1 (edge-triggered step), punch: bool (press edge), kick: bool
+// side: -1|0|1 (held), punch: bool (press edge), kick: bool
 // (press edge), punchHeld: bool, kickHeld: bool, block: bool, super: bool }.
 // The press edge starts a charge; the engine releases the attack when the
 // matching *Held flag drops — hold longer for a more powerful strike.
@@ -8,24 +8,9 @@
 // Layout 1 (P1): A/D move · W away / S toward camera · R block (hold) · F punch · G kick
 // Layout 2 (P2): ←/→ move · ↑ away / ↓ toward camera · ; block (hold) · K punch · L kick
 //
-// 2026-08-11 control rework. Was: W stepped in, and S did double duty as a
-// tap-to-sidestep / hold-to-block key separated by a 120 ms timer. Now:
-//   • W and S move along the CAMERA's depth axis — W into the screen, S out
-//     toward the viewer — which is how a fighter circles their opponent here.
-//     `side` is no longer an edge-triggered dart; it is held.
-//   • R is block, on its own key. The tap-vs-hold split is gone entirely, and
-//     with it a real ambiguity: a short block read as a sidestep, so guarding
-//     late against a fast swing sometimes stepped you into it instead.
-// P2's block moved off ↓ (now a circle key) onto `;`, beside its K/L attacks.
-//
-// 2026-08-11: the super keys (E / O) are gone. The game is down to two bars —
-// health and energy — so there is no super meter on screen for a key to spend,
-// and a signature move now fires by itself the moment a human's meter fills
-// (game.js `_autoSuperReady`). `super` stays in the intent shape because ai.js
-// still sets it: the CPU keeps its own rung-paced activation. A keyboard
-// controller now always publishes `super: false` — explicitly, not by omission,
-// because an absent field reads as `undefined` at the engine's `intent.super`
-// check, and that silent read is precisely what kept the feature dead before.
+// No super key: a human's signature move fires by itself when the meter fills
+// (game.js `_autoSuperReady`). `super` stays in the intent shape for ai.js,
+// which paces its own activation.
 //
 // `left`/`right` are SCREEN-relative: the left key always walks the fighter
 // toward the left edge of the screen, the right key toward the right edge,
@@ -38,12 +23,11 @@
 // also the one that carries you around your opponent — this is the circle
 // control, expressed in the frame the player actually sees.
 //
-// Camera-relative is the point, not an implementation detail. The first cut of
-// this derived the axis from the line between the fighters, which is consistent
-// in ROTATIONAL terms but flips on screen the moment the two swap sides of the
-// ring: the same key would walk you into the screen in one exchange and out of
-// it in the next. Screen-relative never inverts.
-const LAYOUTS = {
+// Camera-relative is the point: an axis derived from the line between the
+// fighters would flip on screen whenever they swap sides.
+//
+// Exported because the touch panel (below) and gamepad.js press these same codes.
+export const LAYOUTS = {
   1: {
     left: 'KeyA', right: 'KeyD',
     depthAway: 'KeyW', depthToward: 'KeyS',
@@ -57,10 +41,8 @@ const LAYOUTS = {
 };
 
 export class KeyboardController {
-  // Marks this fighter as driven by a person at the keyboard. game.js reads it
-  // (`_autoSuperReady`) to decide who gets an automatic signature super: humans
-  // do, because they no longer have a key for it; AI fighters do not, because
-  // ai.js paces its own activation as a difficulty knob.
+  // game.js `_autoSuperReady` reads this: humans get an automatic super, AI
+  // fighters do not (ai.js paces its own activation as a difficulty knob).
   isHuman = true;
 
   constructor(layout) {
@@ -69,15 +51,9 @@ export class KeyboardController {
     this.punchQueued = false;
     this.kickQueued = false;
 
-    // Circling and blocking are pure held-key state read straight off `down` in
-    // update(), so neither needs a queue or a timer here. The sideQueued /
-    // blockKeyDownAt pair that used to live here existed only to disambiguate
-    // the old tap-vs-hold S key.
     this._onDown = (e) => {
-      // Let any modified chord through untouched. This matters now that block
-      // is KeyR: Ctrl+R / Cmd+R is reload, and swallowing it would leave a
-      // player unable to refresh the page while the fight has focus. No binding
-      // in either layout uses a modifier, so nothing is lost by ignoring them.
+      // Let any modified chord through untouched: Ctrl+R / Cmd+R is reload, and
+      // no binding in either layout uses a modifier.
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       if (Object.values(this.map).includes(e.code)) e.preventDefault();
       if (e.repeat) return;
@@ -100,10 +76,8 @@ export class KeyboardController {
     // engine's toward/away `move`. Defaults to +1 when facing is unknown.
     const towardX = (ctx && ctx.towardX) || 1;
     const move = worldDir * towardX;
-    // Held, not tapped, and deliberately NOT folded through towardX the way
-    // `move` is: this axis is screen-relative by design, so W walks into the
-    // screen whichever side of the ring the fighter is standing on. Folding
-    // facing in here would reintroduce exactly the inversion this scheme fixes.
+    // Deliberately NOT folded through towardX: this axis is screen-relative, so W
+    // walks into the screen whichever side of the ring the fighter stands on.
     const circle = (this.down.has(this.map.depthAway) ? 1 : 0)
       - (this.down.has(this.map.depthToward) ? 1 : 0);
     const block = this.down.has(this.map.block);
@@ -117,11 +91,8 @@ export class KeyboardController {
       punchHeld: this.down.has(this.map.punch) || this.punchQueued,
       kickHeld: this.down.has(this.map.kick) || this.kickQueued,
       block,
-      // Always false for a human — no key maps to it any more. Published
-      // explicitly rather than dropped: `intent.super` is read unguarded in
-      // _tickFighter, and an omitted field reading `undefined` there is the
-      // exact silent failure that kept this system dead for its whole life.
-      // A human's super now fires from game.js `_autoSuperReady` instead.
+      // Always false for a human; published explicitly because `intent.super`
+      // is read unguarded in _tickFighter.
       super: false,
     };
     this.punchQueued = false;
@@ -138,4 +109,80 @@ export class KeyboardController {
     window.removeEventListener('keydown', this._onDown);
     window.removeEventListener('keyup', this._onUp);
   }
+}
+
+// ── Touch controls ───────────────────────────────────────────────────
+// Docked along the bottom of the arena. Left cluster: walk in/out plus the two
+// circle keys. Right cluster: block (hold), punch, kick (hold to charge). Each
+// cluster stacks its small keys over its big ones, so the pad fits a 360px
+// phone. The host
+// gets .pb-has-pad so the page's bottom-docked chrome (training bar, caption,
+// news package) can lift clear of it. Synthetic key events feed the normal
+// input path, so the touch panel has no control semantics of its own —
+// rebinding a key in LAYOUTS rebinds the button. Returns the panel; the caller
+// removes it (and .pb-has-pad) on dispose.
+export function buildTouchControls(container, online) {
+  const K = LAYOUTS[1];
+  const panel = document.createElement('div');
+  panel.className = 'pb-touch';
+  const mk = (code, label, name, small = false) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    b.setAttribute('aria-label', name); // the glyphs alone read as "black left-pointing triangle"
+    if (small) b.className = 'pb-touch-small';
+    const down = (e) => {
+      e.preventDefault();
+      b.classList.add('pb-touch-held');
+      window.dispatchEvent(new KeyboardEvent('keydown', { code }));
+      // Haptic tick on press, heavier for strikes. Skipped on kiosk/demo routes:
+      // with no user gesture every call would emit a console error.
+      try {
+        const onKiosk = (location.search || '').indexOf('kiosk=') >= 0
+          || /\/demo(\b|\/|$)/i.test(location.pathname || '');
+        // The Profile haptics opt-out, not mute ("sound off, buzz on" is a real choice).
+        if (!onKiosk && localStorage.getItem('pomini_haptics') !== '0' && navigator.vibrate) {
+          navigator.vibrate((code === K.punch || code === K.kick) ? 16 : 8);
+        }
+      } catch { }
+    };
+    const up = () => {
+      if (!b.classList.contains('pb-touch-held')) return;
+      b.classList.remove('pb-touch-held');
+      window.dispatchEvent(new KeyboardEvent('keyup', { code }));
+    };
+    b.addEventListener('pointerdown', down);
+    b.addEventListener('pointerup', up);
+    b.addEventListener('pointercancel', up);
+    b.addEventListener('pointerleave', up); // finger slid off = release
+    b.addEventListener('contextmenu', (e) => e.preventDefault());
+    return b;
+  };
+  // Left cluster is the movement axis: walk in/out, and the two circle keys
+  // beside them. All four are hold-to-act, matching the keyboard exactly —
+  // these dispatch synthetic keydown/keyup for the very same codes.
+  const cluster = (small, big) => {
+    const c = document.createElement('div');
+    c.className = 'pb-touch-cluster';
+    const top = document.createElement('div');
+    top.className = 'pb-touch-row pb-touch-row--small';
+    top.append(...small);
+    const bottom = document.createElement('div');
+    bottom.className = 'pb-touch-row';
+    bottom.append(...big);
+    c.append(top, bottom);
+    return c;
+  };
+  const left = cluster(
+    [mk(K.depthAway, '↺', 'Circle counter-clockwise', true), mk(K.depthToward, '↻', 'Circle clockwise', true)],
+    [mk(K.left, '◀', 'Move left'), mk(K.right, '▶', 'Move right')]);
+  const guard = [mk(K.block, '🛡', 'Block (hold)', true)];
+  // Online has a special (full energy); the local modes fire theirs by themselves.
+  if (online) guard.push(mk('KeyH', '⚡', 'Special', true));
+  const right = cluster(guard,
+    [mk(K.punch, '👊', 'Punch (hold to charge)'), mk(K.kick, '🦵', 'Kick (hold to charge)')]);
+  panel.append(left, right);
+  container.appendChild(panel);
+  container.classList.add('pb-has-pad');
+  return panel;
 }

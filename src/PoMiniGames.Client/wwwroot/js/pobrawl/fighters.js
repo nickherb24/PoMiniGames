@@ -1,5 +1,4 @@
 // fighters.js — the president caricatures as hierarchical three.js primitive rigs.
-// The 1P human can use an imported portrait; the roster uses procedural rigs.
 //
 // Likeness comes from four layers, all cheap primitives + canvas textures:
 //   1. Facial geometry — brows/eyes/nose/mouth/chin/jowls, parameterized per
@@ -12,18 +11,14 @@
 //      base build, plus accessories (flag pins, Bush Sr.'s round glasses,
 //      Carter's cardigan, Clinton's loosened tie).
 //
-// Engine contracts that must NOT change (mirror sync, foot IK, ragdolls and
-// hit capsules all depend on them): joint names, joint positions, the
-// jiggles array order, and refs.skull.scale staying (1,1,1) at build time
-// (the engine writes absolute swell scales into it).
+// Engine contracts that must NOT change (foot IK, ragdolls and hit capsules
+// depend on them): joint names, joint positions, and refs.skull.scale staying
+// (1,1,1) at build time (the engine writes absolute swell scales into it).
 //
 // Each character exposes `mass`, `attackPower`, and `moveAccel` so the engine
-// can drive realistic weight/momentum/knockback without per-character special
-// cases. Materials are MeshStandardMaterial so we can pick up the arena env
-// map and react to the key/rim lights.
+// can drive weight/momentum/knockback without per-character special cases.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
-import { buildPortraitHead } from './portraitHead.js';
 
 // Face parameter reference (all optional, defaults in buildFace):
 //   brow:  { color, angle (rad; − = stern inner-down, + = raised), thick, w }
@@ -207,9 +202,6 @@ export const CHARACTERS = {
     mass: 1.2, attackPower: 1.12, moveAccel: 12,
     entrance: 'victory',
   },
-  // LBJ (Lyndon B. Johnson, 1963–1969). Texas-sized arm-twister: heavy brows,
-  // big nose, prominent ears, hair brushed straight back from a high forehead.
-  // Round belly + wide shoulders, slow but hits like a freight train.
   lbj: {
     id: 'lbj', name: 'LBJ',
     skin: 0xe5c19a, suit: 0x2b3e5e, tie: 0xc0392b, tieLength: 1.05,
@@ -229,8 +221,6 @@ export const CHARACTERS = {
     mass: 1.25, attackPower: 1.18, moveAccel: 9,
     entrance: 'lbjTreatment',
   },
-  // JFK (John F. Kennedy, 1961–1963). Iconic bouffant of thick light-brown hair
-  // swept up and back, the famous Kennedy grin, breezy confidence.
   jfk: {
     id: 'jfk', name: 'JFK',
     skin: 0xefcfa6, suit: 0x1a2a4e, tie: 0x4a7ba8, tieLength: 1.0,
@@ -248,9 +238,6 @@ export const CHARACTERS = {
     mass: 0.9, attackPower: 0.98, moveAccel: 14,
     entrance: 'jfkNod',
   },
-  // Eisenhower (Dwight D., 1953–1961). Military bearing: short cropped grey
-  // hair, broad shoulders, a strict-but-fair thousand-yard stare. Wider
-  // stance than the recent presidents; slow feet but punishing counters.
   eisenhower: {
     id: 'eisenhower', name: 'Eisenhower',
     skin: 0xeec9a8, suit: 0x4a5a6a, tie: 0x8a6028, tieLength: 0.95,
@@ -269,9 +256,6 @@ export const CHARACTERS = {
     mass: 1.18, attackPower: 1.15, moveAccel: 10,
     entrance: 'eisenhowerSalute',
   },
-  // Truman (Harry S., 1945–1953). Bald on top with a thin rim of grey hair
-  // and round wire-rim glasses. Plucky, big smile, round cheeks — the
-  // "Give 'em hell" pugilist of the postwar era.
   truman: {
     id: 'truman', name: 'Truman',
     skin: 0xeec5a0, suit: 0x3a3f4a, tie: 0x8a7a5a, tieLength: 0.95,
@@ -289,9 +273,6 @@ export const CHARACTERS = {
     mass: 0.94, attackPower: 1.05, moveAccel: 13,
     entrance: 'giveEmHell',
   },
-  // FDR (Franklin D., 1933–1945). Tall, lean, aristocratic silver hair
-  // combed back. The cigarette-holder grin, round wire glasses, the
-  // longest reach in the roster — fast and precise despite the cane era.
   fdr: {
     id: 'fdr', name: 'FDR',
     skin: 0xe6bea0, suit: 0x1c2538, tie: 0x4a5a8a, tieLength: 1.1,
@@ -309,8 +290,7 @@ export const CHARACTERS = {
     mass: 0.96, attackPower: 1.1, moveAccel: 12,
     entrance: 'fdrCane',
   },
-  // BOB — the 1-player everyman hero. No suit: white tee, blue jeans,
-  // sneakers, messy brown hair. Built by the same rig with `outfit: 'casual'`.
+  // BOB — the 1-player everyman hero, built with `outfit: 'casual'` (no suit).
   bob: {
     id: 'bob', name: 'BOB',
     skin: 0xdfae8f, hair: 0x5a3d24, hairStyle: 'spiky',
@@ -328,14 +308,6 @@ export const CHARACTERS = {
 };
 
 export const CHARACTER_IDS = Object.keys(CHARACTERS);
-
-// Region -> bone names. The engine uses these to drive per-region damage and tints.
-export const REGION_BONES = {
-  head: ['head'],
-  torso: ['torso', 'hips'],
-  arms: ['shoulderL', 'elbowL', 'shoulderR', 'elbowR'],
-  legs: ['hipL', 'kneeL', 'hipR', 'kneeR'],
-};
 
 // ── Color helpers (canvas painting) ────────────────────────────────────────
 function cssHex(hex) {
@@ -434,13 +406,9 @@ function skinNoiseTexture() {
   return _skinTex;
 }
 
-// ── Procedural normal maps (idea #5) ────────────────────────────────────────
-// Real tangent-space normal maps (RGB), Sobel-derived from a height field, so
-// surface detail catches DIRECTIONAL light — the rim/key/RectArea speculars
-// break up across skin pores and fabric weave instead of sliding over a flat
-// lobe. A bumpMap only perturbs along the view gradient; a normalMap tilts the
-// shading normal properly, which is what reads as "material" under moving
-// lights. Kept linear (no sRGB) since these are data, not colour.
+// ── Procedural normal maps ──────────────────────────────────────────────────
+// Tangent-space normal maps Sobel-derived from a height field, so detail
+// catches directional light. Kept linear (no sRGB): data, not colour.
 function normalFromHeight(size, heightFn, strength) {
   const h = new Float32Array(size * size);
   for (let y = 0; y < size; y++)
@@ -1076,32 +1044,18 @@ export function setExpression(rig, name) {
 
 /**
  * Builds one fighter rig. Returns { root, joints, materials, config, baseColors }.
- */
-/**
  * @param {string} charId
  * @param {{physicalMaterials?: boolean}} [quality]
  *        physicalMaterials: false swaps the whole wardrobe from
  *        MeshPhysicalMaterial to MeshStandardMaterial. See `dress()` below.
- * @param {Array|null} [portraitParts] Loaded head geometry for the 1P human.
  */
-export function buildFighter(charId, quality = {}, portraitParts = null) {
+export function buildFighter(charId, quality = {}) {
   const c = CHARACTERS[charId];
-  // ── Wardrobe material tier (2026-08-11 audit #5) ──────────────────────────
-  // MeshPhysicalMaterial is three's heaviest lighting path: `sheen` and
-  // `clearcoat` each add a full extra BRDF lobe evaluated per fragment, per
-  // light. The fighters are the most-drawn objects in the frame and every one of
-  // their materials was physical, so this is the single largest per-pixel cost in
-  // the scene — and it was paid identically on a laptop iGPU and a workstation.
-  //
-  // Below the top tier the wardrobe drops to MeshStandardMaterial. The sheen and
-  // clearcoat *properties* are still passed and simply ignored by the standard
-  // shader, which is deliberate: it keeps one construction path instead of two
-  // divergent ones, and it means _applyDamageWear can go on ramping `clearcoat`
-  // with sweat without caring which material it is talking to (on a standard
-  // material that assignment is an inert property write, not an error).
-  // The constructor is stricter than a later write: setValues() warns once per
-  // unknown key, which printed five "not a property" warnings per fighter on
-  // every lower-tier boot. So the physical-only keys are dropped here.
+  // Wardrobe material tier: sheen/clearcoat each add a BRDF lobe per fragment
+  // per light, so lower tiers use MeshStandardMaterial. One construction path
+  // either way; _applyDamageWear's later `clearcoat` writes are inert on a
+  // standard material, but the constructor warns on unknown keys, so the
+  // physical-only keys are dropped here.
   const physical = quality.physicalMaterials !== false;
   const dress = (params) => {
     if (physical) return new THREE.MeshPhysicalMaterial(params);
@@ -1122,18 +1076,14 @@ export function buildFighter(charId, quality = {}, portraitParts = null) {
   // For a casual outfit the "suit" material is the t-shirt (the engine's
   // sweat/tint systems talk to materials.suitMat, so the torso material must
   // keep that name regardless of wardrobe), and the legs get denim instead.
-  //
-  // MeshPhysicalMaterial throughout the wardrobe: `sheen` gives wool/silk
-  // their grazing-angle backscatter (real fabric glows at silhouette edges),
-  // `clearcoat` gives polished hair and dress shoes a second specular lobe.
+  // `sheen` gives fabric its grazing-angle glow; `clearcoat` gives polished
+  // hair and dress shoes a second specular lobe.
   const suitMat = dress({
     color: casual ? c.shirtColor : c.suit,
     roughness: casual ? 0.9 : 0.95, metalness: casual ? 0.0 : 0.05,
     sheen: casual ? 0.3 : 0.55, sheenRoughness: 0.75,
     sheenColor: new THREE.Color(casual ? c.shirtColor : c.suit).lerp(new THREE.Color(0xffffff), 0.35),
     roughnessMap: weaveTexture(),
-    // Real weave normal map (idea #5) replaces the old grayscale bumpMap —
-    // the thread grid now tilts light directionally under the rim/rig lights.
     normalMap: weaveNormalTexture(),
     normalScale: new THREE.Vector2(casual ? 0.35 : 0.7, casual ? 0.35 : 0.7),
   });
@@ -1147,30 +1097,26 @@ export function buildFighter(charId, quality = {}, portraitParts = null) {
         normalScale: new THREE.Vector2(0.9, 0.9),
       })
     : suitMat;
-  // Skin: a warm reddish sheen fakes subsurface scattering — light appears
-  // to bleed through at grazing angles (ears, nose bridge, knuckles). The
-  // pore normal (idea #5) scatters that sheen highlight so skin stops
-  // reading as smooth plastic.
+  // Skin: a warm reddish sheen fakes subsurface scattering at grazing angles;
+  // the pore normal breaks up the highlight.
   const skinMat = dress({
     color: c.skin, roughness: 0.55, metalness: 0.0,
     sheen: 0.32, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff7a55),
     roughnessMap: skinNoiseTexture(),
     normalMap: skinNormalTexture(),
     normalScale: new THREE.Vector2(0.35, 0.35),
-    // Seed a near-zero clearcoat so the wet-sheen lobe is compiled into the
-    // shader up front (idea #6). _applyDamageWear then ramps this value with
-    // sweat WITHOUT forcing a per-frame recompile — a clearcoat that starts
-    // at exactly 0 would need needsUpdate to switch the feature on.
+    // Near-zero, not 0, so the clearcoat lobe is compiled in up front and
+    // _applyDamageWear can ramp it with sweat without a recompile.
     clearcoat: 0.001, clearcoatRoughness: 0.28,
   });
   // Face-only skin: lets Trump's face run oranger than his hands.
-  const faceMat = (c.faceTint || portraitParts)
+  const faceMat = c.faceTint
     ? dress({
         color: c.faceTint ?? c.skin, roughness: 0.55, metalness: 0.0,
         sheen: 0.32, sheenRoughness: 0.5, sheenColor: new THREE.Color(0xff7a55),
         roughnessMap: skinNoiseTexture(),
         normalMap: skinNormalTexture(),
-        normalScale: new THREE.Vector2(portraitParts ? 0.06 : 0.3, portraitParts ? 0.06 : 0.3),
+        normalScale: new THREE.Vector2(0.3, 0.3),
         clearcoat: 0.001, clearcoatRoughness: 0.28,
       })
     : skinMat;
@@ -1197,10 +1143,7 @@ export function buildFighter(charId, quality = {}, portraitParts = null) {
 
   const root = new THREE.Group();
 
-  // Secondary-motion pivot handles, filled in during construction below and
-  // registered with the jiggle solver at the end. Declared up front — the
-  // belly pivot is created during the torso build, well before the suit
-  // dressing block.
+  // Secondary-motion pivots, registered with the jiggle solver at the end.
   let bellyPivot = null;
   const tieSegPivots = [];
   const flapPivots = [];
@@ -1246,11 +1189,9 @@ export function buildFighter(charId, quality = {}, portraitParts = null) {
   }
 
   // Neck bridging the collar to the head.
-  if (!portraitParts) {
-    const neck = capsule(0.055, 0.08, skinMat);
-    neck.position.y = 0.6;
-    torso.add(neck);
-  }
+  const neck = capsule(0.055, 0.08, skinMat);
+  neck.position.y = 0.6;
+  torso.add(neck);
 
   // Suit-only dressing: dress-shirt panel, jacket buttons, and the tie.
   // A casual fighter (BOB) wears a plain tee — none of these apply.
@@ -1357,28 +1298,26 @@ export function buildFighter(charId, quality = {}, portraitParts = null) {
   // (swelling), so the group scale is safe to own here.
   if (c.headScale && c.headScale !== 1) head.scale.setScalar(c.headScale);
 
-  const skull = portraitParts ? new THREE.Group() : box(dims.w, dims.h, dims.d, faceMat);
+  const skull = box(dims.w, dims.h, dims.d, faceMat);
   skull.position.y = 0.16;
   head.add(skull);
   // Hair on its own pivot so it can flop with a subtler jiggle than the tie.
   const hairPivot = new THREE.Group();
   hairPivot.position.y = 0.3;
-  const hair = portraitParts ? new THREE.Group() : buildHair(c, hairMat, dims);
+  const hair = buildHair(c, hairMat, dims);
   hair.position.y = -0.3;
   hairPivot.add(hair);
   head.add(hairPivot);
 
   const earR = c.earR ?? 0.035;
-  for (const side of (portraitParts ? [] : [-1, 1])) {
+  for (const side of [-1, 1]) {
     const ear = sphere(earR, skinMat);
     ear.position.set(side * (dims.hw + 0.01), 0.16, 0);
     head.add(ear);
   }
 
   // Facial features + painted detail plate (returns the expression groups).
-  const face = portraitParts ? {} : buildFace(c, head, { faceMat, skinMat }, dims);
-  const portrait = portraitParts ? buildPortraitHead(portraitParts, c, dims, { faceMat, hairMat }) : null;
-  if (portrait) skull.add(portrait.mesh);
+  const face = buildFace(c, head, { faceMat, skinMat }, dims);
 
   // Cut decal above the brow — hidden until head damage passes the threshold
   // (the engine toggles refs.cut.visible).
@@ -1390,7 +1329,7 @@ export function buildFighter(charId, quality = {}, portraitParts = null) {
   cut.visible = false;
   head.add(cut);
 
-  if (c.aviators && !portraitParts) {
+  if (c.aviators) {
     const glassMat = new THREE.MeshStandardMaterial({
       color: 0x14161a, roughness: 0.1, metalness: 0.85,
     });
@@ -1481,8 +1420,6 @@ export function buildFighter(charId, quality = {}, portraitParts = null) {
   // `stiffness`/`damping` shape the pendulum. kind 'rot' swings the pivot,
   // kind 'scale' squash-stretches it (belly wobble, jowl quiver). minRx/maxRx
   // clamp pitch asymmetrically so cloth can't swing through the body.
-  // NOTE: the mirror ghost syncs this array BY INDEX — both rigs are built by
-  // this same function, so order stays consistent automatically.
   const mkJiggle = (pivot, opts) => ({
     pivot, kind: 'rot', rx: 0, rz: 0, vrx: 0, vrz: 0,
     prev: null, vel: new THREE.Vector3(), ...opts,
@@ -1522,8 +1459,7 @@ export function buildFighter(charId, quality = {}, portraitParts = null) {
     jiggles,
     // Direct mesh handles for the damage-visuals system (swelling, cut) and
     // the expression system (mouths — see setExpression).
-    refs: { skull, cut, hairPivot, mouths: face.mouths, portraitHead: portrait?.mesh },
-    disposePortrait: portrait?.dispose,
+    refs: { skull, cut, hairPivot, mouths: face.mouths },
     materials: { suitMat, skinMat, faceMat, plateMat: face.plateMat, tieMat, hairMat },
     config: c,
     baseColors: {
@@ -1558,7 +1494,7 @@ export function updateJiggles(rig, dt) {
     j.vel.copy(_jv);
     j.prev.copy(_jw);
 
-    // Clamp accel spikes (teleports, replay scrubs) so the spring can't blow up.
+    // Clamp accel spikes (teleports) so the spring can't blow up.
     const m = _jaccel.length();
     if (m > 80) _jaccel.multiplyScalar(80 / m);
 
@@ -1585,7 +1521,3 @@ export function updateJiggles(rig, dt) {
     j.pivot.rotation.z = j.rz;
   }
 }
-
-// Per-region bruise tinting used to live here (tintJoint/resetTints). Removed
-// per user request: a fighter's model colors never change when hit or KO'd —
-// damage is communicated via the HUD body diagram instead.

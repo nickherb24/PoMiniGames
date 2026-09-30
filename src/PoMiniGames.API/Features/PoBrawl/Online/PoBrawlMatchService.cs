@@ -7,8 +7,8 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// <summary>
 /// One in-process PoBrawl 1v1 match. Owns the per-tick combat simulation,
 /// input aggregation, and final result. Lifecycle: created by
-/// <see cref="PoBrawlMatchRegistry"/> when the host starts a match, lives until
-/// the result is broadcast, then disposes itself.
+/// <see cref="PoBrawlMatchRegistry"/> when the host starts a match, and swept by the
+/// pump once it has lingered past <see cref="PoBrawlMatchRegistry.FinishedLinger"/>.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -59,7 +59,7 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// disconnect left the other player punching an empty corner until the bell.
 /// </para>
 /// </remarks>
-public sealed class PoBrawlMatchService : IAsyncDisposable
+public sealed class PoBrawlMatchService
 {
     /// <summary>
     /// Tick rate. 10 Hz matches the client UI's interpolation cadence; faster would
@@ -124,7 +124,6 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
     public string MatchId { get; }
     public string GameCode { get; }
     public IReadOnlyList<PoBrawlLobbyPlayer> Roster { get; }
-    public DateTimeOffset StartedAtUtc { get; }
 
     private readonly PoBrawlLobbyPlayer _p1;
     private readonly PoBrawlLobbyPlayer _p2;
@@ -180,7 +179,6 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
         MatchId = matchId;
         GameCode = gameCode;
         Roster = roster.ToList();
-        StartedAtUtc = DateTimeOffset.UtcNow;
         // Roster is exactly two (lobby cap), but be defensive about ordering so the
         // host is always P1 regardless of who joined first at the SignalR level.
         _p1 = Roster[0];
@@ -204,9 +202,6 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
 
     public PoBrawlSide SideFor(string connectionId) =>
         _connections.TryGetValue(connectionId, out var side) ? side : PoBrawlSide.Player1;
-
-    /// <summary>True when this connection is pinned to a corner (false for a spectator).</summary>
-    public bool IsSeated(string connectionId) => _connections.ContainsKey(connectionId);
 
     public void RegisterConnection(string connectionId, PoBrawlSide side)
     {
@@ -635,10 +630,4 @@ public sealed class PoBrawlMatchService : IAsyncDisposable
 
     public PoBrawlLobbyPlayer Player1 => _p1;
     public PoBrawlLobbyPlayer Player2 => _p2;
-
-    public async ValueTask DisposeAsync()
-    {
-        // Nothing async to dispose — match is in-process only.
-        await ValueTask.CompletedTask;
-    }
 }

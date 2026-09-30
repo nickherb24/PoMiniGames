@@ -38,12 +38,7 @@ public interface IStorageService
     /// </summary>
     /// <param name="winnerFighterId">Winning fighter, or either side when <paramref name="isDraw"/>.</param>
     /// <param name="loserFighterId">Losing fighter, or the other side when <paramref name="isDraw"/>.</param>
-    /// <returns>
-    /// The re-ranked board, same shape as <see cref="GetPoBrawlFighterRatingsAsync"/>. Returning
-    /// only the two changed rows would be useless on its own — a rating reads against the
-    /// ranking — and every caller followed the write with a board fetch anyway.
-    /// </returns>
-    Task<List<PoBrawlFighterRating>> RecordPoBrawlDemoResultAsync(
+    Task RecordPoBrawlDemoResultAsync(
         string winnerFighterId, string loserFighterId, bool isDraw);
 
     // ── PoBrawl online player Elo (one row per principal, head-to-head over SignalR) ──
@@ -56,9 +51,6 @@ public interface IStorageService
     /// <summary>Top-ranked online players by head-to-head Elo.</summary>
     Task<List<PoBrawlPlayerRating>> GetPoBrawlPlayerRatingsAsync(int limit = 10);
 
-    /// <summary>Read one player's online Elo row, or null if they have never played online.</summary>
-    Task<PoBrawlPlayerRating?> GetPoBrawlPlayerRatingAsync(string principalId);
-
     /// <summary>
     /// Records one online 1v1 match and moves both players' ratings. The Elo arithmetic
     /// runs through the same <see cref="Services.PairwiseEloCalculator"/> the demo board
@@ -68,8 +60,7 @@ public interface IStorageService
     /// <param name="loserPrincipalId">Principal id of the loser; the other side when <paramref name="isDraw"/>.</param>
     /// <param name="winnerDisplayName">Display name for the winner's row (claim identity at submit time).</param>
     /// <param name="loserDisplayName">Display name for the loser's row.</param>
-    /// <returns>The re-ranked player board.</returns>
-    Task<List<PoBrawlPlayerRating>> RecordPoBrawlOnlineMatchAsync(
+    Task RecordPoBrawlOnlineMatchAsync(
         string winnerPrincipalId, string loserPrincipalId,
         string winnerDisplayName, string loserDisplayName,
         bool isDraw);

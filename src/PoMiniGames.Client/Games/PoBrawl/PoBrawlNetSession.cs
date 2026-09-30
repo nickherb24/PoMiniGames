@@ -125,6 +125,19 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
         if (_hub is { State: HubConnectionState.Connected }) await _hub.InvokeAsync("RequestRematch");
     }
 
+    /// <summary>
+    /// The part of a hub failure a page can show. A HubException arrives wrapped — "An unexpected
+    /// error occurred invoking 'JoinRoom' on the server. HubException: No room with code ABCDE." —
+    /// so the part after the last marker is the server's text. Any other failure (transport, a
+    /// non-HubException) gets the fallback.
+    /// </summary>
+    internal static string HubMessage(Exception ex, string fallback)
+    {
+        const string marker = "HubException: ";
+        var i = ex.Message.LastIndexOf(marker, StringComparison.Ordinal);
+        return i >= 0 ? ex.Message[(i + marker.Length)..] : fallback;
+    }
+
     public async ValueTask DisposeAsync()
     {
         var hub = _hub;

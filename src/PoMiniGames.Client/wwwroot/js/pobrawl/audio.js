@@ -2,7 +2,7 @@
 // No audio files; everything is generated from OscillatorNode + filtered noise.
 // Architecture:
 //   master gain -> glue compressor -> limiter -> destination
-//     ├── sfxGain       (impacts, blocks, KO, voice grunts, footsteps)
+//     ├── sfxGain       (impacts, blocks, KO, voice grunts)
 //     │     ├── panner (per source; StereoPanner keyed off world-x)
 //     │     └── reverbSend -> convolver -> reverbGain -> master
 //     ├── musicGain     (round-start loop stem + low-HP tension)
@@ -10,48 +10,28 @@
 //
 // Every public method is a no-op while muted so the game can call them freely.
 
-// 2 seconds of noise. Longer than any single sound that reads from it, so
-// every playback can start at a random offset (see `_noiseSource`) and no two
-// cracks are the same waveform.
+// Seconds of shared noise; longer than any sound reading it, so each playback
+// starts at a random offset (`_noiseSource`).
 const NOISE_SECONDS = 2;
 
 // Half-width of the arena in world units, for mapping world-x -> stereo pan.
 const ARENA_HALF_WIDTH = 6;
 
-// Music scheduler: wake every LOOKAHEAD_MS and schedule every note that falls
-// due within SCHEDULE_AHEAD seconds. Timer jitter no longer reaches the audio
-// clock — the timer only decides *when we schedule*, never *when a note plays*.
+// Music scheduler: wake every LOOKAHEAD_MS, queue notes due within SCHEDULE_AHEAD
+// seconds. SCHEDULE_AHEAD is the main-thread stall budget — a round opening can
+// block a few hundred ms, and anything longer drains the queue audibly.
 const LOOKAHEAD_MS = 25;
-// How far ahead of the audio clock notes are queued. This is the budget for
-// main-thread stalls: the timer can't fire while the thread is blocked, so any
-// block longer than this drains the queue and the bass line audibly hiccups.
-// A round opening (fresh rigs, first-frame shader compiles) can block for a
-// couple hundred milliseconds, so keep the queue deep enough to ride that out
-// — 0.1 s was not, which is why the music stuttered as a match started.
 const SCHEDULE_AHEAD = 0.45;
 
-// ── Dynamic mix constants (GFX/SOUND #5) ─────────────────────────────────
-// The SFX bus runs through a lowpass that normally sits above the audible
-// band (so it is a straight wire) and is swept down for the "concussion"
-// after a heavy head hit or a KO. 20 kHz rather than `Infinity` because a
-// BiquadFilter still has a phase response at its corner — parking it past
-// Nyquist keeps the open state genuinely transparent.
+// SFX-bus lowpass: open (20 kHz, not Infinity — the corner's phase response stays
+// out of band) normally, swept down to MUFFLED (Hz) for the concussion.
 const SFX_FILTER_OPEN = 20000;
-// Corner the concussion sweeps down to at full strength. 420 Hz kills the
-// crack/hiss layers of every impact and leaves the body thuds, which is what
-// "ears ringing" actually sounds like.
 const SFX_FILTER_MUFFLED = 420;
-// Sidechain: how far the music bus is pulled down by a full-power impact, and
-// how fast it recovers. Attack is near-instant (the duck has to be under the
-// transient, not after it); release is slow enough to read as breathing.
+// Music sidechain attack/release, seconds.
 const DUCK_ATTACK = 0.012;
 const DUCK_RELEASE = 0.32;
 
-// ── Crowd bed constants (GFX/SOUND #6) ───────────────────────────────────
-// The crowd is three layers of filtered noise, not a sample: a low "room"
-// rumble, a mid chatter band, and a high hiss. Intensity moves the mid band's
-// centre frequency and the overall level, which is what a real crowd does as
-// it gets louder — it does not just get bigger, it gets brighter.
+// Crowd bed: three filtered-noise layers; intensity raises level and brightens the mid band.
 const CROWD_BASE_GAIN = 0.05;
 const CROWD_PEAK_GAIN = 0.16;
 
@@ -71,9 +51,7 @@ function makeNoiseBuffer(ctx) {
   return buf;
 }
 
-// Synthesized impulse response: exponentially-decaying stereo noise. Gives the
-// arena a sense of enclosure — dry hits read as happening in a vacuum.
-// Decorrelated channels so the tail widens rather than sitting centre.
+// Synthesized IR: exponentially decaying, decorrelated stereo noise.
 function makeImpulseResponse(ctx, duration = 1.2, decay = 2.6) {
   const len = Math.max(1, Math.floor(ctx.sampleRate * duration));
   const ir = ctx.createBuffer(2, len, ctx.sampleRate);
@@ -86,9 +64,7 @@ function makeImpulseResponse(ctx, duration = 1.2, decay = 2.6) {
   return ir;
 }
 
-// Release every node in `nodes` once `source` finishes. Without this each
-// impact leaves its panner wired to sfxGain forever, and a long flurry piles
-// up hundreds of live nodes on the audio thread.
+// Release `nodes` once `source` ends, or a flurry piles up live nodes on the audio thread.
 function autoDisconnect(source, nodes) {
   source.onended = () => {
     for (const n of nodes) {
@@ -97,16 +73,9 @@ function autoDisconnect(source, nodes) {
   };
 }
 
-// ── Announcer voice pick (GFX/SOUND #7) ──────────────────────────────────
-// Cached because getVoices() walks the platform voice list on every call, and
-// the announcer fires at round start / KO — moments already busy with rig
-// rebuilds and shader compiles.
-//
-// Deliberately NOT shared with pojoker-speech-interop.js, which wants a British
-// storyteller. A boxing PA wants the opposite: an American, deep, and above all
-// LOCAL voice. Remote/network voices ("Natural", "Online") are filtered out —
-// they sound better but arrive hundreds of milliseconds late, and an announcer
-// calling "K.O." after the replay has started is worse than a robotic one.
+// Announcer voice, cached (getVoices() is slow). Not shared with pojoker-speech-interop.js:
+// this wants an American, deep, LOCAL voice — network voices ("Natural", "Online") lag
+// hundreds of ms, and a late "K.O." is worse than a robotic one.
 let _announcerVoice = null;
 let _announcerVoiceResolved = false;
 function pickAnnouncerVoice() {
@@ -130,12 +99,8 @@ function pickAnnouncerVoice() {
   return _announcerVoice;
 }
 
-// ── Presidential voices (2026-09-29) ──────────────────────────────────────
-// grunt() used to be one voice for all fifteen fighters. Each now has a pitch
-// (f0), two vowel formants (f1/f2 — what makes a voice sound like a particular
-// throat rather than a synth) and a rasp amount (breath noise through the upper
-// formant). Nixon and LBJ sit low and gravelly, Truman and Bush Sr. reedy,
-// Clinton and Biden breathy. Unknown ids fall back to the middle of the table.
+// Per-fighter grunt voice: pitch f0 (Hz), vowel formants f1/f2 (Hz), rasp = breath
+// noise through the upper formant (0..1). Unknown ids use DEFAULT_VOICE.
 const VOICES = {
   trump:      { f0: 105, f1: 650, f2: 1100, rasp: 0.35 },
   biden:      { f0: 118, f1: 600, f2: 1300, rasp: 0.45 },
@@ -155,8 +120,7 @@ const VOICES = {
 };
 const DEFAULT_VOICE = { f0: 112, f1: 600, f2: 1250, rasp: 0.25 };
 
-// Note name → MIDI semitone offset (C4 = 60 → freq 261.63 Hz).
-// Supports sharps (#) and flats (b); octave is parsed from the digits.
+// Note name → semitone (C4 = MIDI 60); sharps (#) and flats (b).
 const NOTE_NAMES = { C: 0, 'C#': 1, Db: 1, D: 2, 'D#': 3, Eb: 3, E: 4,
                      F: 5, 'F#': 6, Gb: 6, G: 7, 'G#': 8, Ab: 8,
                      A: 9, 'A#': 10, Bb: 10, B: 11 };
@@ -169,11 +133,8 @@ function noteToFreq(name) {
   return 440 * Math.pow(2, (midi - 69) / 12);
 }
 
-// Round-start chiptune intros. Each entry is a ≤5-second two-voice riff
-// inspired by a popular tune from the president's era:
-//   melody  — the lead line (square wave, lightly detuned pair)
-//   bass    — the root/fifth foundation (triangle wave)
-// The key MUST match the charId in fighters.js — used as INTRO_THEMES[id].
+// Round-start chiptune intros: ≤5 s two-voice riffs (melody = detuned squares,
+// bass = triangle), [note, beats]. Keys MUST match the charId in fighters.js.
 const INTRO_THEMES = {
   // Donald Trump (2017-2021) — riff from "Eye of the Tiger" (Survivor, 1982)
   trump: {
@@ -335,8 +296,7 @@ const INTRO_THEMES = {
   },
 };
 
-// Lazy AudioContext + master bus; we never start audio without a user gesture,
-// but the bus itself can be created on first call.
+// Lazy AudioContext + master bus, built on first call.
 class AudioBus {
   constructor() {
     this.ctx = null;
@@ -352,14 +312,10 @@ class AudioBus {
     this._introRestoreVol = 0.35; // remembered musicGain value to restore after ducking
     this.lowMusicCrossfade = 0; // 0 = normal stem, 1 = low-HP stem
     this._ensureFailed = false; // latched so a broken graph can't report success
-    // Audio-reactive envelope. Each SFX call nudges this up; the render loop
-    // calls tick(dt) once a frame to decay it. The BrawlGame reads
-    // getEnvelope() to pulse the UnrealBloomPass on every impact.
-    // Both start at 0: a non-zero _envPeak is a ceiling `tick` would chase with
-    // no sound playing, which pins the bloom on permanently.
+    // Audio-reactive envelope for the bloom pulse (getEnvelope); SFX nudge it, tick(dt)
+    // decays it. Both must start at 0 or tick chases a ceiling and pins the bloom on.
     this._env = 0;
     this._envPeak = 0; // ceiling for the latest hit; decays in tick()
-    // ── Dynamic mix (#5) ──────────────────────────────────────────────
     this.sfxFilter = null;   // concussion lowpass, in-line on the SFX bus
     this.musicDuck = null;   // sidechain VCA between musicGain and master
     this.crowdGain = null;   // crowd bed level (owned by setCrowdIntensity)
@@ -387,9 +343,7 @@ class AudioBus {
       this.master = ctx.createGain();
       this.master.gain.value = 0.85;
 
-      // Glue compressor, then a brickwall limiter. The compressor alone lets
-      // simultaneous impacts punch through into clipping; the limiter is the
-      // thing that actually guarantees we stay under 0 dBFS.
+      // Glue compressor, then a brickwall limiter to stay under 0 dBFS.
       const comp = ctx.createDynamicsCompressor();
       comp.threshold.value = -12;
       comp.knee.value = 12;
@@ -406,28 +360,22 @@ class AudioBus {
 
       this.master.connect(comp).connect(limiter).connect(
         (window.PoAudioBus && window.PoAudioBus.busSync('sfx')) || ctx.destination);
-      // The finished mix, post-limiter — what tapStream() hands the KO clip
-      // recorder (clip.js) so a saved clip sounds like the fight did.
+      // Post-limiter mix, tapped by tapStream() for the KO clip recorder (clip.js).
       this.out = limiter;
 
       this.sfxGain = ctx.createGain();
       this.sfxGain.gain.value = 1.0;
 
-      // Concussion filter (#5). Every SFX — dry AND wet — passes through it, so
-      // a heavy head hit muffles the room reflection as well as the crack. A
-      // sweep that left the reverb bright would read as a broken mix rather
-      // than as a stunned fighter.
+      // Concussion filter: dry AND wet pass through it, so the reverb muffles too.
       this.sfxFilter = ctx.createBiquadFilter();
       this.sfxFilter.type = 'lowpass';
       this.sfxFilter.frequency.value = SFX_FILTER_OPEN;
-      // Q at the Butterworth-ish default. A resonant corner would whistle as it
-      // swept, which is a synth effect, not a concussion.
+      // Non-resonant, so the sweep doesn't whistle.
       this.sfxFilter.Q.value = 0.0001;
       this.sfxGain.connect(this.sfxFilter);
       this.sfxFilter.connect(this.master);
 
-      // Reverb send: sfx go out dry via the filter->master path and wet via this
-      // parallel convolver path, so the wet level is tunable on its own.
+      // Parallel reverb send, so the wet level is tunable on its own.
       const convolver = ctx.createConvolver();
       convolver.buffer = makeImpulseResponse(ctx);
       this.reverbGain = ctx.createGain();
@@ -436,38 +384,26 @@ class AudioBus {
 
       this.musicGain = ctx.createGain();
       this.musicGain.gain.value = 0.35;
-      // Sidechain VCA (#5). Deliberately a SECOND gain rather than automating
-      // musicGain itself: setMusicTension and playIntroTheme both write
-      // musicGain (and cancelScheduledValues on it), so a duck scheduled there
-      // would be wiped by the next tension change — or worse, would wipe one.
-      // Two stages, two owners, no interference.
+      // Sidechain VCA: a separate gain because setMusicTension/playIntroTheme own (and
+      // cancelScheduledValues on) musicGain. One owner per automation stage.
       this.musicDuck = ctx.createGain();
       this.musicDuck.gain.value = 1.0;
-      // Danger lowpass (GFX/SOUND #4). A third stage with a third owner:
-      // setDanger() closes it as a fighter nears a KO, so the music sinks under
-      // the heartbeat. Wide open (and so inaudible) the rest of the time.
+      // Danger lowpass, owned by setDanger(); wide open unless a fighter nears KO.
       this.musicLP = ctx.createBiquadFilter();
       this.musicLP.type = 'lowpass';
       this.musicLP.frequency.value = SFX_FILTER_OPEN;
       this.musicLP.Q.value = 0.0001;
       this.musicGain.connect(this.musicLP).connect(this.musicDuck).connect(this.master);
 
-      // Crowd bed bus (#6). Sits outside sfxGain so impacts can duck/swell it
-      // independently, and outside musicGain so the music tension curve does
-      // not drag the hall's ambience around with it.
-      // Same two-stage split as the music: crowdGain is the *intensity* level
-      // (owned by setCrowdIntensity) and crowdDuck is the *duck* VCA (owned by
-      // the announcer). One node for both would mean every announcement fought
-      // the next tension update for the same automation timeline.
+      // Crowd bed bus, outside sfx/music. Two stages, two owners: crowdGain
+      // (setCrowdIntensity) and crowdDuck (the announcer).
       this.crowdGain = ctx.createGain();
       this.crowdGain.gain.value = 0;
       this.crowdDuck = ctx.createGain();
       this.crowdDuck.gain.value = 1.0;
       this.crowdGain.connect(this.crowdDuck).connect(this.master);
 
-      // Round-start chiptune bus — independent of sfxGain (impacts) and
-      // musicGain (looped stem) so ducking only affects the loop while the
-      // intro plays over the top.
+      // Round-start chiptune bus, separate so ducking the loop leaves the intro alone.
       this.introGain = ctx.createGain();
       this.introGain.gain.value = 0.15;
       this.introGain.connect(this.master);
@@ -475,19 +411,14 @@ class AudioBus {
       this.noiseBuf = makeNoiseBuffer(ctx);
       return true;
     } catch (e) {
-      // Latch the failure. Previously this swallowed the error and returned
-      // false while leaving this.ctx assigned, so the *next* call short-circuited
-      // on `if (this.ctx) return true` and reported success with a half-built
-      // graph — a one-character typo silently killed every noise layer and the
-      // intro themes for good. Fail closed and say so.
+      // Latch the failure so a half-built graph never reports success.
       this._ensureFailed = true;
       try { console.error('[pobrawl/audio] AudioContext setup failed; audio disabled.', e); } catch { /* noop */ }
       return false;
     }
   }
 
-  // One-shot noise source, started at a random offset so repeated sounds never
-  // replay the identical slice of the shared buffer.
+  // One-shot noise source at a random offset into the shared buffer.
   _noiseSource(playSeconds) {
     const src = this.ctx.createBufferSource();
     src.buffer = this.noiseBuf;
@@ -499,62 +430,42 @@ class AudioBus {
   setMuted(m) {
     this.muted = !!m;
     if (this.master) this.master.gain.value = this.muted ? 0 : 0.85;
-    // The crowd bed is a set of LOOPING sources — unlike every one-shot here,
-    // muting the master is not enough to make it stop costing anything, and an
-    // unmuted context would bring it straight back at full level. Tear it down
-    // on mute and rebuild on unmute.
+    // The crowd bed loops, so tear it down on mute rather than leave it running.
     if (this.muted) this.stopCrowd();
     else if (this.ctx) this.startCrowd();
-    // Speech does not go through master.gain at all (see the announce() note),
-    // so muting has to reach it separately or the announcer keeps talking over
-    // a silent game.
+    // Speech bypasses master.gain, so mute has to stop it separately.
     if (this.muted) this.stopAnnounce();
   }
 
-  // Audio-reactive envelope: every SFX method calls _pulse(power) right when
-  // the sound fires, so the bloom pass in game.js can read getEnvelope() the
-  // same frame. Big hits land at ~1.0, whooshes at ~0.2, blocks at ~0.4.
+  // Big hits ~1.0, blocks ~0.4, whooshes ~0.2.
   _pulse(power) {
     this._envPeak = Math.max(this._envPeak, Math.min(1, power));
   }
 
-  // Per-frame envelope decay. Halflife ≈ 90 ms so a flurry of hits keeps
-  // the bloom glowing; silence brings it back to zero in ~0.5 s.
+  // Per-frame decay (~90 ms halflife; silence → 0 in ~0.5 s). The ceiling decays
+  // too, since _pulse only raises it.
   tick(dt) {
-    // The ceiling has to decay too. _pulse only ever raises _envPeak (Math.max),
-    // so a static ceiling is one _env chases upward and never leaves — the bloom
-    // sat pinned at 1.0 through total silence.
     this._envPeak *= Math.exp(-dt * 4.0);
     const decay = Math.exp(-dt * 7.5);
     this._env = this._envPeak * (1 - decay) + this._env * decay;
-    // After enough decay, both targets converge; collapse them so a new pulse
-    // doesn't get averaged into the tail of a previous one.
     if (this._env < 0.005 && this._envPeak < 0.005) { this._env = 0; this._envPeak = 0; }
   }
 
   getEnvelope() { return this._env; }
 
-  // Resume the context after a user gesture — Blazor can't always start audio
-  // because the .razor lifecycle may not be triggered by a button click.
+  // Resume the context after a user gesture.
   async resume() {
     if (this._ensure() && this.ctx.state === 'suspended') {
       try { await this.ctx.resume(); } catch { /* noop */ }
     }
   }
 
-  // One-shot spatializer: StereoPanner keyed off world-x.
-  //
-  // This used to build an HRTF PannerNode. HRTF runs a convolution per node and
-  // positions sound relative to ctx.listener — which nothing in the game ever
-  // moves, so every hit was panned against a default listener at the origin
-  // regardless of the camera. For a 2.5D fighter on a fixed side-on camera,
-  // world-x -> pan is both what we actually want and far cheaper.
+  // One-shot spatializer: StereoPanner keyed off world-x (cheap; fits the side-on camera).
   _spatializer(worldPos) {
     const ctx = this.ctx;
     if (ctx.createStereoPanner) {
       const p = ctx.createStereoPanner();
-      // 0.8 rather than a hard 1.0: fully-panned mono sounds collapse into one
-      // ear on headphones and read as broken rather than positional.
+      // Max 0.8: hard-panned mono reads as broken on headphones.
       p.pan.value = worldPos ? clamp(worldPos.x / ARENA_HALF_WIDTH, -1, 1) * 0.8 : 0;
       return p;
     }
@@ -574,18 +485,14 @@ class AudioBus {
     return input;
   }
 
-  // Connect a spatializer's audible output to the sfx bus. The fallback path
-  // pans through a merger, so its output node is not the node callers feed.
+  // The fallback spatializer's output (merger) is not the node callers feed.
   _connectSpat(spat) {
     (spat.output || spat).connect(this.sfxGain);
     return spat;
   }
 
-  // Layered impact: low thud (sine + sub noise) + mid crack (filtered noise) + hiss.
-  //
-  // `kind` ('punch' | 'kick') sets the weight: a kick lands lower, decays longer
-  // and carries more low-mid body. Every layer is randomized per call — identical
-  // repeats are the single biggest tell that a hit is synthesized.
+  // Layered impact: thud + crack + hiss. A kick lands lower and longer. Every layer
+  // is randomized per call — identical repeats are the biggest synth tell.
   impact({ power = 1, blocked = false, worldPos = null, kind = 'punch' } = {}) {
     if (!this._ensure() || this.muted) return;
     this._pulse(blocked ? 0.45 : Math.min(1, 0.55 + power * 0.25));
@@ -685,8 +592,6 @@ class AudioBus {
   }
 
   ko() {
-    // _ensure/mute check first: this used to pulse the bloom envelope even when
-    // audio was muted or unavailable, flashing the screen for a sound nobody heard.
     if (!this._ensure() || this.muted) return;
     this._pulse(1.0);
     const ctx = this.ctx;
@@ -723,8 +628,7 @@ class AudioBus {
     if (!this._ensure() || this.muted) return;
     this._pulse(0.15 + power * 0.1);
     const v = VOICES[charId] || DEFAULT_VOICE;
-    // Wider per-call spread than a fixed pitch: a grunt repeats far more often
-    // than an impact, so it goes "robotic" fastest without variation.
+    // Wide per-call spread: grunts repeat most, so they go robotic fastest.
     const f0 = v.f0 * (blocked ? 1.35 : 0.95 + power * 0.25) * rand(0.9, 1.12);
     this._voice(v, f0, f0 * rand(0.5, 0.62), rand(0.18, 0.24), 0.08, 1);
   }
@@ -797,8 +701,7 @@ class AudioBus {
     autoDisconnect(o, nodes);
   }
 
-  // ══ Prop materials (2026-09-29) ═══════════════════════════════════════
-  // Crates, ropes and turnbuckles all used to play impact() — a body blow.
+  // Prop materials:
   //   wood  — a knock plus a three-mode crack (a plank's resonances ring for
   //           ~0.1 s, not a note), then a patter of splinters landing
   //   rope  — a low twang with a vibrato wobble: a cable under tension, not a string
@@ -1032,39 +935,12 @@ class AudioBus {
     autoDisconnect(src, [src, bp, g]);
   }
 
-  // Cheap footstep tick — call on every other walk-cycle hit.
-  footstep(volume = 0.05, worldPos = null) {
-    if (!this._ensure() || this.muted) return;
-    this._pulse(0.08);
-    const ctx = this.ctx;
-    const now = ctx.currentTime;
-    const spat = this._connectSpat(this._spatializer(worldPos));
-    const o = ctx.createOscillator();
-    o.type = 'sine';
-    o.frequency.value = rand(80, 100);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(volume * rand(0.85, 1.15), now + 0.003);
-    g.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
-    o.connect(g).connect(spat);
-    o.start(now); o.stop(now + 0.09);
-    autoDisconnect(o, [o, g, spat, spat.output].filter(Boolean));
-  }
-
-  // ══ Dynamic mix (GFX/SOUND #5) ═══════════════════════════════════════
-  // Three effects, one idea: the mix should react to what just happened on
-  // screen. Before this the bus was static — a KO and a jab reached the
-  // speakers through exactly the same signal path, so the only thing that
-  // distinguished them was how loud they were.
+  // ══ Dynamic mix ══════════════════════════════════════════════════════
 
   /**
-   * Ramp an AudioParam down and back to `base`. Shared by the impact sidechain
-   * and the announcer duck, which want the same shape at different depths.
-   *
-   * cancelScheduledValues + an explicit setValueAtTime(param.value) is the
-   * load-bearing pair: without the second call, cancelling mid-ramp leaves the
-   * param at its *last scheduled* value rather than where it audibly is, and
-   * rapid hits produce a stepped zipper instead of a smooth pump.
+   * Ramp an AudioParam down and back to `base`. The setValueAtTime(param.value)
+   * after cancelScheduledValues is load-bearing: without it a mid-ramp cancel
+   * jumps to the last scheduled value and rapid hits zipper.
    */
   _duckParam(param, base, amount, hold = 0, release = DUCK_RELEASE) {
     const now = this.ctx.currentTime;
@@ -1077,13 +953,8 @@ class AudioBus {
   }
 
   /**
-   * Sidechain the music under an impact. Called from the engine on every landed
-   * hit, with the same 0..1 power the impact sound used.
-   *
-   * The depth is deliberately sub-linear (0.18 + 0.42·power, so a jab barely
-   * moves it and a full-charge kick pulls the stem down by ~60%): a duck deep
-   * enough to notice on every jab turns a normal exchange into a stuttering
-   * mess, which is the same failure mode that killed the old bloom pulse.
+   * Sidechain the music under a landed hit (power 0..1). Depth 0.18 + 0.42·power:
+   * a jab barely moves it, so normal exchanges don't stutter.
    */
   duckMusic(power = 1) {
     if (!this._ensure() || this.muted || !this.musicDuck) return;
@@ -1091,10 +962,8 @@ class AudioBus {
   }
 
   /**
-   * "Ears ringing" after a heavy head hit or a KO: sweep the whole SFX bus down
-   * to a muffled corner, hold, then open back up, with a faint tinnitus sine
-   * over the top and the music pulled well down underneath.
-   *
+   * "Ears ringing" after a heavy head hit or KO: muffle the SFX bus, hold, reopen,
+   * with a tinnitus sine on top and the music ducked.
    * @param {number} strength 0..1 — how far the corner drops and how long it holds
    */
   concussion(strength = 1) {
@@ -1108,18 +977,14 @@ class AudioBus {
     const f = this.sfxFilter.frequency;
     f.cancelScheduledValues(now);
     f.setValueAtTime(f.value, now);
-    // Exponential, not linear: frequency is perceived logarithmically, so a
-    // linear ramp from 20 kHz spends most of its time in the top octave where
-    // nothing is audible and then falls off a cliff at the end.
+    // Exponential: pitch is perceived logarithmically.
     f.exponentialRampToValueAtTime(Math.max(120, corner), now + 0.05);
     f.setValueAtTime(Math.max(120, corner), now + 0.05 + hold);
     f.exponentialRampToValueAtTime(SFX_FILTER_OPEN, now + 0.05 + hold + 0.55 + 0.5 * s);
 
-    // Music drops out from under it for the length of the ring.
     if (this.musicDuck) this._duckParam(this.musicDuck.gain, 1.0, 0.7 * s, hold, 0.6);
 
-    // Tinnitus: a quiet high sine that fades in behind the muffle and out with
-    // it. Detuned slightly per call so repeated KOs don't ring on one pitch.
+    // Tinnitus sine, randomized per call.
     const tone = ctx.createOscillator();
     tone.type = 'sine';
     tone.frequency.value = rand(3100, 4200);
@@ -1128,22 +993,15 @@ class AudioBus {
     tg.gain.setValueAtTime(0.0001, now);
     tg.gain.linearRampToValueAtTime(0.016 * s, now + 0.08);
     tg.gain.exponentialRampToValueAtTime(0.0001, now + dur);
-    // Straight to master: routing the ringing through sfxFilter would muffle
-    // the very thing that is supposed to be cutting through the muffle.
+    // Straight to master, bypassing the muffle it rings over.
     tone.connect(tg).connect(this.master);
     tone.start(now); tone.stop(now + dur + 0.02);
     autoDisconnect(tone, [tone, tg]);
   }
 
   /**
-   * The "vacuum" during hit-pause. Called with true when the engine freezes the
-   * frame on impact and false when it resumes.
-   *
-   * True stereo width narrowing would need a mid/side matrix over the whole
-   * bus, and every source here is already panned individually — decoding and
-   * re-encoding M/S for a 50 ms effect is not worth the node count. Pulling the
-   * reverb tail and a little master level instead produces the same read: the
-   * room disappears for the length of the freeze and slams back when it ends.
+   * The "vacuum" during hit-pause (true on freeze, false on resume): pulls the
+   * reverb so the room vanishes and slams back. Cheaper than M/S narrowing.
    */
   setHitstop(active) {
     if (!this._ensure() || !this.reverbGain) return;
@@ -1157,21 +1015,16 @@ class AudioBus {
     rv.linearRampToValueAtTime(active ? 0.03 : 0.18, now + (active ? 0.015 : 0.12));
   }
 
-  // ══ Crowd bed (GFX/SOUND #6) ═════════════════════════════════════════
-  // arena.js has had an animated crowd since the beginning; audio.js had one
-  // filtered-noise pad described as "feels like a crowd murmur" buried inside
-  // the music loop. This is the crowd as its own instrument: three noise bands
-  // whose level AND brightness track match tension, a chant that emerges only
-  // when the tension is high, and one-shot reactions the engine can fire.
+  // ══ Crowd bed ════════════════════════════════════════════════════════
+  // Three noise bands whose level and brightness track tension, a chant at high
+  // tension, and one-shot reactions.
 
   startCrowd() {
     if (!this._ensure() || this.muted || this._crowdNodes) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
 
-    // One looping source per band, each started at its own random offset into
-    // the shared 2 s buffer so the three layers are decorrelated. A single
-    // source split three ways would phase-lock them into one filtered tone.
+    // One looping source per band at its own offset, so the layers stay decorrelated.
     const loopSource = () => {
       const s = ctx.createBufferSource();
       s.buffer = this.noiseBuf;
@@ -1180,13 +1033,12 @@ class AudioBus {
       return s;
     };
 
-    // Swell VCA — sits between the mix and the intensity level so a one-shot
-    // reaction rides on top of whatever the tension level currently is.
+    // Swell VCA: one-shot reactions ride on top of the intensity level.
     const swell = ctx.createGain();
     swell.gain.value = 1.0;
     swell.connect(this.crowdGain);
 
-    // Layer 1: room rumble. Mono, centred — a hall's low end has no direction.
+    // Layer 1: room rumble, mono.
     const rumbleSrc = loopSource();
     const rumbleLp = ctx.createBiquadFilter();
     rumbleLp.type = 'lowpass';
@@ -1195,8 +1047,7 @@ class AudioBus {
     rumbleG.gain.value = 0.9;
     rumbleSrc.connect(rumbleLp).connect(rumbleG).connect(swell);
 
-    // Layer 2: chatter. This is the band intensity moves — both its level and
-    // its centre frequency, so an excited crowd gets brighter, not just louder.
+    // Layer 2: chatter — the band intensity moves (level and centre frequency).
     const chatterSrc = loopSource();
     const chatterBp = ctx.createBiquadFilter();
     chatterBp.type = 'bandpass';
@@ -1208,8 +1059,7 @@ class AudioBus {
     chatterSrc.connect(chatterBp).connect(chatterG).connect(chatterPan);
     (chatterPan.output || chatterPan).connect(swell);
 
-    // Layer 3: hiss. Barely audible on its own; it is what stops the bed
-    // sounding like a lowpassed rumble and starts it sounding like people.
+    // Layer 3: hiss.
     const hissSrc = loopSource();
     const hissHp = ctx.createBiquadFilter();
     hissHp.type = 'highpass';
@@ -1220,9 +1070,7 @@ class AudioBus {
     hissSrc.connect(hissHp).connect(hissG).connect(hissPan);
     (hissPan.output || hissPan).connect(swell);
 
-    // Chant: a slow LFO added onto the chatter gain. Its DEPTH is what
-    // setCrowdIntensity raises, so at low tension the bed is flat and as the
-    // fight gets desperate a rhythmic surge emerges out of it on its own.
+    // Chant: slow LFO on the chatter gain; setCrowdIntensity owns its depth.
     const chantLfo = ctx.createOscillator();
     chantLfo.type = 'sine';
     chantLfo.frequency.value = 1.15; // ~69 bpm — a stadium chant, not a tremolo
@@ -1241,8 +1089,7 @@ class AudioBus {
     this.setCrowdIntensity(this._crowdIntensity);
   }
 
-  // StereoPanner with the same merger fallback _spatializer uses, but taking a
-  // pan position directly rather than a world point.
+  // _spatializer, but taking a pan position directly.
   _pan(x) {
     const ctx = this.ctx;
     if (ctx.createStereoPanner) {
@@ -1264,9 +1111,7 @@ class AudioBus {
   }
 
   /**
-   * Where the crowd sits between "waiting for the bell" and "on its feet".
-   * The engine feeds this the same excitement value that drives the animated
-   * crowd in arena.js, so what you see and what you hear are one signal.
+   * Crowd excitement — the same value that drives arena.js's animated crowd.
    * @param {number} t 0..1
    */
   setCrowdIntensity(t) {
@@ -1299,8 +1144,7 @@ class AudioBus {
     const s = this._crowdNodes.swell.gain;
     s.cancelScheduledValues(now);
     s.setValueAtTime(s.value, now);
-    // Fast up, slow down — a crowd reacts in a tenth of a second and takes a
-    // second to settle. The reverse reads as a fade-in, which is uncanny.
+    // Fast up, slow down.
     s.linearRampToValueAtTime(1 + 2.4 * p, now + 0.11);
     s.linearRampToValueAtTime(1, now + 0.11 + 0.7 + 0.5 * p);
   }
@@ -1315,8 +1159,7 @@ class AudioBus {
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
     bp.Q.value = 1.6;
-    // Rising then falling: the pitch contour is the whole reason this reads as
-    // a gasp rather than a noise burst.
+    // The rise-fall contour is what makes it a gasp.
     bp.frequency.setValueAtTime(700, now);
     bp.frequency.linearRampToValueAtTime(1750, now + 0.16);
     bp.frequency.linearRampToValueAtTime(900, now + dur);
@@ -1329,66 +1172,22 @@ class AudioBus {
     autoDisconnect(src, [src, bp, g]);
   }
 
-  /** Low disapproving swell — a whiffed heavy, a ring-out stall. */
-  crowdBoo() {
-    if (!this._ensure() || this.muted || !this.crowdGain) return;
-    const ctx = this.ctx;
-    const now = ctx.currentTime;
-    const dur = 0.95;
-    const src = this._noiseSource(dur);
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 340;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.linearRampToValueAtTime(0.42, now + 0.18);
-    g.gain.exponentialRampToValueAtTime(0.001, now + dur);
-    src.connect(lp).connect(g).connect(this.crowdGain);
-    src.start(now, src._offset); src.stop(now + dur);
-    autoDisconnect(src, [src, lp, g]);
-    // A touch of sung vowel under the noise so it reads as voices, not wind.
-    const o = ctx.createOscillator();
-    o.type = 'sawtooth';
-    o.frequency.setValueAtTime(96, now);
-    o.frequency.linearRampToValueAtTime(84, now + dur);
-    const ob = ctx.createBiquadFilter();
-    ob.type = 'lowpass';
-    ob.frequency.value = 500;
-    const og = ctx.createGain();
-    og.gain.setValueAtTime(0.0001, now);
-    og.gain.linearRampToValueAtTime(0.05, now + 0.2);
-    og.gain.exponentialRampToValueAtTime(0.001, now + dur);
-    o.connect(ob).connect(og).connect(this.crowdGain);
-    o.start(now); o.stop(now + dur + 0.02);
-    autoDisconnect(o, [o, ob, og]);
-  }
-
   stopCrowd() {
     if (!this._crowdNodes) return;
     for (const s of this._crowdNodes.sources) { try { s.stop(); } catch { /* */ } }
     try { this._crowdNodes.chantLfo.stop(); } catch { /* */ }
-    // Looping sources never fire `onended` on their own, so autoDisconnect
-    // would never run for this graph — tear it down by hand.
+    // Loops never fire onended, so autoDisconnect can't clean this graph.
     for (const n of this._crowdNodes.all) { try { n.disconnect(); } catch { /* */ } }
     this._crowdNodes = null;
   }
 
-  // ══ PA announcer (GFX/SOUND #7) ══════════════════════════════════════
-  //
-  // IMPORTANT CONSTRAINT, so nobody tries to "fix" this later: a
-  // SpeechSynthesisUtterance is rendered by the platform straight to the output
-  // device. There is no MediaStream, no AudioNode, and no way to route it into
-  // an AudioContext, so it CANNOT be pushed through this bus's waveshaper,
-  // bandpass or convolver. The tannoy character therefore comes from three
-  // things that can be controlled: the voice/pitch/rate on the utterance
-  // itself, a synthesized mic-key click and cabinet thump fired through the bus
-  // underneath it, and ducking the music and crowd out of its way. Getting a
-  // genuinely processed announcer would mean shipping rendered audio assets,
-  // which this game deliberately does not do.
+  // ══ PA announcer ═════════════════════════════════════════════════════
+  // CONSTRAINT: speechSynthesis renders straight to the output device and cannot
+  // be routed into an AudioContext, so no bus processing applies. The PA feel comes
+  // from voice/pitch/rate, a mic-key click + thump through the bus, and ducking.
   announce(text, { rate = 0.92, pitch = 0.62, volume = 1, duckSec = 1.1 } = {}) {
     if (this.muted || !text) return;
     this._paKey();
-    // Duck music and crowd so the line sits on top of the mix.
     if (this._ensure()) {
       if (this.musicDuck) this._duckParam(this.musicDuck.gain, 1.0, 0.62, duckSec, 0.5);
       if (this.crowdDuck) this._duckParam(this.crowdDuck.gain, 1.0, 0.45, duckSec, 0.5);
@@ -1396,9 +1195,7 @@ class AudioBus {
     const synth = typeof window !== 'undefined' && window.speechSynthesis;
     if (!synth) return; // no Web Speech — the mic key + duck still land
     try {
-      // A queued backlog is worse than a dropped line here: announcements are
-      // tied to moments ("K.O.", "ROUND TWO"), and one arriving four seconds
-      // late is actively confusing.
+      // Drop any backlog: a late "K.O." is worse than none.
       synth.cancel();
       const u = new SpeechSynthesisUtterance(text);
       const v = pickAnnouncerVoice();
@@ -1417,7 +1214,6 @@ class AudioBus {
     if (!this._ensure() || this.muted) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
-    // Click: a very short bandpassed noise tick, hard and dry.
     const tick = this._noiseSource(0.05);
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
@@ -1430,7 +1226,7 @@ class AudioBus {
     tick.connect(bp).connect(tg).connect(this.sfxGain);
     tick.start(now, tick._offset); tick.stop(now + 0.06);
     autoDisconnect(tick, [tick, bp, tg]);
-    // Thump: the speaker cabinet moving. Sells "big room PA" more than the click.
+    // Cabinet thump.
     const th = ctx.createOscillator();
     th.type = 'sine';
     th.frequency.setValueAtTime(120, now);
@@ -1449,17 +1245,13 @@ class AudioBus {
     try { window.speechSynthesis?.cancel(); } catch { /* */ }
   }
 
-  // ══ Super stinger (GFX/SOUND #2) ═════════════════════════════════════
-  // The signature super used to borrow the generic whoosh() — the same sound a
-  // missed jab makes. This is its own cue: a tape-stop on the way in, a sub
-  // drop under the freeze, and a wide detuned chord that blooms out of it.
+  // Super stinger: tape-stop, sub drop under the freeze, then a detuned chord.
   superStinger() {
     if (!this._ensure() || this.muted) return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
 
-    // 1. Tape stop: a noise sweep whose bandpass falls off a cliff, plus a
-    //    detuned pitch-down. Reads as the world grinding to a halt.
+    // 1. Tape stop: falling bandpassed noise.
     const stopDur = 0.42;
     const tape = this._noiseSource(stopDur);
     const tbp = ctx.createBiquadFilter();
@@ -1488,9 +1280,7 @@ class AudioBus {
     sub.start(now); sub.stop(now + 1.05);
     autoDisconnect(sub, [sub, sg]);
 
-    // 3. Chord: a minor triad with the fifth voiced an octave up, three
-    //    detuned saws per note, opening through a lowpass. It lands 0.18 s in,
-    //    on the far side of the tape stop, so the two read as cause and effect.
+    // 3. Chord: minor triad, three detuned saws per note, opening lowpass; 0.18 s in.
     const chordAt = now + 0.18;
     const lp = ctx.createBiquadFilter();
     lp.type = 'lowpass';
@@ -1512,8 +1302,7 @@ class AudioBus {
         autoDisconnect(o, [o]);
       }
     }
-    // The chord and its filter outlive every oscillator's onended, so they are
-    // torn down off the last note rather than by autoDisconnect on each.
+    // Shared filter/gain torn down off a sentinel that outlives every note.
     const last = ctx.createConstantSource();
     last.start(chordAt); last.stop(chordAt + 1.6);
     autoDisconnect(last, [last, lp, cg]);
@@ -1522,19 +1311,15 @@ class AudioBus {
     this.crowdSwell(1.0);
   }
 
-  // Continuous music stem: two layered loops we crossfade between based on HP.
-  // No samples, so we synthesize a simple 4-step bass + filtered noise pad.
+  // Music stem: two synthesized loops crossfaded by HP.
   startMusic() {
     if (!this._ensure() || this.musicNodes) return;
     const ctx = this.ctx;
     const tempo = 96; // bpm
     const beat = 60 / tempo;
 
-    // Bass voice. Signal path is deliberately two gains deep:
-    //   bassEnv   — the per-note envelope, written by the scheduler ahead of time
-    //   bassLevel — the tension mix, written by setMusicTension
-    // One shared gain can't do both: tension has to cancelScheduledValues, which
-    // would wipe the notes the scheduler has already queued up.
+    // Two gains: bassEnv (per-note, scheduler) and bassLevel (setMusicTension, which
+    // cancelScheduledValues and would otherwise wipe queued notes).
     const bassNotes = [55, 55, 73, 65]; // A1, A1, D2, C2 (A minor pentatonic)
     const bassNode = ctx.createOscillator();
     bassNode.type = 'triangle';
@@ -1548,11 +1333,8 @@ class AudioBus {
     bassNode.connect(bassLP).connect(bassEnv).connect(bassLevel).connect(this.musicGain);
     bassNode.start();
 
-    // Lookahead scheduler. The old version fired setInterval every beat and
-    // scheduled at `ctx.currentTime` — so every note landed wherever timer jitter
-    // happened to put it, and a backgrounded tab (throttled to ~1s timers) stalled
-    // the sequence outright. Now the timer only decides when to *queue*; note times
-    // come off the audio clock and stay exact regardless of jitter.
+    // Lookahead scheduler: the timer only decides when to queue; note times come
+    // off the audio clock.
     let step = 0;
     let nextNoteTime = ctx.currentTime + 0.05;
     const scheduleNote = (t) => {
@@ -1565,12 +1347,8 @@ class AudioBus {
     };
     const scheduler = () => {
       if (this.musicNodes?.stopped) return;
-      // Catch-up guard. If the main thread was blocked past the lookahead
-      // window (or the tab was throttled), nextNoteTime is now in the past.
-      // Scheduling those notes anyway makes the AudioParam ramps fire
-      // immediately, cramming a whole run of beats into one instant — the
-      // stutter is the catch-up, not the gap. Skip the missed beats and
-      // resume on the next one still in the future, staying on the grid.
+      // After a stall, skip missed beats (staying on the grid) rather than cram
+      // them all into one instant.
       if (nextNoteTime < ctx.currentTime) {
         const missed = Math.ceil((ctx.currentTime - nextNoteTime) / beat);
         nextNoteTime += missed * beat;
@@ -1584,7 +1362,7 @@ class AudioBus {
     const bassInterval = setInterval(scheduler, LOOKAHEAD_MS);
     scheduler();
 
-    // Pad: filtered noise with a slow LFO on cutoff — feels like a crowd murmur.
+    // Pad: filtered noise with a slow LFO on cutoff.
     const pad = ctx.createBufferSource();
     pad.buffer = this.noiseBuf;
     pad.loop = true;
@@ -1607,8 +1385,7 @@ class AudioBus {
     };
   }
 
-  // 0..1 — how much to crossfade the music toward the "low-HP" stem.
-  // We simulate the low-HP stem by attenuating the bass + brightening the pad.
+  // 0..1 toward the "low-HP" stem: quieter bass, louder pad.
   setMusicTension(t) {
     this.lowMusicCrossfade = clamp(t, 0, 1);
     if (!this.musicNodes || !this._ensure()) return;
@@ -1631,30 +1408,25 @@ class AudioBus {
     this.musicNodes = null;
   }
 
-  // Round-start chiptune intro. Plays a short (~4–5s) period-appropriate riff
-  // for the given character on introGain while ducking the musicGain loop.
-  // Safe to call repeatedly — any in-flight intro is stopped first.
-  //   charId — must match a key in INTRO_THEMES (i.e. a fighters.js charId).
+  // Round-start riff for charId (an INTRO_THEMES key) on introGain, ducking the loop.
+  // Restarts any in-flight intro.
   playIntroTheme(charId) {
     if (!this._ensure() || this.muted) return;
     const theme = INTRO_THEMES[charId];
     if (!theme || !this.introGain) return;
 
-    // Cancel anything still ringing from a previous intro.
     this.stopIntroTheme();
 
     const ctx = this.ctx;
     const now = ctx.currentTime;
     const beatDur = 60 / theme.bpm;
 
-    // Total length is the longer of melody / bass in beats.
     let melodyBeats = 0, bassBeats = 0;
     for (const [, d] of theme.melody) melodyBeats += d;
     if (theme.bass) for (const [, d] of theme.bass) bassBeats += d;
     const totalDur = Math.max(melodyBeats, bassBeats) * beatDur;
 
-    // Duck musicGain down so the intro sits clearly on top, then restore it.
-    // Scheduled in audio-time so it survives tab-throttling.
+    // Duck and restore in audio time, so tab throttling can't strand it.
     if (this.musicGain) {
       this._introRestoreVol = this.musicGain.gain.value;
       this.musicGain.gain.cancelScheduledValues(now);
@@ -1665,8 +1437,7 @@ class AudioBus {
 
     const created = [];
 
-    // Lead voice — pair of slightly-detuned square oscillators for that
-    // NES-style chiptune heft. Hard 5ms attack, exponential release tail.
+    // Lead: two detuned squares.
     let t = 0;
     for (const [note, dur] of theme.melody) {
       const startT = now + t * beatDur;
@@ -1692,7 +1463,6 @@ class AudioBus {
       t += dur;
     }
 
-    // Bass voice — single triangle oscillator, slight attack/release.
     if (theme.bass) {
       let bt = 0;
       for (const [note, dur] of theme.bass) {
@@ -1719,12 +1489,11 @@ class AudioBus {
     this.introNodes = created;
   }
 
-  // Stop any in-flight intro theme. Idempotent.
+  // Idempotent.
   stopIntroTheme() {
     if (!this.introNodes) return;
     const ctx = this.ctx;
     const now = ctx ? ctx.currentTime : 0;
-    // Snap musicGain back to its pre-duck volume in case we cut mid-intro.
     if (this.musicGain && ctx) {
       this.musicGain.gain.cancelScheduledValues(now);
       this.musicGain.gain.linearRampToValueAtTime(this._introRestoreVol, now + 0.08);
@@ -1736,16 +1505,9 @@ class AudioBus {
     this.introNodes = null;
   }
 
-  // ══ Combo melody (GFX/SOUND #3, 2026-09-23) ══════════════════════════
-  // Each landed hit in a run rings one step further up A minor pentatonic —
-  // the scale the music loop's bass line walks (startMusic: A1 A1 D2 C2) — so a
-  // combo plays a rising phrase in the song's own key instead of the same crack
-  // eight times. A mallet voice (fundamental + an inharmonic 2.76× partial) sits
-  // ON the impact, never replacing it: the hit still sounds like a hit.
-  //
-  // Not quantised to the beat grid on purpose. A cue that waits up to half a
-  // beat for the downbeat would lag the fist it belongs to, and the whole point
-  // of hit audio is that it lands on the frame of contact.
+  // Combo melody: each hit in a run rings one step up A minor pentatonic (the
+  // music loop's key), a mallet voice layered on the impact. Deliberately not
+  // quantised to the beat — hit audio must land on the frame of contact.
   comboNote(n, worldPos = null) {
     if (n < 2 || !this._ensure() || this.muted) return;
     const ctx = this.ctx;
@@ -1767,7 +1529,6 @@ class AudioBus {
       o.start(now); o.stop(now + decay + 0.03);
       return [o, g];
     };
-    // Later steps ring a touch louder — the phrase should build, not plateau.
     const lift = Math.min(1, 0.55 + deg * 0.06);
     const [o1, g1] = voice(f0, 0.07 * lift, 0.42);
     const [o2, g2] = voice(f0 * 2.76, 0.022 * lift, 0.16);
@@ -1776,9 +1537,7 @@ class AudioBus {
     autoDisconnect(o1, [o1, g1, spat, spat.output].filter(Boolean));
   }
 
-  // A cashed-in run of 4+: a quick rising Am(add9) arpeggio that resolves the
-  // phrase the combo notes started. Fires when the run expires, not on the last
-  // hit, so it reads as the crowd's "ooh" rather than as another impact.
+  // Run of 4+ expiring: a rising Am(add9) arpeggio resolving the combo phrase.
   comboFinisher(n) {
     if (n < 4 || !this._ensure() || this.muted) return;
     const ctx = this.ctx;
@@ -1801,9 +1560,7 @@ class AudioBus {
     this.crowdSwell(0.5);
   }
 
-  // ══ Danger state (GFX/SOUND #4, 2026-09-23) ══════════════════════════
-  // One lub-dub. game.js owns the tempo (it also drives the screen-edge pulse
-  // off the same beat), so this only has to make the sound.
+  // One lub-dub; game.js owns the tempo (shared with the screen-edge pulse).
   heartbeat(strength = 1) {
     if (!this._ensure() || this.muted) return;
     const ctx = this.ctx;
@@ -1818,8 +1575,7 @@ class AudioBus {
       g.gain.setValueAtTime(0.0001, t0);
       g.gain.linearRampToValueAtTime(peak, t0 + 0.012);
       g.gain.exponentialRampToValueAtTime(0.0008, t0 + 0.2);
-      // Straight to master, NOT the SFX bus: the concussion lowpass sits on that
-      // bus, and the heartbeat is exactly the sound that should survive it.
+      // Straight to master so it survives the concussion lowpass.
       o.connect(g).connect(this.master);
       o.start(t0); o.stop(t0 + 0.22);
       autoDisconnect(o, [o, g]);
@@ -1832,18 +1588,15 @@ class AudioBus {
   setDanger(level) {
     if (!this.musicLP || !this.ctx) return;
     const d = clamp(level, 0, 1);
-    // Exponential in frequency so the sweep sounds even: 20 kHz → ~700 Hz.
+    // Exponential sweep, 20 kHz → ~700 Hz.
     const hz = d < 0.01 ? SFX_FILTER_OPEN : 700 * Math.pow(SFX_FILTER_OPEN / 700, 1 - d);
     this.musicLP.frequency.setTargetAtTime(hz, this.ctx.currentTime, 0.25);
   }
 
-  // ══ VS splash sting (GFX/SOUND #8, 2026-09-23) ═══════════════════════
-  // A reversed-cymbal riser into a sub boom and a metallic clang, timed so the
-  // boom lands as the two name cards meet (the splash CSS slams them in at ~0.45 s).
+  // VS splash: riser into a sub boom + clang at 0.45 s, when the splash CSS slams
+  // the name cards together.
   vsSting() {
-    // Running-only: the first splash plays before any gesture has unlocked the
-    // context, and nodes scheduled on a suspended context fire whenever it is
-    // finally resumed — a VS boom arriving in the middle of the fight.
+    // Running-only: nodes queued on a suspended context would fire mid-fight on resume.
     if (!this._ensure() || this.muted || this.ctx.state !== 'running') return;
     const ctx = this.ctx;
     const now = ctx.currentTime;
@@ -1875,8 +1628,7 @@ class AudioBus {
     sub.start(hitAt); sub.stop(hitAt + 0.85);
     autoDisconnect(sub, [sub, sg]);
 
-    // Clang: three inharmonic square partials through a bandpass — a bell struck
-    // with a hammer, not a note.
+    // Clang: three inharmonic square partials through a bandpass.
     const bp = ctx.createBiquadFilter();
     bp.type = 'bandpass';
     bp.frequency.value = 1400;
@@ -1900,9 +1652,7 @@ class AudioBus {
     this._pulse(0.6);
   }
 
-  // ══ Breaking-news sting (GFX/SOUND #9, 2026-09-23) ═══════════════════
-  // The cable-news "da-da-da-DAAA": three bright brass stabs climbing to a held
-  // fifth, over a timpani roll that swells into the last hit.
+  // Breaking-news "da-da-da-DAAA": brass stabs to a held fifth over a timpani roll.
   newsSting() {
     if (!this._ensure() || this.muted || this.ctx.state !== 'running') return;
     const ctx = this.ctx;
@@ -1940,7 +1690,6 @@ class AudioBus {
     stab(now + e * 2, [493.88, 739.99], 0.12, 0.055);  // B4 + F#5
     stab(now + e * 3, [587.33, 880], 1.1, 0.065);      // D5 + A5, held
 
-    // Timpani roll: rapid low sine hits swelling into the downbeat.
     for (let i = 0; i < 8; i++) {
       const t0 = now + i * (e * 3 / 8);
       const o = ctx.createOscillator();
@@ -1979,16 +1728,11 @@ class AudioBus {
     this.stopCrowd();
     this.stopAnnounce();
     if (this.ctx) {
-      // The shared bus context is the whole app's (js/audioBus.js): closing it here killed
-      // audio for every game visited afterwards, and handed the NEXT PoBrawl engine — a
-      // training-room toggle re-inits one in place — a dead context whose second close()
-      // rejected ("Cannot close a closed AudioContext"). Our nodes are disconnected by the
-      // stop* calls above; only a private fallback context is ours to close.
+      // Never close the shared app context (js/audioBus.js); only a private fallback.
       if (this._ownsCtx && this.ctx.state !== 'closed') {
         this.ctx.close().catch(() => { /* already closing */ });
       } else {
-        // On the shared context, cut our master chain loose so a re-init does not leave
-        // a dead graph hanging off the app's bus.
+        // Detach our chain from the shared bus.
         try { this.master?.disconnect(); } catch { /* already disconnected */ }
       }
       this.ctx = null;

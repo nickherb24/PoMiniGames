@@ -1,4 +1,4 @@
-// commentary.js — ringside commentary and captions (2026-09-29).
+// commentary.js — ringside commentary and captions.
 //
 // Captions: every line the PA speaks (countdown, "Fight!", "K O!", super names, the press
 // conference, the commentary below) is also written into a caption bar at the foot of the

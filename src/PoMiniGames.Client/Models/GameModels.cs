@@ -145,8 +145,6 @@ public class PoBrawlLadderEntry
     public string Date { get; set; } = "";
 }
 
-// Fighter Elo rows use PoMiniGames.Domain.Models.PoBrawlFighterRating directly, for the
-// same reason PoSports does above.
 
 /// <summary>
 /// One finished CPU-vs-CPU demo match. Carries who fought and who won, and nothing else:

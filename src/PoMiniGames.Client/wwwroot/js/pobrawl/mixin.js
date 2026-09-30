@@ -1,14 +1,8 @@
 // mixin.js — prototype composition for BrawlGame.
 //
-// BrawlGame was a single 5,400-line class. Its behaviour splits cleanly along
-// subsystem lines (personality/super, VFX, the KO sequence + camera), but those
-// methods reach across ~40 fields of shared match state, so turning them into
-// free functions would mean threading a `game` argument through several hundred
-// call sites — a large diff with real risk for no behavioural gain.
-//
-// Instead each subsystem is written as an ordinary class whose prototype is mixed
-// into BrawlGame's. Every method body is unchanged and every `this._foo()` call
-// site still resolves exactly as before; only the file it lives in has moved.
+// Each subsystem (personality/super, VFX, the KO sequence + camera) is an ordinary
+// class whose prototype is mixed into BrawlGame's, because its methods reach across
+// ~40 fields of shared match state through `this`.
 //
 // getOwnPropertyDescriptors rather than Object.assign: class methods are
 // NON-enumerable, so Object.assign copies nothing at all from a class prototype.

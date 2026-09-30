@@ -230,10 +230,7 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
             (PoBrawlOutcome.Loss, false) => "lost on points at the bell",
             _ => "fought to a draw",
         };
-        var who = b.SpeakerName == PoBrawlRoster.Bob.Name
-            ? "BOB, a mild-mannered office worker who wandered into the ring"
-            : $"{b.SpeakerName}, the cartoon president";
-        return $"Speaker: {who}. Opponent: {b.OpponentName}. The speaker {result} after {b.Seconds} seconds. " +
+        return $"Speaker: {Billing(b.SpeakerName)}. Opponent: {b.OpponentName}. The speaker {result} after {b.Seconds} seconds. " +
                $"Speaker landed {b.Hits} hits, blocked {b.Blocks}, best combo {b.BestCombo}, biggest hit {b.BiggestHit} damage. " +
                $"Opponent landed {b.OpponentHits} hits.";
     }

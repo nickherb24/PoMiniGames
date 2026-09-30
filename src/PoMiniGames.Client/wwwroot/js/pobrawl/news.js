@@ -1,4 +1,4 @@
-// news.js — the "Breaking News" result package (GFX/SOUND #9, 2026-09-23).
+// news.js — the "Breaking News" result package.
 //
 // A cable-news lower third over the result frame: a LIVE bug, a BREAKING NEWS tag,
 // a headline written from the fight that just happened, a "popular vote" bar that
@@ -18,8 +18,7 @@ export class NewsDesk {
   constructor(container, { onSaveClip, demo = false } = {}) {
     const el = document.createElement('div');
     el.className = demo ? 'pb-news pb-news--demo' : 'pb-news';
-    // Not a live region: the page's shell already announces every result, and a second
-    // polite region read the same KO twice (2026-09-29 UI review #9).
+    // Not a live region: the page's shell already announces every result.
     el.innerHTML = `
       <div class="pb-news__bug"><span class="pb-news__live">LIVE</span><span class="pb-news__net">PBN</span></div>
       <div class="pb-news__vote" aria-hidden="true">

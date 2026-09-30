@@ -1,4 +1,4 @@
-// netplay.js — the online 1v1 in the arena (2026-09-29).
+// netplay.js — the online 1v1 in the arena.
 //
 // The server (PoBrawlMatchService) is authoritative for everything the result depends on:
 // HP, energy, each corner's X on a one-dimensional ring, and whether every swing hit, was
@@ -13,7 +13,7 @@
 //     server's damage in place of the engine's roll), or at the end of the active window if
 //     the two rigs never quite touch. So every point of HP the HUD shows is the server's.
 //   • Personalities, supers and prop chip damage are off: each would move HP the server never
-//     moved. The KO, the ragdoll, the replay, the news desk — all the presentation — is the
+//     moved. The KO, the ragdoll, the news desk — all the presentation — is the
 //     same code the local modes run.
 //
 // Keys (local corner only): A/D walk (held), R or S guard (held), F punch, G kick, H special.
@@ -103,7 +103,7 @@ export class NetController {
  * down AND up) and attack PRESSES (sent once per key-down). `send(kind, value)` is the page's
  * hub call. Also feeds the local NetController so the fighter moves before the server answers.
  */
-export class NetInput {
+class NetInput {
   constructor(controller, send) {
     this.controller = controller;
     this.send = send;
@@ -192,7 +192,6 @@ class NetplayMethods {
     if (!this.online || !this.fighters || !s) return;
     if (s.tick <= this.online.lastTick) return; // late or duplicate
     this.online.lastTick = s.tick;
-    this.online.last = s; // read-only introspection via PoBrawl._game, like the rest of it
     const now = performance.now() / 1000;
     const corners = [
       { f: this.fighters[0], x: s.player1X, hp: s.player1Hp, en: s.player1Energy, held: s.player1Held, swing: s.player1Swing, outcome: s.player1Outcome, dmg: s.player1Damage },
@@ -256,10 +255,9 @@ class NetplayMethods {
   /** Throw the swing the server fired. Any verdict still in the air lands first. */
   _netSwing(f, name, verdict) {
     const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
-    if (f.netVerdict) this._presentNetVerdict(f, opp, f.attack || ATTACKS.punch, f.netVerdict, chestHit(opp), null);
+    if (f.netVerdict) this._presentNetVerdict(f, opp, f.attack || ATTACKS.punch, f.netVerdict, chestHit(opp));
     if (f.state === 'ko') return;
     const attackName = name === 'special' ? 'kick' : name;
-    this._destroySwingPhysics(f);
     f.blockStunT = 0;
     f.animator.setBlocking(false);
     f.animator.setCharge(null, 0);
@@ -271,11 +269,11 @@ class NetplayMethods {
     }
     f.netVerdict = verdict;
     // No limb to swing (a torn-off punching arm): land it now rather than never.
-    if (f.state !== attackName) this._presentNetVerdict(f, opp, ATTACKS[attackName], verdict, chestHit(opp), null);
+    if (f.state !== attackName) this._presentNetVerdict(f, opp, ATTACKS[attackName], verdict, chestHit(opp));
   }
 
   /** The hit pipeline's online door (from _tryHit): the limb touched — land the server's verdict. */
-  _tryHitNet(attacker, defender, attack, contact) {
+  _tryHitNet(attacker, defender, attack) {
     const v = attacker.netVerdict;
     if (!v) { attacker.hasHit = true; return; }
     if (v.outcome === 'whiff') return; // the server says it missed: let the limb sail through
@@ -283,9 +281,8 @@ class NetplayMethods {
     const aMul = attacker.swingActiveMul ?? 1.0;
     const phase = attacker.stateT > attack.windup * wMul + attack.active * aMul ? 'recover' : 'active';
     const hit = testAttackHit(attacker.rig, attack.name, phase, defender.rig);
-    // A cannon contact with no capsule overlap still counts: the physics saw the touch.
-    if (!hit && !contact) return;
-    this._presentNetVerdict(attacker, defender, attack, v, hit || chestHit(defender), contact);
+    if (!hit) return;
+    this._presentNetVerdict(attacker, defender, attack, v, hit);
   }
 
   /** After each fighter's tick: a verdict whose swing ended (or was interrupted) without contact lands now. */
@@ -295,11 +292,11 @@ class NetplayMethods {
     const a = f.attack;
     const swinging = a && (f.state === 'punch' || f.state === 'kick');
     if (swinging && f.stateT <= a.windup + a.active + 0.02) return;
-    this._presentNetVerdict(f, opp, a || ATTACKS.punch, v, chestHit(opp), null);
+    this._presentNetVerdict(f, opp, a || ATTACKS.punch, v, chestHit(opp));
   }
 
   /** Land one verdict with the ordinary presentation: the engine's own block and hit code paths. */
-  _presentNetVerdict(attacker, defender, attack, v, hit, contact) {
+  _presentNetVerdict(attacker, defender, attack, v, hit) {
     attacker.netVerdict = null;
     attacker.hasHit = true;
     if (v.outcome === 'whiff' || defender.state === 'ko') return;
@@ -308,17 +305,11 @@ class NetplayMethods {
     const knockDir = new THREE.Vector3(dpos.x - apos.x, 0, dpos.z - apos.z);
     if (knockDir.lengthSq() > 1e-6) knockDir.normalize(); else knockDir.set(1, 0, 0);
     const impulseDir = knockDir.clone();
-    if (contact && contact.normal) {
-      impulseDir.set(contact.normal.x, contact.normal.y, contact.normal.z);
-      if (impulseDir.lengthSq() < 1e-6) impulseDir.copy(knockDir);
-      else if (impulseDir.dot(knockDir) < 0) impulseDir.negate();
-      impulseDir.normalize();
-    }
     const atkMass = attacker.rig.config.mass;
     const defMass = defender.rig.config.mass;
     const region = regionForHurtBone(hit.capsule);
     const s = {
-      attacker, defender, attack, contact, hit, phase: 'active', region, regionMod: 1,
+      attacker, defender, attack, hit, phase: 'active', region, regionMod: 1,
       effect: regionEffect(defender.regionDmg), knockDir, impulseDir,
       chargeMul: v.special ? 2.5 : 1, atkMass, defMass,
       powerScale: attacker.rig.config.attackPower * (atkMass / defMass), dpos,
@@ -379,7 +370,7 @@ class NetplayMethods {
     if (koPending) return;
     for (const f of this.fighters) {
       const opp = f === this.fighters[0] ? this.fighters[1] : this.fighters[0];
-      if (f.netVerdict) this._presentNetVerdict(f, opp, f.attack || ATTACKS.punch, f.netVerdict, chestHit(opp), null);
+      if (f.netVerdict) this._presentNetVerdict(f, opp, f.attack || ATTACKS.punch, f.netVerdict, chestHit(opp));
     }
     if (this.phase !== 'fighting') return; // that verdict was the KO
     const label = fin.event === 'forfeit' ? 'FORFEIT!' : fin.event === 'abandoned' ? 'NO CONTEST' : 'TIME!';

@@ -33,23 +33,9 @@ public static class PoBrawlOnlineMatchEndpoints
 {
     public static IEndpointRouteBuilder MapPoBrawlOnlineMatchEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/pobrawl/matches");
-
-        // GET — read the live 1v1 player-Elo board. Anonymous so it can render
-        // before AuthGate completes guest sign-in, same posture as the demo
-        // fighter Elo board.
-        group.MapGet("",
-            async (IStorageService storage, int? top, CancellationToken ct) =>
-            {
-                var limit = Math.Clamp(top ?? 10, 1, 100);
-                var rows = await storage.GetPoBrawlPlayerRatingsAsync(limit);
-                return Results.Ok(rows);
-            })
-            .AllowAnonymous()
-            .RequireRateLimiting("leaderboard-read");
-
-        // POST — record a finished 1v1 match and increment both players' Elo.
-        group.MapPost("",
+        // POST — record a finished 1v1 match and increment both players' Elo. Answers 204:
+        // the ratings surface on the Online MMR board (/api/leaderboards).
+        app.MapPost("/pobrawl/matches",
             async (
                 [FromBody] PoBrawlMatchResultDto dto,
                 HttpContext http,
@@ -112,7 +98,7 @@ public static class PoBrawlOnlineMatchEndpoints
                     userId, dto.MatchId, truth.Outcome, truth.DurationSeconds, truth.Forfeit);
 
                 // History row per corner (per-owner idempotency inside). A retried POST lands
-                // here as a duplicate and just re-reads the board below.
+                // here as a duplicate and is a no-op.
                 await matchHistory.RecordAsync(new MatchRecordRequest(
                     Owner: integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
                     Game: GameKey.PoBrawl.Value,
@@ -135,39 +121,27 @@ public static class PoBrawlOnlineMatchEndpoints
                     var winnerName = localLost ? truth.OpponentDisplayName : displayName;
                     var loserName = localLost ? displayName : truth.OpponentDisplayName;
 
-                    // Unreachable through the registry (a corner cannot fight itself), but a
-                    // hand-crafted payload naming the same principal on both sides is a 400,
-                    // not a 500.
+                    // Reachable: lobby seats key on connection, so one player in two tabs can fill
+                    // both corners. That is a 400 here, not a rating row fighting itself.
                     if (string.Equals(winnerPid, loserPid, StringComparison.OrdinalIgnoreCase))
                     {
                         return Results.BadRequest(new { error = "opponent_is_self" });
                     }
 
-                    var board = await storage.RecordPoBrawlOnlineMatchAsync(
-                        winnerPrincipalId: NormalisePrincipal(winnerPid),
-                        loserPrincipalId: NormalisePrincipal(loserPid),
+                    await storage.RecordPoBrawlOnlineMatchAsync(
+                        winnerPrincipalId: PoBrawlLobbyService.SanitizePrincipal(winnerPid),
+                        loserPrincipalId: PoBrawlLobbyService.SanitizePrincipal(loserPid),
                         winnerDisplayName: winnerName,
                         loserDisplayName: loserName,
                         isDraw: isDraw);
-                    return Results.Ok(board);
                 }
 
-                // The other corner (or a retry of ours) already applied the rating swing —
-                // still answer with the board so the caller's UI has fresh numbers.
-                var rows = await storage.GetPoBrawlPlayerRatingsAsync(10);
-                return Results.Ok(rows);
+                // A lost claim means the other corner (or a retry of ours) already applied the swing.
+                return Results.NoContent();
             })
             .RequireAuthorization()
             .RequireRateLimiting("highscores");
 
         return app;
     }
-
-    /// <summary>
-    /// Principal id sanitiser. Matches the lobby's table-row key normalisation
-    /// (lowercased + trimmed) so a write at this endpoint lands on the same
-    /// partition the lobby-side state machine wrote to.
-    /// </summary>
-    private static string NormalisePrincipal(string raw) =>
-        string.IsNullOrWhiteSpace(raw) ? "anon" : raw.Trim().ToLowerInvariant();
 }

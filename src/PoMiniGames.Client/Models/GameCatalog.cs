@@ -135,8 +135,8 @@ public static class GameCatalog
             new(GameMode.OnePlayer, "/pobrawl/1player?autoGuest=1"),
             new(GameMode.TwoPlayer, "/pobrawl/2player?autoGuest=1"),
             // Server-authoritative 1v1 over SignalR. Two humans, one lobby, one
-            // fight. Match result feeds /api/pobrawl/matches and the per-player
-            // Elo table — see Features/PoBrawl/Online.
+            // fight. POST /api/pobrawl/matches feeds the per-player Elo table —
+            // see Features/PoBrawl/Online.
             new(GameMode.Multiplayer, "/pobrawl/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/pobrawl/demo?autoGuest=1"),
         ]) { ChipPrimary = true },

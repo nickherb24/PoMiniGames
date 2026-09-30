@@ -69,11 +69,9 @@ blob-report/
 blob-report/**
 
 # ─── Adhoc screenshots / debug captures ──────────────────────────────
-docs/screenshots/adhoc-*/
-docs/screenshots/*.png
-docs/screenshots/*.jpg
-docs/screenshots/*.jpeg
-docs/screenshots/*.webp
+# SCREENSHOTS/ is where the old-vs-new UI captures land (CLAUDE.md); they are
+# review artefacts, not source, so they stay local.
+SCREENSHOTS/
 
 # ─── Node / npm (npm-installed Azurite fallback writes here) ────────
 node_modules/

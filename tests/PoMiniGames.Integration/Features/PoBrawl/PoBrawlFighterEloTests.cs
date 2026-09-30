@@ -8,8 +8,9 @@ namespace PoMiniGames.Integration;
 /// <summary>
 /// PoBrawl demo-mode fighter Elo round-trip against a real Azurite container: a recorded
 /// CPU-vs-CPU result moves both fighters' ratings in opposite directions by the same amount,
-/// a draw moves the draw counters, and the roster allowlist rejects unrateable submissions
-/// at the HTTP boundary before they can mint a row.
+/// a draw is zero-sum too, and the roster allowlist rejects unrateable submissions at the
+/// HTTP boundary before they can mint a row. The board is read where the app reads it, the
+/// unified <c>/api/leaderboards/pobrawldemo</c> route; <c>POST /api/pobrawl/elo</c> is write only.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -31,19 +32,22 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
 
     public PoBrawlFighterEloTests(TestWebApplicationFactory factory) => _factory = factory;
 
-    // Two fighters that no other test touches. count=50 because the roster is 15 and the
-    // endpoint defaults to a top-10 board — the fighters under test need not be winning.
+    // Two fighters that no other test touches. limit=15 is the whole roster, so the fighters
+    // under test show up whether or not they are winning.
     private const string Winner = "fdr";
     private const string Loser = "truman";
+    private const string DemoBoard = "/api/leaderboards/pobrawldemo?limit=15";
 
-    private static async Task<PoBrawlFighterRating> RatingOf(HttpClient client, string fighterId)
-    {
-        var board = await client.GetFromJsonAsync<List<PoBrawlFighterRating>>("/api/pobrawl/elo?count=50");
-        return board!.SingleOrDefault(r => r.FighterId == fighterId)
+    private static async Task<GameLeaderboardDto> Board(HttpClient client) =>
+        (await client.GetFromJsonAsync<GameLeaderboardDto>(DemoBoard))!;
+
+    /// <summary>Rating by roster display name.</summary>
+    private static async Task<int> EloOf(HttpClient client, string name) =>
+        (await Board(client)).Entries.FirstOrDefault(e => e.Name == name) is { } row
+            ? (int)row.Value
             // A fighter with no recorded match has no row yet; the seed rating is what the
             // server would price its first match against.
-            ?? new PoBrawlFighterRating { FighterId = fighterId, Elo = 1000 };
-    }
+            : 1000;
 
     [Fact]
     public async Task RecordDemoResult_MovesBothRatings_AndRejectsUnrateableFighters()
@@ -55,39 +59,33 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
         var client = await _factory.CreateClient().ArmAntiforgeryAsync();
 
         // ── A decisive result moves both ratings, zero-sum ────────────────
-        var winnerBefore = await RatingOf(client, Winner);
-        var loserBefore = await RatingOf(client, Loser);
+        // Names, not ids: the board renders the roster display name, resolved server-side.
+        var winnerBefore = await EloOf(client, "FDR");
+        var loserBefore = await EloOf(client, "Truman");
 
         var post = await client.PostAsJsonAsync(
             "/api/pobrawl/elo", new { winnerFighterId = Winner, loserFighterId = Loser, isDraw = false });
-        post.StatusCode.Should().Be(HttpStatusCode.OK);
+        post.StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var winnerAfter = await RatingOf(client, Winner);
-        var loserAfter = await RatingOf(client, Loser);
+        var winnerAfter = await EloOf(client, "FDR");
+        var loserAfter = await EloOf(client, "Truman");
 
-        var gain = winnerAfter.Elo - winnerBefore.Elo;
-        var drop = loserBefore.Elo - loserAfter.Elo;
+        var gain = winnerAfter - winnerBefore;
+        var drop = loserBefore - loserAfter;
 
         gain.Should().BePositive("beating a comparable opponent must raise the winner's rating");
         gain.Should().Be(drop,
             "the delta is rounded once and applied as +d/-d, so the rating pool is conserved exactly");
 
-        winnerAfter.Wins.Should().Be(winnerBefore.Wins + 1);
-        loserAfter.Losses.Should().Be(loserBefore.Losses + 1);
-        winnerAfter.DisplayName.Should().Be("FDR", "the display name is resolved server-side from the roster");
-
-        // ── A draw counts as a draw for both sides ────────────────────────
+        // ── A draw is zero-sum too ────────────────────────────────────────
         (await client.PostAsJsonAsync(
             "/api/pobrawl/elo", new { winnerFighterId = Winner, loserFighterId = Loser, isDraw = true }))
-            .StatusCode.Should().Be(HttpStatusCode.OK);
+            .StatusCode.Should().Be(HttpStatusCode.NoContent);
 
-        var winnerDrawn = await RatingOf(client, Winner);
-        var loserDrawn = await RatingOf(client, Loser);
+        var winnerDrawn = await EloOf(client, "FDR");
+        var loserDrawn = await EloOf(client, "Truman");
 
-        winnerDrawn.Draws.Should().Be(winnerAfter.Draws + 1);
-        loserDrawn.Draws.Should().Be(loserAfter.Draws + 1);
-        winnerDrawn.Wins.Should().Be(winnerAfter.Wins, "a draw is not a win");
-        (winnerDrawn.Elo - winnerAfter.Elo).Should().Be(-(loserDrawn.Elo - loserAfter.Elo),
+        (winnerDrawn - winnerAfter).Should().Be(-(loserDrawn - loserAfter),
             "a draw is zero-sum too — the now higher-rated fighter gives points back");
 
         // ── The roster allowlist is the row-creation gate ─────────────────
@@ -107,18 +105,16 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
             "/api/pobrawl/elo", new { winnerFighterId = Winner, loserFighterId = Winner, isDraw = false }))
             .StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
-        var board = await client.GetFromJsonAsync<List<PoBrawlFighterRating>>("/api/pobrawl/elo?count=50");
-        board!.Should().NotContain(r => r.FighterId == "notapresident" || r.FighterId == "bob",
+        var board = await Board(client);
+        // A row for an off-roster id would render under the id itself (no roster name to resolve).
+        board.Entries.Should().NotContain(e => e.Name == "notapresident" || string.Equals(e.Name, "bob", StringComparison.OrdinalIgnoreCase),
             "a rejected submission must not have created a row");
-        board.Should().BeInDescendingOrder(r => r.Elo, "the board ranks by rating");
+        board.Entries.Should().BeInDescendingOrder(e => e.Value, "the board ranks by rating");
 
-        // ── The unified BFF exposes the same partition as the demo board ──────
-        // /api/leaderboards/pobrawldemo is the route the /leaderboards page calls
-        // when it renders the top-3 Brawl Demo trophy case. It reads the same
-        // storage partition /api/pobrawl/elo writes to, so the rows above must
-        // surface under the unified DTO with the right gameKey/title/unit and
-        // rank ordered by Elo. The page filters the "XXX" placeholder, but the
-        // BFF still emits it so the rank list always fills out to the limit.
+        // ── The unified board's shape ─────────────────────────────────────
+        // The /leaderboards page renders the top-3 Brawl Demo trophy case from this, with
+        // the right gameKey/title/unit and rank ordered by Elo. The page filters the "XXX"
+        // placeholder, but the BFF still emits it so the rank list always fills to the limit.
         var demoBoard = await client.GetFromJsonAsync<System.Text.Json.JsonElement>(
             "/api/leaderboards/pobrawldemo?limit=3");
         demoBoard.GetProperty("gameKey").GetString().Should().Be("pobrawldemo");

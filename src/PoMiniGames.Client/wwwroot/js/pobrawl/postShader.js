@@ -1,16 +1,6 @@
-// postShader.js — the CA / vignette / radial-blur / broadcast-grade pass.
+// postShader.js — the CA / vignette / radial-blur / broadcast-grade pass. Pure
+// shader data; `_buildComposer` wraps it in a ShaderPass.
 //
-// Split out of game.js 2026-09-13. This is pure shader data: a uniforms table and
-// two GLSL strings, with no reference to `this` and exactly one consumer
-// (`_buildComposer`, which wraps it in a ShaderPass). It sat in the middle of
-// game.js as 172 lines of GLSL between the gameplay constants and the class
-// declaration, which is the one thing in that file that is not game logic at all.
-//
-// Deliberately NOT a mixin like vfx.js / cinematics.js: those move METHODS that
-// close over match state, and need the prototype trick to keep `this` working.
-// This moves a value, so a plain export is enough.
-
-// ── Post-processing: CA + vignette + radial blur + broadcast grade ───────
 // Runs after bloom, before OutputPass (so it operates on the linear HDR
 // frame). uCA and uRadial are pulsed by hits and the KO flash; uDesat rides
 // the KO lights-down blend (drains color, keeps the reds); the teal-shadow /
@@ -23,18 +13,11 @@ export const CAVignetteShader = {
     uRadial: { value: 0 },
     uGrade: { value: 1.0 },
     uDesat: { value: 0 },
-    // Film grain (idea #10): animated luminance-weighted noise. uGrain is the
-    // amount (0 = off); uTime drives the per-frame hash so the grain crawls.
-    //
-    // 2026-08-07 (user request): OFF. At 0.04 the noise was weighted into the
-    // shadows, and PoBrawl's fighters are mostly dark suits against a dark
-    // hall — so instead of reading as film texture it read as a crawling
-    // cross-hatch woven over the whole image, which is what it looked like on
-    // the KO frames. The shader branch below is skipped entirely at 0, so this
-    // costs nothing; raise it if the look is ever wanted back.
+    // Film grain amount (0 = off, branch skipped). Kept off: weighted into the
+    // shadows, it reads as a crawling cross-hatch over the dark suits and hall.
+    // uTime drives the per-frame hash.
     uGrain: { value: 0.0 },
     uTime: { value: 0 },
-    // ── Godrays / lens-flare uniforms (idea #10) ───────────────────
     // uGodrays     : intensity (0 = off). Drives the spotlight blade.
     // uGodraysOrig : screen-space origin of the shaft in UV (default 0.5,1.05 — top edge).
     // uGodraysDecay: per-step exponential falloff for the marching sample.
@@ -43,28 +26,21 @@ export const CAVignetteShader = {
     uGodraysOrig: { value: [0.5, 1.05] },
     uGodraysDecay: { value: 0.94 },
     uGodraysTint: { value: [1.0, 0.94, 0.78] },
-    // ── Speedlines (GFX/SOUND #3 / #2) ──────────────────────────────
-    // Radial manga speedlines, drawn in screen space and masked away from the
-    // frame centre so the fighters are never behind them. 0 = off and the
-    // branch is skipped outright. Spiked for ~2 frames on a heavy impact and
-    // held up through the super cinematic.
+    // Radial manga speedlines, masked away from the frame centre so the
+    // fighters are never behind them. 0 = off (branch skipped). Held up
+    // through the super cinematic.
     uSpeed: { value: 0 },
     uSpeedTint: { value: [1.0, 0.97, 0.88] },
-    // ── Danger edge (GFX/SOUND #4, 2026-09-23) ──────────────────────
-    // A red tint creeping in from the screen edge on the SIDE of a fighter
-    // near a KO (0..1 each), pulsing on the heartbeat game.js plays. Edge-only
-    // and capped well short of opaque: the flicker passes removed every
-    // whole-frame luminance change, and this is built not to be one — the
-    // centre of the frame, where the fighters are, is never touched. Calm mode
-    // pins uHeart at a constant, so the tint holds still.
+    // Danger edge: red tint from the screen edge on the SIDE of a fighter near
+    // a KO (0..1 each), pulsing on game.js's heartbeat. Edge-only and capped
+    // short of opaque so it is never a whole-frame luminance change. Calm mode
+    // pins uHeart at a constant.
     uDangerL: { value: 0 },
     uDangerR: { value: 0 },
     uHeart: { value: 0 },
-    // ── Shockwave / comic KO / tape rewind (2026-09-29) ─────────────
     // uShock    : ring strength (0 = off). A screen-space refraction ring racing
     //             out from uShockC (UV) to radius uShockR (in frame heights).
-    //             It moves pixels, never brightens them — the flicker passes
-    //             removed every whole-frame luminance change.
+    //             It moves pixels, never brightens them.
     // uComic    : 0..1 halftone print + ink + posterise, the KO panel only.
     // uRewind   : 0..1 VHS tracking wobble + scanlines, under the rematch splash.
     // uAspect / uRes : frame shape, set per frame by game.js.

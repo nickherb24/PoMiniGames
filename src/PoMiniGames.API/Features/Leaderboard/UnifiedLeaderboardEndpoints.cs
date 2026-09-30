@@ -89,10 +89,8 @@ public static class UnifiedLeaderboardEndpoints
             SafeBuildPoSportsAsync(storage, limit),
             SafeBuildPoBrawlAsync(storage, limit),
             // 2026-08-11: dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
-            // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring —
-            // so the board shares storage with the existing /api/pobrawl/elo read but
-            // is served through the unified leaderboards so the /leaderboards page can
-            // pick it up alongside the per-player boards.
+            // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring.
+            // This is the board's only read; POST /api/pobrawl/elo is write only.
             SafeBuildPoBrawlDemoAsync(storage, limit),
             SafeBuildFunQuizAsync(funQuiz, limit),
             SafeBuildPoJokerAsync(joker, limit),
@@ -193,10 +191,8 @@ public static class UnifiedLeaderboardEndpoints
             // the board the 1P end-of-match modal renders.
             "pobrawlko" => await BuildPoBrawlKoAsync(storage, limit),
             // 2026-08-11: dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
-            // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring —
-            // so the board shares storage with the existing /api/pobrawl/elo read but
-            // is served through the unified leaderboards so the /leaderboards page can
-            // pick it up alongside the per-player boards.
+            // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring.
+            // This is the board's only read; POST /api/pobrawl/elo is write only.
             "pobrawldemo" => await BuildPoBrawlDemoAsync(storage, limit),
             "funquiz" => await BuildFunQuizAsync(funQuiz, limit),
             // GameKey canonicalises "pocouplequiz" to "couplequiz", but the board is keyed by
@@ -431,10 +427,8 @@ public static class UnifiedLeaderboardEndpoints
     /// <summary>
     /// PoBrawl demo-mode fighter ELO. The row subject is the character, not the player —
     /// demo matches are CPU-vs-CPU, so "Trump" or "Obama" is what climbs the board, not
-    /// the human who walked past the kiosk. Serve the same partition as
-    /// <c>/api/pobrawl/elo</c> so a write to one surface shows up on the other; the unified
-    /// path exists so the <c>/leaderboards</c> page can render this alongside the per-player
-    /// boards without bolting a second component onto <c>PoBrawlEloBoard</c>.
+    /// the human who walked past the kiosk. This is the only read of the partition that
+    /// <c>POST /api/pobrawl/elo</c> writes.
     /// </summary>
     /// <remarks>
     /// Roster is bounded at <see cref="PoBrawlRoster.Count"/> (15), so a top-3 view is

@@ -8,18 +8,13 @@
 //
 // This is the standard fighting-game approach: capsule-capsule tests are O(N*M),
 // stable under rotation, and read as "real polygon contact" to a player without
-// the cost of a true mesh-mesh pipeline.
-//
-// Capsules are defined in rig-local space (relative to root) so they
-// automatically follow the rig when the root group is translated/rotated.
-// Capsules are pulled from the live rig every test via getWorldPosition on
-// their two anchor joints.
+// the cost of a true mesh-mesh pipeline. It is the only hit path: game.js polls
+// it every active-attack tick, and the clash test runs on the same geometry.
 //
 // ── Capsule anatomy ───────────────────────────────────────────────────────
-// A capsule is { jointA, jointB, radius, kind } where jointA/jointB are rig
-// joint names. The world endpoints are taken from those joints' current world
-// positions each tick. `kind` is 'striker' (deals damage), 'hurt' (receives),
-// or 'guard' (counts as a block surface).
+// A capsule is { jointA, jointB, radius } where jointA/jointB are rig joint
+// names; its world endpoints are those joints' world positions at test time.
+// Sets: striker (deals damage), hurt (receives), guard (block surface).
 //
 // ── Why capsules not boxes ───────────────────────────────────────────────
 // Boxes would be slightly more accurate to the visible primitives but require
@@ -29,8 +24,8 @@
 
 import * as THREE from 'three';
 
-// Capsule definition. jointA/jointB are the rig's joint names; radius is the
-// capsule thickness in world units. `active` lets us toggle subsets per-frame.
+// jointA/jointB are the rig's joint names; radius is the capsule thickness in
+// world units.
 export const FIGHTER_CAPSULES = {
   // ── Hurt capsules (defender's body) ────────────────────────────────
   hurt: {
@@ -59,9 +54,8 @@ export const FIGHTER_CAPSULES = {
 //
 // Strikers follow the ACTUAL fist/shoe meshes (registered as rig joints in
 // fighters.js) — a hit only registers when the visible limb polygons reach
-// the defender. `forwardReach` is now just a small knuckle/toe pad, not the
-// half-meter invisible extension it used to be; the range comes from the
-// stretched strike animation and the attack lunge instead.
+// the defender. `forwardReach` is a small knuckle/toe pad; the range comes
+// from the stretched strike animation and the attack lunge.
 export const ATTACK_CAPSULES = {
   punch: {
     active: {
@@ -103,28 +97,6 @@ function capsuleEndpoints(joints, cap, forwardDir) {
     _vB.add(_fwd);
   }
   return { a: _vA.clone(), b: _vB.clone() };
-}
-
-/**
- * World-space endpoints of one capsule on a live rig, sampled exactly the way the
- * hit test samples it (a striker's `forwardReach` pad included). Exists for the
- * training room's hitbox overlay, which must draw the capsule the test is using,
- * not an approximation of it. Writes into `outA` / `outB`; false when the rig is
- * missing one of the capsule's joints.
- */
-export function sampleCapsule(rig, cap, outA, outB) {
-  let fwd = null;
-  if (cap.forwardReach) {
-    rig.root.getWorldDirection(_fwd);
-    _fwd.y = 0;
-    if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, 1);
-    fwd = _fwd.normalize().clone();
-  }
-  const ends = capsuleEndpoints(rig.joints, cap, fwd);
-  if (!ends) return false;
-  outA.copy(ends.a);
-  outB.copy(ends.b);
-  return true;
 }
 
 // Closest points between two line segments in 3D, plus the distance between
@@ -171,13 +143,16 @@ function closestPointsOnSegments(p1, p2, p3, p4) {
  * Test a single attacker capsule against all defender capsules.
  * Returns the first intersection { capsule, point, distance } or null.
  */
-export function testCapsuleAgainstSet(attackerRig, attackerCaps, defenderRig, defenderCaps) {
-  // Attacker's facing direction in world XZ.
-  attackerRig.root.getWorldDirection(_fwd);
-  _fwd.y = 0;
-  if (_fwd.lengthSq() < 1e-6) _fwd.set(0, 0, 1);
-  _fwd.normalize();
-  const atk = capsuleEndpoints(attackerRig.joints, attackerCaps, _fwd);
+// A rig's facing direction flattened to world XZ.
+function facing(rig, out) {
+  rig.root.getWorldDirection(out);
+  out.y = 0;
+  if (out.lengthSq() < 1e-6) out.set(0, 0, 1);
+  return out.normalize();
+}
+
+function testCapsuleAgainstSet(attackerRig, attackerCaps, defenderRig, defenderCaps) {
+  const atk = capsuleEndpoints(attackerRig.joints, attackerCaps, facing(attackerRig, _fwd));
   if (!atk) return null;
   let best = null;
   for (const [name, cap] of Object.entries(defenderCaps)) {
@@ -233,6 +208,29 @@ export function testAttackBlocked(attackerRig, attackName, phase, defenderRig) {
     if (testCapsuleAgainstSet(attackerRig, cap, defenderRig, def)) return true;
   }
   return false;
+}
+
+/**
+ * Striker-vs-striker: do two simultaneous swings' limbs meet? Returns the
+ * midpoint of the closest approach (a new Vector3), or null.
+ */
+export function testAttackClash(rigA, attackA, phaseA, rigB, attackB, phaseB) {
+  const capsA = ATTACK_CAPSULES[attackA]?.[phaseA === 'recover' ? 'recover' : 'active'];
+  const capsB = ATTACK_CAPSULES[attackB]?.[phaseB === 'recover' ? 'recover' : 'active'];
+  if (!capsA || !capsB) return null;
+  const fwdA = facing(rigA, new THREE.Vector3());
+  const fwdB = facing(rigB, new THREE.Vector3());
+  for (const ca of Object.values(capsA)) {
+    const a = capsuleEndpoints(rigA.joints, ca, fwdA);
+    if (!a) continue;
+    for (const cb of Object.values(capsB)) {
+      const b = capsuleEndpoints(rigB.joints, cb, fwdB);
+      if (!b) continue;
+      const hit = closestPointsOnSegments(a.a, a.b, b.a, b.b);
+      if (hit && hit.d <= ca.radius + cb.radius) return hit.pa.add(hit.pb).multiplyScalar(0.5);
+    }
+  }
+  return null;
 }
 
 // ── Region classification ───────────────────────────────────────────────

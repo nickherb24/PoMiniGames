@@ -1,23 +1,16 @@
-// gamepad.js — controllers in, rumble out (GFX/SOUND #2, 2026-09-23).
+// gamepad.js — controllers in, rumble out.
 //
 // A pad is not a new input path. Each poll turns the pad's state into the set of
 // KEY CODES it is holding and dispatches synthetic keydown/keyup for the
-// difference, exactly as the touch panel does (game.js _buildTouchControls). So
+// difference, exactly as the touch panel does (input.js buildTouchControls). So
 // KeyboardController — hold-to-charge, toggle holds, the lot — drives a pad with
-// no code of its own, and rebinding a key in input.js rebinds the button too.
-//
-// Keep KEYS in step with input.js LAYOUTS. It is restated rather than imported
-// because input.js does not export the table, and a controller that silently
-// pressed the wrong key would be worse than a duplicated eight-line map.
+// no code of its own, and rebinding a key in input.js LAYOUTS rebinds the button too.
 //
 // A pad only ever RELEASES codes it pressed itself, so a player on the keyboard
 // and a pad on the same layout do not cancel each other's held keys (the one
 // overlap: a pad lifting a key the keyboard is also holding — rare, harmless).
 
-const KEYS = {
-  1: { left: 'KeyA', right: 'KeyD', away: 'KeyW', toward: 'KeyS', block: 'KeyR', punch: 'KeyF', kick: 'KeyG' },
-  2: { left: 'ArrowLeft', right: 'ArrowRight', away: 'ArrowUp', toward: 'ArrowDown', block: 'Semicolon', punch: 'KeyK', kick: 'KeyL' },
-};
+import { LAYOUTS } from './input.js';
 
 // Stick deadzone. 0.4 rather than a tight 0.15: a worn stick resting at 0.25
 // would otherwise walk the fighter on its own, and nothing here is analogue —
@@ -52,7 +45,7 @@ export class GamepadBridge {
     for (let slot = 0; slot < this.layouts.length; slot++) {
       const pad = live[slot] || null;
       this.padIndex[slot] = pad ? pad.index : -1;
-      this._apply(slot, pad ? this._codes(pad, KEYS[this.layouts[slot]]) : null);
+      this._apply(slot, pad ? this._codes(pad, LAYOUTS[this.layouts[slot]]) : null);
     }
   }
 
@@ -61,8 +54,8 @@ export class GamepadBridge {
     const ax = pad.axes[0] || 0, ay = pad.axes[1] || 0;
     if (ax < -DEADZONE || pressed(pad, B.left)) want.add(k.left);
     if (ax > DEADZONE || pressed(pad, B.right)) want.add(k.right);
-    if (ay < -DEADZONE || pressed(pad, B.up)) want.add(k.away);
-    if (ay > DEADZONE || pressed(pad, B.down)) want.add(k.toward);
+    if (ay < -DEADZONE || pressed(pad, B.up)) want.add(k.depthAway);
+    if (ay > DEADZONE || pressed(pad, B.down)) want.add(k.depthToward);
     // Face buttons: south/west punch, east/north kick — so both the "A punches"
     // and the "square punches" instincts land on the same move.
     if (pressed(pad, B.south) || pressed(pad, B.west)) want.add(k.punch);

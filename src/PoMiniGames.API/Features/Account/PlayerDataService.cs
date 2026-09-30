@@ -74,11 +74,15 @@ public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILo
     /// partitions by game, so the caller's rows are spread across all of them).</param>
     /// <param name="NameFields">Fields holding the player's display name, in priority order.</param>
     /// <param name="RowKeyIsName">True when the RowKey itself is the (sanitised) display name.</param>
+    /// <param name="UserIdField">Field holding the claim id the row belongs to.</param>
+    /// <param name="LowerCasedId">True when the table stores the claim id lower-cased.</param>
     private sealed record PlayerTable(
         string Table,
         string[]? Partitions,
         string[] NameFields,
-        bool RowKeyIsName = false);
+        bool RowKeyIsName = false,
+        string UserIdField = "UserId",
+        bool LowerCasedId = false);
 
     private static readonly PlayerTable[] Sources =
     [
@@ -96,6 +100,10 @@ public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILo
 
         // The 1P ladder run (PoBrawlProgressStore): one row per claim identity, matched on UserId.
         new("PoBrawlProgress", ["p"], []),
+
+        // Live 1v1 Elo (POST /api/pobrawl/matches): one row per principal, stored trimmed and
+        // lower-cased (PoBrawlLobbyService.SanitizePrincipal) in PrincipalId.
+        new("PoBrawlPlayerRatings", ["pobrawlplayerelo"], [], UserIdField: "PrincipalId", LowerCasedId: true),
     ];
 
     /// <summary>Assembles the full export document.</summary>
@@ -254,11 +262,12 @@ public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILo
     /// </summary>
     private static bool Matches(TableEntity entity, PlayerDataSubject subject, PlayerTable source)
     {
-        var rowUserId = entity.GetString("UserId");
+        var rowUserId = entity.GetString(source.UserIdField);
         if (!string.IsNullOrEmpty(rowUserId))
         {
+            var userId = source.LowerCasedId ? subject.UserId.Trim().ToLowerInvariant() : subject.UserId;
             return subject.HasClaimIdentity
-                && string.Equals(rowUserId, subject.UserId, StringComparison.Ordinal);
+                && string.Equals(rowUserId, userId, StringComparison.Ordinal);
         }
 
         if (string.IsNullOrWhiteSpace(subject.DisplayName))

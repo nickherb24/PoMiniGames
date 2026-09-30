@@ -69,38 +69,16 @@ public partial class StorageService
         }
     }
 
-    public async Task<PoBrawlPlayerRating?> GetPoBrawlPlayerRatingAsync(string principalId)
-    {
-        if (!IsStorageAvailable() || string.IsNullOrWhiteSpace(principalId))
-        {
-            return null;
-        }
-
-        try
-        {
-            var entity = await Table(PoBrawlPlayerEloTable).GetEntityAsync<TableEntity>(
-                PoBrawlPlayerEloPartition, principalId);
-            return PlayerRatingFrom(entity.Value);
-        }
-        catch (RequestFailedException ex) when (ex.Status == 404)
-        {
-            return null;
-        }
-        catch (Exception ex)
-        {
-            MarkUnavailable(ex);
-            return null;
-        }
-    }
-
     /// <summary>
     /// Records one online 1v1 match and increments both players' ratings. The Elo
     /// arithmetic is identical to the demo board — same calculator, same floor, same
     /// zero-sum property — so a player who fights both CPU opponents and humans
     /// carries a single coherent rating concept. The match record itself lives in
     /// MatchHistory (see MatchHistoryEndpoints); this method only moves the rating.
+    /// The self-fight guard lives in the only caller, PoBrawlOnlineMatchEndpoints, which
+    /// answers it with a 400.
     /// </summary>
-    public async Task<List<PoBrawlPlayerRating>> RecordPoBrawlOnlineMatchAsync(
+    public async Task RecordPoBrawlOnlineMatchAsync(
         string winnerPrincipalId, string loserPrincipalId,
         string winnerDisplayName, string loserDisplayName,
         bool isDraw)
@@ -109,12 +87,10 @@ public partial class StorageService
             throw new ArgumentException("Winner principal id is required.", nameof(winnerPrincipalId));
         if (string.IsNullOrWhiteSpace(loserPrincipalId))
             throw new ArgumentException("Loser principal id is required.", nameof(loserPrincipalId));
-        if (string.Equals(winnerPrincipalId, loserPrincipalId, StringComparison.OrdinalIgnoreCase))
-            throw new ArgumentException("A player cannot fight themselves.", nameof(loserPrincipalId));
 
         if (!IsStorageAvailable())
         {
-            return [];
+            return;
         }
 
         var table = Table(PoBrawlPlayerEloTable);
@@ -156,17 +132,14 @@ public partial class StorageService
                         compensationFailure,
                         "PoBrawl online Elo: failed to compensate a half-applied match for {PrincipalId}; the rating pool is off by {Delta}.",
                         winnerPrincipalId, delta);
-                    return [];
+                    return;
                 }
                 throw;
             }
-
-            return await GetPoBrawlPlayerRatingsAsync();
         }
         catch (Exception ex)
         {
             MarkUnavailable(ex);
-            return [];
         }
     }
 

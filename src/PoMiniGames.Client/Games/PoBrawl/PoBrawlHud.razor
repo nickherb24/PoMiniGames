@@ -1,18 +1,14 @@
 @* The fight HUD: health, energy, body damage and the clock, fed ~4×/sec by the engine
    (game.js _pushHud → PoBrawlPage.OnHud → Update). Its own component so that pump re-renders
-   this subtree alone: it used to call StateHasChanged on the page, which re-rendered the whole
-   GameShell (header section, stats, the shared live region) four times a second for the
-   length of every fight. The page keeps the danger announcements; everything drawn is here. *@
+   this subtree alone, not the whole GameShell. The page keeps the danger announcements. *@
 
 <div class="pb-hud">
-    @* GFX/SOUND #1 (2026-09-23): the ghost is the damage chip — a pale bar under the
-       fill that holds the old value for a beat and then drains to meet it, so every
-       hit shows how much it took. Pure CSS (a delayed width transition on the same
-       --hp). InDanger cracks the plate. *@
+    @* The ghost is the damage chip: a pale bar under the fill that holds the old value for a
+       beat and then drains to meet it (a delayed width transition on the same --hp).
+       InDanger cracks the plate. *@
     <div class="pb-hp-side @(InDanger(_p1Hp) ? "pb-hp-side--danger" : "")">
         <span class="pb-hp-name" title="@P1Name">@P1Name</span>
-        @* Review #5: real meters — a screen reader can query either bar on demand
-           (role=meter carries the value range) between the sparse announcements. *@
+        @* Real meters: a screen reader can query either bar between the sparse announcements. *@
         <div class="pb-hp-track" role="meter" aria-valuemin="0" aria-valuemax="100"
              aria-valuenow="@_p1Hp" aria-label="@P1Fighter — health">
             <div class="pb-hp-ghost" style="--hp: @(_p1Hp)%;"></div><div class="pb-hp-fill pb-hp-p1" style="--hp: @(_p1Hp)%;"></div>
@@ -62,7 +58,7 @@
     public static bool InDanger(int hp) => hp > 0 && hp <= DangerHpPct;
 
     // Round-start values. _elapsed is the time LEFT (game.js _pushHud sends TIME_LIMIT - clock);
-    // seeded at the limit so the clock never reads 0 before the engine's first pump (review #6).
+    // seeded at the limit so the clock never reads 0 before the engine's first pump.
     private int _p1Hp = 100, _p2Hp = 100;
     private int _p1Energy = 100, _p2Energy = 100;
     private double _elapsed = 60;
@@ -81,7 +77,7 @@
         InvokeAsync(StateHasChanged);
     }
 
-    /// <summary>One engine pump. Skipped when nothing visible moved (review #10): the page only
+    /// <summary>One engine pump. Skipped when nothing visible moved: the page only
     /// shows integer seconds and ints, and quiet stretches push identical state.</summary>
     public void Update(int p1Hp, int p2Hp, double elapsed, int[]? p1Regions, int[]? p2Regions, int p1Energy, int p2Energy)
     {

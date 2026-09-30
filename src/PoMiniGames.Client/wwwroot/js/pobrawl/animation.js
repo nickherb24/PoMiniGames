@@ -1,13 +1,9 @@
 // animation.js — procedural pose animation for the fighter rigs.
 //
-// A pose is a partial map { jointName: {x,y,z} } of Euler targets; a track is
-// a timed sequence of poses. Each tick the animator resolves the target pose
-// (transient track if one is playing, else the base stance), layers overlays
-// (breathing, walk swing, hit-reaction lean, momentum lean, head tracking,
-// clinch frame, per-joint reaction springs) and damp-lerps every joint toward
-// the result. Legs are then owned by the foot-IK stepper: feet PLANT at world
-// positions and the two-bone leg solver keeps them pinned until a step is
-// triggered — unless a transient track (kick) explicitly drives that leg.
+// A pose is a partial map { jointName: {x,y,z} } of Euler targets; a track is a
+// timed sequence of poses. Each tick: resolve the target pose (track or base
+// stance), layer overlays, damp-lerp every joint. Legs belong to the foot-IK
+// stepper unless the current track segment keys that leg.
 
 import * as THREE from 'three';
 
@@ -52,11 +48,7 @@ const KO_POSE = {
 
 // Transient tracks: [pose, duration, opts] segments. Durations align with the
 // combat windup/active/recover windows in game.js (punch 0.08/0.10/0.22,
-// kick 0.12/0.12/0.30, hitstun 0.35).
-//
-// Real strikes are staged: the hips load, the shoulder coils, the limb whips,
-// then over-extends and recoils. Each stage is its own key with its own lerp
-// stiffness (opts.k) — slow anticipation, violent snap, heavy follow-through.
+// kick 0.12/0.12/0.30, hitstun 0.35). opts.k is the segment's lerp stiffness;
 // opts.overshoot scales the segment's own joints past their nominal pose.
 const TRACKS = {
   punch: [
@@ -66,10 +58,8 @@ const TRACKS = {
        shoulderL: { x: -0.85, y: 0, z: 0.2 } }, 0.04, { k: 18 }],
     [{ shoulderR: { x: -0.6, y: 0, z: -0.3 }, elbowR: { x: -1.6, y: 0, z: 0 },
        torso: { x: 0.06, y: 0.55, z: 0 } }, 0.04, { k: 22 }],
-    // active: whip → full cross extension. The rear shoulder rolls all the way
-    // through and the torso corkscrews so the fist visibly stretches past the
-    // lead shoulder — the striker capsules ride the real fist mesh now, so the
-    // pose IS the range.
+    // active: whip → full cross extension. Striker capsules ride the fist mesh,
+    // so this pose IS the reach.
     [{ shoulderR: { x: -1.45, y: 0, z: 0.1 }, elbowR: { x: -0.2, y: 0, z: 0 },
        torso: { x: 0.16, y: -0.45, z: 0 }, head: { x: 0, y: 0.1, z: 0 } }, 0.05, { k: 52, overshoot: 1.14 }],
     [{ shoulderR: { x: -1.7, y: 0, z: 0.05 }, elbowR: { x: -0.01, y: 0, z: 0 },
@@ -86,8 +76,7 @@ const TRACKS = {
        torso: { x: 0.14, y: 0.15, z: 0.04 }, shoulderL: { x: -0.5, y: 0, z: 0.3 } }, 0.05, { k: 16 }],
     [{ hipR: { x: -0.85, y: 0, z: 0 }, kneeR: { x: 1.8, y: 0, z: 0 },
        torso: { x: 0.1, y: 0.1, z: 0.05 } }, 0.07, { k: 20 }],
-    // active: snap extension → drive-through. Deep torso lean-back lets the
-    // hip open further so the shoe stabs out well past the old pose.
+    // active: snap extension → drive-through; torso lean-back opens the hip.
     [{ hipR: { x: -1.65, y: 0, z: 0 }, kneeR: { x: 0.04, y: 0, z: 0 },
        torso: { x: -0.38, y: 0.05, z: 0 }, shoulderL: { x: -0.2, y: 0, z: 0.55 },
        shoulderR: { x: -0.2, y: 0, z: -0.65 }, head: { x: 0.1, y: 0, z: 0 } }, 0.06, { k: 50, overshoot: 1.2 }],
@@ -99,9 +88,8 @@ const TRACKS = {
     [GUARD, 0.18, { k: 8 }],
   ],
   hitstun: [
-    // Sharp but SMALL whip, a sag, then recover (0.35 = HITSTUN). Joint
-    // telemetry tuning: the rendered torso deflection should stay in the
-    // realistic 5-15° band — the head sells the hit, not a folding spine.
+    // Small whip, sag, recover (0.35 = HITSTUN). Keep torso deflection in the
+    // 5-15° band — the head sells the hit, not a folding spine.
     [{ torso: { x: -0.16, y: 0.06, z: 0 }, head: { x: -0.3, y: 0.04, z: 0 },
        shoulderL: { x: 0.15, y: 0, z: 0.35 }, shoulderR: { x: 0.12, y: 0, z: -0.35 },
        elbowL: { x: -0.35, y: 0, z: 0 }, elbowR: { x: -0.35, y: 0, z: 0 } }, 0.06, { k: 40, overshoot: 1.1 }],
@@ -115,21 +103,15 @@ const TRACKS = {
   ],
 };
 
-// ── Charge poses ──────────────────────────────────────────────────────
-// Held coil poses for the hold-to-charge attacks. The engine calls
-// animator.setCharge(name, amt) every tick while the button is held; the
-// pose deepens with `amt` and the animator layers a tremble on top so a
-// fully-wound fighter visibly shakes with stored power.
+// ── Charge poses: held coils for hold-to-charge (see setCharge) ─────────
 const CHARGE_POSES = {
-  // Fist drawn back past the hip, torso wound like a spring. Legs are left
-  // unkeyed so the foot-IK keeps the stance planted.
+  // Legs unkeyed so the foot-IK keeps the stance planted.
   punch: {
     torso: { x: 0.04, y: 0.85, z: 0 }, head: { x: -0.05, y: -0.5, z: 0 },
     shoulderR: { x: 0.35, y: 0, z: -0.55 }, elbowR: { x: -2.3, y: 0, z: 0 },
     shoulderL: { x: -1.0, y: 0, z: 0.25 }, elbowL: { x: -1.6, y: 0, z: 0 },
   },
-  // Knee chambered high, arms flared for balance. Right leg is keyed so the
-  // stepper releases it (same rule as the kick track).
+  // Right leg keyed so the stepper releases it (same rule as the kick track).
   kick: {
     torso: { x: 0.26, y: 0.1, z: 0.05 }, head: { x: -0.15, y: 0, z: 0 },
     hipR: { x: -1.05, y: 0, z: 0 }, kneeR: { x: 2.0, y: 0, z: 0 },
@@ -138,12 +120,7 @@ const CHARGE_POSES = {
   },
 };
 
-// ── Entrance tracks ───────────────────────────────────────────────────
-// Played once per fighter during the 3.7 s countdown so each president
-// has a personality at the bell. Each entrance is ~1.5 s, looping
-// internally across the countdown. Foes face the camera-front during
-// their pose (animator.look is forced toward the audience for 1.5 s by
-// the engine after _spawnFighters).
+// ── Entrance tracks: one per president, played during the countdown ────
 const ENTRANCES = {
   // Trump: chin-up swagger — head high, shoulders back, fists on hips.
   swagger: [
@@ -357,15 +334,11 @@ const ENTRANCES = {
   ],
 };
 
-export { ENTRANCES };
-
 function lerpAngle(cur, target, k) {
   return cur + (target - cur) * k;
 }
 
-// Layer per-character stance offsets additively onto the shared guard —
-// Trump's chin-up lean, Nixon's hunch, Obama's dropped relaxed arms. Offsets
-// are partial: { jointName: {x?,y?,z?} } added to the GUARD values.
+// Per-character stance offsets, partial { jointName: {x?,y?,z?} }, added to GUARD.
 function personalizeGuard(offsets) {
   if (!offsets) return GUARD;
   const out = {};
@@ -404,50 +377,39 @@ export class Animator {
     this.joints = joints;
     this.track = null;
     this.trackT = 0;
-    // The character's personalized idle guard (GUARD + stance offsets).
-    // Track segments that reference GUARD resolve to this, so the
-    // personality survives the return from punches/kicks/entrances.
+    // Track segments referencing GUARD resolve to this personalized guard.
     this.guard = personalizeGuard(stance);
     this.base = this.guard;
     this.walkPhase = 0;
-    // Hold-to-charge coil (see setCharge).
     this.chargeName = null;
     this.chargeAmt = 0;
-    // Hit-reaction lean in radians (set by the game; decays each tick).
+    // Hit-reaction lean in radians (decays each tick).
     this.leanX = 0;
     this.leanZ = 0;
-    // Momentum lean (velocity/acceleration-driven; targets set by the game).
     this.moveLean = { x: 0, z: 0, tx: 0, tz: 0 };
-    // Head tracking (targets set by the game each tick).
     this.look = { yaw: 0, pitch: 0, tYaw: 0, tPitch: 0 };
-    // Clinch frame blend (arms brace when chest-to-chest).
     this.clinch = 0;
     this.clinchTarget = 0;
-    // Per-joint reaction springs — physics-flavored whip on hits/blocks.
     // jointName -> { ox,oy,oz (offset), vx,vy,vz (velocity) }
     this.reactions = {};
-    // Foot plants (world space). null until first update.
+    // World-space foot plants; null until first update.
     this.feet = {
       L: { plant: null, from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1 },
       R: { plant: null, from: new THREE.Vector3(), to: new THREE.Vector3(), t: 1 },
     };
     this._legDriven = { L: false, R: false };
-    // When true the animator stops driving joint rotations — used by the
-    // ragdolls so their world-space solvers aren't fought by the pose-lerp.
+    // Set by the ragdolls so the pose-lerp doesn't fight their solvers.
     this.frozen = false;
   }
 
   play(name) {
-    // Accept either a combat TRACK (punch/kick/hitstun/ko) or an entrance
-    // track. Falling back to null is intentional — idle poses are handled
-    // by the base stance, not a track.
+    // Combat track or entrance; unknown → null (idle is the base stance).
     this.track = TRACKS[name] || ENTRANCES[name] || null;
     this.trackT = 0;
   }
 
-  // Hold-to-charge coil. `name` is 'punch'|'kick' (or null to clear); `amt`
-  // is 0..1 charge fraction. While set (and no track is playing) the joints
-  // damp-lerp into the charge pose, deepening and trembling with amt.
+  // Hold-to-charge coil, called every tick while held. `name` 'punch'|'kick'|null;
+  // `amt` 0..1 deepens the pose and the tremble. Ignored while a track plays.
   setCharge(name, amt) {
     if (name && this.chargeName !== name) this.track = null;
     this.chargeName = name || null;
@@ -515,8 +477,7 @@ export class Animator {
           } else {
             target = { ...this.guard, ...seg };
           }
-          // Legs explicitly keyed by this segment are track-driven; the
-          // foot-IK stepper must not fight them.
+          // Legs keyed by this segment are track-driven; the stepper must not fight them.
           this._legDriven.L = !!(seg.hipL || seg.kneeL);
           this._legDriven.R = !!(seg.hipR || seg.kneeR);
         }
@@ -526,8 +487,7 @@ export class Animator {
       }
     }
 
-    // Charge coil: no track playing, but a charge is held. The pose deepens
-    // with the stored charge (80% coil on tap → full coil at max).
+    // Charge coil: 80% on tap → full at max charge.
     if (!this.track && this.chargeName && CHARGE_POSES[this.chargeName]) {
       const pose = CHARGE_POSES[this.chargeName];
       const depth = 0.8 + 0.2 * this.chargeAmt;
@@ -541,7 +501,6 @@ export class Animator {
       trackK = 16;
     }
     const snappy = trackK > 0;
-    // Stored-power tremble: the whole upper body shakes as charge builds.
     const tremble = (this.chargeName && this.chargeAmt > 0.1)
       ? Math.sin(ctx.idleT * 47) * 0.05 * this.chargeAmt : 0;
 
@@ -550,7 +509,6 @@ export class Animator {
     const swing = Math.sin(this.walkPhase) * 0.55 * ctx.speed;
     const bob = Math.abs(Math.sin(this.walkPhase)) * 0.04 * ctx.speed
       + Math.sin(ctx.idleT * 2.2) * 0.012;
-    // Breathing: chest rises slowly at rest, shallower when moving.
     const breath = Math.sin(ctx.idleT * 1.9) * (0.02 - 0.01 * ctx.speed);
 
     const kSm = Math.min(1, dt * 7);
@@ -589,19 +547,16 @@ export class Animator {
         else if (name === 'head') py += swing * 0.18;
       }
 
-      // Breathing on the upper body.
       if (name === 'torso') px += breath;
       else if (name === 'shoulderL') pz += breath * 0.4;
       else if (name === 'shoulderR') pz -= breath * 0.4;
 
-      // Charge tremble on the wound-up upper body.
       if (tremble !== 0) {
         if (name === 'torso') px += tremble;
         else if (name === 'shoulderL' || name === 'shoulderR') px += tremble * 1.4;
         else if (name === 'head') px += tremble * 0.7;
       }
 
-      // Hit-reaction lean overlay on the upper body only.
       if (name === 'torso') { px += this.leanX; pz += this.leanZ; }
       else if (name === 'head') { px += this.leanX * 0.6; pz += this.leanZ * 0.6; }
       else if (name === 'hips') { px += this.leanX * 0.4; }
@@ -615,7 +570,7 @@ export class Animator {
       else if (name === 'head' && snappy) { py += this.look.yaw * 0.35; }
       else if (name === 'torso' && !snappy) py += this.look.yaw * 0.15;
 
-      // Clinch frame: forearms brace against the opponent at chest range.
+      // Clinch: forearms brace at chest range.
       if (this.clinch > 0.01 && !snappy) {
         if (name === 'shoulderL') { px += -0.4 * this.clinch; pz += 0.22 * this.clinch; }
         else if (name === 'shoulderR') { px += -0.35 * this.clinch; pz += -0.22 * this.clinch; }
@@ -631,7 +586,6 @@ export class Animator {
       joint.rotation.z = lerpAngle(joint.rotation.z, pz, k);
       if (name === 'hips') {
         joint.position.y = 1.0 + bob;
-        // Lateral weight shift: the pelvis sways over the planted foot.
         joint.position.x = Math.sin(this.walkPhase) * 0.05 * ctx.speed;
       }
     }
@@ -648,9 +602,8 @@ export class Animator {
     }
   }
 
-  // Step logic: keep feet planted at world positions; when the stance point
-  // (which follows the moving/turning body) drifts too far from a plant,
-  // swing that foot to a new plant leading the velocity.
+  // Feet stay planted in world space; when the body's stance point drifts too far
+  // from a plant, that foot steps to a new plant leading the velocity.
   _updateFeet(ctx) {
     const root = ctx.root;
     const dt = ctx.dt;
@@ -662,7 +615,6 @@ export class Animator {
 
     for (const side of ['L', 'R']) {
       const f = this.feet[side];
-      // Stance point in world (root-local stance → world, pinned to floor).
       _stance.set(side === 'L' ? -STANCE_X : STANCE_X, 0, STANCE_Z[side]);
       root.localToWorld(_stance);
       _stance.y = FOOT_Y;
@@ -673,7 +625,6 @@ export class Animator {
       }
 
       if (f.t < 1) {
-        // Mid-swing: advance and land.
         f.t = Math.min(1, f.t + dt / STEP_DUR);
         if (f.t >= 1) f.plant.copy(f.to);
         continue;
@@ -697,8 +648,6 @@ export class Animator {
     if (worst && !anySwinging) {
       const f = this.feet[worst];
       f.from.copy(f.plant);
-      // Lead the step ahead of the velocity so the foot lands where the
-      // body is going, not where it was.
       const lead = 0.13;
       f.to.set(
         f._stanceX + clamp((ctx.vel?.x ?? 0) * lead, -0.25, 0.25),
@@ -762,9 +711,7 @@ export class Animator {
   applyLean(x, z) {
     this.leanX += x;
     this.leanZ += z;
-    // Cap so consecutive hits don't rotate the torso beyond believable range.
-    // 0.5 rad — the lean stacks with the hitstun track, the reaction springs
-    // and the ragdoll blend, all pulling the spine the same way.
+    // Tight cap: this stacks with the hitstun track, reaction springs and ragdoll blend.
     this.leanX = Math.max(-0.2, Math.min(0.2, this.leanX));
     this.leanZ = Math.max(-0.2, Math.min(0.2, this.leanZ));
   }

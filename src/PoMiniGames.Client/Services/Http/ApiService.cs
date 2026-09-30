@@ -2,7 +2,6 @@ using System.Net.Http.Json;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
 using PoSportsHighScore = PoMiniGames.Domain.Models.PoSportsHighScore;
-using PoBrawlFighterRating = PoMiniGames.Domain.Models.PoBrawlFighterRating;
 using PoMiniGamesClient.Models;
 
 using PoMiniGamesClient.Services.Auth;
@@ -612,10 +611,9 @@ public class ApiService
 
     // ─── PoBrawl demo-mode fighter Elo ───────────────────────────────────
 
-
     /// <summary>
-    /// Reports one finished CPU-vs-CPU demo match. Returns the re-ranked board, or null when
-    /// the submit did not land — so recording a result also refreshes the board in one call.
+    /// Reports one finished CPU-vs-CPU demo match. True when the server took it (204). The
+    /// board is read separately, through the unified /api/leaderboards/pobrawldemo route.
     /// </summary>
     /// <remarks>
     /// Deliberately <b>not</b> queued through the offline score-sync pipeline the player
@@ -625,62 +623,38 @@ public class ApiService
     /// matches are also effectively unlimited, so dropping the ones that fail costs the
     /// board nothing but a little precision.
     /// </remarks>
-    public async Task<PoBrawlFighterRating[]?> SubmitPoBrawlDemoResultAsync(
-        PoBrawlDemoResultRequest request)
+    public async Task<bool> SubmitPoBrawlDemoResultAsync(PoBrawlDemoResultRequest request)
     {
         try
         {
-            var response = await _http.PostAsJsonAsync(
+            using var response = await _http.PostAsJsonAsync(
                 "/api/pobrawl/elo", request, ApiJsonContext.Default.PoBrawlDemoResultRequest);
-            return response.IsSuccessStatusCode
-                ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlFighterRatingArray)
-                : null;
+            return response.IsSuccessStatusCode;
         }
         catch
         {
-            return null;
+            return false;
         }
     }
 
     // ─── PoBrawl online 1v1 ──────────────────────────────────────────────
 
     /// <summary>
-    /// Posts a finished 1v1 match result to /api/pobrawl/matches. The server records a
-    /// MatchHistory row and increments both players' Elo in one atomic call. Returns the
-    /// re-ranked online Elo board on success, or null on a transport failure.
+    /// Reports a finished 1v1 fight to /api/pobrawl/matches. The server reads only the match id,
+    /// records a MatchHistory row and applies the Elo swing once per match. True on success (204);
+    /// false on a rejection or a transport failure.
     /// </summary>
-    public async Task<List<PoMiniGames.Domain.Models.PoBrawlPlayerRating>?>
-        SubmitPoBrawlOnlineMatchAsync(PoMiniGames.Shared.Games.PoBrawlMatchResultDto result)
+    public async Task<bool> SubmitPoBrawlOnlineMatchAsync(PoMiniGames.Shared.Games.PoBrawlMatchResultDto result)
     {
         try
         {
-            var response = await _http.PostAsJsonAsync(
-                "/api/pobrawl/matches", result,
-                ApiJsonContext.Default.PoBrawlMatchResultDto);
-            return response.IsSuccessStatusCode
-                ? await response.Content.ReadFromJsonAsync(
-                    ApiJsonContext.Default.ListPoBrawlPlayerRating)
-                : null;
+            using var response = await _http.PostAsJsonAsync(
+                "/api/pobrawl/matches", result, ApiJsonContext.Default.PoBrawlMatchResultDto);
+            return response.IsSuccessStatusCode;
         }
         catch
         {
-            return null;
-        }
-    }
-
-    /// <summary>Top-ranked online players. Same anonymous posture as the demo Elo board.</summary>
-    public async Task<List<PoMiniGames.Domain.Models.PoBrawlPlayerRating>?>
-        GetPoBrawlOnlineRatingsAsync(int count = 10)
-    {
-        try
-        {
-            return await _http.GetFromJsonAsync(
-                $"/api/pobrawl/matches?top={count}",
-                ApiJsonContext.Default.ListPoBrawlPlayerRating);
-        }
-        catch
-        {
-            return null;
+            return false;
         }
     }
 

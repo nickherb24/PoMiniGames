@@ -25,9 +25,6 @@
 }
 else if (_failed is { } why)
 {
-    @* The lobby used to stop on "Finding you a room…" for good when the server was down or
-       the hub refused the connection — no retry, and a connect failure with no room code
-       escaped to Blazor's error bar. *@
     <div class="pbl-failed" role="alert">
         <p>@why</p>
         <button type="button" class="pbl-btn" @onclick="OnIntroStartAsync">Try again</button>
@@ -55,9 +52,8 @@ else
             <span class="lobby-pill lobby-pill--muted">@FighterName(p.Fighter.Id)</span>
         </PlayerBadges>
         <Picker>
-            @* Rooms (2026-09-29): this was one shared global room. Now you land in a public room
-               by quick match (so two people who open this page still meet), and can open a
-               private one, join a friend's by code or link, or watch a fight in progress. *@
+            @* Quick match lands you in a public room (so two people who open this page still meet);
+               you can also open a private one, join a friend's by code or link, or watch a live fight. *@
             <div class="pbl-room">
                 <span class="pbl-room__code">Room <b>@(Code ?? "…")</b></span>
                 @if (_private == true)
@@ -117,8 +113,6 @@ else
                             class="lobby-pick-card @(mine ? "lobby-pick-card--mine" : "")"
                             aria-pressed="@(mine ? "true" : "false")"
                             @onclick="() => PickAsync(f.Id)">
-                        @* The "selected" pill made every card two rows tall (and was 10px text);
-                           the accent border plus aria-pressed already say it. *@
                         <span class="lobby-pick-card__name">@(mine ? "✓ " : "")@f.Name</span>
                     </button>
                 }
@@ -139,8 +133,7 @@ else
     private LobbyClient<PoBrawlLobbyPlayer> _lobby = null!;
     private bool _introDone;
     // Whether this room is private: known when we made it or quick-matched into it, null when
-    // we came in by a code or link (the lobby state doesn't carry it). The hint used to call a
-    // friend's private room "public: quick match can seat a stranger".
+    // we came in by a code or link (the lobby state does not carry it).
     private bool? _private;
     private string? _failed;   // why the lobby could not be reached; the retry card shows it
     private bool _wired;       // lobby events subscribed (once — a retry must not double them)
@@ -217,7 +210,7 @@ else
             catch (Exception ex) when (_lobby.RoomCode is not null && _lobby.IsConnected)
             {
                 // A dead invite link (the room expired, or it is full): say so, and quick-match instead.
-                ToastService.Show(HubMessage(ex, "That room is gone"), ToastType.Warning);
+                ToastService.Show(PoBrawlNetSession.HubMessage(ex, "That room is gone"), ToastType.Warning);
                 _lobby.RoomCode = null;
                 _private = false;
                 await _lobby.JoinAsync();
@@ -225,7 +218,7 @@ else
         }
         catch (Exception ex)
         {
-            _failed = HubMessage(ex, "Couldn't reach the lobby.");
+            _failed = PoBrawlNetSession.HubMessage(ex, "Couldn't reach the lobby.");
             return;
         }
         _refreshCts ??= new CancellationTokenSource();
@@ -243,7 +236,7 @@ else
         }
         catch (Exception ex)
         {
-            ToastService.Show(HubMessage(ex, "Couldn't join that room"), ToastType.Warning);
+            ToastService.Show(PoBrawlNetSession.HubMessage(ex, "Couldn't join that room"), ToastType.Warning);
         }
     }
 
@@ -310,15 +303,6 @@ else
     {
         await _lobby.LeaveLobbyAsync();
         Nav.NavigateTo("/");
-    }
-
-    // A HubException arrives wrapped: "An unexpected error occurred invoking 'JoinRoom' on the
-    // server. HubException: No room with code ABCDE." The part after the last "HubException: " is ours.
-    private static string HubMessage(Exception ex, string fallback)
-    {
-        const string marker = "HubException: ";
-        var i = ex.Message.LastIndexOf(marker, StringComparison.Ordinal);
-        return i >= 0 ? ex.Message[(i + marker.Length)..] : fallback;
     }
 
     public async ValueTask DisposeAsync()

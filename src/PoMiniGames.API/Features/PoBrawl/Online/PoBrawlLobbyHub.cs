@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.SignalR;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Shared.Games;
-using PoBrawlFighter = PoMiniGames.Domain.Primitives.PoBrawlFighter;
 
 namespace PoMiniGames.Features.PoBrawl.Online;
 

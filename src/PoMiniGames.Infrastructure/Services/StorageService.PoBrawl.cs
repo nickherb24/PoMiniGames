@@ -160,7 +160,7 @@ public partial class StorageService
         }
     }
 
-    public async Task<List<PoBrawlFighterRating>> RecordPoBrawlDemoResultAsync(
+    public async Task RecordPoBrawlDemoResultAsync(
         string winnerFighterId, string loserFighterId, bool isDraw)
     {
         var winnerId = PoBrawlRoster.Canonicalize(winnerFighterId)
@@ -175,11 +175,8 @@ public partial class StorageService
 
         if (!IsStorageAvailable())
         {
-            // Storage is down: skip the Azure-side match write. With the in-memory fallback
-            // wired in, hand off so the Elo board keeps moving for whoever's running the
-            // demo; without it, return an empty board so the client can render
-            // "leaderboard unavailable" rather than a stale snapshot.
-            return [];
+            // Storage is down: the match is dropped. A demo sample is cheap to lose.
+            return;
         }
 
         var table = Table(PoBrawlEloTable);
@@ -230,29 +227,19 @@ public partial class StorageService
                         compensationFailure,
                         "PoBrawl Elo: failed to compensate a half-applied demo match for {WinnerId}; the rating pool is off by {Delta}.",
                         winnerId, delta);
-                    return [];
+                    return;
                 }
                 // Compensation succeeded but the forward path failed — fall through to the
-                // outer catch, which marks storage unavailable and returns an empty board
-                // so the endpoint still answers 200 with usable shape.
+                // outer catch, which marks storage unavailable.
                 throw;
             }
-
-            // Return the re-ranked board, not the two rows just written. A rating only means
-            // anything against the ranking, so every caller wanted the board and had to fetch it
-            // in a second round-trip; one bounded partition query replaces two point read-backs
-            // here and an entire HTTP call at the client.
-            return await GetPoBrawlFighterRatingsAsync();
         }
         catch (Exception ex)
         {
             // Anything that escaped the inner compensation (mid-match storage failure,
             // unanticipated SDK error, etc.) lands here. Mark storage unavailable so the
-            // graceful-degradation path takes over and try the in-memory fallback if it's
-            // wired in — the demo loop can keep running, and the user re-submitting after
-            // storage recovers retries cleanly.
+            // graceful-degradation path takes over; the demo loop keeps running.
             MarkUnavailable(ex);
-            return [];
         }
     }
 

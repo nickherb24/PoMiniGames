@@ -1,4 +1,4 @@
-// matWear.js — the ring canvas remembers the fight (GFX/SOUND #7, 2026-09-23).
+// matWear.js — the ring canvas remembers the fight.
 //
 // Two small 2D canvases painted in world XZ and sampled by the ring-mat shader
 // (game.js _initReactiveArena injects the lookup next to the knockdown ripple):
@@ -9,9 +9,8 @@
 //   wet  — sweat that dries: droplets flung off a rocked head darken the vinyl
 //          and lower its roughness, then evaporate over ~20 s. Alpha only.
 //
-// Blood is NOT painted here. It already has its own stain meshes (vfx.js
-// _addBloodStain), gated on the no-gore switch; duplicating it would mean two
-// systems to keep in step with that switch.
+// Blood is NOT painted here: it has its own stain meshes (vfx.js _addBloodStain),
+// gated on the no-gore switch.
 //
 // Painting is a few canvas arcs per event; the upload is throttled to 5 Hz and
 // skipped when nothing changed, so a quiet ring costs nothing at all.

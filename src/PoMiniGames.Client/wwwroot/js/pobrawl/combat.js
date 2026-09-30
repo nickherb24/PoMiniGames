@@ -4,7 +4,7 @@
 // absorption, a PLAYER_KILLED / COMBAT_FINISHED event queue, and winner resolution.
 // The engine owns visuals/animation; this owns the numbers and the "who won" rule.
 
-export const COMBAT_STATES = Object.freeze({
+const COMBAT_STATES = Object.freeze({
   WAITING: 'WAITING',
   STARTED: 'STARTED',
   FINISHED: 'FINISHED',
@@ -47,10 +47,6 @@ export class CombatPlay {
 
   getPlayer(playerId) {
     return this.players.get(playerId);
-  }
-
-  getCombatState() {
-    return this.combatState;
   }
 
   damage({ playerId, amount, sourceId = null, bypassArmor = false }) {

@@ -120,31 +120,9 @@ public static class PoBrawlLeaderboardEndpoints
 
         // ── Demo-mode fighter Elo ─────────────────────────────────────────
         // Head-to-head ratings for the presidents, accumulated from CPU-vs-CPU demo
-        // matches. Rates characters, not players — see PoBrawlFighterRating.
-        var elo = app.MapGroup("/pobrawl/elo").WithTags("HighScores");
-
-        elo.MapGet("",
-            async (IStorageService storage, int count = 10) =>
-            {
-                var ratings = await storage.GetPoBrawlFighterRatingsAsync(count);
-                return Results.Ok(ratings);
-            })
-            .WithName("GetPoBrawlFighterRatings")
-            .WithSummary("Top PoBrawl fighters by head-to-head Elo")
-            // §10 leaderboard READS are anonymous, writes are not. This board holds no
-            // per-identity data at all — it rates characters — and the demo route renders
-            // while AuthGate's background guest sign-in is still in flight, so gating the
-            // read would strand an unattended kiosk on "Loading…" until a session appeared.
-            .AllowAnonymous()
-            // The rate limit is not optional here, it is what AllowAnonymous costs: dropping
-            // the group's auth gate removes this GET's only throttle, and the handler drives a
-            // Table Storage partition query per request on an F1 plan. Its own read policy
-            // rather than "highscores" — see RateLimitingExtensions; sharing the write bucket
-            // would let the demo page's board load eat the budget for its own match submit.
-            .RequireRateLimiting("leaderboard-read")
-            .Produces<IEnumerable<PoBrawlFighterRating>>(StatusCodes.Status200OK);
-
-        elo.MapPost("",
+        // matches. Rates characters, not players — see PoBrawlFighterRating. WRITE ONLY,
+        // like the ladder: the board is read at /api/leaderboards/pobrawldemo.
+        app.MapPost("/pobrawl/elo",
             async (PoBrawlDemoResultRequest request, IStorageService storage) =>
             {
                 // The server owns the Elo arithmetic and the roster: the submission names
@@ -162,13 +140,14 @@ public static class PoBrawlLeaderboardEndpoints
                     return Results.BadRequest(new { error = "A fighter cannot fight itself" });
                 }
 
-                var updated = await storage.RecordPoBrawlDemoResultAsync(
+                await storage.RecordPoBrawlDemoResultAsync(
                     request.WinnerFighterId, request.LoserFighterId, request.IsDraw);
-                return Results.Ok(updated);
+                return Results.NoContent();
             })
+            .WithTags("HighScores")
             .WithName("RecordPoBrawlDemoResult")
-            .WithSummary("Record one CPU-vs-CPU demo match and return the re-ranked board")
-            .Produces<IEnumerable<PoBrawlFighterRating>>(StatusCodes.Status200OK)
+            .WithSummary("Record one CPU-vs-CPU demo match")
+            .Produces(StatusCodes.Status204NoContent)
             .ProducesValidationProblem()
             // 10/min is comfortably above the real demo cadence (a match runs tens of
             // seconds), so a 429 here means something other than the kiosk is posting.
