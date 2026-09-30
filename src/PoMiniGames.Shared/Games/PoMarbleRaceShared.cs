@@ -34,8 +34,7 @@ public sealed record MarbleRaceStart(
 /// <summary>
 /// One streamed snapshot from the host. <see cref="Positions"/> is 101 × (x, y, z) little-endian
 /// float32; <see cref="Flags"/> is one byte per marble: 0 live, 1 finished, 2 eliminated. The
-/// guest-marble HUD numbers ride along so the guest page can show place and gap without a
-/// second sim.
+/// guest marble's place rides along so the guest page can show it without a second sim.
 /// </summary>
 public sealed class MarbleRaceFrame
 {
@@ -46,11 +45,6 @@ public sealed class MarbleRaceFrame
     public byte[] Flags { get; set; } = [];
     public int GuestPlace { get; set; }
     public int Field { get; set; }
-    public double GuestProgress { get; set; }
-    public double LeaderProgress { get; set; }
-    public double GuestGap { get; set; }
-    public double GuestSpeed { get; set; }
-    public double GuestLateral { get; set; }
 }
 
 /// <summary>Host → guest phase change. <see cref="Seed"/> is the seed of the NEXT track on <c>pick</c>.</summary>
@@ -62,3 +56,17 @@ public sealed record MarbleRacePodium(int[] Indices, double[] Times, double[] Ga
 public sealed record MarbleRaceResult(bool HostWon, int HostPlace, bool GuestWon, int GuestPlace);
 
 public sealed record MarbleRaceQueueStatus(bool Matched, int Waiting);
+
+/// <summary>One finish on one map, offered as a world record. The server keeps it only if it is the fastest.</summary>
+public sealed record MarbleRaceRecordRequest(int MapId, double FinishSeconds);
+
+/// <summary>One top-10 finish inside a scoring run. <see cref="LeadSeconds"/> is the gap to 2nd (0 unless 1st).</summary>
+public sealed record MarbleRaceRunRace(int Place, double FinishSeconds, double LeadSeconds);
+
+/// <summary>
+/// A PoMarbleRace high-score submission: the run's claimed total plus the races it was built
+/// from. The server recomputes the total from <see cref="Races"/> and stores that, never
+/// <see cref="BestScore"/> (which is only compared and logged). Identity and timestamp are
+/// server-derived, so there is no field to forge them in.
+/// </summary>
+public sealed record MarbleRaceHighScoreRequest(int BestScore, int MapId = 0, MarbleRaceRunRace[]? Races = null);

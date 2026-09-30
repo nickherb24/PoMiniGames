@@ -178,6 +178,13 @@
     /// </summary>
     [Parameter] public string? CueScope { get; set; }
 
+    /// <summary>
+    /// Show the card even when the player ticked "Don't show this again" (and hide that box),
+    /// exactly like <c>?intro=1</c>. For a page that reopens its intro on purpose — PoMarbleRace's
+    /// Change track button — where auto-skipping would dismiss it the instant it opened.
+    /// </summary>
+    [Parameter] public bool ForceShow { get; set; }
+
     [Inject] private Services.Ui.UiFeedbackService Feedback { get; set; } = null!;
 
     [Inject] private IJSRuntime JS { get; set; } = null!;
@@ -229,7 +236,7 @@
 
         try
         {
-            _forceShow = new Uri(Navigation.Uri).Query.Contains("intro=1", StringComparison.OrdinalIgnoreCase);
+            _forceShow = ForceShow || new Uri(Navigation.Uri).Query.Contains("intro=1", StringComparison.OrdinalIgnoreCase);
             var skip = await JS.InvokeAsync<string?>("localStorage.getItem", SkipKey);
             if (!_forceShow && skip == "1")
             {

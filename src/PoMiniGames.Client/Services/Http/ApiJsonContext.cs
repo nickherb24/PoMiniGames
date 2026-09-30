@@ -50,6 +50,8 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(MarbleRaceHighScore))]
 [JsonSerializable(typeof(MarbleRaceHighScore[]))]
 [JsonSerializable(typeof(MarbleRaceHighScoreRequest))]
+[JsonSerializable(typeof(MarbleRaceRecordRequest))]
+[JsonSerializable(typeof(PoMiniGames.Domain.Models.MarbleRaceMapRecord[]))]
 // PoCabinet (T11, 2026-09-17): the per-track leaderboard ratchets on lap time;
 // the request shape carries only the score + the contextual track/position,
 // identity is resolved server-side.

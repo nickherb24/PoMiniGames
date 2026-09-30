@@ -1,3 +1,4 @@
+using PoMiniGames.Shared.Games;
 using System.Net.Http.Json;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.
@@ -308,6 +309,35 @@ public class ApiService
         catch
         {
             return null;
+        }
+    }
+
+    /// <summary>The fastest finish on each PoMarbleRace map (the track picker's world records).</summary>
+    public async Task<PoMiniGames.Domain.Models.MarbleRaceMapRecord[]?> GetMarbleRaceMapRecordsAsync()
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync("/api/marblerace/records", ApiJsonContext.Default.MarbleRaceMapRecordArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Offers one finish as a map record. Fire-and-forget by design: a record that fails to post is
+    /// not parked for retry the way a run score is — the next good finish offers itself anyway.
+    /// </summary>
+    public async Task SubmitMarbleRaceMapRecordAsync(MarbleRaceRecordRequest request)
+    {
+        try
+        {
+            using var _ = await _http.PostAsJsonAsync("/api/marblerace/records", request, ApiJsonContext.Default.MarbleRaceRecordRequest);
+        }
+        catch
+        {
+            // Offline: nothing to do.
         }
     }
 

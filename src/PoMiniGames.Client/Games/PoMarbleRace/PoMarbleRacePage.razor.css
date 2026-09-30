@@ -1,12 +1,20 @@
+/* Canvas overlays (countdown, standings, pads, the online card) float over the track, so they are
+   dark glass in both colour schemes. The setup options render inside GameIntro's card and follow
+   the theme tokens instead. */
+
+.mr-wrap-row {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    max-width: 1500px;
+    margin: 0 auto;
+    width: 100%;
+}
+
 .mr-wrap {
-    /* Fill the game area: the canvas spans the full row width and most of the
-       viewport height (chrome-aware), so the race uses the whole screen instead
-       of sitting in a small 960×540 box. The three.js camera auto-adjusts to the
-       resulting aspect via scene.resize(). Phones get a portrait box below. */
+    /* Fill the game area: the three.js camera adapts to whatever aspect this ends up. */
     position: relative;
     width: 100%;
-    /* The below-canvas HUD was removed, so the race graphics take that space:
-       fill nearly the whole viewport height minus the sticky top bar. */
     height: min(calc(100vh - 96px), 92vh);
     min-height: 340px;
     border-radius: 10px;
@@ -15,6 +23,8 @@
     margin: 0 auto;
 }
 
+/* width/height are load-bearing: scene.js sets an inline position:relative on this host, which
+   voids the inset below. */
 .mr-canvas-host {
     position: absolute;
     inset: 0;
@@ -22,359 +32,24 @@
     height: 100%;
 }
 
-/* 2026-08-10 audit #10: when the WebGL canvas mounts inside the host, fade
-   it in over the host's own track-gradient background. The three.js scene
-   takes a frame or two to paint its first frame; without this fade a
-   player sees a black flash, then the static gradient, then the live
-   scene. The fade hides both transitions behind a single opacity ramp
-   that completes before the player notices. */
+/* scene.js sizes only the backing store (setSize(..., false)), so the element must be sized
+   here — without this the canvas rendered at its attribute size, 1.5× the host on a 150%
+   display, and overflow:hidden cut off the right and bottom of the track. The fade hides the
+   first-frame flash. */
 .mr-canvas-host canvas {
-    /* Size the ELEMENT to its host in CSS pixels. scene.js calls
-       renderer.setSize(w, h, false) — updateStyle=false — so three.js sizes only
-       the backing store (w × devicePixelRatio). Without these rules the canvas
-       element rendered at its ATTRIBUTE size, i.e. 1.5× wider/taller than the
-       host on a 150% display: the host's overflow:hidden silently amputated the
-       right and bottom of the track (measured 1491×843 canvas in a 994×562 host,
-       audit 2026-08-30). CSS 100%/100% + the ResizeObserver in scene.js make the
-       pair correct at any DPR. */
     display: block;
     width: 100%;
     height: 100%;
     opacity: 0;
-    animation: mr-canvas-in 0.45s var(--ease-standard, ease-out) 0.15s forwards;
+    animation: mr-fade-in 0.45s var(--ease-standard, ease-out) 0.15s forwards;
 }
 
-@keyframes mr-canvas-in {
+@keyframes mr-fade-in {
     from { opacity: 0; }
-    to   { opacity: 1; }
+    to { opacity: 1; }
 }
 
-/* ── Top-3 podium overlay (broadcast banner, top-centre of the canvas) ── */
-.mr-podium {
-    position: absolute;
-    top: 16px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 4;
-    min-width: 264px;
-    padding: 12px 16px;
-    border-radius: var(--radius-md);
-    background: rgba(8, 12, 24, 0.82);
-    border: 1px solid rgba(253, 224, 71, 0.5);
-    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45), 0 0 18px rgba(253, 224, 71, 0.15);
-    backdrop-filter: blur(6px);
-    color: #e2e8f0;
-    animation: mr-podium-in 0.35s ease-out;
-}
-
-@keyframes mr-podium-in {
-    from { opacity: 0; transform: translate(-50%, -10px); }
-    to   { opacity: 1; transform: translate(-50%, 0); }
-}
-
-/* The emoji here became an inline SVG (GFX #6), so the row is a flex line now — an SVG has no
-   baseline to align a text run against the way a glyph did. */
-.mr-podium-title {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    font-size: 0.72rem;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: #fde047;
-    margin-bottom: 8px;
-}
-
-.mr-podium-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 4px 6px;
-    border-radius: var(--radius-sm);
-}
-
-.mr-podium-row--1 { background: rgba(253, 224, 71, 0.12); }
-
-.mr-podium-medal { font-size: 1.1rem; width: 1.4rem; text-align: center; }
-
-.mr-podium-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    box-shadow: 0 0 6px currentColor;
-}
-
-.mr-podium-name {
-    font-weight: 700;
-    min-width: 4.5rem;
-}
-
-.mr-podium-time {
-    font-weight: 800;
-    font-variant-numeric: tabular-nums;
-    min-width: 4.2rem;
-}
-
-.mr-podium-gap {
-    margin-left: auto;
-    font-size: 0.78rem;
-    color: #94a3b8;
-    font-variant-numeric: tabular-nums;
-}
-
-.mr-podium-row--1 .mr-podium-gap { color: #fde047; font-weight: 700; }
-
-/* ── HUD ──
-   2026-07-12: the HUD used to be absolutely positioned inside the canvas
-   wrap (sitting *on top of* the marble track at the finish line). It is now
-   a sibling of the canvas in a column flex — rendered as a regular block
-   element beneath the canvas so the sticky top bar (z-sticky) cannot clip
-   it and the HUD never overlaps the marble track. */
-.mr-hud {
-    width: min(720px, 100%);
-    margin: var(--space-3) auto 0;
-    padding: 12px 16px;
-    border-radius: var(--radius-md);
-    background: rgba(15, 23, 42, 0.72);
-    border: 1px solid rgba(34, 211, 238, 0.35);
-    box-shadow: 0 0 18px rgba(34, 211, 238, 0.15);
-    backdrop-filter: blur(6px);
-    color: #e2e8f0;
-    font-size: 0.82rem;
-    flex: 0 1 auto;
-    position: relative;
-    z-index: 1;
-}
-
-.mr-score-row {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-    margin-bottom: 8px;
-}
-
-.mr-score {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    flex: 1;
-    background: rgba(2, 6, 23, 0.5);
-    border-radius: 6px;
-    padding: 4px 0;
-}
-
-.mr-score-label {
-    font-size: 0.6rem;
-    letter-spacing: 0.08em;
-    color: #94a3b8;
-}
-
-.mr-score-value {
-    font-size: 1.3rem;
-    font-weight: 800;
-    color: #fde047;
-    line-height: 1.1;
-}
-
-.mr-score-streak { color: #fb923c; }
-
-.mr-progress {
-    height: 6px;
-    border-radius: 4px;
-    background: rgba(2, 6, 23, 0.6);
-    overflow: hidden;
-    margin-bottom: 4px;
-}
-
-/* Your own progress sits under the leader's, thinner and in your accent colour, so the
-   two read as "the race" and "you in it" rather than one ambiguous bar. */
-.mr-progress--you {
-    height: 4px;
-    margin-bottom: 8px;
-}
-
-.mr-progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #22d3ee, #a3e635);
-    transition: width 0.12s linear;
-}
-
-.mr-progress-fill--you {
-    background: linear-gradient(90deg, #fb923c, #fde047);
-}
-
-.mr-leaderboard {
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    flex-direction: row;
-    flex-wrap: nowrap;
-    gap: 2px;
-    justify-content: space-between;
-}
-
-.mr-lb-row {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 3px;
-    padding: 4px 2px 4px;
-    border-radius: 6px;
-    flex: 1 1 0;
-    min-width: 0;
-    position: relative;
-}
-
-.mr-lb-you {
-    background: rgba(34, 211, 238, 0.18);
-    outline: 1px solid rgba(34, 211, 238, 0.5);
-}
-
-/* The tile the camera is currently on. Deliberately a different channel from .mr-lb-you
-   (red border vs cyan fill) so a marble that is both yours AND on camera shows both at
-   once instead of one state hiding the other. */
-.mr-lb-oncam {
-    border: 1px solid rgba(248, 113, 113, 0.75);
-    box-shadow: 0 0 10px rgba(248, 113, 113, 0.3);
-}
-
-.mr-lb-place {
-    font-weight: 700;
-    color: #cbd5e1;
-    font-size: 0.78rem;
-    line-height: 1;
-}
-
-.mr-lb-dot {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    box-shadow: 0 0 8px currentColor;
-}
-
-.mr-lb-name {
-    font-size: 0.6rem;
-    font-weight: 700;
-    color: #cbd5e1;
-    line-height: 1;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-}
-
-.mr-lb-speed {
-    font-variant-numeric: tabular-nums;
-    color: #94a3b8;
-    font-size: 0.68rem;
-    line-height: 1;
-    /* Keep the speed number on a single line even when the HUD width is on
-       the smaller side — the number carries the leaderboard semantics. */
-    white-space: nowrap;
-}
-
-.mr-lb-gap {
-    font-variant-numeric: tabular-nums;
-    color: #64748b;
-    font-size: 0.58rem;
-    line-height: 1;
-    white-space: nowrap;
-}
-
-.mr-lb-you-tag {
-    font-size: 0.5rem;
-    font-weight: 800;
-    color: #22d3ee;
-    letter-spacing: 0.06em;
-    line-height: 1;
-}
-
-.mr-lb-fin {
-    color: #a3e635;
-    font-weight: 800;
-}
-
-/* Tag overlays on each marble tile: YOU sits top-right, ✓ (finished) sits
-   bottom-right. They never collide even when both apply to the same marble.
-   The horizontal leaderboard narrows to 84 px per tile at 720 px width, so
-   each tag needs to live in its own corner — stacking both on top-right used
-   to cause one to obscure the other. */
-.mr-lb-row > .mr-lb-you-tag {
-    position: absolute;
-    top: 1px;
-    right: 3px;
-    font-size: 0.5rem;
-    font-weight: 800;
-    color: #22d3ee;
-    letter-spacing: 0.06em;
-    line-height: 1;
-    z-index: 1;
-}
-
-/* Top-LEFT, so it never collides with the YOU tag (top-right) or ✓ (bottom-right) —
-   all three can apply to the same tile at once. */
-.mr-lb-row > .mr-lb-cam-tag {
-    position: absolute;
-    top: 1px;
-    left: 3px;
-    font-size: 0.5rem;
-    color: #f87171;
-    line-height: 1;
-    z-index: 1;
-}
-
-.mr-lb-row > .mr-lb-fin {
-    position: absolute;
-    bottom: 1px;
-    right: 3px;
-    font-size: 0.85rem;
-    color: #a3e635;
-    font-weight: 800;
-    line-height: 1;
-    z-index: 1;
-}
-
-.mr-hint {
-    margin-top: 8px;
-    font-size: 0.65rem;
-    color: #64748b;
-    text-align: center;
-}
-
-.mr-hint kbd {
-    background: #1e293b;
-    border-radius: 4px;
-    padding: 0 4px;
-    border: 1px solid #334155;
-}
-
-/* The .mr-wrap-row always stacks canvas above HUD now (no wide-viewport
-   side-by-side branch needed). The container is a centred flex column so
-   both elements line up to the same horizontal centre. */
-.mr-wrap-row {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: var(--space-3);
-    max-width: 1500px;
-    margin: 0 auto;
-    width: 100%;
-}
-
-@media (max-width: 640px) {
-    .mr-hud {
-        /* On phones the horizontal leaderboard can't fit 8 tiles legibly;
-           fall back to a narrower centred strip. */
-        width: 100%;
-        max-width: 320px;
-        font-size: 0.72rem;
-        padding: 10px 12px;
-    }
-}
-
-/* ── Pick overlay ── */
+/* ── Online quick-match card ── */
 .mr-overlay {
     position: absolute;
     inset: 0;
@@ -394,286 +69,174 @@
     box-shadow: 0 0 28px rgba(168, 85, 247, 0.25);
 }
 
-.mr-pick-title {
-    margin: 0 0 4px;
-    color: var(--color-text-primary);
-    font-size: 1.4rem;
-}
+/* The colour words, coloured like the marbles they name (white mirrors GUEST_COLOR). */
+.mr-red { color: #ef4444; text-shadow: 0 0 12px rgba(239, 68, 68, 0.7); }
+.mr-white { color: #f8fafc; text-shadow: 0 0 12px rgba(248, 250, 252, 0.7); }
 
-/* The word RED in the start card, coloured like the marble it names. */
-.mr-pick-red {
-    color: #ef4444;
-    text-shadow: 0 0 12px rgba(239, 68, 68, 0.7);
-}
-
-/* Online: the guest's marble. Mirrors GUEST_COLOR in game.js. */
-.mr-pick-white {
-    color: #f8fafc;
-    text-shadow: 0 0 12px rgba(248, 250, 252, 0.7);
-}
-
-
-.mr-pick-sub {
-    margin: 0 0 10px;
-    color: #94a3b8;
-    font-size: 0.85rem;
-}
-
-.mr-pick-sub kbd {
-    background: rgba(148, 163, 184, 0.18);
-    border: 1px solid rgba(148, 163, 184, 0.35);
-    border-radius: 4px;
-    padding: 1px 6px;
-    font-size: 0.85em;
+/* ── Countdown pill ── */
+.mr-countdown {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 4;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: 4px 12px;
+    max-width: calc(100% - 24px);
+    padding: 8px 16px;
+    border-radius: 9999px;
+    background: rgba(8, 12, 24, 0.8);
+    border: 1px solid rgba(168, 85, 247, 0.45);
+    box-shadow: 0 4px 18px rgba(2, 6, 18, 0.5);
+    backdrop-filter: blur(8px);
     color: #e2e8f0;
+    animation: mr-fade-in 0.25s ease-out;
 }
 
-/* Seconds left to claim a marble before one is picked at random. Ticks with a
-   pulse so the urgency reads without the player parsing the sentence. */
-.mr-pick-count {
+.mr-countdown-title {
+    font-weight: 800;
+    letter-spacing: 0.02em;
+}
+
+.mr-countdown-sub {
+    font-size: 0.85rem;
+    color: #94a3b8;
+}
+
+.mr-countdown-num {
     display: inline-block;
     min-width: 1.1em;
-    color: var(--color-text-primary);
+    color: #e2e8f0;
     font-size: 1.05rem;
     font-variant-numeric: tabular-nums;
-    animation: mr-pick-tick 1s ease-out infinite;
+    animation: mr-tick 1s ease-out infinite;
 }
 
-@keyframes mr-pick-tick {
-    0%   { transform: scale(1.25); color: #a855f7; }
-    100% { transform: scale(1);    color: var(--color-text-primary); }
+@keyframes mr-tick {
+    0% { transform: scale(1.3); color: #a855f7; }
+    100% { transform: scale(1); color: #e2e8f0; }
 }
 
-@media (prefers-reduced-motion: reduce) {
-    .mr-pick-count { animation: none; }
-}
-
-.mr-pick-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(88px, 1fr));
-    gap: 10px;
-}
-
-/* Each marble is a card now, not a bare dot: the roster has real physical differences
-   (marbles.js MARBLE_ROSTER) and a per-track grid slot, and the pick is only a decision
-   if the player can see them. */
-.mr-pick-marble {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: flex-start;
-    gap: 3px;
-    background: rgba(2, 6, 23, 0.5);
-    border: 1px solid rgba(148, 163, 184, 0.18);
+.mr-countdown-btn {
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    border: 1px solid rgba(168, 85, 247, 0.6);
+    background: rgba(168, 85, 247, 0.15);
+    color: #e9d5ff;
     cursor: pointer;
-    padding: 10px 6px 8px;
-    border-radius: 10px;
-    transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
 }
 
-.mr-pick-marble:hover {
-    transform: translateY(-3px) scale(1.04);
-    border-color: var(--c);
-    background: rgba(2, 6, 23, 0.75);
-}
+.mr-countdown-btn:hover { background: rgba(168, 85, 247, 0.3); }
 
-.mr-pick-marble:focus-visible {
-    outline: 2px solid var(--c);
-    outline-offset: 2px;
-}
-
-/* --r carries the marble's true radius, so the biggest ball on this screen really is the
-   heaviest marble on the grid. Sized in a fixed box so the cards stay aligned. */
-.mr-pick-ball {
-    display: block;
-    width: var(--r, 40px);
-    height: var(--r, 40px);
-    margin: calc((48px - var(--r, 40px)) / 2) 0;
-    border-radius: 50%;
-    background: radial-gradient(circle at 32% 30%, #fff 0%, var(--c) 45%, color-mix(in srgb, var(--c) 60%, #000) 100%);
-    box-shadow: 0 0 16px var(--c), inset -4px -6px 10px rgba(0, 0, 0, 0.45);
-}
-
-.mr-pick-name {
-    font-size: 0.78rem;
-    font-weight: 800;
-    color: var(--color-text-primary);
-    line-height: 1;
-}
-
-.mr-pick-trait {
-    font-size: 0.56rem;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--c);
-    line-height: 1;
-}
-
-.mr-pick-meta {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-    margin-top: 2px;
-    font-size: 0.55rem;
-    color: #64748b;
-    font-variant-numeric: tabular-nums;
-}
-
-/* The grid slot is shuffled per track and the back row is a genuine handicap — it is
-   surfaced deliberately rather than left as a hidden bias. */
-.mr-pick-grid-pos {
-    font-weight: 800;
-    color: #cbd5e1;
-    background: rgba(148, 163, 184, 0.14);
-    border-radius: 4px;
-    padding: 1px 4px;
-}
-
-/* ── Live telemetry (pinned to the canvas, top-left) ──
-   Clock, position, gap to leader and remaining nudges. The race clock existed in JS from
-   the start and was never shown; the gap only appeared on the podium once the race was
-   already over. */
-.mr-telemetry {
+/* ── Standings chip: place while racing, podium once it is known ── */
+.mr-place {
     position: absolute;
     top: 14px;
     left: 14px;
     z-index: 4;
-    padding: 8px 12px;
-    border-radius: 12px;
-    /* Layered glass: a soft directional sheen over the dark base, so the panel reads as a pane
-       of glass catching light rather than a flat translucent box. */
-    background:
-        linear-gradient(145deg, rgba(148, 197, 255, 0.10), rgba(148, 197, 255, 0) 46%),
-        rgba(8, 12, 24, 0.7);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 6px 12px;
+    border-radius: 14px;
+    background: rgba(8, 12, 24, 0.72);
     border: 1px solid rgba(34, 211, 238, 0.3);
-    backdrop-filter: blur(10px) saturate(1.25);
-    -webkit-backdrop-filter: blur(10px) saturate(1.25);
-    box-shadow: 0 6px 22px rgba(2, 6, 18, 0.5), inset 0 1px 0 rgba(226, 232, 240, 0.10);
+    box-shadow: 0 4px 14px rgba(2, 6, 18, 0.45);
+    backdrop-filter: blur(8px) saturate(1.15);
     color: #e2e8f0;
+    font-family: var(--font-display);
     pointer-events: none;
-    /* Own stacking context, so the ::after heat wash below can sit behind the content without
-       escaping the panel. */
-    isolation: isolate;
 }
 
-/* 2026-08-07 browser audit #2: this panel's base is hard-coded dark (it floats
-   over the track), but two of its descendants coloured themselves from the
-   theme — `.mr-tel-clock` via `--color-text-primary`, which in light mode is
-   near-black, so the race clock read 1.09:1 against the panel behind it. The
-   dim labels sat at 4.10:1, also under AA. Both are pinned here rather than at
-   each declaration so the panel owns the contract for everything inside it:
-   this is a canvas overlay and its contents never follow the colour scheme. */
-.mr-telemetry .mr-tel-clock {
-    color: #e2e8f0;
+.mr-place-line {
+    display: flex;
+    align-items: baseline;
+    gap: 0.4rem;
 }
 
-.mr-telemetry .mr-tel-speed-unit,
-.mr-telemetry .mr-tel-field,
-.mr-telemetry .mr-tel-edge-cap {
+.mr-place-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
     color: #94a3b8;
 }
 
-/* GFX #6 — the heat wash. Driven by --mr-heat (0..1, set inline from leader progress) as an
-   OPACITY, not by swapping the background: a gradient can't be transitioned, but opacity can,
-   and opacity stays on the compositor so warming the HUD never contends with the WebGL loop on
-   the main thread. Same reason every other animation added here is transform/opacity only. */
-.mr-telemetry::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    pointer-events: none;
-    background: linear-gradient(150deg, rgba(251, 146, 60, 0.30), rgba(248, 113, 113, 0.16) 60%, rgba(248, 113, 113, 0) 100%);
-    opacity: var(--mr-heat, 0);
-    transition: opacity 0.4s ease-out;
-    z-index: -1;
-}
-
-/* ── GFX #6: speed dial ──
-   A conic-gradient arc around the race clock, filling with the player's own speed. The arc
-   itself is repainted on each 10 Hz tick (a gradient is not interpolable), but the needle that
-   rides it is a rotate transform with a matching transition, so the gauge reads as continuous
-   motion rather than as ten steps a second. */
-.mr-tel-dial {
-    position: relative;
-    width: 88px;
-    height: 88px;
-    display: grid;
-    place-content: center;
-    justify-items: center;
-}
-
-.mr-tel-dial::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    /* Cool → hot as the arc fills. The trailing `0` stop is a hard cut: everything past the
-       current speed falls back to the unlit track colour. */
-    background: conic-gradient(from -90deg,
-        #22d3ee 0%,
-        #4ade80 calc(var(--spd, 0%) * 0.45),
-        #fde047 calc(var(--spd, 0%) * 0.78),
-        #fb923c var(--spd, 0%),
-        rgba(148, 163, 184, 0.16) 0);
-    /* Punch the middle out to leave a ring. Both prefixes: -webkit- is still required on Safari. */
-    -webkit-mask: radial-gradient(closest-side, transparent 78%, #000 79%);
-    mask: radial-gradient(closest-side, transparent 78%, #000 79%);
-}
-
-.mr-tel-dial-needle {
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    /* Rotating the whole (invisible) disc carries the ::after pip around the rim — one
-       compositor-friendly transform instead of animating a position. */
-    transform: rotate(var(--spd-deg, 0deg));
-    transition: transform 0.1s linear;
-    will-change: transform;
-}
-
-.mr-tel-dial-needle::after {
-    content: "";
-    position: absolute;
-    top: -2px;
-    left: 50%;
-    width: 5px;
-    height: 5px;
-    margin-left: -2.5px;
-    border-radius: 50%;
-    background: #f8fafc;
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.9);
-}
-
-.mr-tel-speed {
-    font-size: 0.62rem;
+.mr-place-value {
+    font-size: 1.05rem;
     font-weight: 800;
-    letter-spacing: 0.04em;
-    color: #22d3ee;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-    margin-top: 2px;
 }
 
-.mr-tel-speed-unit {
-    font-size: 0.48rem;
+.mr-place-field {
+    font-size: 0.75rem;
+    color: #94a3b8;
+}
+
+.mr-split {
+    font-size: 0.8rem;
+    animation: mr-fade-in 0.2s ease-out;
+}
+
+.mr-split-time {
     font-weight: 700;
-    color: #64748b;
-    margin-left: 2px;
+    font-variant-numeric: tabular-nums;
 }
 
-/* The dial spins the needle continuously; under reduced motion, drop the interpolation so it
-   snaps to each reading instead of gliding. */
-@media (prefers-reduced-motion: reduce) {
-    .mr-tel-dial-needle { transition: none; }
-    .mr-telemetry::after { transition: none; }
+.mr-split-delta {
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
 }
 
-/* ── GFX #6: inline SVG iconography (replaces the emoji) ── */
+.mr-split-delta.is-faster { color: #4ade80; }
+.mr-split-delta.is-slower { color: #f87171; }
+
+.mr-podium {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 2px;
+    animation: mr-fade-in 0.3s ease-out;
+}
+
+.mr-place-line + .mr-podium {
+    border-top: 1px solid rgba(148, 163, 184, 0.2);
+    padding-top: 4px;
+}
+
+.mr-podium-row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-size: 0.8rem;
+}
+
+.mr-podium-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--dot);
+    box-shadow: 0 0 6px var(--dot);
+}
+
+.mr-podium-name {
+    font-weight: 700;
+    min-width: 4.5rem;
+}
+
+.mr-podium-time {
+    margin-left: auto;
+    color: #94a3b8;
+    font-variant-numeric: tabular-nums;
+}
+
 .mr-medal {
     width: 1.15em;
     height: 1.15em;
-    vertical-align: -0.2em;
 }
 
 .mr-medal-ribbon {
@@ -699,245 +262,24 @@
 .mr-medal--2 { --mr-medal: #cbd5e1; }
 .mr-medal--3 { --mr-medal: #d97706; }
 
-.mr-flag {
-    width: 1em;
-    height: 1em;
-    vertical-align: -0.14em;
-}
-
-.mr-flag-pole {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-}
-
-.mr-flag-cloth rect { fill: currentColor; }
-
-.mr-flag-edge {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.4;
-    opacity: 0.75;
-}
-
-.mr-flame {
-    width: 1em;
-    height: 1em;
-    vertical-align: -0.15em;
-    fill: currentColor;
-}
-
-.mr-flame-core { fill: rgba(255, 247, 214, 0.9); }
-
-/* The .mr-tel-me "YOU · <name>" row that lived here is gone along with the in-world YOU pin
-   and the ON AIR badge — the panel is telemetry only now. */
-.mr-tel-clock {
-    font-size: 1.5rem;
-    font-weight: 800;
-    line-height: 1;
-    color: var(--color-text-primary);
-    font-variant-numeric: tabular-nums;
-}
-
-.mr-tel-row {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    margin-top: 3px;
-}
-
-.mr-tel-pos {
-    font-size: 1rem;
-    font-weight: 800;
-    color: #22d3ee;
-}
-
-/* "/ 101" after the place — your rank out of the field, dimmer so the place stays the figure. */
-.mr-tel-field {
-    font-size: 0.7rem;
-    font-weight: 700;
-    color: #64748b;
-}
-
-.mr-tel-gap {
-    font-size: 0.75rem;
-    color: #94a3b8;
-    font-variant-numeric: tabular-nums;
-}
-
-/* #3 edge gauge: a rail with a centre tick and a sliding marker for the marble's lateral
-   position, so the player can read "am I about to steer off?" at a glance. */
-.mr-tel-edge {
-    margin-top: 7px;
-}
-
-.mr-tel-edge-track {
-    position: relative;
-    height: 6px;
-    border-radius: 3px;
-    /* green in the middle → amber → red at the rails, so drifting toward an edge darkens. */
-    background: linear-gradient(90deg,
-        rgba(248, 113, 113, 0.55) 0%, rgba(251, 146, 60, 0.4) 18%,
-        rgba(74, 222, 128, 0.35) 50%,
-        rgba(251, 146, 60, 0.4) 82%, rgba(248, 113, 113, 0.55) 100%);
-    border: 1px solid rgba(148, 163, 184, 0.25);
-}
-
-.mr-tel-edge-center {
-    position: absolute;
-    left: 50%;
-    top: -1px;
-    bottom: -1px;
-    width: 1px;
-    background: rgba(226, 232, 240, 0.5);
-}
-
-.mr-tel-edge-marker {
-    position: absolute;
-    top: 50%;
-    width: 9px;
-    height: 9px;
-    border-radius: 50%;
-    background: var(--c, #22d3ee);
-    box-shadow: 0 0 8px var(--c, #22d3ee);
-    transform: translate(-50%, -50%);
-    transition: left 0.09s linear;
-}
-
-.mr-tel-edge-cap {
-    display: block;
-    margin-top: 3px;
-    font-size: 0.5rem;
-    font-weight: 800;
-    letter-spacing: 0.1em;
-    color: #64748b;
-}
-
-/* Near a rail the whole gauge flashes red — the "steer back NOW" signal. */
-.mr-tel-edge--danger .mr-tel-edge-cap { color: #f87171; }
-.mr-tel-edge--danger .mr-tel-edge-track {
-    border-color: rgba(248, 113, 113, 0.9);
-    animation: mr-edge-pulse 0.5s ease-in-out infinite;
-}
-
-@keyframes mr-edge-pulse {
-    0%, 100% { box-shadow: 0 0 0 rgba(248, 113, 113, 0); }
-    50% { box-shadow: 0 0 12px rgba(248, 113, 113, 0.8); }
-}
-
-.mr-tel-streak {
-    display: flex;
-    align-items: center;
-    gap: 5px;
-    margin-top: 6px;
-    font-size: 0.68rem;
-    font-weight: 700;
-    color: #fb923c;
-}
-
-/* #10 hot streak (2×+): the multiplier readout ignites so a valuable run looks valuable. */
-.mr-tel-streak--hot {
-    font-size: 0.82rem;
-    font-weight: 900;
-    color: #fde047;
-    text-shadow: 0 0 10px rgba(251, 146, 60, 0.95), 0 0 20px rgba(248, 113, 113, 0.7);
-    animation: mr-streak-throb 0.7s ease-in-out infinite;
-}
-
-@keyframes mr-streak-throb {
-    0%, 100% { transform: scale(1); }
-    50% { transform: scale(1.08); }
-}
-
-/* The .mr-oncam ON AIR chip that lived here is gone along with the in-world YOU / ON AIR
-   pins — the camera never leaves the player's marble, so the chip only ever said "you". */
-
-/* ── #10 FINAL STRETCH klaxon ──
-   Centred across the top of the canvas the moment the leader hits the run to the line. */
-.mr-final {
-    position: absolute;
-    top: 14px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 5;
-    /* inline-flex, not block: the 🏁 emoji became an inline SVG (GFX #6), which needs explicit
-       cross-axis centring. inline-flex keeps the pill hugging its content so the translateX(-50%)
-       centring still lands. */
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 18px;
-    border-radius: var(--radius-pill);
-    background: rgba(12, 8, 20, 0.8);
-    border: 1px solid rgba(253, 224, 71, 0.7);
-    font-size: 0.9rem;
-    font-weight: 900;
-    letter-spacing: 0.12em;
-    color: #fde047;
-    text-shadow: 0 0 12px rgba(251, 146, 60, 0.9);
-    backdrop-filter: blur(6px);
-    pointer-events: none;
-    animation: mr-final-throb 0.6s ease-in-out infinite;
-}
-
-@keyframes mr-final-throb {
-    0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.9; }
-    50% { transform: translateX(-50%) scale(1.06); opacity: 1; }
-}
-
-/* ── #10 hot-streak fire ──
-   An inset amber/red glow around the canvas edges while the multiplier is 2×+, so a run that's
-   racking up points feels like it's on fire. Non-interactive overlay. */
-.mr-fire {
-    position: absolute;
-    inset: 0;
-    z-index: 3;
-    pointer-events: none;
-    border-radius: inherit;
-    box-shadow: inset 0 0 60px 8px rgba(251, 146, 60, 0.45),
-                inset 0 0 120px 24px rgba(248, 113, 113, 0.28);
-    animation: mr-fire-flicker 0.5s ease-in-out infinite;
-}
-
-@keyframes mr-fire-flicker {
-    0%, 100% { opacity: 0.75; }
-    50% { opacity: 1; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-    .mr-tel-edge--danger .mr-tel-edge-track,
-    .mr-tel-streak--hot,
-    .mr-final,
-    .mr-fire { animation: none; }
-}
-
-/* ── Nudge pads ──
-   The keyboard is the primary path, but a verb that only exists on a physical keyboard
-   isn't a verb on a phone. Bottom corners so thumbs reach them and they never sit over
-   the chute's centre. */
+/* ── Touch steering pads: any touch screen, either orientation ── */
 .mr-nudge-pads {
     position: absolute;
     inset: auto 0 16px 0;
     z-index: 4;
-    /* Hidden by default — the on-screen ◀ ▶ steer buttons are only shown on a
-       touch device held in portrait (see the media query below). On desktop the
-       keyboard arrows are the input, so the pads would just cover the track. */
     display: none;
     justify-content: space-between;
     padding: 0 16px;
     pointer-events: none;
 }
 
-/* Mobile portrait only: a phone/tablet in portrait has no keyboard and the tall
-   frame leaves room at the bottom corners for thumbs. */
-@media (pointer: coarse) and (orientation: portrait) {
+@media (pointer: coarse) {
     .mr-nudge-pads { display: flex; }
 }
 
 .mr-nudge-pad {
     pointer-events: auto;
-    touch-action: none; /* hold-to-steer: don't let a press scroll/zoom the page */
+    touch-action: none;
     -webkit-user-select: none;
     user-select: none;
     width: 58px;
@@ -952,231 +294,156 @@
     transition: transform 0.1s ease, background 0.1s ease;
 }
 
-.mr-nudge-pad:hover:not(:disabled) { background: rgba(251, 146, 60, 0.25); }
-.mr-nudge-pad:active:not(:disabled) { transform: scale(0.9); }
+.mr-nudge-pad:active { transform: scale(0.9); background: rgba(251, 146, 60, 0.25); }
 
-.mr-nudge-pad:disabled {
-    opacity: 0.3;
-    cursor: default;
-    color: #64748b;
-    border-color: rgba(100, 116, 139, 0.4);
+/* ── Setup options (inside the intro card; themed) ── */
+.mr-setup {
+    display: grid;
+    gap: 6px;
+    text-align: left;
 }
 
-/* Option #1: container query against .gps-shell. The shell declares
-   `container-type: inline-size; container-name: gps;` in games.css, so this
-   rule responds to the SHELL'S width, not the viewport's. A desktop window
-   with a side panel that squeezes the shell below 40rem triggers the same
-   fullscreen canvas treatment a phone does — the rule is now about "is the
-   game playing in a narrow slot?", not "is the user on a phone?". */
-@container gps (max-width: 40rem) {
-    /* NetRun10 audit #5: narrow game slot. Pull the HUD to the bottom
-       so it doesn't cover the chute, shrink the pick balls, and let the
-       canvas fill the remaining vertical space minus chrome.
-       2026-08-18 mobile-fullscreen: the canvas now claims the whole mobile
-       portrait viewport — no aspect-ratio letterbox, no game-area padding —
-       and the HUD floats as a translucent strip over the bottom of the canvas
-       so the race is visible edge-to-edge. dvh accounts for mobile browser
-       chrome (URL bar collapse). The 56px top offset matches the GameShell
-       topbar; safe-area-inset-bottom keeps the strip above the iOS home
-       indicator.
-       Note: the .gps-game-area overrides live in games.css (the parent shell
-       stylesheet) — this scoped stylesheet can only target selectors rendered
-       by the razor component, not the shell container. */
-    .mr-wrap-row {
-        flex: 1 1 auto;
-        align-self: stretch;
-        width: 100%;
-        max-width: none;
-        margin: 0;
-        gap: 0;
-        min-height: 0;
-        /* 2026-09-11: same feedback-loop guard as .mr-wrap below — the row must
-           never be taller than the shell's viewport budget, or the post-race
-           podium strip can push a few px of page scroll past the fold. */
-        max-height: var(--gps-area-h, 100dvh);
-        overflow: hidden;
-        /* Anchor the absolutely-positioned HUD strip on mobile. */
-        position: relative;
-    }
-    .mr-wrap {
-        flex: 1 1 auto;
-        width: 100%;
-        height: 100%;
-        min-height: 0;
-        /* 2026-09-11 fix: `height: 100%` only resolves against a DEFINITE
-           parent. The parent chain (.mr-wrap-row -> .gps-game-area -> .gps-shell,
-           which is `flex: 1 0 auto` = content-sized) can resolve content-driven,
-           and then the canvas's backing-store attribute size becomes the wrap's
-           content — renderer sizes to host, host grows to canvas, the shell's
-           ResizeObserver refires, and the buffer doubles until the browser
-           clamps at 2^26 (measured: the page was 33,554,432px tall). Clamping
-           with the shell-published viewport budget breaks that loop regardless
-           of how the chain resolves. */
-        max-height: var(--gps-area-h, 100dvh);
-        aspect-ratio: auto;
-        border-radius: 0;
-        /* Fill the row's full height (which is the game area's full height
-           now that --fullscreen removed the 24px game-area padding). */
-    }
-    .mr-hud {
-        /* Float over the bottom of the canvas rather than pushing it down,
-           so the race track gets the full mobile portrait viewport. The
-           strip is translucent so the marbles remain visible underneath. */
-        position: absolute;
-        left: 8px;
-        right: 8px;
-        bottom: calc(8px + env(safe-area-inset-bottom, 0px));
-        width: auto;
-        z-index: 5;
-        font-size: 0.72rem;
-        background: rgba(15, 23, 42, 0.78);
-        backdrop-filter: blur(6px);
-        -webkit-backdrop-filter: blur(6px);
-        border: 1px solid rgba(148, 163, 184, 0.25);
-    }
-    /* Scale the roster balls down proportionally rather than to a flat size — --r is
-       carrying the marble's real radius and squashing them all to one value would throw
-       away the physique the card exists to show. */
-    .mr-pick-ball {
-        width: calc(var(--r, 40px) * 0.8);
-        height: calc(var(--r, 40px) * 0.8);
-        margin: calc((40px - var(--r, 40px) * 0.8) / 2) 0;
-    }
-    .mr-pick-grid { grid-template-columns: repeat(4, minmax(66px, 1fr)); gap: 6px; }
-    .mr-pick-card { padding: 14px 12px; }
-    .mr-telemetry { top: 8px; left: 8px; padding: 6px 9px; }
-    .mr-tel-clock { font-size: 1.1rem; }
-    .mr-nudge-pad { width: 50px; height: 50px; }
-}
-
-/* ── Track picker (intro card) ───────────────────────────────────────────────
-   Rendered into GameIntro's Options slot, so it is authored here and inherits
-   this component's CSS scope. Colours go through the theme tokens rather than
-   raw hex so the card is readable in the light scheme too; the purple accent
-   matches the pick card above, which is scheme-invariant by design. */
-.mr-mapsel {
+.mr-setup-label {
     margin-top: 4px;
-}
-
-.mr-mapsel-label {
     font-size: 0.72rem;
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--color-text-secondary);
-    margin-bottom: 6px;
 }
 
-.mr-mapsel-row {
+.mr-setup-note {
+    margin: 0;
+    font-size: 0.78rem;
+    color: var(--color-text-secondary);
+}
+
+.mr-skins,
+.mr-weights {
     display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
+    gap: 6px;
 }
 
-.mr-mapsel-btn {
-    display: inline-flex;
+/* Four tracks with four lines each: two per row keeps every line readable. */
+.mr-tracks {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
+}
+
+.mr-opt {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 8px;
-    padding: 8px 14px;
+    gap: 2px;
+    min-width: 0;
+    padding: 7px 6px;
     border-radius: 10px;
-    cursor: pointer;
     font: inherit;
+    text-align: center;
     color: var(--color-text-primary);
     background: var(--color-surface-hover);
-    border: 1px solid rgba(168, 85, 247, 0.35);
+    border: 1px solid rgba(168, 85, 247, 0.3);
+    cursor: pointer;
     transition: border-color 120ms ease, box-shadow 120ms ease, background 120ms ease;
 }
 
-.mr-mapsel-btn:hover {
-    border-color: rgba(168, 85, 247, 0.7);
-}
+.mr-opt:hover:not(:disabled) { border-color: rgba(168, 85, 247, 0.7); }
 
-.mr-mapsel-btn.is-on {
+.mr-opt.is-on {
     border-color: rgba(168, 85, 247, 0.95);
-    box-shadow: 0 0 16px rgba(168, 85, 247, 0.35);
+    box-shadow: 0 0 14px rgba(168, 85, 247, 0.35);
     background: rgba(168, 85, 247, 0.16);
 }
 
-/* The slot number, so "map 3" in a bug report matches what the player sees. */
-.mr-mapsel-num {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 20px;
-    height: 20px;
-    border-radius: 6px;
+.mr-opt:disabled {
+    cursor: default;
+    opacity: 0.45;
+    border-style: dashed;
+}
+
+.mr-opt-name {
+    font-size: 0.85rem;
+    font-weight: 700;
+}
+
+.mr-track-wr {
     font-size: 0.72rem;
     font-weight: 700;
-    color: var(--color-text-primary);
-    background: rgba(168, 85, 247, 0.3);
+    color: #d97706;
 }
 
-.mr-mapsel-name {
-    font-size: 0.9rem;
-}
-
-/* ── Minimal place pill (2026-08-11) ──
-   Replaces the multi-row telemetry HUD with a single "Place P3 / 86" chip.
-   Pinned top-left of the canvas. Same glass treatment as the rest of the
-   chrome so it sits on the track without competing with it. */
-.mr-place {
-    position: absolute;
-    top: 14px;
-    left: 14px;
-    z-index: 4;
-    display: inline-flex;
-    align-items: baseline;
-    gap: 0.4rem;
-    padding: 6px 12px;
-    border-radius: 9999px;
-    background: rgba(8, 12, 24, 0.72);
-    border: 1px solid rgba(34, 211, 238, 0.3);
-    box-shadow: 0 4px 14px rgba(2, 6, 18, 0.45);
-    backdrop-filter: blur(8px) saturate(1.15);
-    -webkit-backdrop-filter: blur(8px) saturate(1.15);
-    color: #e2e8f0;
-    font-family: var(--font-display);
-    pointer-events: none;
-}
-
-.mr-place-label {
-    font-size: 0.7rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    color: #94a3b8;
-}
-
-.mr-place-value {
-    font-size: 1.05rem;
-    font-weight: 800;
-    color: #e2e8f0;
-}
-
-.mr-place-field {
-    font-size: 0.75rem;
-    color: #94a3b8;
-}
-
-.mr-mapsel-blurb {
-    margin: 8px 0 0;
-    font-size: 0.78rem;
+.mr-track-meta {
+    font-size: 0.62rem;
     color: var(--color-text-secondary);
-    min-height: 2.2em;
+    opacity: 0.85;
 }
 
-/* The picker lives in the start overlay, which is a compact card — keep the nine
-   slots on one tidy block rather than letting them stretch it. */
-.mr-mapsel-row {
-    justify-content: center;
+.mr-opt-hint {
+    font-size: 0.68rem;
+    color: var(--color-text-secondary);
 }
 
-.mr-mapsel-btn:disabled {
-    cursor: default;
+/* A painted preview of each finish on the red marble. */
+.mr-skin-ball {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 32% 30%, #fecaca 0%, #ef4444 45%, #7f1d1d 100%);
+    box-shadow: inset -3px -4px 7px rgba(0, 0, 0, 0.45);
 }
 
-/* Empty slots: present but obviously not choosable, so the room for more courses
-   reads as room rather than as a broken button. */
-.mr-mapsel-btn.is-empty {
-    opacity: 0.32;
-    padding: 8px 10px;
-    border-style: dashed;
+.mr-skin--swirl .mr-skin-ball {
+    background:
+        repeating-linear-gradient(135deg, rgba(255, 255, 255, 0.35) 0 3px, transparent 3px 8px),
+        radial-gradient(circle at 32% 30%, #fecaca 0%, #ef4444 45%, #7f1d1d 100%);
+}
+
+.mr-skin--catseye .mr-skin-ball {
+    background:
+        linear-gradient(transparent 38%, rgba(20, 24, 36, 0.75) 40% 58%, transparent 60%),
+        radial-gradient(circle at 32% 30%, #fecaca 0%, #ef4444 45%, #7f1d1d 100%);
+}
+
+.mr-skin--galaxy .mr-skin-ball {
+    background:
+        radial-gradient(circle at 70% 40%, #fff 0 1px, transparent 2px),
+        radial-gradient(circle at 40% 70%, #fff 0 1px, transparent 2px),
+        radial-gradient(circle at 55% 25%, #fde68a 0 1px, transparent 2px),
+        radial-gradient(circle at 32% 30%, #f472b6 0%, #b91c1c 50%, #3b0a0a 100%);
+    box-shadow: 0 0 10px rgba(236, 72, 153, 0.55), inset -3px -4px 7px rgba(0, 0, 0, 0.45);
+}
+
+.mr-skin--chrome .mr-skin-ball {
+    background: linear-gradient(170deg, #ffe4e6 0%, #f87171 30%, #450a0a 52%, #b91c1c 70%, #fecaca 100%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .mr-countdown-num { animation: none; }
+}
+
+/* Narrow game slot (the shell is a `gps` inline-size container): the canvas takes the whole
+   viewport budget. The max-heights break a resize feedback loop — a content-sized parent chain
+   once let the canvas grow its own host until the page was 33M px tall. */
+@container gps (max-width: 40rem) {
+    .mr-wrap-row {
+        flex: 1 1 auto;
+        align-self: stretch;
+        max-width: none;
+        min-height: 0;
+        max-height: var(--gps-area-h, 100dvh);
+        overflow: hidden;
+        position: relative;
+    }
+    .mr-wrap {
+        flex: 1 1 auto;
+        height: 100%;
+        min-height: 0;
+        max-height: var(--gps-area-h, 100dvh);
+        border-radius: 0;
+    }
+    .mr-pick-card { padding: 14px 12px; }
+    .mr-place { top: 8px; left: 8px; }
+    .mr-countdown { top: 8px; }
+    .mr-nudge-pad { width: 50px; height: 50px; }
 }

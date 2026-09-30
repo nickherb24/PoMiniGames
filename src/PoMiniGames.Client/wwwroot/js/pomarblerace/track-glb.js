@@ -194,6 +194,29 @@ function worldBox(mesh) {
 const CHECKER_SIZE = 8;
 
 let _checkerTex = null;
+let _brakeTex = null;
+
+/** Amber/black chevrons pointing down-track, for the brake strips. Built once, shared. */
+function brakeTexture() {
+  if (_brakeTex) return _brakeTex;
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.fillStyle = '#1c1206';
+  g.fillRect(0, 0, 64, 64);
+  g.fillStyle = '#f59e0b';
+  for (const y0 of [0, 32]) {
+    g.beginPath();
+    g.moveTo(0, y0 + 20); g.lineTo(32, y0 + 4); g.lineTo(64, y0 + 20);
+    g.lineTo(64, y0 + 30); g.lineTo(32, y0 + 14); g.lineTo(0, y0 + 30);
+    g.closePath(); g.fill();
+  }
+  _brakeTex = new THREE.CanvasTexture(c);
+  _brakeTex.colorSpace = THREE.SRGBColorSpace;
+  _brakeTex.wrapS = _brakeTex.wrapT = THREE.RepeatWrapping;
+  _brakeTex.anisotropy = THREE.Texture.DEFAULT_ANISOTROPY;
+  return _brakeTex;
+}
 
 /**
  * Black-and-white chequer, generated once and shared by every course.
@@ -238,6 +261,8 @@ export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0 });
  * @param {number|null} [opts.finishS] absolute world arclength of the finish, ending the race
  *   early. Overrides finishBackoff. Use when a stretch of authored course is not raceable
  * @param {number} [opts.paddleSpeed] rad/s for Obs-Paddle props
+ * @param {Array<[number, number, number]>} [opts.brakeBands] [s0, s1, maxSpeed] in world
+ *   arclength: rumble strips that cap speed ahead of a narrow mouth (game.js _applyBrakes)
  */
 export function createGlbCourse({
   modelUrl,
@@ -247,6 +272,7 @@ export function createGlbCourse({
   finishBackoff = 16,
   finishS = null,
   paddleSpeed = 1.5,
+  brakeBands = [],
 }) {
   const { SCALE, COUNT, ARCLENGTH, POINTS, DIRS, UPS, RIGHTS, HALF_WIDTHS, CUM } = PATH;
   const COL_VERTS = COL.VERTICES;
@@ -415,7 +441,7 @@ export function createGlbCourse({
     out.index = best;
     out.lateral = dx * rx + dy * ry + dz * rz;
     out.height = dx * ux + dy * uy + dz * uz;
-    return out;
+    return refineLane(x, y, z, out);
   }
 
   /** Sample index at arclength `s` (world units), by binary search over the cumulative table. */
@@ -470,6 +496,558 @@ export function createGlbCourse({
     const span = WORLD_CUM[j] - WORLD_CUM[i];
     const t = span > 1e-6 ? Math.max(0, Math.min(1, (s - WORLD_CUM[i]) / span)) : 0;
     return (HALF_WIDTHS[i] + (HALF_WIDTHS[j] - HALF_WIDTHS[i]) * t) * SCALE;
+  }
+
+  // ── lanes (2026-09-30) ────────────────────────────────────────────────────────────────────
+  // The baked centerline follows the MAIN lane only. Branch lanes (splits, the hazard fan, the
+  // weave) sit up to 46 units off it, and across a junction the main frame is turned nearly 90°
+  // to the channel, so any "where is this marble relative to the track" question asked of the
+  // main line alone is wrong exactly where the course is most interesting. Measured before this
+  // existed: Grand Spiral deleted 293 of 299 marbles it called "off the track" while they were
+  // rolling on a side lane or up a flared bank.
+  //
+  // There is no separate baker output for lanes (the baker is gone), but the collision shell
+  // already carries every channel, main and branch, as a strip of 4-vertex rings in travel
+  // order — wall top, floor edge, floor edge, wall top (see track*-collision.js). Each lane's
+  // frame is read straight off its rings: floor midpoint, across (right), tangent, up, the real
+  // floor half-width and how far out its wall tops reach. `s` still comes from the main line so
+  // standings stay comparable: a lane ring maps onto the main arclength its segment spans.
+  const LANES = [];
+  {
+    const segInfo = new Map((PATH.SEGMENTS || []).map((sg) => [sg.name, sg]));
+    let base = 0;
+    for (const sg of COL.SEGMENTS || []) {
+      const info = segInfo.get(sg.name);
+      const n = sg.kept;
+      const vbase = base;
+      base += n * 4;
+      // Bumper is a decorative rim with no floor; a name the path does not know has no `s`.
+      if (!info || /Bumper/.test(sg.name) || n < 2) continue;
+      const read = (r, k, out) => {
+        const o = (vbase + r * 4 + k) * 3;
+        return out.set(COL_VERTS[o] * SCALE, COL_VERTS[o + 1] * SCALE, COL_VERTS[o + 2] * SCALE);
+      };
+      // Travel order: ring 0 should sit at the segment's `from` end of the main line.
+      const mainPt = (i) => new THREE.Vector3(POINTS[i * 3] * SCALE, POINTS[i * 3 + 1] * SCALE, POINTS[i * 3 + 2] * SCALE);
+      const mid = (r) => read(r, 1, new THREE.Vector3()).add(read(r, 2, new THREE.Vector3())).multiplyScalar(0.5);
+      const reversed = mid(0).distanceTo(mainPt(info.to)) < mid(0).distanceTo(mainPt(info.from));
+      const ring = (r) => (reversed ? n - 1 - r : r);
+
+      const lane = {
+        name: sg.name, open: /Catch/.test(sg.name), n,
+        A: new Float32Array(n * 3), B: new Float32Array(n * 3), C: new Float32Array(n * 3), D: new Float32Array(n * 3),
+        P: new Float32Array(n * 3), R: new Float32Array(n * 3), U: new Float32Array(n * 3),
+        HW: new Float32Array(n), REACH: new Float32Array(n), S: new Float32Array(n), s0: 0, s1: 0,
+      };
+      const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), d = new THREE.Vector3();
+      for (let r = 0; r < n; r++) {
+        read(ring(r), 0, a); read(ring(r), 1, b); read(ring(r), 2, c); read(ring(r), 3, d);
+        a.toArray(lane.A, r * 3); b.toArray(lane.B, r * 3); c.toArray(lane.C, r * 3); d.toArray(lane.D, r * 3);
+        b.clone().add(c).multiplyScalar(0.5).toArray(lane.P, r * 3);
+        lane.HW[r] = b.distanceTo(c) / 2;
+      }
+      const v = (arr, r) => new THREE.Vector3(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2]);
+      let arc = 0;
+      const cum = new Float32Array(n);
+      for (let r = 0; r < n; r++) {
+        if (r > 0) arc += v(lane.P, r).distanceTo(v(lane.P, r - 1));
+        cum[r] = arc;
+        const t = v(lane.P, Math.min(n - 1, r + 1)).sub(v(lane.P, Math.max(0, r - 1))).normalize();
+        const right = v(lane.C, r).sub(v(lane.B, r)).normalize();
+        // up = right × tangent for a right-handed (right = tangent × up) frame; then make sure it
+        // points into the channel. The walls say which way that is; at a lane mouth, where a wall
+        // has zero height, the main line's up does.
+        const up = new THREE.Vector3().crossVectors(right, t).normalize();
+        const walls = v(lane.A, r).sub(v(lane.B, r)).add(v(lane.D, r).sub(v(lane.C, r)));
+        const mi = Math.round(info.from + ((info.to - info.from) * r) / (n - 1));
+        const ref = walls.length() > 0.5 ? walls : new THREE.Vector3(UPS[mi * 3], UPS[mi * 3 + 1], UPS[mi * 3 + 2]);
+        if (up.dot(ref) < 0) up.negate();
+        right.toArray(lane.R, r * 3);
+        up.toArray(lane.U, r * 3);
+        // How far across the wall tops reach: flared walls let a marble roll well past the floor.
+        const p = v(lane.P, r);
+        lane.REACH[r] = Math.max(lane.HW[r], Math.abs(v(lane.A, r).sub(p).dot(right)), Math.abs(v(lane.D, r).sub(p).dot(right)));
+      }
+      const s0 = WORLD_CUM[info.from], s1 = WORLD_CUM[info.to];
+      for (let r = 0; r < n; r++) lane.S[r] = s0 + (arc > 0 ? cum[r] / arc : 0) * (s1 - s0);
+      lane.s0 = s0; lane.s1 = s1;
+      LANES.push(lane);
+    }
+  }
+
+  /**
+   * A decal ribbon laid across the main channel from s0 to s1 (the finish banner, the brake
+   * strips). Follows the channel's real width and banking; lifted and polygon-offset so it never
+   * z-fights the floor. Decorative only — no collider.
+   */
+  function floorBand(s0, s1, map, lift, name) {
+    const steps = Math.max(2, Math.ceil((s1 - s0) / 3));
+    const pos = [], uv = [], idx = [];
+    const c = new THREE.Vector3(), r = new THREE.Vector3(), u = new THREE.Vector3();
+    for (let i = 0; i <= steps; i++) {
+      const along = ((s1 - s0) * i) / steps;
+      const s = s0 + along;
+      centerAt(s, c); rightAt(s, r); upAt(s, u);
+      const hw = halfWidthAt(s);
+      for (const side of [-1, 1]) {
+        pos.push(c.x + r.x * hw * side + u.x * lift, c.y + r.y * hw * side + u.y * lift, c.z + r.z * hw * side + u.z * lift);
+        // U spans the real channel width so a pattern keeps its proportions however wide it is.
+        uv.push(side < 0 ? 0 : (hw * 2) / CHECKER_SIZE, along / CHECKER_SIZE);
+      }
+    }
+    for (let i = 0; i < steps; i++) {
+      const a = i * 2;
+      idx.push(a, a + 1, a + 3, a, a + 3, a + 2);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    geo.setIndex(idx);
+    geo.computeVertexNormals();
+    const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+      map, roughness: 0.72, metalness: 0.0, side: THREE.DoubleSide,
+      polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+    }));
+    mesh.receiveShadow = true;
+    mesh.name = name;
+    return mesh;
+  }
+
+  // Brake bands in world arclength, with the speed each one caps a marble at.
+  const BRAKE_BANDS = brakeBands.map(([a, b, v]) => [a, b, v]);
+  /** Speed cap at `s`, or 0 when `s` is on no brake band. */
+  const brakeAt = (s) => {
+    for (const [a, b, v] of BRAKE_BANDS) if (s >= a && s <= b) return v;
+    return 0;
+  };
+
+  // Checkpoints: one at the start of each branch (where lanes split), inside the raceable part.
+  const CHECKPOINTS = [...new Set((PATH.SEGMENTS || []).filter((sg) => sg.role === 'alt').map((sg) => sg.from))]
+    .map((i) => WORLD_CUM[i])
+    .filter((s) => s > 60 && s < TRACK.FINISH_S - 60)
+    .sort((a, b) => a - b);
+
+  // ── containment (2026-09-30) ─────────────────────────────────────────────────────────────────
+  // Every closed lane becomes a tube: its walls are extended straight up (along the lane's own
+  // up, so banking is followed) to at least CONTAIN_H, and a lid spans the two wall tops. Before
+  // this the walls were 21.8 (Spiral Works) / 26 (Grand Spiral) tall except at lane mouths, where
+  // they start at ZERO — and marbles reach those mouths at the 85 u/s speed cap. 108 of Spiral
+  // Works' 152 falls per three races were at the Split-A mouth.
+  //
+  // The lid height is capped per ring by the clearance to whatever other channel lies above it
+  // (the helixes pass back over themselves ~46 units up; the weave crosses itself), minus a
+  // margin, so a lid never pokes into the floor of the level above. A lane named *Catch* stays
+  // open: it exists to catch what falls onto it from above.
+  //
+  // The wall triangles are rendered as faint glass (buildTrack), so the new walls read as walls;
+  // the lid is never drawn.
+  const CONTAIN_H = 18;
+  const CAP_BACK = 3;
+  const OVERPASS_MIN = 8;
+  const OVERPASS_DS = 150;   // race distance apart before geometry above a ring counts as an overpass
+  const LANDING_RINGS = 16;
+  const KERB_H = 6;
+  const FED_DIST = 25;           // back kerb at a landing zone's start (see fedFromAir)   // rings left unlidded where a lane is fed from the air (~130 units)
+  const landing = [];   // rings an end cap's guide wall starts back from the junction (~24 units)
+  const CONTAIN_MARGIN = 5;
+  // xyz triangle soups (walls, lids, junction floors), rail polylines, per-lane coverage
+  const CONTAIN = { walls: [], lids: [], floors: [], rails: [], stats: [] };
+  {
+    // Clearance above each ring, from every shell vertex of the OTHER lanes (and of this lane more
+    // than a few rings away) that sits over this ring's floor footprint.
+    const all = [];
+    LANES.forEach((L, li) => {
+      for (let r = 0; r < L.n; r++) for (const arr of [L.A, L.B, L.C, L.D]) all.push(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2], li, r);
+    });
+    const t = new THREE.Vector3(), w = new THREE.Vector3();
+    const pushTri = (list, p, q, r) => {
+      // Skip slivers: a zero-height extension (a wall already taller than the lid) is degenerate.
+      const e1 = q.clone().sub(p), e2 = r.clone().sub(p);
+      if (e1.cross(e2).lengthSq() < 1e-4) return;
+      list.push(p.x, p.y, p.z, q.x, q.y, q.z, r.x, r.y, r.z);
+    };
+    // A lane nobody feeds end-to-end is fed from the AIR — after a free fall or out of a funnel —
+    // and its first rings are where marbles land. A lid there catches them on its TOP: Grand
+    // Spiral's field flies ~100 units off the five-lane fan, landed on the Finish lid, rolled off
+    // its edge and was lost. So those rings get walls but no lid.
+    const vv3 = (arr, r) => new THREE.Vector3(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2]);
+    // Fed = some other lane ENDS within FED_DIST of this lane's start. (A tighter test, ahead of
+    // and level with the end ring, missed Spiral Works' Penalty lane, which starts 12 units on
+    // from the Merge at an angle — it went unlidded and the unstick nudge launched marbles out.)
+    // Measured to the end ring's floor EDGE (B–C), not its midpoint: the outer lanes of a fan
+    // start 30–46 units to the side of the wide lane's centre, and a midpoint test called them
+    // fed from the air — which would have put a back kerb across their entrance.
+    const edge = new THREE.Line3(), onEdge = new THREE.Vector3();
+    const fedFromAir = LANES.map((L, li) => !LANES.some((M, mi) => {
+      if (mi === li) return false;
+      edge.start.copy(vv3(M.B, M.n - 1)); edge.end.copy(vv3(M.C, M.n - 1));
+      const p = vv3(L.P, 0);
+      return edge.closestPointToPoint(p, true, onEdge).distanceTo(p) < FED_DIST;
+    }));
+    LANES.forEach((L, li) => {
+      // A Catch lane is never lidded (it exists to catch what falls onto it) but still gets its
+      // walls raised: Grand Spiral's 160-wide catch pan lost marbles straight over its low sides.
+      const v = (arr, r) => new THREE.Vector3(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2]);
+      const topL = [], topR = [], baseL = [], baseR = [];
+      L.HLID = new Float32Array(L.n);   // lid height above the floor per ring, 0 = no lid (caps use it)
+      for (let r = 0; r < L.n; r++) {
+        const P = v(L.P, r), U = v(L.U, r), R = v(L.R, r);
+        t.copy(v(L.P, Math.min(L.n - 1, r + 1))).sub(v(L.P, Math.max(0, r - 1))).normalize();
+        let clear = Infinity;
+        for (let k = 0; k < all.length; k += 5) {
+          // Only a DIFFERENT part of the course can be an overpass: more than OVERPASS_DS along the
+          // race from this ring. Neighbouring track seen through a curving, banked frame — the lane
+          // that feeds a split mouth, or this lane's own next rings — otherwise read as a low
+          // ceiling, and cost Split A's detour the lid and wall extension facing the gap between
+          // its lanes. Sibling lanes over the same stretch still count (the weave crosses itself).
+          const M = LANES[all[k + 3]];
+          const sibling = M !== L && M.s0 === L.s0 && M.s1 === L.s1;
+          if (!sibling && Math.abs(M.S[all[k + 4]] - L.S[r]) < OVERPASS_DS) continue;
+          w.set(all[k] - P.x, all[k + 1] - P.y, all[k + 2] - P.z);
+          const hu = w.dot(U);
+          // Anything within OVERPASS_MIN of the floor is neighbouring track seen through a banked
+          // frame (Split A's feeding lane reads 3.5 units "above" the detour's first ring), not a
+          // ceiling. Real overpasses on these courses are ~46 units up.
+          if (hu < OVERPASS_MIN || hu >= clear) continue;
+          if (Math.abs(w.dot(R)) > L.REACH[r] + 2 || Math.abs(w.dot(t)) > 10) continue;
+          clear = hu;
+        }
+        const A = v(L.A, r), B = v(L.B, r), C = v(L.C, r), D = v(L.D, r);
+        const hA = A.clone().sub(B).dot(U), hD = D.clone().sub(C).dot(U);
+        // Lid at the taller of CONTAIN_H and the real walls, unless the level above is closer —
+        // then just under it. A wall already taller than that height simply is not extended.
+        const H = Math.min(Math.max(CONTAIN_H, hA, hD), clear - CONTAIN_MARGIN);
+        baseL.push(A); baseR.push(D);
+        if (!(H >= 4)) { topL.push(null); topR.push(null); continue; }   // no room: an overpass is the lid
+        if (L.open || (fedFromAir[li] && r < LANDING_RINGS)) {
+          // Landing zone: extend the walls, leave the top open (see fedFromAir).
+          const eL = A.clone().addScaledVector(U, Math.max(0, H - hA)), eD = D.clone().addScaledVector(U, Math.max(0, H - hD));
+          landing.push([li, r, eL, eD]);
+          topL.push(null); topR.push(null);
+          continue;
+        }
+        L.HLID[r] = H;
+        topL.push(A.clone().addScaledVector(U, Math.max(0, H - hA)));
+        topR.push(D.clone().addScaledVector(U, Math.max(0, H - hD)));
+      }
+      // Back kerb across the START of a lane fed from the air: marbles landing there at speed
+      // bounce up and backwards, and Spiral Works lost them rolling back out of Lower A's open
+      // start into the funnel throat behind it. KERB_H is low enough that anything arriving from
+      // above clears it.
+      if (fedFromAir[li]) {
+        const k0 = vv3(L.B, 0), k1 = vv3(L.C, 0), ku = vv3(L.U, 0).multiplyScalar(KERB_H);
+        pushTri(CONTAIN.walls, k0, k1, k1.clone().add(ku)); pushTri(CONTAIN.walls, k0, k1.clone().add(ku), k0.clone().add(ku));
+      }
+      // Landing-zone walls (no lid): extension quads between consecutive landing rings.
+      for (let k = 0; k + 1 < landing.length; k++) {
+        const [la, ra, eA, dA] = landing[k], [lb, rb, eB, dB] = landing[k + 1];
+        if (la !== li || lb !== li || rb !== ra + 1) continue;
+        pushTri(CONTAIN.walls, baseL[ra], baseL[rb], eB); pushTri(CONTAIN.walls, baseL[ra], eB, eA);
+        pushTri(CONTAIN.walls, baseR[ra], dB, baseR[rb]); pushTri(CONTAIN.walls, baseR[ra], dA, dB);
+      }
+      landing.length = 0;
+      const lidded = topL.filter(Boolean).length;
+      CONTAIN.stats.push({ lane: L.name, index: li, rings: L.n, lidded, caps: 0, fedFromAir: fedFromAir[li], unlidded: topL.map((t, i) => (t ? -1 : i)).filter((i) => i >= 0) });
+      let rail = null;
+      for (let r = 0; r < L.n - 1; r++) {
+        const a0 = topL[r], a1 = topL[r + 1], d0 = topR[r], d1 = topR[r + 1];
+        if (!a0 || !a1 || !d0 || !d1) { rail = null; continue; }
+        pushTri(CONTAIN.walls, baseL[r], baseL[r + 1], a1); pushTri(CONTAIN.walls, baseL[r], a1, a0);
+        pushTri(CONTAIN.walls, baseR[r], d1, baseR[r + 1]); pushTri(CONTAIN.walls, baseR[r], d0, d1);
+        pushTri(CONTAIN.lids, a0, a1, d1); pushTri(CONTAIN.lids, a0, d1, d0);
+        if (!rail) { rail = [[a0], [d0]]; CONTAIN.rails.push(rail[0], rail[1]); }
+        rail[0].push(a1); rail[1].push(d1);
+      }
+    });
+
+    const vv = (arr, r) => new THREE.Vector3(arr[r * 3], arr[r * 3 + 1], arr[r * 3 + 2]);
+
+    // ── junction bridges ──
+    // The shell is decimated per segment, so consecutive segments do not always share a ring: on
+    // Grand Spiral the Loop's last ring and Helix B's first sit ~8 units apart with NO floor
+    // between them, and the census parked ~50 marbles a race around that hole. Each lane's end
+    // ring is joined to the start ring of every lane that continues from it: floor (a collider,
+    // never drawn — the model already renders one there), both side walls up to the lid, and the
+    // lid. Where the two rings coincide (most split mouths) the bridge has no area and is skipped.
+    LANES.forEach((L, li) => {
+      if (L.open) return;
+      const r = L.n - 1;
+      const P = vv(L.P, r), U = vv(L.U, r);
+      const T = vv(L.P, r).sub(vv(L.P, r - 1)).normalize();   // out of this lane
+      const across = vv(L.C, r).sub(vv(L.B, r)).normalize();
+      LANES.forEach((M, mi) => {
+        if (mi === li || M.open) return;
+        const d = vv(M.P, 0).sub(P);
+        if (d.length() < 0.5 || d.dot(T) < -2 || d.dot(T) > 14 || Math.abs(d.dot(U)) > 8) return;
+        const TM = vv(M.P, 1).sub(vv(M.P, 0)).normalize();
+        if (TM.dot(T) < 0.3) return;   // must continue onward, not run alongside or back
+        // Bridge only where the two rings OVERLAP across their width. A split feeds several lanes
+        // from one wide end and a merge feeds one wide lane from several narrow ones; bridging
+        // each lane to the other's full width sent one lane's bridge walls straight across its
+        // sibling's path and jammed the whole field at the junction.
+        const LB = vv(L.B, r), LW = LB.distanceTo(vv(L.C, r));
+        const MB = vv(M.B, 0), MW = MB.distanceTo(vv(M.C, 0));
+        const acrossM = vv(M.C, 0).sub(MB).normalize();
+        const clamp = (u, w) => Math.max(0, Math.min(w, u));
+        // M's edges measured along L's line, and L's edges along M's line.
+        let a0 = vv(M.B, 0).sub(LB).dot(across), a1 = vv(M.C, 0).sub(LB).dot(across);
+        let b0 = LB.clone().sub(MB).dot(acrossM), b1 = vv(L.C, r).sub(MB).dot(acrossM);
+        const flipped = a0 > a1;   // the rings may run their B/C sides in opposite directions
+        if (flipped) [a0, a1] = [a1, a0];
+        if (b0 > b1) [b0, b1] = [b1, b0];
+        const uL0 = clamp(a0, LW), uL1 = clamp(a1, LW), uM0 = clamp(b0, MW), uM1 = clamp(b1, MW);
+        if (uL1 - uL0 < 1 || uM1 - uM0 < 1) return;   // they do not face each other
+        const lB = LB.clone().addScaledVector(across, uL0), lC = LB.clone().addScaledVector(across, uL1);
+        let mB = MB.clone().addScaledVector(acrossM, uM0), mC = MB.clone().addScaledVector(acrossM, uM1);
+        if (flipped) [mB, mC] = [mC, mB];
+        if (lB.distanceTo(mB) < 0.5 && lC.distanceTo(mC) < 0.5) return;
+        pushTri(CONTAIN.floors, lB, lC, mC); pushTri(CONTAIN.floors, lB, mC, mB);
+        const H = Math.min(L.HLID[r] || CONTAIN_H, M.HLID[0] || CONTAIN_H);
+        const up = (p) => p.clone().addScaledVector(U, H);
+        pushTri(CONTAIN.walls, lB, mB, up(mB)); pushTri(CONTAIN.walls, lB, up(mB), up(lB));
+        pushTri(CONTAIN.walls, lC, up(mC), mC); pushTri(CONTAIN.walls, lC, up(lC), up(mC));
+        pushTri(CONTAIN.lids, up(lB), up(mB), up(mC)); pushTri(CONTAIN.lids, up(lB), up(mC), up(lC));
+        CONTAIN.stats.find((st) => st.index === li).bridges = (CONTAIN.stats.find((st) => st.index === li).bridges || 0) + 1;
+      });
+    });
+
+    // ── end caps ──
+    // Where two lanes meet, the tube of each stops at its own end ring. When the lane beyond is
+    // NARROWER, the outer part of this end ring leads nowhere — no floor ahead, no wall — and a
+    // marble riding that edge simply leaves the course. That corner, not the lanes, is where the
+    // census losses were: Grand Spiral's 40-wide Washboard runs into the 32-wide Loop, and the
+    // Loop into Helix B. So each end ring that touches another lane's end ring gets a wall across
+    // whatever part of its width the neighbour does not cover. An end that meets NO lane (it opens
+    // into a funnel, the free fall or the finish run-out) is left open — that is the course.
+    //
+    // END rings (the downstream end, where a lane narrows into the next) get an ANGLED guide
+    // wall that steers marbles in. START rings wider than the lane feeding them get a FLAT wall
+    // along the junction line over the uncovered part: that seals the open corner between the two
+    // lanes' walls (Grand Spiral lost 44 marbles a race out of it at the start of Helix B) without
+    // standing in the flow — an angled wall there made a pocket that parked ~40 marbles instead.
+    LANES.forEach((L, li) => {
+      if (L.open) return;
+      for (const r of [0, L.n - 1]) {
+        const B = vv(L.B, r), C = vv(L.C, r), P = vv(L.P, r), U = vv(L.U, r);
+        const W = B.distanceTo(C);
+        const across = C.clone().sub(B).normalize();
+        const T = vv(L.P, r === 0 ? 1 : L.n - 2).sub(P).normalize();   // into this lane
+        const spans = [];
+        LANES.forEach((M, mi) => {
+          if (mi === li) return;
+          for (const q of [0, M.n - 1]) {
+            const d = vv(M.P, q).sub(P);
+            if (Math.abs(d.dot(T)) > 8 || Math.abs(d.dot(U)) > 6) continue;
+            // Only a lane that CONTINUES beyond this end counts — its interior must run the other
+            // way. A sibling lane that starts or ends alongside this one (a split's other branch,
+            // the fan into the free fall) runs the same way, and counting it capped the whole mouth.
+            const TM = vv(M.P, q === 0 ? 1 : M.n - 2).sub(vv(M.P, q)).normalize();
+            if (TM.dot(T) > -0.3) continue;
+            const u0 = vv(M.B, q).sub(B).dot(across), u1 = vv(M.C, q).sub(B).dot(across);
+            spans.push([Math.max(0, Math.min(u0, u1)), Math.min(W, Math.max(u0, u1))]);
+          }
+        });
+        if (!spans.length) continue;   // an open end: funnel, free fall, finish
+        spans.sort((a, b) => a[0] - b[0]);
+        const gaps = [];
+        let at = 0;
+        for (const [a, b] of spans) {
+          if (a > at + 1) gaps.push([at, a]);
+          at = Math.max(at, b);
+        }
+        if (W > at + 1) gaps.push([at, W]);
+        const H = L.HLID[r] || Math.max(CONTAIN_H, vv(L.A, r).sub(B).dot(U), vv(L.D, r).sub(C).dot(U));
+        // A gap at the lane's EDGE gets an angled guide wall, not a flat one: from the floor edge
+        // CAP_BACK rings back into this lane to where the neighbour's floor begins at the end
+        // ring. A flat cap made a pocket that marbles ran into and parked in; the angled wall
+        // steers them into the narrower lane. A gap in the MIDDLE (between two continuing lanes)
+        // gets a flat nose across it.
+        const back = r === 0 ? Math.min(L.n - 1, CAP_BACK) : Math.max(0, L.n - 1 - CAP_BACK);
+        for (const [a, b] of gaps) {
+          let p0, p1;
+          if (r !== 0 && a < 0.5) { p0 = vv(L.B, back); p1 = B.clone().addScaledVector(across, b); }
+          else if (r !== 0 && b > W - 0.5) { p0 = vv(L.C, back); p1 = B.clone().addScaledVector(across, a); }
+          else { p0 = B.clone().addScaledVector(across, a); p1 = B.clone().addScaledVector(across, b); }
+          const q0 = p0.clone().addScaledVector(U, H), q1 = p1.clone().addScaledVector(U, H);
+          pushTri(CONTAIN.walls, p0, p1, q1); pushTri(CONTAIN.walls, p0, q1, q0);
+          CONTAIN.stats.find((st) => st.index === li).caps++;
+        }
+      }
+    });
+  }
+
+  /**
+   * Swept guard over the containment surfaces (2026-09-30).
+   *
+   * The containment is a single-sided triangle shell, and cannon-es only keeps a sphere on the
+   * near side of a triangle while its CENTRE is on the near side. At the 85 u/s speed cap a marble
+   * moves 1.42 units a step — more than its 1-unit radius — so a head-on hit carries the centre
+   * through in one step and the solver then pushes it out the FAR side. Floors never see this
+   * (marbles press into them gently); walls and lids take head-on hits, and the first census with
+   * containment still lost 41 marbles straight through Grand Spiral's fully lidded Loop.
+   *
+   * So each frame the engine traces every marble's path against these triangles (a uniform grid
+   * keeps it to a handful of tests) and, on a crossing, puts the marble back on the inside. This is
+   * the one part of the course that must never be crossed, so there is no legitimate crossing to
+   * get wrong.
+   */
+  function createSweepGuard(soups) {
+    const CELL = 12;
+    const SEAM = 0.03;
+    const tris = [];
+    for (const soup of soups) for (let i = 0; i < soup.length; i += 9) tris.push(soup.slice(i, i + 9));
+    const grid = new Map();
+    const key = (x, y, z) => `${x},${y},${z}`;
+    tris.forEach((t, ti) => {
+      const lo = [0, 1, 2].map((a) => Math.floor(Math.min(t[a], t[a + 3], t[a + 6]) / CELL));
+      const hi = [0, 1, 2].map((a) => Math.floor(Math.max(t[a], t[a + 3], t[a + 6]) / CELL));
+      for (let x = lo[0]; x <= hi[0]; x++) for (let y = lo[1]; y <= hi[1]; y++) for (let z = lo[2]; z <= hi[2]; z++) {
+        const k = key(x, y, z);
+        let b = grid.get(k);
+        if (!b) grid.set(k, (b = []));
+        b.push(ti);
+      }
+    });
+    const seen = new Set();
+    const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), pv = new THREE.Vector3(), tv = new THREE.Vector3(), qv = new THREE.Vector3();
+    const dir = new THREE.Vector3(), n = new THREE.Vector3();
+    /**
+     * @param {{x,y,z}} p0 position before the step @param {{x,y,z}} p1 position after it
+     * @param {THREE.Vector3} outPoint where to put the marble back @param {THREE.Vector3} outNormal
+     *   unit normal pointing back inside (against the motion)
+     * @returns {boolean} true when the path crossed a containment triangle
+     */
+    return function sweep(p0, p1, radius, outPoint, outNormal) {
+      dir.set(p1.x - p0.x, p1.y - p0.y, p1.z - p0.z);
+      if (dir.lengthSq() < 1e-8) return false;
+      const lo = [Math.min(p0.x, p1.x), Math.min(p0.y, p1.y), Math.min(p0.z, p1.z)].map((v) => Math.floor(v / CELL));
+      const hi = [Math.max(p0.x, p1.x), Math.max(p0.y, p1.y), Math.max(p0.z, p1.z)].map((v) => Math.floor(v / CELL));
+      seen.clear();
+      let bestT = Infinity;
+      for (let x = lo[0]; x <= hi[0]; x++) for (let y = lo[1]; y <= hi[1]; y++) for (let z = lo[2]; z <= hi[2]; z++) {
+        const b = grid.get(key(x, y, z));
+        if (!b) continue;
+        for (const ti of b) {
+          if (seen.has(ti)) continue;
+          seen.add(ti);
+          const t = tris[ti];
+          // Möller–Trumbore, segment form (0 <= t <= 1).
+          e1.set(t[3] - t[0], t[4] - t[1], t[5] - t[2]);
+          e2.set(t[6] - t[0], t[7] - t[1], t[8] - t[2]);
+          pv.crossVectors(dir, e2);
+          const det = e1.dot(pv);
+          if (Math.abs(det) < 1e-9) continue;
+          const inv = 1 / det;
+          tv.set(p0.x - t[0], p0.y - t[1], p0.z - t[2]);
+          // A small barycentric tolerance so adjacent triangles OVERLAP at their shared edges: a
+          // path grazing the seam between a lane wall and the extension above it slipped between
+          // the two exact tests (Spiral Works' Split-A mouth).
+          const u = tv.dot(pv) * inv;
+          if (u < -SEAM || u > 1 + SEAM) continue;
+          qv.crossVectors(tv, e1);
+          const v = dir.dot(qv) * inv;
+          if (v < -SEAM || u + v > 1 + SEAM) continue;
+          const tt = e2.dot(qv) * inv;
+          if (tt < 0 || tt > 1 || tt >= bestT) continue;
+          bestT = tt;
+          n.crossVectors(e1, e2).normalize();
+          if (n.dot(dir) > 0) n.negate();
+          outNormal.copy(n);
+        }
+      }
+      if (bestT === Infinity) return false;
+      outPoint.set(p0.x + dir.x * bestT, p0.y + dir.y * bestT, p0.z + dir.z * bestT).addScaledVector(outNormal, radius + 0.05);
+      return true;
+    };
+  }
+
+  const RIM_H = 20;
+  const rimDebug = { filled: 0, entrances: 0 };
+  const RIM_BINS = 72;
+  /** Append a vertical wall around a funnel's rim to `out` (a triangle soup). See buildTrack. */
+  function buildRimWall(wx, wy, wz, out) {
+    const n = wx.length;
+    let minY = Infinity, maxY = -Infinity, cx = 0, cz = 0;
+    for (let i = 0; i < n; i++) { minY = Math.min(minY, wy[i]); maxY = Math.max(maxY, wy[i]); cx += wx[i]; cz += wz[i]; }
+    cx /= n; cz /= n;
+    const top = maxY - (maxY - minY) * 0.25;
+    const bins = new Array(RIM_BINS).fill(null);
+    for (let i = 0; i < n; i++) {
+      if (wy[i] < top) continue;
+      const dx = wx[i] - cx, dz = wz[i] - cz, r = Math.hypot(dx, dz);
+      const b = Math.floor(((Math.atan2(dz, dx) + Math.PI) / (2 * Math.PI)) * RIM_BINS) % RIM_BINS;
+      if (!bins[b] || r > bins[b].r) bins[b] = { r, p: new THREE.Vector3(wx[i], wy[i], wz[i]) };
+    }
+    // Leave open the angular sector each lane end faces the funnel through: that is an entrance
+    // (a feed channel ending at or above the rim — Spiral Works' drops in from well above it) or an
+    // exit. Only END rings count, and only ones level with or above the rim and near it
+    // horizontally; the lanes the funnel drains into start far below it.
+    let maxR = 0;
+    for (const b of bins) if (b) maxR = Math.max(maxR, b.r);
+    const ang = (x, z) => Math.atan2(z - cz, x - cx);
+    const sectors = [];
+    for (const L of LANES) {
+      for (const r of [0, L.n - 1]) {
+        const px = L.P[r * 3], py = L.P[r * 3 + 1], pz = L.P[r * 3 + 2];
+        if (Math.hypot(px - cx, pz - cz) > maxR + 30 || py < top - 15 || py > maxY + 45) continue;
+        const a = [ang(L.B[r * 3], L.B[r * 3 + 2]), ang(L.C[r * 3], L.C[r * 3 + 2]), ang(px, pz)];
+        sectors.push({ mid: a[2], half: Math.max(...a.map((x) => Math.abs(Math.atan2(Math.sin(x - a[2]), Math.cos(x - a[2]))))) + 0.15 });
+      }
+    }
+    const nearLane = (m) => sectors.some((sc) => {
+      const a = ang(m.x, m.z);
+      return Math.abs(Math.atan2(Math.sin(a - sc.mid), Math.cos(a - sc.mid))) <= sc.half;
+    });
+    const up = new THREE.Vector3(0, RIM_H, 0);
+    // Join consecutive FILLED bins: a low-poly funnel (Grand Spiral's has 18 rim vertices) leaves
+    // most bins empty, and joining only adjacent bins built no wall at all.
+    const rim = bins.filter(Boolean);
+    rimDebug.filled = rim.length;
+    for (let b = 0; b < rim.length; b++) {
+      const a = rim[b], c = rim[(b + 1) % rim.length];
+      const mid = a.p.clone().add(c.p).multiplyScalar(0.5);
+      if (nearLane(mid)) { rimDebug.entrances++; continue; }
+      const a2 = a.p.clone().add(up), c2 = c.p.clone().add(up);
+      out.push(a.p.x, a.p.y, a.p.z, c.p.x, c.p.y, c.p.z, c2.x, c2.y, c2.z);
+      out.push(a.p.x, a.p.y, a.p.z, c2.x, c2.y, c2.z, a2.x, a2.y, a2.z);
+    }
+  }
+
+  const _lp = new THREE.Vector3();
+  /**
+   * Refine a main-line projection against the lanes that span its `s`: pick the lane whose floor
+   * the point is actually over (smallest overhang past the floor edge, then nearest the floor)
+   * and restate lateral/height in THAT lane's frame. Leaves `out` on the main frame when no lane
+   * covers `s` (the funnel, a free fall).
+   */
+  function refineLane(x, y, z, out) {
+    out.lane = -1;
+    out.hw = halfWidthAt(out.s);
+    out.reach = out.hw;
+    let bestScore = Infinity;
+    for (let li = 0; li < LANES.length; li++) {
+      const L = LANES[li];
+      if (out.s < L.s0 - 30 || out.s > L.s1 + 30) continue;
+      // Nearest ring in space, starting from the ring whose mapped `s` matches.
+      let lo = 0, hi = L.n - 1;
+      while (lo < hi) { const m = (lo + hi) >> 1; if (L.S[m] < out.s) lo = m + 1; else hi = m; }
+      let k = lo, kd = Infinity;
+      for (let r = Math.max(0, lo - 4); r <= Math.min(L.n - 1, lo + 4); r++) {
+        const dx = x - L.P[r * 3], dy = y - L.P[r * 3 + 1], dz = z - L.P[r * 3 + 2];
+        const dd = dx * dx + dy * dy + dz * dz;
+        if (dd < kd) { kd = dd; k = r; }
+      }
+      _lp.set(x - L.P[k * 3], y - L.P[k * 3 + 1], z - L.P[k * 3 + 2]);
+      const lat = _lp.x * L.R[k * 3] + _lp.y * L.R[k * 3 + 1] + _lp.z * L.R[k * 3 + 2];
+      const h = _lp.x * L.U[k * 3] + _lp.y * L.U[k * 3 + 1] + _lp.z * L.U[k * 3 + 2];
+      const score = Math.max(0, Math.abs(lat) - L.HW[k]) + Math.abs(h - 1);
+      if (score < bestScore) {
+        bestScore = score;
+        out.lane = li; out.ring = k;
+        out.lateral = lat; out.height = h; out.hw = L.HW[k]; out.reach = L.REACH[k];
+      }
+    }
+    return out;
   }
 
   /**
@@ -560,6 +1138,8 @@ export function createGlbCourse({
     };
     const addSurface = (shape) => addStatic(shape, materials.surface);
 
+    const shellSoup = [];   // every static track triangle, for the swept guard (see below)
+
     // The swept channels collide against the BAKED shell, not the rendered mesh — only the surface
     // a marble can actually reach, decimated along the sweep. See the course's track*-collision.js
     // and the baker for what that costs in fidelity (essentially nothing) and buys in frame time
@@ -586,12 +1166,22 @@ export function createGlbCourse({
       for (const [indices, material] of zoned) {
         if (!indices || !indices.length) continue;
         for (const shape of chunkedTrimeshes(cx, cy, cz, indices)) addStatic(shape, material);
+        for (let t = 0; t < indices.length; t++) {
+          const v = indices[t];
+          shellSoup.push(cx[v], cy[v], cz[v]);
+        }
       }
     }
 
     // A funnel is not a swept channel, so the baker has no ring structure to loft a shell from and
     // it collides against its rendered geometry. Its reachable surface is the inside of the cone,
     // whose normals all point upward, so a single normal test culls the underside exactly.
+    //
+    // The funnel also gets a RIM WALL (2026-09-30): marbles arriving fast spun up and over its lip —
+    // 30 of Grand Spiral's census losses. The rim is the outermost top vertex per angle bin around
+    // the funnel's axis, extruded straight up RIM_H. Bins where a lane meets the rim (the channel
+    // that feeds the funnel) are left open, or the wall would shut the entrance.
+    const rimWalls = [];
     if (bowlMeshName) {
       for (const mesh of trackMeshes) {
         if (mesh.name !== bowlMeshName) continue;
@@ -602,8 +1192,60 @@ export function createGlbCourse({
           return e1z * e2x - e1x * e2z > 0;   // the +Y component of (e1 x e2)
         };
         for (const shape of chunkedTrimeshes(wx, wy, wz, indices, upwardFacing)) addSurface(shape);
+        for (let t = 0; t < indices.length; t += 3) {
+          const a = indices[t], b = indices[t + 1], c = indices[t + 2];
+          if (!upwardFacing(a, b, c)) continue;
+          shellSoup.push(wx[a], wy[a], wz[a], wx[b], wy[b], wz[b], wx[c], wy[c], wz[c]);
+        }
+        buildRimWall(wx, wy, wz, rimWalls);
       }
     }
+
+    // ── containment: colliders + glass (see CONTAIN above) ──
+    // Colliders from the same soup the glass is drawn from, so what you see is what stops you.
+    const soupBodies = (soup) => {
+      const n = soup.length / 3;
+      const wx = new Float64Array(n), wy = new Float64Array(n), wz = new Float64Array(n);
+      for (let i = 0; i < n; i++) { wx[i] = soup[i * 3]; wy[i] = soup[i * 3 + 1]; wz[i] = soup[i * 3 + 2]; }
+      const idx = new Uint32Array(n);
+      for (let i = 0; i < n; i++) idx[i] = i;
+      for (const shape of chunkedTrimeshes(wx, wy, wz, idx)) addSurface(shape);
+    };
+    soupBodies(CONTAIN.walls);
+    soupBodies(CONTAIN.lids);
+    soupBodies(CONTAIN.floors);
+    soupBodies(rimWalls);
+    // The guard covers the WHOLE course, not just the containment: a marble's centre never has a
+    // legitimate reason to cross any track surface, and the original shell walls tunnel exactly
+    // like the new ones (the Split-A mouth on Spiral Works lost marbles through its own lane wall).
+    const sweepGuard = createSweepGuard([CONTAIN.walls, CONTAIN.lids, CONTAIN.floors, rimWalls, shellSoup]);
+    const glass = (soup, opacity) => {
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(soup, 3));
+      geo.computeVertexNormals();
+      const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
+        color: 0xcfefff, roughness: 0.05, metalness: 0, transparent: true, opacity,
+        depthWrite: false, side: THREE.DoubleSide,
+      }));
+      mesh.userData.noAO = true;   // transparent: keep it out of GTAO's prepass (scene.js)
+      mesh.name = 'ContainmentGlass';
+      group.add(mesh);
+    };
+    // Walls only: the lid stays an invisible collider. A glass ceiling over every channel read as
+    // a haze over the whole course (user call, 2026-09-30).
+    glass(CONTAIN.walls, 0.1);
+    if (rimWalls.length) glass(rimWalls, 0.1);
+    {
+      // A bright rail along each lid edge: the glass itself is nearly invisible by design, the
+      // rail is what tells the eye "there is a wall up to here".
+      const railMat = new THREE.LineBasicMaterial({ color: 0xa5f3fc, transparent: true, opacity: 0.45 });
+      for (const pts of CONTAIN.rails) group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), railMat));
+    }
+
+    // ── brake bands (2026-09-30) ──
+    // Amber rumble strips before the narrow lane mouths: marbles were reaching them at the 85 u/s
+    // speed cap. game.js caps speed on them (brakeAt); this is the painted strip that says so.
+    for (const [a, b] of BRAKE_BANDS) group.add(floorBand(a, b, brakeTexture(), 0.3, 'BrakeBand'));
 
     // ── obstacle primitives ──
     for (const node of propNodes) {
@@ -700,46 +1342,9 @@ export function createGlbCourse({
     // Decorative only — no collider. It is lifted clear of the floor and given a polygon offset
     // so it cannot z-fight the surface it sits on.
     {
-      const STEPS = 8, LIFT = 0.35, BAND = 26;
+      const BAND = 26;
       const s0 = Math.max(0, TRACK.FINISH_S - BAND * 0.5);
-      const pos = [], uv = [], idx = [];
-      const c = new THREE.Vector3(), r = new THREE.Vector3(), u = new THREE.Vector3();
-      for (let i = 0; i <= STEPS; i++) {
-        const along = (BAND * i) / STEPS;
-        const s = s0 + along;
-        centerAt(s, c); rightAt(s, r); upAt(s, u);
-        const hw = halfWidthAt(s);
-        for (const side of [-1, 1]) {
-          pos.push(
-            c.x + r.x * hw * side + u.x * LIFT,
-            c.y + r.y * hw * side + u.y * LIFT,
-            c.z + r.z * hw * side + u.z * LIFT,
-          );
-          // U spans the real channel width so the squares stay square however wide it is.
-          uv.push(side < 0 ? 0 : (hw * 2) / CHECKER_SIZE, along / CHECKER_SIZE);
-        }
-      }
-      for (let i = 0; i < STEPS; i++) {
-        const a = i * 2;
-        idx.push(a, a + 1, a + 3, a, a + 3, a + 2);
-      }
-      const geo = new THREE.BufferGeometry();
-      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-      geo.setIndex(idx);
-      geo.computeVertexNormals();
-      const banner = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({
-        map: checkerTexture(),
-        roughness: 0.72,
-        metalness: 0.0,
-        side: THREE.DoubleSide,
-        polygonOffset: true,
-        polygonOffsetFactor: -2,
-        polygonOffsetUnits: -2,
-      }));
-      banner.receiveShadow = true;
-      banner.name = 'FinishBanner';
-      group.add(banner);
+      group.add(floorBand(s0, s0 + BAND, checkerTexture(), 0.35, 'FinishBanner'));
     }
 
     // ── starting grid ──
@@ -855,14 +1460,40 @@ export function createGlbCourse({
        * falls with lateral ~ 0, satisfied the height test alone, and so was never retired at all.
        * It just kept falling while still holding its place in the standings.
        */
-      isOutOfBounds: (proj) => proj.height < -OOB_DROP || Math.abs(proj.lateral) > halfWidthAt(proj.s) + OOB_LATERAL,
+      isOutOfBounds: (proj) => proj.height < -OOB_DROP
+        || Math.abs(proj.lateral) > (proj.lane >= 0 ? proj.reach : halfWidthAt(proj.s)) + OOB_LATERAL,
+
+      // Speed cap on a brake band at `s`, 0 elsewhere (game.js _applyBrakes).
+      ...(BRAKE_BANDS.length ? { brakeAt } : {}),
+      // Where the checkpoint arches stand (maps.js) and sector times split (game.js).
+      checkpoints: CHECKPOINTS,
+      // Per-lane containment coverage, for the map certification test's diagnostics.
+      containment: CONTAIN.stats,
+      laneNames: LANES.map((l) => l.name),
+      rimSegments: rimWalls.length / 18,
+      rimDebug,
+      // Swept check against the containment surfaces — see createSweepGuard.
+      sweepGuard,
+
+      /**
+       * Which way the course runs at a projected position: along the marble's own lane where it
+       * has one (across a junction the main line's tangent is turned ~90° to the channel), else
+       * along the main line. game.js aims its unstick nudge with this.
+       */
+      flowDir: (proj, out) => {
+        if (proj.lane < 0) return dirAt(proj.s, out);
+        const L = LANES[proj.lane];
+        const a = Math.min(proj.ring, L.n - 2);
+        return out.set(L.P[(a + 1) * 3] - L.P[a * 3], L.P[(a + 1) * 3 + 1] - L.P[a * 3 + 1], L.P[(a + 1) * 3 + 2] - L.P[a * 3 + 2]).normalize();
+      },
 
       /**
        * Floor point directly beneath a marble, for its contact shadow. Projected onto the local
        * floor PLANE rather than to a world-Y height, so the shadow stays planted on banked turns.
        */
       floorPoint: (pos, proj, out) => {
-        const up = upAt(proj.s, _scratchUp);
+        const L = proj.lane >= 0 ? LANES[proj.lane] : null;
+        const up = L ? _scratchUp.fromArray(L.U, proj.ring * 3) : upAt(proj.s, _scratchUp);
         return out.set(pos.x, pos.y, pos.z).addScaledVector(up, -proj.height + 0.06);
       },
 

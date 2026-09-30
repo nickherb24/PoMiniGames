@@ -40,6 +40,22 @@ const IMPACT_SECONDS = 0.22;
 // #10 — impulse response length for the convolution reverb.
 const IR_SECONDS = 1.5;
 
+// ── Surface-aware rolling (GFX 2026-09-30) ──
+// The rolling bed used to be one bandpass riding the LEADER's speed on every surface. It now
+// follows the camera's marble and the material it is actually touching (game.js reads the
+// contact list after each step): filter shape, level and a tremolo rate/depth per surface. The
+// tremolo is what makes a rumble band or a washboard read as ridges rather than as louder noise.
+// `air` is silence — a marble in flight makes no rolling sound, which sells the jumps.
+const SURFACES = {
+  surface: { type: 'bandpass', lo: 140, span: 620, q: 1.1, gain: 1.0, trem: 0, rate: 0 },
+  obstacle: { type: 'bandpass', lo: 180, span: 700, q: 1.4, gain: 1.0, trem: 0, rate: 0 },
+  rumble: { type: 'lowpass', lo: 90, span: 300, q: 2.4, gain: 1.7, trem: 0.55, rate: 22 },
+  bump: { type: 'bandpass', lo: 120, span: 380, q: 2.0, gain: 1.5, trem: 0.85, rate: 9 },
+  ice: { type: 'highpass', lo: 2200, span: 2400, q: 0.7, gain: 0.8, trem: 0, rate: 0 },
+  boost: { type: 'bandpass', lo: 320, span: 1100, q: 0.9, gain: 1.35, trem: 0.2, rate: 34 },
+  air: { type: 'bandpass', lo: 140, span: 620, q: 1.1, gain: 0, trem: 0, rate: 0 },
+};
+
 export function createAudio() {
   let ctx = null;
   let muted = false;
@@ -50,6 +66,8 @@ export function createAudio() {
   let master = null, comp = null, bedBus = null, sfxBus = null;
   let reverbSend = null, convolver = null;
   let rollSrc = null, rollFilter = null, rollGain = null;
+  let rollTrem = null, tremOsc = null, tremDepth = null, rollKind = 'surface';
+  let ownsCtx = false;
   let crowdSrc = null, crowdFilter = null, crowdGain = null;
   let droneOscs = null, droneFilter = null, droneGain = null, droneBase = null;
   let noiseBuf = null;
@@ -162,7 +180,17 @@ export function createAudio() {
     rollFilter.Q.value = 1.1;
     rollGain = c.createGain();
     rollGain.gain.value = 0;
-    rollSrc.connect(rollFilter).connect(rollGain).connect(bedBus);
+    // Tremolo: an LFO added onto a unity gain. Depth 0 leaves the bed untouched.
+    rollTrem = c.createGain();
+    rollTrem.gain.value = 1;
+    tremOsc = c.createOscillator();
+    tremOsc.type = 'triangle';
+    tremOsc.frequency.value = 12;
+    tremDepth = c.createGain();
+    tremDepth.gain.value = 0;
+    tremOsc.connect(tremDepth).connect(rollTrem.gain);
+    tremOsc.start();
+    rollSrc.connect(rollFilter).connect(rollGain).connect(rollTrem).connect(bedBus);
     rollSrc.start();
 
     // Crowd bed: the same noise, lowpassed hard and swelled as the race resolves.
@@ -225,8 +253,11 @@ export function createAudio() {
     if (!ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return null;
-      // Shared context (js/audioBus.js) — one AudioContext for the whole app.
-      ctx = (window.PoAudioBus && window.PoAudioBus.contextSync()) || new AC();
+      // Shared context (js/audioBus.js) — one AudioContext for the whole app. `ownsCtx` records
+      // whether this module made its own, because only then may dispose() close it: closing the
+      // shared one silenced every other game (and the music) for the rest of the visit.
+      ctx = (window.PoAudioBus && window.PoAudioBus.contextSync()) || null;
+      if (!ctx) { ctx = new AC(); ownsCtx = true; }
 
       // #7 — master → compressor → destination. The compressor is the safety net that the old
       // single-gain graph never had: it catches the gun, a sting and a burst of impacts landing
@@ -291,16 +322,26 @@ export function createAudio() {
   }
 
   // ── Continuous beds ───────────────────────────────────────────────────
-  // Called every frame from the game loop. `speed` is the focused marble's speed;
-  // `nearFinish` (0..1) drives the crowd swell and the tension drone.
-  function updateBeds(speed, nearFinish, racing) {
+  // Called every frame from the game loop. `speed` is the focused marble's speed and `surface` a
+  // SURFACES key for what it is touching; `nearFinish` (0..1) drives the crowd and the drone.
+  function updateBeds(speed, nearFinish, racing, surface) {
     if (!ctx || !rollGain) return;
     const now = ctx.currentTime;
     const v = Math.min(1, Math.max(0, speed / 45));
+    const sf = SURFACES[surface] || SURFACES.surface;
+    // A filter TYPE can't be ramped, so it only changes on a surface change (a click there is
+    // masked by the change itself); everything continuous is ramped.
+    if (surface !== rollKind && SURFACES[surface]) {
+      rollKind = surface;
+      rollFilter.type = sf.type;
+      rollFilter.Q.setTargetAtTime(sf.q, now, 0.03);
+      tremOsc.frequency.setTargetAtTime(sf.rate || 12, now, 0.03);
+    }
     // Ramp rather than set: a per-frame setValueAtTime on a gain is a zipper-noise generator.
-    const rollTarget = racing ? 0.02 + v * 0.16 : 0;
-    rollGain.gain.setTargetAtTime(rollTarget, now, 0.08);
-    rollFilter.frequency.setTargetAtTime(140 + v * 620, now, 0.08);
+    const rollTarget = racing ? (0.02 + v * 0.16) * sf.gain : 0;
+    rollGain.gain.setTargetAtTime(rollTarget, now, surface === 'air' ? 0.03 : 0.08);
+    rollFilter.frequency.setTargetAtTime(sf.lo + v * sf.span, now, 0.08);
+    tremDepth.gain.setTargetAtTime(sf.trem * (0.4 + 0.6 * v), now, 0.05);
 
     const near = Math.max(0, Math.min(1, nearFinish));
     const crowdTarget = racing ? 0.015 + near * 0.13 : 0.01;
@@ -436,10 +477,10 @@ export function createAudio() {
     tone(240, c.currentTime + 0.01, 0.26, 0.09, 'sawtooth', 900, cueNode(cue));
   }
 
-  // Overtake: a two-note blip. Throttled — the pack trades places constantly in
-  // traffic and an unthrottled cue turns into a machine gun. Unspatialized: it's about YOUR
-  // standing, not about a location on the track.
-  function playOvertake(gained) {
+  // Overtake: a two-note rise when you gain a place, a fall when you lose one. Throttled — the
+  // pack trades places constantly in traffic. `cue` places it where the OTHER marble is (the one
+  // you passed, or the one that passed you), so you hear which side the move happened on.
+  function playOvertake(gained, cue) {
     const c = ensure();
     if (!c) return;
     const now = c.currentTime;
@@ -447,8 +488,33 @@ export function createAudio() {
     lastOvertake = now;
     const a = gained ? 587.33 : 466.16;
     const b = gained ? 880.0 : 349.23;
-    tone(a, now + 0.01, 0.09, 0.1, 'square');
-    tone(b, now + 0.09, 0.11, 0.1, 'square');
+    const dest = cueNode(cue ? { pan: cue.pan, gain: 1 } : null);
+    tone(a, now + 0.01, 0.09, 0.1, 'square', null, dest);
+    tone(b, now + 0.09, 0.11, 0.1, 'square', null, dest);
+  }
+
+  // Your own top-10 finish: a crowd roar that swells in and rolls off over ~2 s, on top of the
+  // finish chime. The same noise buffer as the beds, lowpassed into a mass of voices.
+  function playRoar() {
+    const c = ensure();
+    if (!c || !noiseBuf) return;
+    const now = c.currentTime;
+    const src = c.createBufferSource();
+    src.buffer = noiseBuf;
+    src.loop = true;
+    const lp = c.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(500, now);
+    lp.frequency.linearRampToValueAtTime(1600, now + 0.35);
+    lp.frequency.linearRampToValueAtTime(700, now + 2.2);
+    const g = c.createGain();
+    g.gain.setValueAtTime(0.0001, now);
+    g.gain.exponentialRampToValueAtTime(0.45, now + 0.3);
+    g.gain.exponentialRampToValueAtTime(0.0001, now + 2.3);
+    src.connect(lp).connect(g).connect(sfxBus);
+    src.start(now);
+    src.stop(now + 2.4);
+    duck(0.4, 0.6);
   }
 
   // Finish chime for a marble crossing the line. Spatialized, so a pack finishing ahead of you
@@ -486,6 +552,7 @@ export function createAudio() {
     playGun,
     playWhoosh,
     playOvertake,
+    playRoar,
     playFinish,
     updateBeds,
     silenceBeds,
@@ -499,8 +566,11 @@ export function createAudio() {
         // The drone oscillators are long-running sources like the beds — leaving them started
         // keeps the context alive after close() in some browsers.
         if (droneOscs) for (const o of droneOscs) { try { o.stop(); } catch { } }
-        try { ctx.close(); } catch { }
+        try { tremOsc && tremOsc.stop(); } catch { }
+        // The shared context outlives this game: detach our graph from it instead of closing it.
+        if (ownsCtx) { try { ctx.close(); } catch { } } else { try { master && master.disconnect(); } catch { } }
         ctx = null; master = null; comp = null; bedBus = null; sfxBus = null;
+        rollTrem = null; tremOsc = null; tremDepth = null; ownsCtx = false;
         reverbSend = null; convolver = null;
         rollSrc = null; crowdSrc = null; rollGain = null; crowdGain = null;
         droneOscs = null; droneGain = null; droneFilter = null; droneBase = null;

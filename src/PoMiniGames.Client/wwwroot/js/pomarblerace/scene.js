@@ -1,6 +1,7 @@
 // scene.js — Three.js renderer/scene/lights + smooth orbit-follow camera, plus the
 // post-processing pipeline: ACES tone mapping, dynamic shadows, GTAO, a transient rack focus,
-// a colour grade, SMAA, a speed-reactive FOV and GPU sparks.
+// a colour grade, SMAA, a speed-reactive FOV, GPU sparks, pooled impact light pulses and a
+// per-map lighting theme (setTheme).
 //
 // 2026-08-08 (user request) removed from this file: bloom (#2), the vignette (#6), chromatic
 // aberration (#7), image-based lighting (#17) and the graded background (#20).
@@ -118,6 +119,9 @@ export function createScene(container) {
   renderer.toneMappingExposure = 1.15;
   renderer.shadowMap.enabled = true;                     // #3 — dynamic shadows
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // The glass marbles (marbles.js, heavy tier) render the scene once more for refraction; they
+  // are small on screen, so half resolution is indistinguishable and halves that pass.
+  renderer.transmissionResolutionScale = 0.5;
   // FLICKER FIX (1/4) — anisotropy. Every procedural texture in track.js pinned itself to 4,
   // and the kerb stripes (hard red/white, seen at grazing angles by a chase cam) aliased into
   // crawling moiré at that level. Textures inherit this default, so raising it here raises it
@@ -169,8 +173,10 @@ export function createScene(container) {
   // cyberpunk palette, but a blue fill lands on the largest surface in the scene and made the
   // asphalt read as blue-grey — measured at a +37 blue bias over the road, which is what the
   // grey road texture was fighting. A faint cool sky tint is kept so the scene is not sterile.
-  scene.add(new THREE.AmbientLight(0xb6b8bd, 3.6));
-  scene.add(new THREE.HemisphereLight(0xc2ccdd, 0x3a3c42, 2.2));
+  const ambient = new THREE.AmbientLight(0xb6b8bd, 3.6);
+  scene.add(ambient);
+  const hemi = new THREE.HemisphereLight(0xc2ccdd, 0x3a3c42, 2.2);
+  scene.add(hemi);
   const key = new THREE.DirectionalLight(0xffffff, 3.0);
   key.position.set(40, 80, -30);
   key.castShadow = true;
@@ -266,6 +272,15 @@ export function createScene(container) {
     // the crease where a marble meets the road.
     gtao.updateGtaoMaterial({ radius: 2.2, distanceExponent: 1.0, thickness: 1.0, scale: 1.1 });
     composer.addPass(gtao);
+    // The pass hides Points and Lines from its depth/normal prepass but not Meshes, so an additive
+    // Mesh (the ribbon trails) was written as solid depth and drew a black AO smear. Objects marked
+    // userData.noAO are hidden too; restoreVisibility() restores them from the cache the original
+    // overrideVisibility() just filled.
+    const hideFromAo = gtao.overrideVisibility.bind(gtao);
+    gtao.overrideVisibility = () => {
+      hideFromAo();
+      scene.traverse((o) => { if (o.userData.noAO) o.visible = false; });
+    };
   }
 
   // Bloom (#2) removed 2026-08-08 (user request).
@@ -283,8 +298,54 @@ export function createScene(container) {
   composer.addPass(smaa);
   composer.addPass(new OutputPass());                     // tone-map + sRGB to screen
 
+  // ── Per-map theme (GFX 2026-09-30) ────────────────────────────────────
+  // Each map in maps.js may carry a `theme`: background (which is also the fog colour, so the
+  // horizon never shows the seam the graded background once did), fog range, the three lights and
+  // exposure. A map without one keeps the rig above. The light COUNT never changes, so switching
+  // theme never recompiles a shader.
+  function setTheme(t) {
+    if (!t) return;
+    renderer.setClearColor(t.bg, 1);
+    scene.background.setHex(t.bg);
+    scene.fog.color.setHex(t.bg);
+    scene.fog.near = t.fogNear;
+    scene.fog.far = t.fogFar;
+    ambient.color.setHex(t.ambient[0]); ambient.intensity = t.ambient[1];
+    hemi.color.setHex(t.hemi[0]); hemi.groundColor.setHex(t.hemi[1]); hemi.intensity = t.hemi[2];
+    key.color.setHex(t.key[0]); key.intensity = t.key[1];
+    renderer.toneMappingExposure = t.exposure;
+  }
+
+  // ── Impact light pulses (GFX #5) ──────────────────────────────────────
+  // A hard hit or a kicker discharge lights the track around it for a beat. Three point lights
+  // live in the scene from the start at zero intensity and are only re-aimed and brightened:
+  // adding and removing lights would change the light count and recompile every lit material.
+  const PULSES = 3;
+  const pulses = Array.from({ length: PULSES }, () => {
+    const l = new THREE.PointLight(0xffffff, 0, 26, 2);
+    scene.add(l);
+    return { light: l, life: 0, peak: 0 };
+  });
+  let pulseHead = 0;
+  function pulseLight(pos, colorHex, strength = 1) {
+    const p = pulses[pulseHead];
+    pulseHead = (pulseHead + 1) % PULSES;
+    p.light.position.set(pos.x, pos.y + 2.5, pos.z);
+    p.light.color.set(colorHex);
+    p.peak = 150 * strength;   // candela; ≈ 3× the key light on the floor right under it
+    p.life = 1;
+  }
+  function updatePulses(dt) {
+    for (const p of pulses) {
+      if (p.life <= 0) continue;
+      p.life = Math.max(0, p.life - dt / 0.35);
+      p.light.intensity = p.peak * p.life * p.life;
+    }
+  }
+
   // ── GPU spark pool (#7 — collision sparks) ────────────────────────────
-  const SPARKS = 160;
+  // 320, up from 160: the finish burst (game.js) throws 120 at once for your own top-10 crossing.
+  const SPARKS = 320;
   const sparkPos = new Float32Array(SPARKS * 3);
   const sparkCol = new Float32Array(SPARKS * 3);
   const sparkVel = new Float32Array(SPARKS * 3);
@@ -352,11 +413,6 @@ export function createScene(container) {
     if (any) { sparkGeo.attributes.position.needsUpdate = true; sparkGeo.attributes.color.needsUpdate = true; }
   }
 
-  // Shockwave rings (#4) removed 2026-08-08 (user request). A pool of 8 additive flat
-  // rings used to expand and fade on heavy impacts and off the kicker band. The pool,
-  // burstRing() and updateRings() all went with it; game.js's two call sites now go
-  // through the no-op kept on the returned object below.
-
   // ── Audio spatialization helper (#9) ──────────────────────────────────
   // Turns a world position into a stereo pan and a distance gain relative to the LIVE camera,
   // so audio.js never needs to know about the camera or three.js at all. Pan comes from the
@@ -401,10 +457,6 @@ export function createScene(container) {
     const g = GRADES[name];
     if (g) gradeTo = g;
   }
-
-  // Kept as a no-op so the start-gun and boost-pad call sites in game.js stay valid; the
-  // smear they used to fire is gone (2026-08-07 user request).
-  function punchBlur() { /* radial blur removed */ }
 
   function updatePost(dt) {
     const k = 1 - Math.exp(-3.2 * dt);      // grade easing; slower than the FOV so it reads as a mood shift
@@ -571,6 +623,7 @@ export function createScene(container) {
     PostFx.applyCameraShake(camera, performance.now() / 1000, 1.4);
 
     updateSparks(dt);
+    updatePulses(dt);
     updatePost(dt);             // #3 colour grade
     rackFocus.update(dt);       // §GFX-2 — no-op unless a photo finish is running
   }
@@ -583,15 +636,15 @@ export function createScene(container) {
     marbleEnv: marbleEnv.texture,
     add(obj) { scene.add(obj); },
     remove(obj) { scene.remove(obj); },
+    // True where the device can afford the heavy passes (GTAO, glass transmission).
+    heavy: !!gtao,
     followTarget,
     burstSparks,
     burstConfetti,
-    // #4 shockwave rings removed; kept as a no-op so game.js impact/kicker call
-    // sites stay valid without each needing a guard.
-    burstRing() { /* shockwave rings removed */ },
+    pulseLight,       // GFX #5
+    setTheme,
     audioCue,         // #9
     setGrade,         // #3
-    punchBlur,        // #2
     punchFov,
     /**
      * §GFX-2 — rack the focus for the photo finish. `distance` is how far the

@@ -23,6 +23,7 @@ public partial class StorageService : IStorageService
 {
     private const string PlayerStatsTable = "PlayerStats";
     private const string MarbleRaceTable = "MarbleRaceHighScores";
+    private const string MarbleRaceRecordsTable = "MarbleRaceMapRecords";
     private const string PoBrawlTable = "PoBrawlHighScores";
     private const string PoBrawlLadderTable = "PoBrawlLadder";
     private const string PoBrawlEloTable = "PoBrawlFighterRatings";
@@ -138,7 +139,7 @@ public partial class StorageService : IStorageService
     public void Initialize()
     {
         Exception? firstFailure = null;
-        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoSportsTable, PoVoxelStrikeTable })
+        foreach (var table in new[] { PlayerStatsTable, MarbleRaceTable, MarbleRaceRecordsTable, PoBrawlTable, PoBrawlLadderTable, PoBrawlEloTable, PoBrawlPlayerEloTable, PoRacerTable, PoSportsTable, PoVoxelStrikeTable })
         {
             try { Table(table); }
             catch (Exception ex)

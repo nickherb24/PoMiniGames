@@ -3,6 +3,7 @@ using PoMiniGames.Domain.Models;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Shared.Games;
 
 // Namespace follows the folder (Features/PoMarbleRace). It previously said
 // Features.HighScores, which is a different slice that already exists — so this
@@ -50,19 +51,29 @@ public static class MarbleRaceHighScoresEndpoints
                     });
                 }
 
-                // Server-authoritative identity. The request body carries no name at all: a
-                // signed-in caller is named by their claims, and everyone else is "Guest". Trusting
-                // a body-supplied name let an anonymous caller post under a real player's name and
-                // appear on the board as them.
-                // Plausibility, on top of the range check above: the guard measures how long
-                // this player's session has actually been open and rejects a point total that
-                // no run of that length could have produced. See ScoreIntegrityGuard.
+                // The stored total is the server's own sum over the run's races, never the
+                // claimed one — see MarbleRaceRunVerifier. A run it cannot recompute is refused
+                // with 422, which the client treats as final rather than parking it for retry.
+                var verified = MarbleRaceRunVerifier.Score(request.MapId, request.Races);
+                if (verified is not { } recomputed)
+                {
+                    MarbleRaceLog.RunUnverifiable(log, request.MapId, request.Races?.Length ?? 0);
+                    return Results.Problem("This run could not be verified.", statusCode: StatusCodes.Status422UnprocessableEntity);
+                }
+                if (recomputed != score.Value) MarbleRaceLog.ClaimMismatch(log, score.Value, recomputed);
+                score = MarbleRaceScore.Clamp(recomputed);
+
+                // Plausibility, on top of the checks above: the guard measures how long this
+                // player's session has actually been open and rejects a point total that no run of
+                // that length could have produced. See ScoreIntegrityGuard.
                 var verdict = integrity.Inspect(http, GameKey.PoMarbleRace, score.Value);
                 if (!verdict.Allowed)
                 {
                     return verdict.ToProblem();
                 }
 
+                // Server-authoritative identity: the body carries no name, so a caller cannot post
+                // under someone else's.
                 var identity = RequestIdentity.Resolve(http.User);
                 var fallback = identity.IsAuthenticated ? "Player" : "Guest";
                 // Even a claim-derived name is player-chosen — an Entra display name is whatever
@@ -85,18 +96,52 @@ public static class MarbleRaceHighScoresEndpoints
             .WithSummary("Submit a new PoMarbleRace high score")
             .Produces<MarbleRaceHighScore>(StatusCodes.Status201Created)
             .ProducesValidationProblem()
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
+            .RequireRateLimiting("highscores");
+
+        // ── world records: fastest finish per map (track picker) ──
+        var records = app.MapGroup("/marblerace/records").WithTags("HighScores");
+
+        records.MapGet("",
+            async (IStorageService storage) => Results.Ok(await storage.GetMarbleRaceMapRecordsAsync()))
+            .WithName("GetMarbleRaceMapRecords")
+            .WithSummary("Fastest finish on each PoMarbleRace map")
+            .Produces<IEnumerable<MarbleRaceMapRecord>>(StatusCodes.Status200OK);
+
+        records.MapPost("",
+            async (MarbleRaceRecordRequest request, HttpContext http, IStorageService storage, IScoreIntegrityGuard integrity) =>
+            {
+                // Same physical bound the run check uses: no finish faster than the course allows.
+                if (!MarbleRaceRunVerifier.IsPlausibleFinish(request.MapId, request.FinishSeconds))
+                {
+                    return Results.ValidationProblem(new Dictionary<string, string[]>
+                    {
+                        [nameof(request.FinishSeconds)] = ["Not a possible finish time for this map."],
+                    });
+                }
+                var identity = RequestIdentity.Resolve(http.User);
+                var name = integrity.ResolveDisplayName(identity.DisplayName, identity.IsAuthenticated ? "Player" : "Guest");
+                // The board keeps the faster of this and the standing record (ShouldOverwrite).
+                var saved = await storage.SaveMarbleRaceMapRecordAsync(new MarbleRaceMapRecord
+                {
+                    MapId = request.MapId,
+                    Seconds = Math.Round(request.FinishSeconds, 2),
+                    PlayerName = name,
+                    UserId = identity.UserId,
+                    IsGuest = identity.IsGuest,
+                    AchievedAtUtc = DateTimeOffset.UtcNow,
+                });
+                return Results.Ok(saved);
+            })
+            .WithName("SubmitMarbleRaceMapRecord")
+            .WithSummary("Offer a finish time as a PoMarbleRace map record")
+            .Produces<MarbleRaceMapRecord>(StatusCodes.Status200OK)
+            .ProducesValidationProblem()
             .RequireRateLimiting("highscores");
 
         return app;
     }
 }
-
-/// <summary>
-/// The wire shape of a score submission. Scoped to this slice, and deliberately narrower than
-/// <see cref="MarbleRaceHighScore"/>: identity and timestamp are server-derived, so there is no
-/// field for a caller to supply (or forge) them in.
-/// </summary>
-public sealed record MarbleRaceHighScoreRequest(int BestScore);
 
 /// <summary>
 /// Source-generated logging for the score path. This slice previously logged nothing, so a save
@@ -112,4 +157,12 @@ internal static partial class MarbleRaceLog
     [LoggerMessage(Level = LogLevel.Warning,
         Message = "MarbleRace score rejected: {Score} outside [{Min}, {Max}]")]
     public static partial void ScoreRejected(ILogger logger, int score, int min, int max);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "MarbleRace run unverifiable map={MapId} races={Races}")]
+    public static partial void RunUnverifiable(ILogger logger, int mapId, int races);
+
+    [LoggerMessage(Level = LogLevel.Warning,
+        Message = "MarbleRace claimed {Claimed} but its races add up to {Recomputed}; storing the recomputed total")]
+    public static partial void ClaimMismatch(ILogger logger, int claimed, int recomputed);
 }

@@ -5,7 +5,7 @@ import { createScene } from './scene.js';
 import * as CANNON from 'cannon-es';
 import { createWorld, stepWorld } from './physics.js';
 import { mapById, DEFAULT_MAP_ID } from './maps.js';
-import { createMarbles, MARBLE_COUNT } from './marbles.js';
+import { createMarbles, MARBLE_COUNT, PLAYER_INDEX, SKINS } from './marbles.js';
 import { createAudio } from './audio.js';
 // §GFX-16/§GFX-17 — marble is the weather + glass launch consumer. Classic-style
 // IIFE modules imported as modules: they self-register on window and run once.
@@ -17,7 +17,48 @@ const RACE_TIMEOUT = 180;   // s — failsafe, and now the only backstop for a m
                             // at the foot of one of the course's uphill loops (see track.js)
 const TICK_INTERVAL = 0.1;  // s — throttle for OnRaceTick to C#
 const BEST_KEY = 'pomarblerace_best';
-const LB_SHOWN = 6;         // leaderboard rows sent to the HUD (top N of the 101-marble field)
+const TRACK_STATS_KEY = 'pomarblerace_trackstats';   // { [mapId]: { races, top10, wins, bestPlace, bestTime } }
+const MARBLE_KEY = 'pomarblerace_marble';            // { skin, weight } — the intro card's last pick
+const LEADERS = 3;          // rivals drawn in glass and trailed (marbles.js)
+const AIR_HOLD = 0.12;      // s without floor contact before the rolling bed calls it airborne
+const SECTORS_KEY = 'pomarblerace_sectors';          // { [mapId]: [best sector seconds] }
+
+// ── Staying on the map (2026-09-30) ──
+// A marble is only retired when it is BOTH outside the course envelope AND has touched nothing
+// for LOST_AIR seconds. Touching any static body means it is on the map, whatever the centerline
+// maths says — the old envelope-only test deleted marbles rolling on side lanes. One that is
+// touching track while the envelope disagrees has reached another part of the course, so its
+// position is re-acquired rather than the marble deleted.
+const LOST_AIR = 1.0;
+const REACQUIRE_AFTER = 1.0;
+// Brake strips (track.brakeAt): how fast an over-speed marble is bled down to the strip's cap.
+const BRAKE_RATE = 3;
+// Unstick: a marble that has not gained STALL_GAIN units of progress in STALL_AFTER seconds gets
+// a nudge along the course, then again every STALL_REPEAT seconds, each one STALL_STEP harder
+// (up to STALL_MAX). The escalation is for the authored courses' dips with an uphill exit —
+// Spiral Works' Split A → Mid junction parked 23-35 marbles a race — where climbing out takes
+// ~27 u/s and a fixed small push only rocked the pile.
+const STALL_AFTER = 5;
+const STALL_REPEAT = 2;
+// 12 units per STALL_AFTER, not 2: a marble creeping along a corner at ~0.4 u/s reset a 2-unit
+// timer every few seconds and was never nudged at all (Grand Spiral's Loop → Helix B junction
+// parked ~50 that way until the race timed out).
+const STALL_GAIN = 12;
+const STALL_NUDGE = 14;
+const STALL_STEP = 8;
+const STALL_MAX = 40;
+const STALL_LOOKAHEAD = 12;
+
+// localStorage readers, shared with index.js menu(). Every access is guarded: storage can be
+// blocked (private mode), and a stat card is never worth a crash.
+function readJson(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key) || 'null') || fallback; } catch { return fallback; }
+}
+export function readBest() {
+  try { return parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0; } catch { return 0; }
+}
+export const readTrackStats = () => readJson(TRACK_STATS_KEY, {});
+export const readMarbleChoice = () => ({ skin: 'swirl', weight: 'balanced', ...readJson(MARBLE_KEY, {}) });
 
 // ── The player's verb ──
 // Continuous lateral steering. Holding left/right adds sideways acceleration to the picked
@@ -69,10 +110,6 @@ const SHOT_LEAD_MARGIN = 14;  // units the leader must be up on the current subj
 // the centerline" would eliminate marbles for riding a wall-of-death. track.isOutOfBounds()
 // judges it in the local frame instead; see the note there.
 
-// Ceiling on a reported time gap; beyond this the HUD shows "+60s" rather than a number
-// whose precision it hasn't earned. See _gapSeconds.
-const GAP_MAX = 60;
-
 // How far the camera anchor is pulled from the subject marble back toward the road centreline.
 // 0 = lock dead on the marble (jittery — it inherits per-frame physics noise); 1 = the old
 // road-only framing, which loses the marble entirely on a 160-unit-wide channel.
@@ -97,6 +134,8 @@ export const GUEST_COLOR = 0xf8fafc;
 // as continuous, low enough that a late frame slides rather than snaps.
 const NET_SMOOTH = 14;
 const _rollAxis = new CANNON.Vec3();
+const _guardPoint = new THREE.Vector3();
+const _guardNormal = new THREE.Vector3();
 const _rollQ = new CANNON.Quaternion();
 
 export class Game {
@@ -109,8 +148,9 @@ export class Game {
    *   course, null for the procedural one. Loading happens BEFORE the Game is constructed so the
    *   frame loop never has to run trackless; index.js owns that await.
    * @param {object|null} online null for a local game, else { role: 'host'|'guest', seed, guestIndex }.
+   * @param {object|null} marble the player's { skin, weight } from the intro card, or null.
    */
-  constructor(containerId, dotnetRef, demo, mapId, asset, online) {
+  constructor(containerId, dotnetRef, demo, mapId, asset, online, marble) {
     this.container = document.getElementById(containerId);
     this.dotnet = dotnetRef || null;
     this.demo = !!demo;
@@ -127,6 +167,7 @@ export class Game {
     this._netFinish = 0;       // guest: finish order, in the order the host's frames report it
     this._guestHud = null;
     this.scene = createScene(this.container);
+    this.scene.setTheme(this.map.theme);
     const w = createWorld();
     this.world = w.world;
     this.materials = w.materials;
@@ -135,8 +176,28 @@ export class Game {
     this.phase = 'pick';
     this.score = 0;
     this.streak = 0;
-    this.best = parseInt(localStorage.getItem(BEST_KEY) || '0', 10) || 0;
+    this.best = readBest();
     this.chosen = -1;
+    // The races of the current scoring run, sent with each result so a board submission can be
+    // recomputed server-side (MarbleRaceRunVerifier). A miss empties it along with the score.
+    this.runRaces = [];
+    // The player's marble. Demo and an online guest race the default (the guest's pick would
+    // have to cross the wire to reach the host's physics). A skin the best run has not unlocked
+    // falls back to the default rather than trusting whatever localStorage says.
+    this.marbleOpts = { glass: this.scene.heavy };
+    if (marble && !this.demo && !this.isGuest) {
+      const sk = SKINS.find((k) => k.id === marble.skin);
+      this.marbleOpts.skin = sk && sk.need <= this.best ? sk.id : 'swirl';
+      this.marbleOpts.weight = marble.weight;
+      try { localStorage.setItem(MARBLE_KEY, JSON.stringify({ skin: marble.skin, weight: marble.weight })); } catch { }
+    }
+    this._leaders = [];        // this frame's top rivals, for the glass + trails (marbles.js sync)
+    this._touch = new Set();   // marble bodies touching a static body this step (_markContacts)
+    this._sector = 0;          // next checkpoint the player's marble has to pass
+    this._sectorStart = 0;
+    this._surface = 'surface'; // what the camera's marble is rolling on, for the audio bed
+    this._airT = 0;
+    this._nearFinish = 0;
     // Only procedural maps re-roll between races (map.regenerate). The authored course is fixed
     // content, so _nextTrack() resets the field on the SAME track rather than rebuilding it —
     // which also spares it rebuilding hundreds of trimesh colliders every race.
@@ -159,7 +220,7 @@ export class Game {
     // does not, and glassFx captures live so the panels update as the race runs.
     setTimeout(() => {
       const canvas = this.container.querySelector('canvas');
-      if (canvas) this._glassStop = window.PoGlass?.attachHud(canvas, '.mr-pick-card, .mr-place, .mr-podium');
+      if (canvas) this._glassStop = window.PoGlass?.attachHud(canvas, '.mr-pick-card, .mr-place, .mr-countdown');
     }, 1200);
     this.marbleSet = null;
     this.raceClock = 0;
@@ -176,7 +237,6 @@ export class Game {
     this._wasBoosting = false;
 
     // director
-    this.shotReason = 'LEADER';
     this.slowmo = false;
     this._lastFocus = null;
     this._shotMarble = null;    // current subject; with _shotSince it drives the hysteresis above
@@ -226,13 +286,14 @@ export class Game {
     if (index < 0 || index >= MARBLE_COUNT) return;
     this.chosen = index;
     this._steerLeft = this._steerRight = false;
+    this._sector = 0;
+    this._sectorStart = 0;
     this._setPhase('racing');
     this.raceClock = 0;
     this.tickAccum = TICK_INTERVAL;
     for (const m of this.marbleSet.marbles) m.prevPlace = -1;
     this.scene.followTarget(this.marbleSet.marbles[index].mesh.position, 0, true);
     this.scene.punchFov();   // a quick FOV widen as the race kicks off
-    this.scene.punchBlur(0.7); // #2 — and a smear off the line, so the start has a kick
     this.audio.resume();
     this.audio.playGun();
   }
@@ -334,6 +395,7 @@ export class Game {
     // the weather overlay a rAF loop — both must die with the game.
     if (this._glassStop) this._glassStop();
     window.PoWeather?.stop();
+    window.PoMusicDirector?.tension?.(0);
     window.PoMusicDirector?.match(false);
   }
 
@@ -359,15 +421,16 @@ export class Game {
         // #9: the clink is now placed in the stereo field by where the hit happened on screen.
         if (v > 8) this.audio.playClink(v, this.scene.audioCue(pos));
         this.scene.burstSparks(pos, color, Math.min(14, 4 + Math.floor(v)), Math.min(1.6, 0.5 + v * 0.12));
-        // #4: a genuinely heavy hit also throws a shockwave ring. Gated harder than the clink —
-        // a ring on every tap would leave the road permanently covered in them.
-        if (v > 14) this.scene.burstRing(pos, color, Math.min(1.5, 0.6 + v * 0.05));
+        // GFX #5: a genuinely heavy hit lights the track around it for a beat. Gated harder than
+        // the clink, or traffic would strobe.
+        if (v > 14) this.scene.pulseLight(pos, 0xffd9a0, Math.min(1.5, 0.5 + v * 0.04));
       },
       // Marble-only specular environment (realism pass #3). Bound as `envMap` on the marble
       // materials alone — deliberately NOT scene.environment, so the track stays matte.
       this.scene.marbleEnv,
       // Online: the guest's marble is recoloured so both humans can find themselves in the pack.
-      this.online ? { [this.guestIndex]: GUEST_COLOR } : null);
+      this.online ? { [this.guestIndex]: GUEST_COLOR } : null,
+      this.marbleOpts);
     // One group, not 101 meshes: the pack is a single InstancedMesh now (marbles.js #1), and the
     // player's Mesh rides in the same group.
     this.scene.add(this.marbleSet.group);
@@ -382,6 +445,7 @@ export class Game {
     // would keep the hysteresis holding a shot on a marble that is no longer in the world.
     this._shotMarble = null;
     this._lastFocus = null;
+    this._leaders = [];
     this._setPhase('pick');
     // frame the start gate from above, looking along the track rather than down world +Z
     this.scene.followTarget(this.track.overviewTarget, 0, true, this.track.dirAt(0));
@@ -403,6 +467,7 @@ export class Game {
     // chosen win/loss by then, and overwriting it here would wash that straight out.
     if (p === 'pick') this._setGrade('pick');
     else if (p === 'racing') this._setGrade('racing');
+    if (p !== 'racing') window.PoMusicDirector?.tension?.(0);
     // 2026-07-19 browser audit #1: skip phase notifications while the
     // intro is up. The host can't react to OnPhase('pick') until resume()
     // fires anyway, and a notify during intro would race the host's
@@ -443,24 +508,23 @@ export class Game {
     const now = performance.now();
     // Stamp the subject on every change so the hysteresis below can measure how long the current
     // shot has run. Cheap, and it keeps _shotSince honest for the non-demo cuts too.
-    const take = (marble, reason) => {
+    const take = (marble) => {
       if (marble !== this._shotMarble) { this._shotMarble = marble; this._shotSince = now; }
-      this.shotReason = reason;
       return marble;
     };
 
     if (this.demo) {
       const cur = this._shotMarble;
       // Nothing to hold on to, or the subject is out of the race → take the leader outright.
-      if (!cur || cur.eliminated || cur.finished) return take(leader, 'LEADER');
-      if (cur === leader) return take(leader, 'LEADER');
+      if (!cur || cur.eliminated || cur.finished) return take(leader);
+      if (cur === leader) return take(leader);
       // Hold the shot: only cut once it has run its minimum AND the leader has genuinely gone.
       // Returning `cur` without take() deliberately leaves _shotSince alone — the shot is
       // continuing, not restarting.
       const held = (now - this._shotSince) / 1000;
       const behind = leader.s - cur.s;
-      if (held < SHOT_MIN_HOLD || behind < SHOT_LEAD_MARGIN) { this.shotReason = 'LEADER'; return cur; }
-      return take(leader, 'LEADER');
+      if (held < SHOT_MIN_HOLD || behind < SHOT_LEAD_MARGIN) return cur;
+      return take(leader);
     }
 
     const me = this.marbleSet.marbles[this.chosen];
@@ -469,23 +533,9 @@ export class Game {
     // slow-mo finish. You must always see the marble you're steering. The camera
     // only leaves you once you're out of the race (eliminated or finished), when
     // it falls back to the leader so there's still a race to watch.
-    if (!meAlive) return take(leader, 'LEADER');
+    if (!meAlive) return take(leader);
 
-    return take(me, me === leader ? 'LEADER' : 'YOU');
-  }
-
-  // Time gap behind the leader, in seconds. Finished marbles compare finish times; those
-  // still running get the standard racing estimate (distance behind ÷ own speed), which is
-  // what a viewer actually wants to know — "how long until I'm there".
-  // Capped: the estimate divides by the marble's own speed, so a slow one coming out of a
-  // rumble band reported "+232.0s" — arithmetically fine, useless as a readout. Past
-  // GAP_MAX the only information left is "out of it", so say that instead of a number.
-  _gapSeconds(m, leader) {
-    if (!leader || m === leader) return 0;
-    if (m.finished && leader.finished) return Math.max(0, m.finishTime - leader.finishTime);
-    const ds = leader.s - m.s;
-    if (ds <= 0) return 0;
-    return Math.min(GAP_MAX, ds / Math.max(4, m.speed));
+    return take(me);
   }
 
   // Boost pads. A no-op on maps that have none — see the track interface in maps.js.
@@ -512,9 +562,118 @@ export class Game {
     // Edge-trigger the whoosh so it fires once per pad, not every frame you're on one.
     if (playerBoosting && !this._wasBoosting) {
       this.audio.playWhoosh(this.scene.audioCue(me.mesh.position));   // #9 placed at the pad
-      this.scene.punchBlur(0.5);                                       // #2 the pad kicks the frame
     }
     this._wasBoosting = playerBoosting;
+  }
+
+  // Brake strips (Spiral Works). Bleeds an over-speed marble down to the strip's cap; a no-op on maps
+  // without any. Scaling the velocity rather than adding a force keeps the heading untouched.
+  _applyBrakes(sdt) {
+    if (!this.track.brakeAt) return;
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated) continue;
+      const cap = this.track.brakeAt(m.s);
+      if (!cap) continue;
+      const v = m.body.velocity;
+      const sp = v.length();
+      if (sp > cap) v.scale(Math.max(cap / sp, 1 - BRAKE_RATE * sdt), v);
+    }
+  }
+
+  _savePrev() {
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated) continue;
+      (m.prev || (m.prev = new CANNON.Vec3())).copy(m.body.position);
+    }
+  }
+
+  _guardContainment() {
+    const sweep = this.track.sweepGuard;
+    if (!sweep) return;
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated || !m.prev) continue;
+      if (!sweep(m.prev, m.body.position, m.radius, _guardPoint, _guardNormal)) continue;
+      m.body.position.set(_guardPoint.x, _guardPoint.y, _guardPoint.z);
+      // Bounce off the inside of the surface it tried to pass (restitution 0.3).
+      const v = m.body.velocity;
+      const vn = v.x * _guardNormal.x + v.y * _guardNormal.y + v.z * _guardNormal.z;
+      if (vn < 0) {
+        v.x -= 1.3 * vn * _guardNormal.x;
+        v.y -= 1.3 * vn * _guardNormal.y;
+        v.z -= 1.3 * vn * _guardNormal.z;
+      }
+    }
+  }
+
+  // Which marbles are touching a static body (floor, wall, lid, obstacle) after this step. One
+  // pass over the solver's contact list; marble-on-marble contacts do not count.
+  _markContacts() {
+    const t = this._touch;
+    t.clear();
+    const marble = this.materials.marble;
+    for (const c of this.world.contacts) {
+      const a = c.bi, b = c.bj;
+      if (a.material === marble && b.material !== marble) t.add(a);
+      else if (b.material === marble && a.material !== marble) t.add(b);
+    }
+  }
+
+  // Unstick (see STALL_*): nudge a marble that has stopped making progress along the course. The
+  // direction is the marble's own lane where the track can say (track.flowDir) — across a lane
+  // junction the main line's tangent is turned ~90° to the channel, and the stalls cluster
+  // exactly there — else toward the centerline a little ahead.
+  _unstick(sdt) {
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated) continue;
+      if (m.stallS === undefined || m.s > m.stallS + STALL_GAIN) { m.stallS = m.s; m.stallT = 0; m.nudges = 0; continue; }
+      m.stallT += sdt;
+      if (m.stallT < STALL_AFTER) continue;
+      m.stallT = STALL_AFTER - STALL_REPEAT;
+      let d;
+      // Along the lane when the marble is in one; otherwise (a funnel, a free fall) toward the
+      // course a little ahead — in a funnel that is the throat. The main line's tangent there
+      // points nowhere useful, and pushing along it shoved a marble resting on Grand Spiral's
+      // funnel lip straight off the outside.
+      if (this.track.flowDir && m.proj && m.proj.lane >= 0) {
+        d = this.track.flowDir(m.proj, _camRoad);
+      } else {
+        const ahead = this.track.centerAt(m.s + STALL_LOOKAHEAD, _camRoad);
+        const p = m.body.position;
+        d = ahead.set(ahead.x - p.x, ahead.y - p.y, ahead.z - p.z).normalize();
+      }
+      const push = Math.min(STALL_MAX, STALL_NUDGE + STALL_STEP * (m.nudges || 0));
+      m.nudges = (m.nudges || 0) + 1;
+      m.body.velocity.x += d.x * push;
+      m.body.velocity.y += d.y * push + 3;
+      m.body.velocity.z += d.z * push;
+    }
+  }
+
+  // Sector splits (map checkpoints): as your own marble passes each checkpoint, and at the line,
+  // report the time since the last one against this map's best for that sector.
+  _checkSectors() {
+    const cps = this.track.checkpoints;
+    if (this.demo || !cps) return;
+    const me = this.marbleSet.marbles[this.isGuest ? this.guestIndex : this.chosen];
+    if (!me || me.eliminated) return;
+    while (this._sector < cps.length && me.s >= cps[this._sector]) this._splitSector(this.raceClock, cps.length + 1);
+    if (me.finished && this._sector === cps.length) this._splitSector(me.finishTime, cps.length + 1);
+  }
+
+  _splitSector(at, count) {
+    const idx = this._sector;
+    const time = Math.round((at - this._sectorStart) * 100) / 100;
+    this._sector++;
+    this._sectorStart = at;
+    const all = readJson(SECTORS_KEY, {});
+    const bests = all[this.map.id] || [];
+    const best = bests[idx] || 0;
+    if (!best || time < best) {
+      bests[idx] = time;
+      all[this.map.id] = bests;
+      try { localStorage.setItem(SECTORS_KEY, JSON.stringify(all)); } catch { }
+    }
+    this._invoke('OnSector', idx + 1, count, time, best);
   }
 
   // #6 Kickers: drive the telegraph (brightening pad) and the fire moment. Push-only, so it
@@ -559,9 +718,9 @@ export class Game {
     if (hits > 0) {
       // ...but only make noise when it actually connects, and place it where it connected (#9).
       this.audio.playWhoosh(this.scene.audioCue(lastHitPos));
-      // #4 - a magenta shockwave off the band, which is what makes the kick read as a discharge
+      // GFX #5 - a magenta flash off the band, which is what makes the kick read as a discharge
       // rather than the pack spontaneously scattering.
-      this.scene.burstRing(lastHitPos, 0xe879f9, 1.5);
+      this.scene.pulseLight(lastHitPos, 0xe879f9, 1.5);
     }
   }
 
@@ -586,11 +745,15 @@ export class Game {
 
       this.track.driveMotors();
       this._applySteer(sdt);   // player's held steering, integrated by the step below
+      this._savePrev();
       stepWorld(this.world, sdt);
       // Interlock, not tuning: cannon-es has no CCD and the course's collision shell is a single
       // surface with nothing behind it, so a marble must never carry a velocity that would step
       // it further than its own diameter. See MAX_SPEED in marbles.js.
       this.marbleSet.clampSpeeds();
+      // Containment is single-sided; a fast head-on hit can carry a marble through it in one
+      // step. Trace this frame's paths and put any crossing back inside (track.sweepGuard).
+      this._guardContainment();
       // Re-project the field onto the centerline FIRST: `s` is the ranking key, the finish test
       // and the bounds test, and every one of those below would read last frame's positions
       // otherwise.
@@ -598,8 +761,12 @@ export class Game {
       // Both read each marble's `s`, so they run after the re-projection above. Their impulses
       // land on the next step, exactly as they did when this was keyed on world z.
       this._applyBoost(sdt);
+      this._applyBrakes(sdt);
       this._applyKickers();
-      this.marbleSet.sync(this.track);
+      this._markContacts();
+      this._unstick(sdt);
+      this._surface = this._surfaceOf(this._lastFocus, dt);
+      this.marbleSet.sync(this.track, this.scene.camera.position, this._leaders);
       for (const p of this.track.paddles) { p.mesh.position.copy(p.body.position); p.mesh.quaternion.copy(p.body.quaternion); }
 
       this.raceClock += sdt;
@@ -609,13 +776,19 @@ export class Game {
       // line could be scored as eliminated instead of a finisher.
       const { justFinished } = this.marbleSet.checkFinishes(this.track.finishS, this.raceClock);
 
-      // Remove any marble that has left the course. The test lives in track.js because it has
-      // to be made in the track's LOCAL frame: this course banks to near-vertical, so a marble
-      // riding a wall-of-death is far "below" the centerline in world Y while still perfectly
-      // in bounds.
+      // Remove any marble that has genuinely left the course — see LOST_AIR. The envelope test
+      // lives in the track because it has to be made in the track's LOCAL (per-lane) frame.
       for (const m of this.marbleSet.marbles) {
-        if (m.finished || m.eliminated) continue;
-        if (m.proj && this.track.isOutOfBounds(m.proj)) this.marbleSet.eliminate(m);
+        if (m.finished || m.eliminated || !m.proj) continue;
+        const onTrack = this._touch.has(m.body);
+        m.airT = onTrack ? 0 : (m.airT || 0) + sdt;
+        if (!this.track.isOutOfBounds(m.proj)) { m.lostT = 0; continue; }
+        if (onTrack) {
+          m.lostT = (m.lostT || 0) + sdt;
+          if (m.lostT > REACQUIRE_AFTER) { m.pathIndex = -1; m.lostT = 0; }
+        } else if (m.airT > LOST_AIR) {
+          this.marbleSet.eliminate(m);
+        }
       }
 
       // Recomputed after the sweep rather than taken from checkFinishes: a marble eliminated
@@ -627,6 +800,7 @@ export class Game {
         // #9 — spatialized, so a pack crossing ahead of you spreads across the stereo field
         // instead of stacking a hundred identical chimes dead centre.
         this.audio.playFinish(this.scene.audioCue(m.mesh.position));
+        if (m.index === this.chosen) this._celebrateOwnFinish(m, m.finishOrder + 1);
       }
       // §GFX-2 — rack the focus for the WINNER only. Firing it per finisher
       // would re-trigger it a hundred times as the pack crosses, which reads as
@@ -663,7 +837,10 @@ export class Game {
         ? 1 - Math.max(0, Math.min(1, (this.track.finishS - leaderNow.s) / 300))
         : 0;
       const nearFinish = Math.pow(nearRaw, 0.6);
-      this.audio.updateBeds(leaderNow ? leaderNow.speed : 0, nearFinish, this.phase === 'racing');
+      this._nearFinish = nearFinish;
+      // The rolling bed rides the marble on camera (not the leader) and what it is touching.
+      const rolling = this._lastFocus || leaderNow;
+      this.audio.updateBeds(rolling ? rolling.speed : 0, nearFinish, this.phase === 'racing', this._surface);
 
       // #3 — FINAL STRETCH grade. Deliberately keyed off the same 0.86 leader-progress threshold
       // the HUD's own "🏁 FINAL STRETCH" klaxon uses (PoMarbleRacePage.razor), so the screen and
@@ -698,13 +875,15 @@ export class Game {
         this.scene.followTarget(anchor, dt, focus !== this._lastFocus, fwd, focus.speed);
         this._lastFocus = focus;
       }
+      this._leaders = this._topRivals(order);
+      this._checkSectors();
 
       this.tickAccum += dt;
       if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendTick(); }
       if (this.online && !this.isGuest) this._netSend(dt);
     } else if (this.phase === 'result') {
       // keep the paddles/marbles visually settled; advance after the banner
-      this.marbleSet.sync(this.track);
+      this.marbleSet.sync(this.track, this.scene.camera.position, this._leaders);
       this.resultTimer -= dt;
       const winner = this.marbleSet.leaderboard()[0];
       if (winner) {
@@ -722,6 +901,76 @@ export class Game {
     }
 
     this.scene.render();
+  }
+
+  // The top rivals, for the glass and trails. Never the red marble: it is always trailed, and it
+  // is a Mesh of its own rather than a pack instance, so it has nothing to swap into the glass.
+  _topRivals(order) {
+    const out = [];
+    for (const m of order) {
+      if (m.index === PLAYER_INDEX) continue;
+      out.push(m);
+      if (out.length === LEADERS) break;
+    }
+    return out;
+  }
+
+  // What `m` is rolling on, as an audio.js SURFACES key, read from the solver's contact list after
+  // the step: the contact material of whatever non-marble body it touches. Riding on other marbles
+  // counts as the plain surface. No contact for AIR_HOLD seconds is 'air' — a single substep
+  // without contact is a bounce, not a jump, and would otherwise stutter the bed.
+  _surfaceOf(m, dt) {
+    if (!m || m.finished || m.eliminated) return 'surface';
+    if (this.track.inBoost && this.track.inBoost(m.s)) return 'boost';
+    if (this.track.brakeAt && this.track.brakeAt(m.s)) return 'rumble';
+    if (this.isGuest) return 'surface';   // no physics on the guest, so no contacts to read
+    let kind = null;
+    for (const c of this.world.contacts) {
+      const other = c.bi === m.body ? c.bj : c.bj === m.body ? c.bi : null;
+      if (!other) continue;
+      const name = other.material ? other.material.name : '';
+      if (name === 'marble') { kind = kind || 'surface'; continue; }
+      kind = name === 'rumble' || name === 'bump' || name === 'ice' ? name
+        : name === 'obstacle' || name === 'spinner' ? 'obstacle' : 'surface';
+      if (kind !== 'surface') break;
+    }
+    if (kind) { this._airT = 0; return kind; }
+    this._airT += dt;
+    return this._airT >= AIR_HOLD ? 'air' : this._surface;
+  }
+
+  // GFX #6 — your own top-10 crossing: a big confetti burst, a gold flash, a crowd roar and a kick
+  // of camera shake. Every other finisher still gets the small per-marble confetti and chime.
+  _celebrateOwnFinish(m, place) {
+    if (this.demo || place < 1 || place > SCORE_TOP) return;
+    this.scene.burstConfetti(m.mesh.position, 120);
+    this.scene.pulseLight(m.mesh.position, 0xfde047, 2);
+    this.audio.playRoar();
+    window.PoImpact?.impact('win', 0.8);
+  }
+
+  // GFX #1 — the soundtrack's tension: how close the leader is to the line, plus whether you are
+  // in the scoring places. PoMusicDirector dedupes small changes, so 10 Hz is fine.
+  _setTension(place) {
+    const md = window.PoMusicDirector;
+    if (!md || !md.tension) return;
+    const contention = place >= 1 && place <= SCORE_TOP ? 0.3 : place >= 1 && place <= SCORE_TOP * 2.5 ? 0.15 : 0;
+    md.tension(0.15 + 0.45 * this._nearFinish + contention);
+  }
+
+  // Per-track record for the intro card's track buttons (F7). Local only; demo never counts.
+  _recordTrackStat(place, time) {
+    const all = readTrackStats();
+    const st = all[this.map.id] || { races: 0, top10: 0, wins: 0, bestPlace: 0, bestTime: 0 };
+    st.races++;
+    if (place >= 1) {
+      if (place <= SCORE_TOP) st.top10++;
+      if (place === 1) st.wins++;
+      if (!st.bestPlace || place < st.bestPlace) st.bestPlace = place;
+      if (!st.bestTime || time < st.bestTime) st.bestTime = Math.round(time * 100) / 100;
+    }
+    all[this.map.id] = st;
+    try { localStorage.setItem(TRACK_STATS_KEY, JSON.stringify(all)); } catch { }
   }
 
   _resolve() {
@@ -751,21 +1000,33 @@ export class Game {
       const mult = 1 + Math.min(this.streak - 1, MAX_STREAK_STEPS) * 0.5;
       gained = Math.round(base * mult);
       this.score += gained;
+      // MIRRORED IN C#: MarbleRaceRunVerifier re-adds these races with the same arithmetic, so a
+      // change to the scoring above must land there too.
+      const lead = place === 1 && order.length > 1 && order[1].finished ? order[1].finishTime - me.finishTime : 0;
+      this.runRaces.push({ place, time: Math.round(me.finishTime * 1000) / 1000, lead: Math.round(lead * 1000) / 1000 });
     } else {
       // The run ends. A miss (finishing outside the top SCORE_TOP, or falling off) costs the
       // whole run — that's the stake that makes a streak worth watching.
       this.streak = 0;
       this.score = 0;
+      this.runRaces = [];
     }
     if (this.score > this.best) { this.best = this.score; try { localStorage.setItem(BEST_KEY, String(this.best)); } catch { } }
+    if (!this.demo) this._recordTrackStat(place, finished ? me.finishTime : 0);
 
     this.resultTimer = RESULT_MS / 1000;
     this._setPhase('result');
     // #3 — the result grade, set AFTER _setPhase so it isn't overwritten by a phase grade.
     this._setGrade(won ? 'win' : 'loss');
     this.audio.playSting(won);
+    if (!this.demo) window.PoMusicDirector?.verdict?.(won);
     this._sendTick(); // final standings
-    this._invoke('OnRaceResult', won, place, this.score, gained, this.streak, this.best);
+    // The run's races ride along (appended — positional contract) for the board submission.
+    // Your own finish time rides along too (0 when you did not finish), offered as the map's
+    // world record by the page.
+    this._invoke('OnRaceResult', won, place, this.score, gained, this.streak, this.best, this.map.id,
+      this.runRaces.map((r) => r.place), this.runRaces.map((r) => r.time), this.runRaces.map((r) => r.lead),
+      finished ? Math.round(me.finishTime * 100) / 100 : 0);
     // Online host: the guest's standing, for the page to relay. Same top-SCORE_TOP rule, no
     // streak — the run/score system belongs to the host's own session.
     if (this.online && !this.isGuest) {
@@ -776,10 +1037,9 @@ export class Game {
     }
   }
 
-  // C# is handed parallel primitive arrays rather than a JSON string: the string form was
-  // serialized by us, serialized again by the interop layer, then parsed a third time on the
-  // C# side — every tick for a whole race. Colours/names are omitted; C# derives them from the
-  // marble index (index 0 = the red player, everything else from PACK_PALETTE).
+  // C# is handed primitives and parallel arrays rather than JSON strings on the hot paths. Colours
+  // and names are omitted; C# derives them from the marble index (0 = the red player, the rest
+  // from PACK_PALETTE).
   _invoke(method, ...args) {
     if (!this.dotnet) return;
     // invokeMethodAsync rejects asynchronously, so a bare try/catch here would never see the
@@ -804,57 +1064,32 @@ export class Game {
       top3.map((m) => round2(m.finishTime - winTime)));
   }
 
+  // The HUD tick: the player's place and the field size are all the page draws mid-race.
   _sendTick() {
     if (!this.dotnet) return;
     const order = this.marbleSet.leaderboard();
-    const leader = order[0];
     const me = this.chosen >= 0 ? this.marbleSet.marbles[this.chosen] : null;
 
-    // Overtake cue: compare the player's place against the last tick's before the snapshot
-    // below overwrites it. Only the player's own position changes are worth a sound.
+    // Overtake cue (GFX #10): compare the player's place against the last tick's before the
+    // snapshot below overwrites it, and pan it to the marble that took part — the one just
+    // behind you after a gain, the one just ahead after a loss.
     if (me && !me.eliminated && this.phase === 'racing' && me.prevPlace > 0 && me.place !== me.prevPlace) {
-      this.audio.playOvertake(me.place < me.prevPlace);
+      const gained = me.place < me.prevPlace;
+      const other = order[gained ? me.place : me.place - 2];
+      this.audio.playOvertake(gained, other ? this.scene.audioCue(other.mesh.position) : null);
     }
     for (const m of order) m.prevPlace = m.place;
 
-    // #3 lateral position of the player's marble across the channel (−1 left edge … +1 right
-    // edge), for the HUD edge gauge. 0 when the player has no live marble.
-    const myLateral = (me && !me.eliminated && me.proj) ? this.track.lateralOf(me.proj) : 0;
-
-    // With 101 marbles the HUD can't render the whole field, so only the top LB_SHOWN are sent
-    // for the leaderboard list. The player's own standing is sent separately (place / field /
-    // gap) and shown in the telemetry panel, so it's always visible even when far down the pack.
-    const shown = order.slice(0, LB_SHOWN);
-    const myLive = !!me && !me.eliminated;
-    const round2 = (v) => Math.round(v * 100) / 100;
-    this._invoke('OnRaceTick',
-      shown.map((m) => m.index),
-      shown.map((m) => Math.round(m.speed * 10) / 10),
-      shown.map((m) => m.finished),
-      shown.map((m) => (m.finished ? round2(m.finishTime) : 0)),
-      shown.map((m) => round2(this._gapSeconds(m, leader))),
-      this.marbleSet.progress(),
-      myLive ? this.marbleSet.progressOf(me) : 0,
-      round2(this.raceClock),
-      Math.round(myLateral * 1000) / 1000,
-      myLive ? me.place : -1,                                  // player's absolute place
-      order.length,                                            // field size (marbles still racing)
-      myLive ? round2(this._gapSeconds(me, leader)) : 0,       // player's gap to the leader
-      this.streak,
-      this._lastFocus ? this._lastFocus.index : -1,
-      this.shotReason || 'LEADER',
-      // GFX #6 — the player's OWN speed, for the HUD's conic-gradient speed ring. The `speeds`
-      // array above only covers the top LB_SHOWN, so a player outside the top 6 had no speed
-      // anywhere in this payload. Appended at the END: OnRaceTick is a positional contract, and
-      // adding here means no existing argument shifts position.
-      myLive ? Math.round(me.speed * 10) / 10 : 0);
+    const myPlace = me && !me.eliminated ? me.place : -1;
+    if (this.phase === 'racing') this._setTension(this.demo ? -1 : myPlace);
+    this._invoke('OnRaceTick', myPlace, order.length);
   }
 
   // ── Online ──
 
   // Host: stream the field to the guest. float32 x,y,z per marble in index order, one flag byte
-  // per marble (0 live, 1 finished, 2 eliminated), plus the guest marble's own HUD numbers so the
-  // guest page can show place and gap without a simulation of its own.
+  // per marble (0 live, 1 finished, 2 eliminated), plus the guest marble's place so the guest page
+  // can show it without a simulation of its own.
   _netSend(dt) {
     this._netAccum += dt;
     if (this._netAccum < NET_INTERVAL) return;
@@ -869,24 +1104,17 @@ export class Game {
       flags[i] = m.eliminated ? 2 : m.finished ? 1 : 0;
     }
     const order = this.marbleSet.leaderboard();
-    const leader = order[0];
     const g = ms[this.guestIndex];
-    const gLive = !!g && !g.eliminated;
-    const round2 = (v) => Math.round(v * 100) / 100;
     this._invoke('OnHostFrame',
-      ++this._netTick, round2(this.raceClock), this.phase,
+      ++this._netTick, Math.round(this.raceClock * 100) / 100, this.phase,
       new Uint8Array(pos.buffer), flags,
-      gLive ? g.place : -1, order.length,
-      gLive ? this.marbleSet.progressOf(g) : 0, this.marbleSet.progress(),
-      gLive ? round2(this._gapSeconds(g, leader)) : 0,
-      gLive ? Math.round(g.speed * 10) / 10 : 0,
-      (gLive && g.proj) ? Math.round(this.track.lateralOf(g.proj) * 1000) / 1000 : 0);
+      g && !g.eliminated ? g.place : -1, order.length);
   }
 
   // Guest: a streamed snapshot from the host. Positions become easing targets (applied in
   // _guestRacingFrame), flags fire the same finish/elimination cues the host saw, and the first
   // racing frame is what starts the guest's race.
-  applyFrame(tick, clock, phase, positions, flags, guestPlace, field, guestProgress, leaderProgress, guestGap, guestSpeed, guestLateral) {
+  applyFrame(tick, clock, phase, positions, flags, guestPlace, field) {
     if (!this.isGuest || !this.marbleSet) return;
     if (phase === 'racing' && this.phase === 'pick') this.pick(this.guestIndex);
     if (this.phase !== 'racing') return;
@@ -912,10 +1140,11 @@ export class Game {
         this.scene.burstConfetti(m.mesh.position);
         this.audio.playFinish(this.scene.audioCue(m.mesh.position));
         if (m.finishOrder === 0) this.scene.photoFinish();
+        if (m.index === this.guestIndex) this._celebrateOwnFinish(m, m.finishOrder + 1);
       }
     }
     this.raceClock = clock;
-    this._guestHud = { guestPlace, field, guestProgress, leaderProgress, guestGap, guestSpeed, guestLateral };
+    this._guestHud = { guestPlace, field };
   }
 
   // Guest: no physics. Ease every live marble toward its streamed target, fake the roll from the
@@ -942,13 +1171,15 @@ export class Game {
       }
     }
     this.marbleSet.updateProgress(this.track);
-    this.marbleSet.sync(this.track);
+    this.marbleSet.sync(this.track, this.scene.camera.position, this._leaders);
     for (const p of this.track.paddles) { p.mesh.position.copy(p.body.position); p.mesh.quaternion.copy(p.body.quaternion); }
 
     const order = this.marbleSet.leaderboard();
     const leaderNow = order[0];
     const nearRaw = leaderNow ? 1 - Math.max(0, Math.min(1, (this.track.finishS - leaderNow.s) / 300)) : 0;
-    this.audio.updateBeds(leaderNow ? leaderNow.speed : 0, Math.pow(nearRaw, 0.6), true);
+    this._nearFinish = Math.pow(nearRaw, 0.6);
+    const rolling = this._lastFocus || leaderNow;
+    this.audio.updateBeds(rolling ? rolling.speed : 0, this._nearFinish, true, this._surfaceOf(rolling, dt));
     this._setGrade(this.marbleSet.progress() >= 0.86 ? 'final' : 'racing');
 
     const focus = this._pickShot(order);
@@ -958,29 +1189,21 @@ export class Game {
       this.scene.followTarget(anchor, dt, focus !== this._lastFocus, this.track.dirAt(fs), focus.speed);
       this._lastFocus = focus;
     }
+    this._leaders = this._topRivals(order);
+    this._checkSectors();
 
     this.tickAccum += dt;
     if (this.tickAccum >= TICK_INTERVAL) { this.tickAccum = 0; this._sendGuestTick(order); }
   }
 
-  // Guest: the HUD tick, with the guest marble's own numbers taken from the host's frame rather
-  // than measured here. Same positional OnRaceTick contract as _sendTick.
+  // Guest: the HUD tick, with the guest marble's place taken from the host's frame rather than
+  // measured here. Same OnRaceTick contract as _sendTick.
   _sendGuestTick(order) {
     if (!this.dotnet) return;
     const h = this._guestHud || {};
-    const leader = order[0];
-    const shown = order.slice(0, LB_SHOWN);
-    const round2 = (v) => Math.round(v * 100) / 100;
-    this._invoke('OnRaceTick',
-      shown.map((m) => m.index),
-      shown.map((m) => Math.round(m.speed * 10) / 10),
-      shown.map((m) => m.finished),
-      shown.map((m) => (m.finished ? round2(m.finishTime) : 0)),
-      shown.map((m) => round2(this._gapSeconds(m, leader))),
-      h.leaderProgress || 0, h.guestProgress || 0, round2(this.raceClock),
-      h.guestLateral || 0, h.guestPlace ?? -1, h.field || order.length, h.guestGap || 0,
-      0, this._lastFocus ? this._lastFocus.index : -1, this.shotReason || 'LEADER',
-      h.guestSpeed || 0);
+    const place = h.guestPlace ?? -1;
+    this._setTension(place);
+    this._invoke('OnRaceTick', place, h.field || order.length);
   }
 
   // Guest: the host resolved the race. Mirror _resolve's presentation without its scoring.
@@ -991,6 +1214,7 @@ export class Game {
     this._setPhase('result');
     this._setGrade(won ? 'win' : 'loss');
     this.audio.playSting(!!won);
+    window.PoMusicDirector?.verdict?.(!!won);
   }
 
   // Guest: the host has moved on to the next race, on this seed.

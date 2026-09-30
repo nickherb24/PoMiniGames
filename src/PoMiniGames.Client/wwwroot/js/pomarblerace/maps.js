@@ -30,10 +30,20 @@
 //
 // OPTIONAL, and absent on maps that have no such feature — the game feature-detects each:
 //   inBoost(s)       is `s` on a boost pad?
+//   brakeAt(s)       speed cap on a brake strip at `s`, 0 elsewhere (game.js _applyBrakes)
+//   checkpoints      `s` of each checkpoint arch / sector split (addCheckpointArches, game.js)
 //   kickers          telegraphed kicker bands (see game.js _applyKickers)
 //   regenerate       true if asking for a new track means anything (procedural maps only)
+//
+// Each entry also says how the map was MADE and how many VERTICES it renders — both shown on the
+// track picker. `vertices` was measured 2026-09-30 by building the map in the engine and summing
+// every geometry in its track group (course, glass containment, arches, props); it is constant
+// per map, seeds included. Re-measure after changing a course or its dressing.
+// A registry entry (MAPS below) may also carry a `theme` — scene.js setTheme(): background/fog
+// colour, fog range, ambient/hemisphere/key lights and exposure. The page reads names and blurbs
+// from mapMenu(), so this file is the only place a map is described.
 import * as THREE from 'three';
-import { generateTrack, TRACK as PROC_TRACK } from './track-procedural.js';
+import { generateTrack } from './track-procedural.js';
 import { createGlbCourse } from './track-glb.js';
 import * as SPIRAL_WORKS_PATH from './track-path.js';
 import * as SPIRAL_WORKS_COL from './track-collision.js';
@@ -50,6 +60,9 @@ const spiralWorks = createGlbCourse({
   collision: SPIRAL_WORKS_COL,
   // Track-Bowl is a funnel with no ring structure, so it collides against its own geometry.
   bowlMeshName: 'Track-Bowl',
+  // Rumble strips capping speed before the three split mouths: the field reached Split A at the
+  // 85 u/s cap and 108 of 152 census falls happened there.
+  brakeBands: [[905, 965, 46], [1480, 1536, 46], [1690, 1712, 46]],
   // FINISH EARLY, at the foot of the Track-LowerA loop (world s 2270.7, 62.3% of the geometry).
   // That loop climbs 23.3 world units and needs ~59 u/s at the bottom simply to crest, so the
   // field bunches there and almost nothing gets over — the race was being decided by game.js's
@@ -67,8 +80,12 @@ const grandSpiral = createGlbCourse({
   bowlMeshName: 'Track-Bowl2',
 });
 
-/** A fresh, zeroed projection record for a caller to own and reuse. */
-export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0 });
+/**
+ * A fresh, zeroed projection record for a caller to own and reuse. `lane`/`ring`/`hw`/`reach`
+ * are filled by the authored courses (track-glb.js refineLane): which lane the marble is over,
+ * that lane's floor half-width and how far its walls reach. -1 means "judged on the main line".
+ */
+export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0, lane: -1, ring: 0, hw: 0, reach: 0 });
 
 // ── procedural adapter ──────────────────────────────────────────────────────────────────────
 // The procedural chute predates the interface above and speaks in world +Z. Because it descends
@@ -149,9 +166,40 @@ function adaptProceduralTrack(t) {
       return out.set(pos.x, pos.y, pos.z).addScaledVector(_u, -proj.height + 0.06);
     },
     inBoost: (s) => t.inBoost(s),
+    checkpoints: t.checkpoints,
     driveMotors: () => t.driveMotors(),
     dispose: () => t.dispose(),
   };
+}
+
+// ── checkpoint arches (2026-09-30) ──
+// A glowing half-hoop standing over the channel at each checkpoint: where the course branches on
+// the authored maps, at each hazard zone on the procedural ones. Purely visual — game.js reads the
+// same `checkpoints` list for the sector splits. Built from the track interface alone, so every
+// map gets them. The hoop is squashed to at most ARCH_H tall so a 100-wide channel does not grow
+// a 50-high arch through the containment lid.
+const ARCH_H = 16;
+let _archMat = null;
+function addCheckpointArches(track) {
+  if (!track.checkpoints || !track.checkpoints.length) return track;
+  _archMat = _archMat || new THREE.MeshStandardMaterial({
+    color: 0x7c3aed, emissive: 0xa855f7, emissiveIntensity: 1.6, roughness: 0.35, metalness: 0.1,
+  });
+  const c = new THREE.Vector3(), d = new THREE.Vector3(), r = new THREE.Vector3(), u = new THREE.Vector3();
+  const basis = new THREE.Matrix4();
+  for (const s of track.checkpoints) {
+    const hw = track.halfWidthAt(s) + 1;
+    track.centerAt(s, c); track.dirAt(s, d); track.rightAt(s, r); track.upAt(s, u);
+    // Half torus in its local XY plane: X across the channel, Y up, Z along the track.
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(hw, 0.7, 8, 40, Math.PI), _archMat);
+    basis.makeBasis(r, u, d);
+    arch.quaternion.setFromRotationMatrix(basis);
+    arch.scale.set(1, Math.min(1, ARCH_H / hw), 1);
+    arch.position.copy(c);
+    arch.name = 'CheckpointArch';
+    track.group.add(arch);
+  }
+  return track;
 }
 
 // ── registry ────────────────────────────────────────────────────────────────────────────────
@@ -168,28 +216,84 @@ function adaptProceduralTrack(t) {
 //      below with the next free `id`.
 // `load` is awaited once before the first build and may return anything the map needs; whatever
 // it resolves to is handed back to `build` as `asset`.
+// Canyon Run: the chute recipe, longer and narrower with a different hazard mix. The kicker band
+// sits between the plinko and the rumble strip; bobs are dropped (from > to) for a longer plinko.
+const CANYON_RUN = {
+  track: { LENGTH: 2200, DROP: 930, START_Y: 180, CHANNEL_WIDTH: 50, SEGMENTS: 640 },
+  zones: {
+    RIDGES: { from: 0.06, to: 0.16, step: 0.035 },
+    BOOST: [[0.18, 0.21], [0.47, 0.50], [0.64, 0.67], [0.83, 0.86]],
+    PLINKO: { from: 0.24, to: 0.40, rows: 9 },
+    KICKERS: [0.415, 0.435],
+    RUMBLE: [[0.44, 0.46], [0.60, 0.63]],
+    BOBS: { from: 1, to: 0, step: 0.04 },
+    TURNSTILES: { from: 0.69, to: 0.80, step: 0.037 },
+    GAUNTLET: { from: 0.87, to: 0.925, step: 0.018 },
+    FINISH: [0.93, 1.0],
+  },
+  pinches: [{ c: 0.22, w: 0.04, d: 0.45 }, { c: 0.55, w: 0.05, d: 0.5 }, { c: 0.855, w: 0.03, d: 0.4 }],
+  curve: 1.2,
+};
+
 const MAPS = [
   {
     id: 1,
     name: 'Neon Chute',
-    blurb: 'The original procedurally generated run — a different track every race, with boost pads, rumble strips and the Gauntlet.',
+    made: 'Built in code — procedural generator',
+    vertices: 22394,
+    blurb: 'Procedural — a new chute every race, with boost pads, rumble strips and the Gauntlet.',
+    // Night: the chute's neon emissives are the light show, so the fill drops and goes violet.
+    theme: {
+      bg: 0x070a1c, fogNear: 70, fogFar: 240,
+      ambient: [0x9ea4cc, 2.6], hemi: [0xb89cff, 0x1a1030, 1.7], key: [0xd8e0ff, 2.6], exposure: 1.1,
+    },
     load: () => Promise.resolve(null),
     build: (world, materials, marbleCount, _asset, seed) =>
-      adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount)),
+      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount))),
   },
   {
     id: 2,
     name: 'Spiral Works',
-    blurb: 'An authored course: a four-turn descending helix into split lanes, a funnel, two banked loops and a hazard fan.',
+    made: 'Modelled by hand in Blender',
+    vertices: 70316,
+    blurb: 'A four-turn helix into split lanes, a funnel, two banked loops and a hazard fan.',
+    // Factory floor under sodium lamps: warm key, rust-brown ground bounce, smoky brown haze.
+    theme: {
+      bg: 0x17130f, fogNear: 78, fogFar: 250,
+      ambient: [0xc4b59c, 3.3], hemi: [0xffd9a8, 0x3a2a1c, 2.0], key: [0xffc98a, 3.2], exposure: 1.12,
+    },
     load: () => spiralWorks.loadModel(),
-    build: (world, materials, marbleCount, asset) => spiralWorks.buildTrack(world, materials, marbleCount, asset),
+    build: (world, materials, marbleCount, asset) => addCheckpointArches(spiralWorks.buildTrack(world, materials, marbleCount, asset)),
   },
   {
     id: 3,
     name: 'Grand Spiral',
-    blurb: 'A wide-open descending weave: a safe-or-risky two-way split, an off-camber helix, washboard ridges, a gated terrace, a funnel, a five-lane fan, a free fall, and boost pads to the line.',
+    made: 'Generated in Blender by a Python script',
+    vertices: 52430,
+    blurb: 'A wide weave: a risky split, washboard, a funnel, a free fall and boost pads to the line.',
+    // Open daytime sky: pale blue haze pushed further out, bright neutral sun.
+    theme: {
+      bg: 0x7fb0d8, fogNear: 150, fogFar: 560,
+      ambient: [0xd0d8e0, 2.8], hemi: [0xbcdcff, 0x6a6450, 2.0], key: [0xffeccc, 4.0], exposure: 0.95,
+    },
     load: () => grandSpiral.loadModel(),
-    build: (world, materials, marbleCount, asset) => grandSpiral.buildTrack(world, materials, marbleCount, asset),
+    build: (world, materials, marbleCount, asset) => addCheckpointArches(grandSpiral.buildTrack(world, materials, marbleCount, asset)),
+  },
+  {
+    id: 4,
+    name: 'Canyon Run',
+    made: 'Built in code — procedural generator',
+    vertices: 22828,
+    blurb: 'Procedural at dusk — a longer, tighter canyon: twin kicker gates, a long plinko and a double Gauntlet.',
+    // Built from the Neon Chute recipe (track-procedural.js), whose 44-tall walls have never lost
+    // a marble. Narrower, longer and twistier, with a different hazard mix.
+    theme: {
+      bg: 0x3b2233, fogNear: 90, fogFar: 330,
+      ambient: [0xffd2b0, 2.8], hemi: [0xffb38a, 0x3a2418, 1.8], key: [0xffa060, 3.4], exposure: 1.05,
+    },
+    load: () => Promise.resolve(null),
+    build: (world, materials, marbleCount, _asset, seed) =>
+      addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, CANYON_RUN))),
   },
 ];
 
@@ -206,5 +310,5 @@ export function mapById(id) {
 
 /** Slot ids and names, for the host's map picker. */
 export function mapMenu() {
-  return MAPS.map((m) => ({ id: m.id, name: m.name, blurb: m.blurb }));
+  return MAPS.map((m) => ({ id: m.id, name: m.name, blurb: m.blurb, made: m.made, vertices: m.vertices }));
 }

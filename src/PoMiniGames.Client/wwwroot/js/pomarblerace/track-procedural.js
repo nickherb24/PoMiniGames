@@ -14,6 +14,10 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 
+// The Neon Chute recipe. A map may run it with a VARIANT (generateTrack's last argument), which
+// overrides any of these and of ZONES / pinches / curve amplitude — that is how Canyon Run is
+// built. The containment is the part to keep: 44-tall walls on a strictly descending chute
+// lost zero marbles in the 2026-09-30 fall census, where both authored courses lost dozens.
 export const TRACK = {
   LENGTH: 1800,       // forward (+Z) extent — lengthened for a longer race
   DROP: 760,          // 2× steeper ramp (slope ≈ 0.42) per request
@@ -33,7 +37,9 @@ export const TRACK = {
 
 // Zone layout along s (0 = gate, 1 = finish). Non-overlapping by construction so the
 // floor ribbons for rumble/boost never z-fight and the hazards stay legible.
-const ZONES = {
+const BASE_TRACK = TRACK;
+
+const BASE_ZONES = {
   RIDGES: { from: 0.10, to: 0.24, step: 0.045 },
   BOOST: [[0.26, 0.295], [0.615, 0.655], [0.835, 0.870]],
   PLINKO: { from: 0.31, to: 0.43, rows: 7 },
@@ -402,21 +408,31 @@ function kerbTexture() {
   return t;
 }
 
-export function generateTrack(world, materials, seed, marbleCount = 8) {
+/**
+ * @param {object} [variant] overrides for a map built from this recipe:
+ *   `{ track: {...TRACK}, zones: {...ZONES}, pinches: [{c,w,d}], curve: number }` — `curve`
+ *   scales the lateral wander amplitudes (1 = the chute). A zone set with from > to is skipped.
+ */
+export function generateTrack(world, materials, seed, marbleCount = 8, variant = null) {
+  const v = variant || {};
+  // Shadow the module-level recipe for this build only.
+  const TRACK = { ...BASE_TRACK, ...v.track };
+  const ZONES = { ...BASE_ZONES, ...v.zones };
+  const CURVE = v.curve ?? 1;
   const rnd = mulberry32(seed);
   const group = new THREE.Group();
   const bodies = [];
   const turnstiles = []; // { body, mesh } — every dynamic obstacle, synced each frame
-  const motors = [];     // { hinge, speed } — Gauntlet rotors, re-armed each frame
+  const motors = [];     // { hinge, speed } bobs / { body, spin } Gauntlet rotors — see driveMotors
 
   // ── Centerline: linear descent in Y (with gentle undulation), lateral wander
   //    in X via three summed sines. Amplitudes AND frequencies are up again per
   //    request — curvature goes as amp*freq², so the turns are markedly sharper
   //    than the sweeping arcs this used to draw. The wide road is what makes them
   //    survivable: there is now room to take a line through a hairpin. ──
-  const amp1 = 68 + rnd() * 54, freq1 = 1.8 + rnd() * 1.8, ph1 = rnd() * 6.28;
-  const amp2 = 24 + rnd() * 30, freq2 = 3.4 + rnd() * 2.8, ph2 = rnd() * 6.28;
-  const amp3 = 106 + rnd() * 46, freq3 = 0.6 + rnd() * 0.55, ph3 = rnd() * 6.28; // #2 sweeping S-curves
+  const amp1 = (68 + rnd() * 54) * CURVE, freq1 = 1.8 + rnd() * 1.8, ph1 = rnd() * 6.28;
+  const amp2 = (24 + rnd() * 30) * CURVE, freq2 = 3.4 + rnd() * 2.8, ph2 = rnd() * 6.28;
+  const amp3 = (106 + rnd() * 46) * CURVE, freq3 = 0.6 + rnd() * 0.55, ph3 = rnd() * 6.28; // #2 sweeping S-curves
 
   // #3 vertical undulation: mild crests/dips layered on the linear descent. Kept to ONE gentle
   // octave in the PHYSICS centerline — a second, faster octave here made the floor-collider
@@ -459,7 +475,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   // pinch on a 64-wide road still leaves 45 units — wide enough that the whole pack
   // sails through and the funnel does nothing. Floored at 0.35 ⇒ never under ~22
   // units, still ~9× the widest marble, so it squeezes without ever plugging.
-  const PINCHES = [
+  const PINCHES = v.pinches || [
     { c: 0.37, w: 0.055, d: 0.52 },
     { c: 0.66, w: 0.050, d: 0.55 },
   ];
@@ -479,13 +495,19 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   // Frame (position, tangent, right, up, bank quaternion) at parameter s.
   const frameAt = (s) => {
     const p = sample(s);
-    const ahead = sample(Math.min(1, s + 0.004));
-    const behind = sample(Math.max(0, s - 0.004));
+    // The heading samples stay INSIDE the track. They used to be clamped at the ends, so at s = 1
+    // `ahead` collapsed onto `p`, the heading came out of atan2(0, 0), and the last floor box got
+    // a garbage bank: it tilted up into a lip across the chute just past the finish line, and the
+    // 2026-09-30 census found a dozen marbles parked against it until the race timed out.
+    const sf = Math.min(Math.max(s, 0.004), 0.996);
+    const pc = sample(sf);
+    const ahead = sample(sf + 0.004);
+    const behind = sample(sf - 0.004);
     const dir = ahead.clone().sub(behind).normalize();
     const right = new THREE.Vector3().crossVectors(dir, UP).normalize();
     // bank into turns: proportional to how fast heading changes
-    const hAhead = Math.atan2(ahead.x - p.x, ahead.z - p.z);
-    const hBehind = Math.atan2(p.x - behind.x, p.z - behind.z);
+    const hAhead = Math.atan2(ahead.x - pc.x, ahead.z - pc.z);
+    const hBehind = Math.atan2(pc.x - behind.x, pc.z - behind.z);
     let dH = hAhead - hBehind;
     while (dH > Math.PI) dH -= 2 * Math.PI;
     while (dH < -Math.PI) dH += 2 * Math.PI;
@@ -963,9 +985,13 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
   // can be flung sideways or knocked backwards, and a race can genuinely turn here.
   // This is the one place the pack gets wrecked on purpose.
   //
-  // Non-trapping: the motor never stops, so a rotor always sweeps clear of whatever
-  // it has pinned within half a revolution. Arms are 0.42 of the channel (vs 0.30
-  // for turnstiles) — long enough to sweep most of it, short enough to leave a gap.
+  // Non-trapping: each rotor is KINEMATIC (2026-09-30), not a motor on a hinge. The motor had a
+  // max force of 90, and a pile of marbles against an arm stalled it — the arm then stood across
+  // the chute as a dam and the census found 25 marbles parked behind it until the timeout. A
+  // kinematic body has infinite mass, so nothing in the pack can stop it and it always sweeps
+  // clear; the authored courses' paddles are built the same way for the same reason. Arms are
+  // 0.42 of the channel (vs 0.30 for turnstiles) — long enough to sweep most of it, short
+  // enough to leave a gap.
   let rotorIdx = 0;
   for (let s = ZONES.GAUNTLET.from; s <= ZONES.GAUNTLET.to + 1e-6; s += ZONES.GAUNTLET.step, rotorIdx++) {
     const f = frameAt(s);
@@ -979,33 +1005,19 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     mesh.castShadow = true;
     group.add(mesh);
 
-    const anchor = new CANNON.Body({ mass: 0 });
-    anchor.position.set(pivot.x, pivot.y, pivot.z);
-    anchor.quaternion.set(f.q.x, f.q.y, f.q.z, f.q.w);
-    world.addBody(anchor);
-    bodies.push(anchor);
-
-    const rotor = new CANNON.Body({ mass: 2.2, material: materials.spinner });
+    const rotor = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC, material: materials.spinner });
     rotor.addShape(new CANNON.Box(new CANNON.Vec3(armLen, padH / 2, padThick / 2)));
     rotor.position.set(pivot.x, pivot.y, pivot.z);
     rotor.quaternion.set(f.q.x, f.q.y, f.q.z, f.q.w);
+    // Alternate direction per rotor so consecutive rotors sweep against each other
+    // and the pack can't just hug one wall through the whole zone. The spin axis is the chute's
+    // local up at the pivot (it banks).
+    const speed = (rotorIdx % 2 === 0 ? 1 : -1) * (2.4 + rnd() * 1.2);
+    const spin = new CANNON.Vec3(f.up.x * speed, f.up.y * speed, f.up.z * speed);
+    rotor.angularVelocity.copy(spin);
     world.addBody(rotor);
     bodies.push(rotor);
-
-    const axis = new CANNON.Vec3(0, 1, 0); // local up
-    const hinge = new CANNON.HingeConstraint(anchor, rotor, {
-      pivotA: new CANNON.Vec3(0, 0, 0), axisA: axis,
-      pivotB: new CANNON.Vec3(0, 0, 0), axisB: axis,
-      maxForce: 90,
-    });
-    // Alternate direction per rotor so consecutive rotors sweep against each other
-    // and the pack can't just hug one wall through the whole zone.
-    const speed = (rotorIdx % 2 === 0 ? 1 : -1) * (2.4 + rnd() * 1.2);
-    hinge.enableMotor();
-    hinge.setMotorSpeed(speed);
-    hinge.setMotorMaxForce(90);
-    world.addConstraint(hinge);
-    motors.push({ hinge, speed });
+    motors.push({ body: rotor, spin });
     turnstiles.push({ body: rotor, mesh });
   }
 
@@ -1072,6 +1084,10 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     finishZ: finishF.p.z,
     overviewTarget: startF.p.clone(),
     boostBands: ZONES.BOOST,
+    // Checkpoint arches + sector splits (maps.js / game.js): the start of each hazard zone.
+    checkpoints: [ZONES.PLINKO, ZONES.BOBS, ZONES.TURNSTILES, ZONES.GAUNTLET]
+      .filter((z) => z.from <= z.to)
+      .map((z) => z.from * TRACK.LENGTH),
     // Is the marble at forward position z standing on a boost pad? game.js applies
     // the acceleration itself — the pads are visual + a predicate, not colliders.
     inBoost: (z) => inBoost(sAt(z)),
@@ -1099,7 +1115,12 @@ export function generateTrack(world, materials, seed, marbleCount = 8) {
     // removed 2026-08-08, so `t` is now unused. It is kept in the signature because game.js
     // calls driveMotors(clock) once per racing frame and an arity change buys nothing.
     driveMotors() {
-      for (const m of motors) m.hinge.setMotorSpeed(m.speed);
+      // Two kinds: the pendulum bobs are hinge motors (re-armed, since cannon-es zeroes a motor
+      // that stalls); the Gauntlet rotors are kinematic (spin re-asserted).
+      for (const m of motors) {
+        if (m.hinge) m.hinge.setMotorSpeed(m.speed);
+        else m.body.angularVelocity.copy(m.spin);
+      }
     },
     // Half the channel width at a forward position. Exposed for the map adapter in maps.js,
     // which needs it to express this track through the same interface as the GLB course.

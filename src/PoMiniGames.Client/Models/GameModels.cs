@@ -87,13 +87,6 @@ public sealed class MarbleRaceHighScore
 }
 
 /// <summary>
-/// A PoMarbleRace submission. Carries the score and nothing else: the player's name, id and
-/// timestamp are resolved server-side from the auth cookie, so there is no field here to forge
-/// them in, and no unread field an attacker can vary to mint duplicate rows.
-/// </summary>
-public sealed record MarbleRaceHighScoreRequest(int BestScore);
-
-/// <summary>
 /// PoCabinet (T11, 2026-09-17): the lap time the server ratchets on
 /// <c>POST /api/pocabinet/scores</c>. Identity fields
 /// (<c>PlayerDisplayName</c> / <c>UserId</c> / <c>IsGuest</c>) are resolved

@@ -1,3 +1,4 @@
+using PoMiniGames.Shared.Games;
 using PoMiniGamesClient.Models;
 // Alias, not a namespace import: PoMiniGamesClient.Models mirrors several other Domain
 // types by name, so importing the namespace wholesale would make them all ambiguous.

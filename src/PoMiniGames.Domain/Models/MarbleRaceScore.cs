@@ -1,7 +1,8 @@
 namespace PoMiniGames.Domain.Models;
 
 /// <summary>
-/// A PoMarbleRace score — one point per top-3 finish, accumulated across a session — that cannot
+/// A PoMarbleRace run total — placement points for consecutive top-10 finishes, with a streak
+/// multiplier (see MarbleRaceRunVerifier) — that cannot
 /// exist outside its legal range. Parsing an untrusted <see cref="int"/> into this type is the only
 /// way to obtain one, so the range rule lives with the value instead of being re-checked (or
 /// forgotten) at each call site.

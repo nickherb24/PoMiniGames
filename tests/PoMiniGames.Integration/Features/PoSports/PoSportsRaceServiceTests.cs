@@ -43,6 +43,8 @@ public sealed class PoSportsRaceServiceTests
         public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10) =>
             Task.FromResult(new List<MarbleRaceHighScore>());
         public Task<MarbleRaceHighScore> SaveMarbleRaceHighScoreAsync(MarbleRaceHighScore entry) => Task.FromResult(entry);
+        public Task<List<MarbleRaceMapRecord>> GetMarbleRaceMapRecordsAsync() => Task.FromResult(new List<MarbleRaceMapRecord>());
+        public Task<MarbleRaceMapRecord> SaveMarbleRaceMapRecordAsync(MarbleRaceMapRecord entry) => Task.FromResult(entry);
         public Task<List<PoBrawlHighScore>> GetPoBrawlHighScoresAsync(int limit = 10) =>
             Task.FromResult(new List<PoBrawlHighScore>());
         public Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry) => Task.FromResult(entry);

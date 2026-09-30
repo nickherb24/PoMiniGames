@@ -27,7 +27,7 @@ public sealed record MarbleRaceHighScore
     /// <summary>True when the submitter had no real signed-in identity.</summary>
     public bool IsGuest { get; init; }
 
-    /// <summary>Top-3 finishes accumulated in one session. See <see cref="MarbleRaceScore"/> for the valid range.</summary>
+    /// <summary>Best run total (consecutive top-10 finishes). See <see cref="MarbleRaceScore"/> for the valid range.</summary>
     public int BestScore { get; init; }
 
     /// <summary>When the run happened. Persisted as an ISO-8601 string for compatibility with legacy rows.</summary>

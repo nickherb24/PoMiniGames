@@ -17,6 +17,10 @@ public interface IStorageService
     Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10);
     Task<MarbleRaceHighScore> SaveMarbleRaceHighScoreAsync(MarbleRaceHighScore entry);
 
+    // PoMarbleRace world records (fastest finish per map; one row per map)
+    Task<List<MarbleRaceMapRecord>> GetMarbleRaceMapRecordsAsync();
+    Task<MarbleRaceMapRecord> SaveMarbleRaceMapRecordAsync(MarbleRaceMapRecord entry);
+
     // PoBrawl High Scores (fastest KO)
     Task<List<PoBrawlHighScore>> GetPoBrawlHighScoresAsync(int limit = 10);
     Task<PoBrawlHighScore> SavePoBrawlHighScoreAsync(PoBrawlHighScore entry);

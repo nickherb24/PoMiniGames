@@ -3,8 +3,8 @@
 //
 // The field is one RED marble the player steers against a pack of 100 rivals, each with its own
 // colour (PACK_PALETTE) and its own procedural glass pattern (the atlas below). The pack shares
-// one geometry and one material and carries no trails/blobs/shadows; only the red player marble
-// gets the full treatment (own material, motion trail, contact blob, collision sparks).
+// one geometry and one material; only the red player marble gets the full treatment (own
+// material, contact blob, collision sparks). Ribbon trails follow the player and the top three.
 //
 // MASS. Every marble used to be physically identical so a race was decided purely by steering
 // skill. The pack now carries a small spread of MASS only — same radius, same damping, and the
@@ -15,8 +15,8 @@
 // every time. Radius is deliberately NOT varied: the pack is one InstancedMesh over a shared
 // SphereGeometry, and the collision radius would then disagree with what is drawn.
 //
-// This does not make the race a build-picker — you do not choose your marble, and yours is always
-// the baseline. It only stops the rivals from behaving like one rigid body.
+// The player may pick a WEIGHT (see WEIGHTS) inside that same spread, and a SKIN (see SKINS) that
+// changes the finish but never the colour — yours is always the one red marble.
 //
 // GFX #1 — INSTANCING. Sharing a geometry and a material still cost 100 separate draw calls and
 // 100 scene-graph nodes walked per frame, because they were 100 separate Mesh objects. The pack
@@ -126,7 +126,29 @@ export const MAX_SPEED = 85;
 
 export const MARBLE_COLORS = MARBLE_ROSTER.map((m) => m.color);
 
-const TRAIL_LEN = 16;
+// ── Player choices (intro card) ──
+// Skins change the red marble's finish, never its hue. `need` is the best run score that unlocks
+// one (localStorage pomarblerace_best), so a good run buys a flashier marble and nothing else.
+export const SKINS = [
+  { id: 'swirl', name: 'Swirl', need: 0 },
+  { id: 'catseye', name: "Cat's eye", need: 15 },
+  { id: 'galaxy', name: 'Galaxy', need: 40 },
+  { id: 'chrome', name: 'Chrome', need: 100 },
+];
+// Weights sit inside the pack's own PACK_MASS_SPREAD. game.js divides both the steering push and
+// the kicker shove by mass, so a light marble steers sharper and gets thrown further; a heavy
+// one turns wide and bullies through traffic. Same radius, same drag — it is not a speed stat.
+export const WEIGHTS = [
+  { id: 'light', name: 'Light', mass: 0.8, hint: 'Steers sharp, gets shoved' },
+  { id: 'balanced', name: 'Balanced', mass: 1.0, hint: 'The baseline' },
+  { id: 'heavy', name: 'Heavy', mass: 1.25, hint: 'Shrugs off kicks, turns wide' },
+];
+
+// Ribbon trails (GFX pass 2026-09-30): the player plus the current top three. They replaced a
+// 1-px THREE.Line on the player alone — WebGL ignores linewidth, so it barely showed.
+const TRAIL_LEN = 20;
+const TRAIL_WIDTH = 0.55;
+const LEADERS = 3;
 
 // ── Marker chrome: deliberately none ──
 // There used to be a white highlight ring around the player's marble and two billboarded pins
@@ -301,13 +323,20 @@ function blobTexture() {
  *   ONLY (realism pass #3). The scene has no global environment — see scene.js — so this is what
  *   gives the spheres a specular highlight without putting reflections on the track.
  */
-export function createMarbles(world, materials, startPositions, chosenIndex, onCollide, envMap, colorOverrides) {
+/**
+ * @param {object} [opts] `{ skin, weight, glass }` — the player's picks (ids from SKINS/WEIGHTS)
+ *   and whether this device can afford transmission (scene.heavy). All optional.
+ */
+export function createMarbles(world, materials, startPositions, chosenIndex, onCollide, envMap, colorOverrides, opts) {
+  const skin = (opts && opts.skin) || 'swirl';
+  const playerMass = (WEIGHTS.find((w) => w.id === (opts && opts.weight)) || WEIGHTS[1]).mass;
+  const glass = !!(opts && opts.glass);
   // Set by updateProgress() from the active map; only used to normalise progress to 0..1.
   let courseLength = 1;
   const marbles = [];
   let finishCounter = 0;
 
-  // Trails (#6) and contact blobs (#8) live in world space, so they sit in a sibling group
+  // Trails and contact blobs (#8) live in world space, so they sit in a sibling group
   // rather than under the (spinning) marble meshes.
   const decorations = new THREE.Group();
   const blobTex = blobTexture();
@@ -320,7 +349,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   // The 100 pack marbles SHARE one geometry + one material, which is what keeps them cheap to
   // draw; their individuality comes from per-instance colour and per-instance atlas cell rather
   // than from separate materials. The red player marble owns its own geometry/material (and is
-  // the only marble with a trail, blob and collision sparks). Low-poly sphere: 100 of them, so
+  // the only marble with a blob and collision sparks). Low-poly sphere: 100 of them, so
   // the segment count matters.
   // 2026-08-08 realism pass #2: 12×8 → 20×14. The note this replaces argued 12×8 was "invisible
   // at the size these render", which held for the old pack-overview camera. The camera is a chase
@@ -399,6 +428,26 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       `);
   };
 
+  // GFX #3 — the lead pack in glass. The top three rivals are drawn from this small InstancedMesh
+  // (transmission, tinted by instanceColor) and zero-scaled in `pack` while they lead, so the
+  // transmission pass costs one extra scene render however many marbles wear it. Heavy tier only.
+  let glassMesh = null, glassGeo = null, glassMat = null;
+  if (glass) {
+    glassGeo = new THREE.SphereGeometry(1.0, 24, 16);
+    glassMat = new THREE.MeshPhysicalMaterial({
+      color: 0xffffff, roughness: 0.06, metalness: 0, transmission: 0.85, thickness: 1.6, ior: 1.5,
+      clearcoat: 1, clearcoatRoughness: 0.04, iridescence: 0.35,
+      envMap: envMap || null, envMapIntensity: envMap ? 1.2 : 0,
+    });
+    glassMesh = new THREE.InstancedMesh(glassGeo, glassMat, LEADERS);
+    glassMesh.frustumCulled = false;
+    glassMesh.castShadow = true;
+    glassMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    glassMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(LEADERS * 3), 3);
+    glassMesh.count = 0;
+    group.add(glassMesh);
+  }
+
   // Scratch objects for composing instance matrices — allocated once, reused every frame for
   // every marble. sync() runs 100 times a frame; allocating here would be 6000 objects/second.
   const _m4 = new THREE.Matrix4();
@@ -430,15 +479,26 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       const playerTex = atlas.clone();
       playerTex.needsUpdate = true;
       playerTex.repeat.set(1 / ATLAS_COLS, 1 / ATLAS_ROWS);
-      const pc = atlasCell(PLAYER_INDEX + 3);   // a cat's-eye cell — the most "marble" of the four
+      // Atlas cell by skin: cell % 4 is the pattern kind (0 cat's eye, 1 swirl, 2 speckle).
+      const pc = skin === 'catseye' ? 4 : skin === 'galaxy' ? 2 : atlasCell(PLAYER_INDEX + 3);
       playerTex.offset.set((pc % ATLAS_COLS) / ATLAS_COLS, ((pc / ATLAS_COLS) | 0) / ATLAS_ROWS);
-      mat = new THREE.MeshStandardMaterial({
-        // Same treatment as the pack (realism pass #3), a touch glossier still: this is the one
-        // marble the camera is locked to, so it carries the closest look.
-        color: RED, emissive: 0x3b0a0a, emissiveIntensity: 0.25, roughness: 0.14, metalness: 0.0,
+      // GFX #3: on a heavy-capable device the player is real glass — MeshPhysicalMaterial with
+      // partial transmission, so the track refracts through it while the red still owns it.
+      // Elsewhere it keeps the standard material it always had.
+      const Mat = glass ? THREE.MeshPhysicalMaterial : THREE.MeshStandardMaterial;
+      const chrome = skin === 'chrome';
+      mat = new Mat({
+        color: RED, emissive: skin === 'galaxy' ? 0x5a0c14 : 0x3b0a0a,
+        emissiveIntensity: skin === 'galaxy' ? 0.6 : 0.25,
+        roughness: chrome ? 0.1 : 0.14, metalness: chrome ? 1.0 : 0.0,
         envMap: envMap || null,
-        envMapIntensity: envMap ? 0.95 : 0,
-        map: playerTex,
+        envMapIntensity: envMap ? (chrome ? 1.6 : 0.95) : 0,
+        map: chrome ? null : playerTex,
+        ...(glass ? {
+          clearcoat: 1, clearcoatRoughness: 0.05,
+          transmission: chrome ? 0 : 0.4, thickness: 1.4, ior: 1.5,
+          iridescence: skin === 'galaxy' ? 1 : 0.25,
+        } : {}),
       });
       mesh = new THREE.Mesh(sphereGeo, mat);
       // Only the player casts/receives shadows — 100 shadow-casters would swamp the shadow map.
@@ -453,30 +513,10 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     }
     mesh.position.copy(startPositions[i]);
 
-    // Trail + contact blob are the player's alone (a trail per pack marble would be 100 extra
-    // draw calls for marbles you're not watching).
-    let trail = null, trailPos = null, blob = null, blobGeo = null;
+    // The contact blob is the player's alone (one per pack marble would be 100 extra draw calls
+    // for marbles you're not watching).
+    let blob = null, blobGeo = null;
     if (isPlayer) {
-      trailPos = new Float32Array(TRAIL_LEN * 3);
-      const trailCol = new Float32Array(TRAIL_LEN * 3);
-      const baseCol = new THREE.Color(RED);
-      for (let j = 0; j < TRAIL_LEN; j++) {
-        trailPos[j * 3] = startPositions[i].x;
-        trailPos[j * 3 + 1] = startPositions[i].y;
-        trailPos[j * 3 + 2] = startPositions[i].z;
-        const f = 1 - j / TRAIL_LEN;
-        trailCol[j * 3] = baseCol.r * f; trailCol[j * 3 + 1] = baseCol.g * f; trailCol[j * 3 + 2] = baseCol.b * f;
-      }
-      const trailGeo = new THREE.BufferGeometry();
-      trailGeo.setAttribute('position', new THREE.BufferAttribute(trailPos, 3));
-      trailGeo.setAttribute('color', new THREE.BufferAttribute(trailCol, 3));
-      const trailMat = new THREE.LineBasicMaterial({
-        vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
-      });
-      trail = new THREE.Line(trailGeo, trailMat);
-      trail.frustumCulled = false;
-      decorations.add(trail);
-
       blobGeo = new THREE.CircleGeometry(radius * 1.5, 20);
       blob = new THREE.Mesh(blobGeo, new THREE.MeshBasicMaterial({
         map: blobTex, color: 0x000000, transparent: true, opacity: 0.5, depthWrite: false,
@@ -487,7 +527,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     }
 
     const body = new CANNON.Body({
-      mass: spec.mass,
+      mass: isPlayer ? playerMass : spec.mass,
       material: materials.marble,
       shape: new CANNON.Sphere(radius),
       position: new CANNON.Vec3(startPositions[i].x, startPositions[i].y, startPositions[i].z),
@@ -506,7 +546,7 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
 
     marbles.push({
       index: i, body, mesh, packIndex,
-      trail, trailPos, blob,
+      blob,
       spec, radius, sphereGeo, blobGeo,
       finished: false, finishOrder: -1, place: -1, finishTime: 0,
       // prevPlace lets the director spot an overtake without re-deriving standings.
@@ -523,6 +563,78 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       // Owned and reused, never reallocated — updateProgress() writes into it in place.
       proj: newProjection(),
     });
+  }
+
+  // ── Ribbon trails ──
+  // Camera-facing strips rebuilt from a short position history each frame: 4 ribbons × 20 points,
+  // one shared additive material. Vertex colour fades to black down the tail, which additive
+  // blending renders as fading out. A ribbon that changes owner restarts its history at the new
+  // owner, or it would draw a streak across the course from the old one.
+  const ribbonMat = new THREE.MeshBasicMaterial({
+    vertexColors: true, transparent: true, blending: THREE.AdditiveBlending,
+    depthWrite: false, side: THREE.DoubleSide,
+  });
+  const ribbonIndex = [];
+  for (let j = 0; j < TRAIL_LEN - 1; j++) {
+    const a = j * 2;
+    ribbonIndex.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
+  }
+  const ribbons = Array.from({ length: LEADERS + 1 }, () => {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(TRAIL_LEN * 2 * 3);
+    const col = new Float32Array(TRAIL_LEN * 2 * 3);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(ribbonIndex);
+    const mesh = new THREE.Mesh(geo, ribbonMat);
+    mesh.frustumCulled = false;
+    mesh.visible = false;
+    mesh.userData.noAO = true;   // additive, no depth: keep it out of GTAO's prepass (scene.js)
+    decorations.add(mesh);
+    return { mesh, geo, pos, col, hist: new Float32Array(TRAIL_LEN * 3), owner: null };
+  });
+  const _rc = new THREE.Color();
+  const colorOf = (m) => (colorOverrides && colorOverrides[m.index] !== undefined ? colorOverrides[m.index] : m.spec.color);
+
+  function claimRibbon(r, m) {
+    r.owner = m;
+    const p = m.body.position;
+    for (let j = 0; j < TRAIL_LEN; j++) { r.hist[j * 3] = p.x; r.hist[j * 3 + 1] = p.y; r.hist[j * 3 + 2] = p.z; }
+    _rc.setHex(colorOf(m));
+    for (let j = 0; j < TRAIL_LEN; j++) {
+      const f = Math.pow(1 - j / (TRAIL_LEN - 1), 1.6) * 0.85;
+      for (let side = 0; side < 2; side++) {
+        const o = (j * 2 + side) * 3;
+        r.col[o] = _rc.r * f; r.col[o + 1] = _rc.g * f; r.col[o + 2] = _rc.b * f;
+      }
+    }
+    r.geo.attributes.color.needsUpdate = true;
+  }
+
+  const _d = new THREE.Vector3(), _toEye = new THREE.Vector3(), _side = new THREE.Vector3(), _p = new THREE.Vector3();
+  function updateRibbon(r, eye) {
+    const m = r.owner;
+    if (!m || m.eliminated) { r.mesh.visible = false; return; }
+    const h = r.hist;
+    if (!m.finished) {
+      h.copyWithin(3, 0, (TRAIL_LEN - 1) * 3);
+      h[0] = m.body.position.x; h[1] = m.body.position.y; h[2] = m.body.position.z;
+    }
+    for (let j = 0; j < TRAIL_LEN; j++) {
+      const a = Math.max(0, j - 1) * 3, b = Math.min(TRAIL_LEN - 1, j + 1) * 3;
+      _d.set(h[a] - h[b], h[a + 1] - h[b + 1], h[a + 2] - h[b + 2]);
+      _p.set(h[j * 3], h[j * 3 + 1], h[j * 3 + 2]);
+      _toEye.copy(eye).sub(_p);
+      _side.crossVectors(_d, _toEye);
+      const len = _side.length();
+      // Taper toward the tail; a stationary marble (len ≈ 0) collapses its ribbon to nothing.
+      _side.multiplyScalar(len > 1e-6 ? (TRAIL_WIDTH * (1 - 0.7 * j / TRAIL_LEN)) / len : 0);
+      const o = j * 6;
+      r.pos[o] = _p.x + _side.x; r.pos[o + 1] = _p.y + _side.y; r.pos[o + 2] = _p.z + _side.z;
+      r.pos[o + 3] = _p.x - _side.x; r.pos[o + 4] = _p.y - _side.y; r.pos[o + 5] = _p.z - _side.z;
+    }
+    r.geo.attributes.position.needsUpdate = true;
+    r.mesh.visible = true;
   }
 
   // Seed the instance buffers from the starting grid. This is NOT redundant with sync(): the
@@ -567,7 +679,6 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
       pack.setMatrixAt(m.packIndex, _m4);
       pack.instanceMatrix.needsUpdate = true;
     }
-    if (m.trail) m.trail.visible = false;
     if (m.blob) m.blob.visible = false;
   }
 
@@ -616,7 +727,12 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
    *   (which is banked to near-vertical in places, so a world-Y height would not do) and reacts
    *   to the gap the way the 2026-08-08 realism pass intended.
    */
-  function sync(track) {
+  /**
+   * @param {THREE.Vector3} [eye] camera position, for the camera-facing trails. Without it the
+   *   trails are skipped.
+   * @param {object[]} [leaders] the current top rivals (never the player), drawn in glass and trailed.
+   */
+  function sync(track, eye, leaders) {
     let packDirty = false;
     for (const m of marbles) {
       if (m.eliminated) continue;
@@ -633,18 +749,6 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
         packDirty = true;
       }
 
-      // Trail + blob belong to the player marble only (both null on the pack).
-      if (m.trail) {
-        // Trail: shift the buffer back one and write the new head (#6).
-        const tp = m.trailPos;
-        for (let j = TRAIL_LEN - 1; j > 0; j--) {
-          tp[j * 3] = tp[(j - 1) * 3];
-          tp[j * 3 + 1] = tp[(j - 1) * 3 + 1];
-          tp[j * 3 + 2] = tp[(j - 1) * 3 + 2];
-        }
-        tp[0] = m.body.position.x; tp[1] = m.body.position.y; tp[2] = m.body.position.z;
-        m.trail.geometry.attributes.position.needsUpdate = true;
-      }
       // Contact blob (#8). 2026-08-08 realism pass #9: this used to be pinned a fixed distance
       // under the marble, so it flew with it — a "contact" shadow that left the ground the
       // moment the marble did, always the same size and always the same 50% black. A real one
@@ -670,9 +774,40 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
         }
       }
     }
+    // Glass leaders: draw each from glassMesh and hide its pack instance. The loop above rewrote
+    // every pack matrix, so a marble that has just lost the lead is back in the pack unaided.
+    const lead = leaders ? leaders.slice(0, LEADERS) : [];
+    if (glassMesh) {
+      let n = 0;
+      for (const m of lead) {
+        if (m.eliminated || m.packIndex < 0) continue;
+        _m4.compose(m.mesh.position, m.mesh.quaternion, _scale);
+        glassMesh.setMatrixAt(n, _m4);
+        glassMesh.setColorAt(n, _col.setHex(colorOf(m)));
+        _m4.compose(m.mesh.position, m.mesh.quaternion, _zero);
+        pack.setMatrixAt(m.packIndex, _m4);
+        packDirty = true;
+        n++;
+      }
+      glassMesh.count = n;
+      glassMesh.instanceMatrix.needsUpdate = true;
+      glassMesh.instanceColor.needsUpdate = true;
+    }
+
     // One upload per frame for the whole 100-marble pack, not one per marble. Only the matrices
     // move — instanceColor and the atlas offsets are static after construction.
     if (packDirty) pack.instanceMatrix.needsUpdate = true;
+
+    if (eye) {
+      const want = [marbles[PLAYER_INDEX], ...lead];
+      // Keep ribbons on marbles still wanted; hand the freed ones to new arrivals.
+      const free = ribbons.filter((r) => !want.includes(r.owner));
+      for (const m of want) {
+        if (!ribbons.some((r) => r.owner === m) && free.length) claimRibbon(free.shift(), m);
+      }
+      for (const r of free) r.owner = null;
+      for (const r of ribbons) updateRibbon(r, eye);
+    }
   }
 
   // Record finish order + time as marbles cross the finish plane. Returns
@@ -746,11 +881,13 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
     pack.dispose();
     packGeo.dispose();
     packMat.dispose();
+    if (glassMesh) { glassMesh.dispose(); glassGeo.dispose(); glassMat.dispose(); }
+    for (const r of ribbons) r.geo.dispose();
+    ribbonMat.dispose();
     for (const m of marbles) {
       // Eliminated/finished marbles already had their body pulled out of the world.
       try { world.removeBody(m.body); } catch { }
-      // Trail/blob/red-material/red-geometry are owned by the player marble only.
-      if (m.trail) { m.trail.geometry.dispose(); m.trail.material.dispose(); }
+      // Blob/red-material/red-geometry are owned by the player marble only.
       if (m.blob) m.blob.material.dispose();
       if (m.index === PLAYER_INDEX) {
         // The player's map is a CLONE of the atlas. Dispose the clone (it owns its own GPU

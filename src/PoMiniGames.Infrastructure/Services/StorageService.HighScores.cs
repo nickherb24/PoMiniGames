@@ -78,6 +78,50 @@ public partial class StorageService
             (incoming.TryGetValue("BestScore", out var v) ? v as int? ?? 0 : 0) > (existing.GetInt32("BestScore") ?? -1),
     };
 
+    // World record per PoMarbleRace map: the row IS the map (RowKey = MapId), and only a faster
+    // finish replaces it — the same ratchet as the player boards, keyed on the map instead.
+    private static readonly HighScoreDescriptor<MarbleRaceMapRecord> MarbleRaceRecords = new(
+        Table: MarbleRaceRecordsTable,
+        Partition: MarbleRacePartition,
+        Sanitize: e => e with
+        {
+            PlayerName = DisplayName24(e.PlayerName),
+            UserId = e.UserId ?? "",
+            Seconds = Math.Clamp(e.Seconds, 0, 180),
+            AchievedAtUtc = e.AchievedAtUtc == default ? DateTimeOffset.UtcNow : e.AchievedAtUtc,
+        },
+        ToFields: e => new Dictionary<string, object?>
+        {
+            ["MapId"] = e.MapId,
+            ["Seconds"] = e.Seconds,
+            ["PlayerName"] = e.PlayerName,
+            ["UserId"] = e.UserId,
+            ["IsGuest"] = e.IsGuest,
+            ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
+        },
+        FromEntity: e => new MarbleRaceMapRecord
+        {
+            MapId = e.GetInt32("MapId") ?? 0,
+            Seconds = e.GetDouble("Seconds") ?? 0d,
+            PlayerName = e.GetString("PlayerName") ?? "",
+            UserId = e.GetString("UserId") ?? "",
+            IsGuest = e.GetBoolean("IsGuest") ?? true,
+            AchievedAtUtc = DateTimeOffset.TryParse(e.GetString("Date"), out var d) ? d : default,
+        },
+        RowKeyFields: ["MapId"],
+        Rank: s => s.OrderBy(x => x.MapId))
+    {
+        ShouldOverwrite = (existing, incoming) =>
+            (incoming.TryGetValue("Seconds", out var v) ? v as double? ?? double.MaxValue : double.MaxValue)
+                < (existing.GetDouble("Seconds") ?? double.MaxValue),
+    };
+
+    public Task<List<MarbleRaceMapRecord>> GetMarbleRaceMapRecordsAsync() =>
+        GetHighScoresAsync(MarbleRaceRecords, 50);
+
+    public Task<MarbleRaceMapRecord> SaveMarbleRaceMapRecordAsync(MarbleRaceMapRecord entry) =>
+        SaveHighScoreAsync(MarbleRaceRecords, entry);
+
     private static readonly HighScoreDescriptor<PoBrawlHighScore> PoBrawlScores = new(
         Table: PoBrawlTable,
         Partition: PoBrawlPartition,
