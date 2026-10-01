@@ -48,20 +48,12 @@
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🏜️</span> SandPlayground</span>;
 
     private RenderFragment HowToPlayContent => @<div>
-        @* 2026-09-11: word budget — the intro card is capped at 100 words. Each
-           tool keeps one behavioural hook; the material-science derivation
-           (critical spans, pore space, hydrostatics) lives in the simulation,
-           not the welcome card. *@
-        <p><strong>Pick a tool, then drag on the world:</strong></p>
-        <ul>
-            <li><strong>Dig Vacuum:</strong> extracts sand and water; concrete and bedrock are immune</li>
-            <li><strong>Sand:</strong> stands in cuts, roofs tunnels, avalanches past a critical span</li>
-            <li><strong>Concrete Bar:</strong> rigid — undermine it and it falls as one body</li>
-            <li><strong>Water:</strong> levels itself, soaks into loose ground, weeps back out</li>
-            <li><strong>TNT:</strong> slingshot a fused bomb — deep bursts seal cavities, surface ones vent</li>
-            <li><strong>Water Balloon:</strong> slingshot an impact burst</li>
-        </ul>
-        <p><strong>Auto-drop</strong>, <strong>Pause</strong>/<strong>Step</strong> and <strong>Reset</strong> sit in the toolbar.</p>
+        @* 2026-09-30: this card listed all six tools, one bullet each — the same
+           text every tool button already carries as its tooltip and shows as a
+           hint when picked. The card now says only what the dock cannot: how the
+           tools are used, and the keys. *@
+        <p>Pick a tool from the dock, then drag on the world. TNT and balloons are slingshots: drag in open air and let go.</p>
+        <p><kbd>1</kbd>–<kbd>8</kbd> tools · right-drag digs · <kbd>[</kbd> <kbd>]</kbd>, the wheel or a pinch for brush size · <kbd>Space</kbd> pause · <kbd>X</kbd> x-ray · <kbd>Ctrl</kbd>+<kbd>Z</kbd> undo. Worlds, challenges, saves and weather are under <strong>⋯</strong>.</p>
     </div>;
 
     protected override void OnInitialized()

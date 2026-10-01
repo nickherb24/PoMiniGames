@@ -144,7 +144,12 @@ void main() {
         // threshold. Coarse grains settle faster and resist entrainment;
         // fine grains travel farther in turbidity plumes.
         float grainFrac = fract(self.r * 255.0);
-        if (grainFrac < 0.05) grainFrac = rnd < 0.62 ? 0.12 : 0.36;
+        // "No fraction yet" is a value on an integer, and on a half-float target
+        // an integer byte lands a hair either side of it: 80/255 reads back as
+        // 79.999, whose fract is 0.999. Left alone that was carried as the grain
+        // fraction, pushed R to 81, and turned every damp grain that touched a
+        // byte upload into vitrified glass (1,500 cells of lake bed in 8 s).
+        if (grainFrac < 0.05 || grainFrac > 0.95) grainFrac = rnd < 0.62 ? 0.12 : 0.36;
         bool glass = rbyte >= 81.0 && rbyte <= 84.0; // vitrified blast lining
         bool sat = rbyte >= 85.0;                    // pores hold a cell of water
 
@@ -205,7 +210,15 @@ void main() {
             float shearStress = abs(leftStress - rightStress) * 0.65 +
                                 (md == AIR || md == WATER ? 0.32 : 0.0);
             float friction = mix(0.625, 0.510, saturation); // tan(32deg)..tan(27deg)
-            float yieldLimit = capillary * 0.24 + normalStress * friction;
+            // The envelope is tau <= c + sigma tan(phi), and c is not only
+            // capillary: packed ground carries real cohesion, here its own
+            // support value. With that term missing no dry cell with air under
+            // it could ever pass (0.32 of shear against at most 0.18), so
+            // every authored tunnel and pocket roof stoped up to the surface
+            // within five seconds of load. Loose sand (a near 0) still has
+            // none and slumps to repose; a cantilever tip still goes before a
+            // bridged span does.
+            float yieldLimit = capillary * 0.24 + normalStress * friction + self.a * 2.0;
             if (!glass && shearStress > yieldLimit) target = min(target, 0.18);
             // Terzaghi effective stress: pore pressure subtracts from the
             // grain skeleton's load-bearing stress before full liquefaction.
@@ -213,13 +226,23 @@ void main() {
             if (mu == WATER) poreHead = max(poreHead, up.a);
             if (ml == WATER) poreHead = max(poreHead, lf.a);
             if (mr == WATER) poreHead = max(poreHead, rt.a);
-            target *= 1.0 - saturation * clamp(poreHead * 1.8, 0.0, 0.42);
+            // Wet weakening is for loose sediment (packed: self.a >= 0.5, see below).
+            bool packed = self.a >= 0.5;
+            if (!packed) target *= 1.0 - saturation * clamp(poreHead * 1.8, 0.0, 0.42);
             // Sand with standing water ON TOP of it is submerged, and
             // submerged sand has no capillary cohesion at all — the damp-sand
             // bridges that hold a bank up simply are not there once the pores
             // are full. That is what makes a river bed mobile. A cavern roof
             // has water BELOW it, not above, so it is untouched by this.
-            if (wet >= 16.0 && (waterNbrs >= 2 || mu == WATER)) target = min(target, 0.35);
+            // Loose sediment only: it can never set under water. Packed ground
+            // keeps its packing, which is what every comment on permeability and
+            // scour in MOVE assumes ("packed strata sit at 1.0, which keeps the
+            // reservoir bed sealed"; "packed ground is immune"). Applied to
+            // everything, this and the pore-pressure term above took a lake's
+            // whole bed down to permeable, erodible slurry and the lake went
+            // through it in seconds — hidden until now only because the
+            // grain-fraction bug above was turning that same bed to glass.
+            if (!packed && wet >= 16.0 && (waterNbrs >= 2 || mu == WATER)) target = min(target, 0.35);
             if (sat) target = min(target, 0.35);   // pore water makes it slurry —
             // and, being under 0.5, keeps it permeable so a wetting front can
             // carry on down through ground it has already soaked.

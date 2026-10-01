@@ -1,63 +1,246 @@
 @* SandPlayground — a GPU sand-and-water physics sandbox.
-   Blazor owns only the docked toolbar. Every pointer event and the 60 FPS
-   loop live in wwwroot/js/sand-playground/sand-playground-engine.js. *@
+   Blazor owns only the floating tool dock and its menu. Every pointer event, the
+   keyboard shortcuts and the 60 FPS loop live in
+   wwwroot/js/sand-playground/sand-playground-engine.js, which reports back
+   through OnEngine so the dock never shows a stale tool.
 
-<div class="sand-playground-root">
-    <div class="sand-playground-toolbar" role="toolbar" aria-label="SandPlayground tools">
-        <span class="sand-playground-title">SAND PLAYGROUND</span>
+   2026-09-30 consolidation: the dock floats over the sim's sky instead of
+   sitting above it (the canvas now takes the whole game area), tools are icon
+   chips, and everything that is not a tool — worlds, challenges, saves, speed,
+   weather, sharing — lives in one "⋯" menu. Eight tools are five chips: Pour and
+   Sling each open a small tray for what they carry (sand / water / fire; TNT /
+   balloon, plus the fuse and the charge), so a new material costs no dock space. The toolbar title, the hint bar,
+   the mute button and both sliders are gone: the shell already names the game,
+   a tool's hint shows briefly when it is picked, sound follows the app's own
+   volume, and brush size is the chip / the wheel / [ ]. *@
 
-        @foreach (var t in ToolDefs)
-        {
-            <button type="button"
-                    class="sand-playground-btn @(ActiveTool == t.Id ? "active" : "")"
-                    title="@t.Hint"
-                    aria-pressed="@(ActiveTool == t.Id ? "true" : "false")"
-                    @onclick="() => SelectToolAsync(t.Id)">@t.Label</button>
-        }
-
-        <span class="sand-playground-sep" aria-hidden="true"></span>
-
-        <label class="sand-playground-brush-label" for="sand-playground-brush">Brush</label>
-        <input id="sand-playground-brush" type="range" min="1" max="32" value="@BrushSize"
-               aria-label="Brush size in pixels"
-               @oninput="OnBrushChangedAsync" class="sand-playground-slider" />
-        <span class="sand-playground-brush-val">@BrushSize px</span>
-
-        <span class="sand-playground-sep" aria-hidden="true"></span>
-
-        <button type="button" class="sand-playground-btn sand-playground-ctrl" aria-pressed="@(Paused ? "true" : "false")"
-                @onclick="TogglePauseAsync">@(Paused ? "► Run" : "❚❚ Pause")</button>
-        <button type="button" class="sand-playground-btn sand-playground-ctrl" disabled="@(!Paused)"
-                title="Advance a single simulation step (paused only)"
-                @onclick="StepAsync">Step</button>
-        <button type="button" class="sand-playground-btn sand-playground-ctrl @(DemoOn ? "active" : "")"
-                title="Rain a random TNT bomb every second"
-                aria-pressed="@(DemoOn ? "true" : "false")"
-                @onclick="ToggleDemoAsync">💣 Auto-drop</button>
-        <button type="button" class="sand-playground-btn sand-playground-ctrl sand-playground-danger"
-                title="Rebuild the world from scratch"
-                @onclick="ResetAsync">Reset</button>
-
-        <span class="sand-playground-sep" aria-hidden="true"></span>
-
-        <button type="button" class="sand-playground-btn sand-playground-ctrl"
-                title="@(AudioOn ? "Mute" : "Unmute")"
-                aria-label="@(AudioOn ? "Mute sound" : "Unmute sound")"
-                aria-pressed="@(AudioOn ? "true" : "false")"
-                @onclick="ToggleAudioAsync">@(AudioOn ? "🔊" : "🔇")</button>
-        <input type="range" min="0" max="100" value="@Volume"
-               aria-label="Volume"
-               @oninput="OnVolumeChangedAsync" class="sand-playground-slider sand-playground-vol" title="Volume" />
-    </div>
-
+<div class="sand-playground-root" @onpointerdown="WakeDock">
     <div class="sand-playground-viewport">
-        @* Fixed 800x600 backing store; CSS scales the rendered box. The engine's
-           pointer math reads the bounding rect, so touch stays accurate at any
+        @* Fixed 800x600 simulation. The engine resizes both drawing buffers to the
+           displayed size (the width/height here are only the first frame's).
+           Pointer math reads the bounding rect, so touch stays accurate at any
            displayed size. *@
         <canvas @ref="_canvas" width="800" height="600" aria-hidden="true"></canvas>
         <canvas @ref="_overlay" width="800" height="600" class="sand-playground-overlay"
                 aria-label="SandPlayground sandbox — drag to paint, drag in open air to slingshot ordnance"></canvas>
-    </div>
 
-    <div class="sand-playground-hint">@ActiveHint</div>
+        @* In the attract reel the whole view is the simulation; the dock arrives
+           with the first touch. *@
+        @if (DockShown)
+        {
+        <div class="sand-playground-dock" role="toolbar" aria-label="SandPlayground tools">
+            @foreach (var g in Groups)
+            {
+                var t = CurrentOf(g);
+                <button type="button"
+                        class="sp-btn @(GroupOf(ActiveTool) == g ? "active" : "")"
+                        title="@($"{t.Label} ({t.Key}) — {t.Hint}")"
+                        aria-label="@(g.Tools.Length > 1 ? $"{g.Label}: {t.Label}" : t.Label)"
+                        aria-pressed="@Pressed(GroupOf(ActiveTool) == g)"
+                        disabled="@(!Array.Exists(g.Tools, x => ToolAllowed(x.Id)))"
+                        @onclick="() => SelectToolAsync(CurrentOf(g).Id)">@t.Icon</button>
+            }
+
+            <span class="sp-sep" aria-hidden="true"></span>
+
+            <button type="button" class="sp-btn sp-brush"
+                    title="Brush size — click to cycle, or use the wheel / [ ]"
+                    aria-label="@($"Brush size {BrushSize} pixels")"
+                    @onclick="CycleBrushAsync">
+                <span class="sp-brush-dot" style="--sp-brush: @BrushSize" aria-hidden="true"></span>@BrushSize
+            </button>
+            <button type="button" class="sp-btn"
+                    title="@(Paused ? "Run (Space)" : "Pause (Space)")"
+                    aria-label="@(Paused ? "Run" : "Pause")"
+                    aria-pressed="@Pressed(Paused)"
+                    @onclick="TogglePauseAsync">@(Paused ? "▶" : "⏸")</button>
+            @* Step only means something while paused, so it only exists then. *@
+            @if (Paused)
+            {
+                <button type="button" class="sp-btn" title="Advance one step (.)" aria-label="Step once"
+                        @onclick="StepAsync">⏭</button>
+            }
+            <button type="button" class="sp-btn" title="Undo (Ctrl+Z)" aria-label="Undo"
+                    disabled="@(UndoDepth == 0)"
+                    @onclick="UndoAsync">↶</button>
+            @* Only exists while radio-fused bombs are lying about. *@
+            @if (RemoteBombs > 0)
+            {
+                <button type="button" class="sp-btn sp-detonate" title="Detonate the radio bombs (Enter)"
+                        aria-label="@($"Detonate {RemoteBombs} radio bombs")"
+                        @onclick="DetonateAsync">💥@RemoteBombs</button>
+            }
+            <button type="button" class="sp-btn @(MenuOpen ? "active" : "")"
+                    title="Worlds, challenges, saves, speed, weather, share"
+                    aria-label="Menu" aria-expanded="@Pressed(MenuOpen)" aria-controls="sand-playground-menu"
+                    @onclick="ToggleMenuAsync">⋯</button>
+        </div>
+
+        @* The tray under the dock: what the active tool carries. *@
+        @if (TrayTools is { } tray)
+        {
+            <div class="sand-playground-tray" role="toolbar" aria-label="@($"{GroupOf(ActiveTool)?.Label} options")">
+                @foreach (var t in tray)
+                {
+                    <button type="button" class="sp-pill @(ActiveTool == t.Id ? "active" : "")"
+                            title="@($"{t.Label} ({t.Key}) — {t.Hint}")"
+                            aria-pressed="@Pressed(ActiveTool == t.Id)"
+                            disabled="@(!ToolAllowed(t.Id))"
+                            @onclick="() => SelectToolAsync(t.Id)">@t.Icon @t.Label</button>
+                }
+                @if (ActiveTool == "tnt")
+                {
+                    <span class="sp-sep" aria-hidden="true"></span>
+                    @foreach (var f in Fuses)
+                    {
+                        <button type="button" class="sp-pill @(Fuse == f.Id ? "active" : "")" title="@f.Hint"
+                                aria-pressed="@Pressed(Fuse == f.Id)"
+                                @onclick="() => SetFuseAsync(f.Id)">@f.Label</button>
+                    }
+                    <span class="sp-sep" aria-hidden="true"></span>
+                    <button type="button" class="sp-pill @(BigCharge ? "" : "active")" title="Small charge: about half the crater"
+                            aria-pressed="@Pressed(!BigCharge)" @onclick="() => SetChargeAsync(false)">Small</button>
+                    <button type="button" class="sp-pill @(BigCharge ? "active" : "")" title="Full charge"
+                            aria-pressed="@Pressed(BigCharge)" @onclick="() => SetChargeAsync(true)">Big</button>
+                }
+            </div>
+        }
+        }
+
+        @if (MenuOpen)
+        {
+            <div id="sand-playground-menu" class="sand-playground-menu" role="dialog" aria-label="SandPlayground menu"
+                 @onkeydown="OnMenuKey">
+                <section>
+                    <h2>World</h2>
+                    <div class="sp-row">
+                        @foreach (var p in Presets)
+                        {
+                            <button type="button" class="sp-pill @(Preset == p.Id ? "active" : "")"
+                                    title="@p.Hint" @onclick="() => LoadWorldAsync(p.Id)">@p.Label</button>
+                        }
+                    </div>
+                    <div class="sp-row">
+                        <button type="button" class="sp-pill" title="Same kind of world, new seed" @onclick="ResetAsync">New world</button>
+                        <button type="button" class="sp-pill" title="Rebuild this exact world" @onclick="ReplaySeedAsync">↻ Replay seed @Seed</button>
+                        <button type="button" class="sp-pill" title="The same world for everyone until midnight UTC" @onclick="DailyAsync">Today's world</button>
+                        <button type="button" class="sp-pill" title="Copy a link that opens this exact world" @onclick="CopyLinkAsync">🔗 Copy link</button>
+                    </div>
+                </section>
+
+                <section>
+                    <h2>Challenges</h2>
+                    @foreach (var c in Challenges)
+                    {
+                        <button type="button" class="sp-line @(ChallengeId == c.Id ? "active" : "")"
+                                title="@c.Hint" @onclick="() => StartChallengeAsync(c.Id)">
+                            <span>@c.Name</span>
+                            <span class="sp-dim">@(c.Best > 0 ? $"best {FormatTime(c.Best)}" : "not beaten")</span>
+                        </button>
+                    }
+                </section>
+
+                <section>
+                    <h2>Saves</h2>
+                    @for (var s = 1; s <= 3; s++)
+                    {
+                        var slot = s;
+                        var when = SlotTimes[slot - 1];
+                        <div class="sp-row sp-row--slot">
+                            <span class="sp-dim">@slot · @(when > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(when).LocalDateTime.ToString("MMM d HH:mm") : "empty")</span>
+                            <button type="button" class="sp-pill" @onclick="() => SaveSlotAsync(slot)">Save</button>
+                            <button type="button" class="sp-pill" disabled="@(when == 0)" @onclick="() => LoadSlotAsync(slot)">Load</button>
+                        </div>
+                    }
+                    <div class="sp-row">
+                        <button type="button" class="sp-pill" title="Download this world as a file" @onclick="ExportAsync">Export file</button>
+                        <button type="button" class="sp-pill" title="Load a world file" @onclick="ImportAsync">Import file</button>
+                    </div>
+                </section>
+
+                <section>
+                    <h2>X-ray</h2>
+                    <div class="sp-row" title="Draw one of the simulation's own fields instead of the materials (X cycles them)">
+                        @for (var v = 0; v < Views.Length; v++)
+                        {
+                            var view = v;
+                            <button type="button" class="sp-pill @(View == view ? "active" : "")"
+                                    aria-pressed="@Pressed(View == view)"
+                                    @onclick="() => SetViewAsync(view)">@Views[view]</button>
+                        }
+                    </div>
+                </section>
+
+                <section>
+                    <h2>Time &amp; weather</h2>
+                    <div class="sp-row">
+                        <span class="sp-dim">Speed</span>
+                        @foreach (var sp in Speeds)
+                        {
+                            <button type="button" class="sp-pill @(Speed == sp.Value ? "active" : "")"
+                                    aria-pressed="@Pressed(Speed == sp.Value)"
+                                    @onclick="() => SetSpeedAsync(sp.Value)">@sp.Label</button>
+                        }
+                    </div>
+                    <div class="sp-row">
+                        <span class="sp-dim">Sky</span>
+                        @foreach (var sk in Skies)
+                        {
+                            <button type="button" class="sp-pill @(Sun == sk ? "active" : "")"
+                                    aria-pressed="@Pressed(Sun == sk)"
+                                    @onclick="() => SetSunAsync(sk)">@sk</button>
+                        }
+                    </div>
+                    <label class="sp-row">
+                        <span class="sp-dim">Wind</span>
+                        <input type="range" min="-100" max="100" step="10" value="@Wind" @oninput="OnWindAsync" />
+                    </label>
+                    <label class="sp-row" title="Past halfway it is a thunderstorm: lightning fuses dry sand to glass">
+                        <span class="sp-dim">Rain</span>
+                        <input type="range" min="0" max="100" step="10" value="@Rain" @oninput="OnRainAsync" />
+                    </label>
+                    <div class="sp-row" title="Bombs, debris and falling concrete. Sand and water cells are unaffected.">
+                        <span class="sp-dim">Gravity</span>
+                        @foreach (var g in Gravities)
+                        {
+                            <button type="button" class="sp-pill @(Gravity == g.Value ? "active" : "")"
+                                    aria-pressed="@Pressed(Gravity == g.Value)"
+                                    @onclick="() => SetGravityAsync(g.Value)">@g.Label</button>
+                        }
+                    </div>
+                    <div class="sp-row">
+                        <button type="button" class="sp-pill @(DemoOn ? "active" : "")"
+                                title="Rain a random TNT bomb every second"
+                                aria-pressed="@Pressed(DemoOn)" @onclick="ToggleDemoAsync">💣 Auto-drop</button>
+                        <button type="button" class="sp-pill sp-touch-only @(Tilt ? "active" : "")"
+                                title="Tilt the device to set the wind"
+                                aria-pressed="@Pressed(Tilt)" @onclick="ToggleTiltAsync">📱 Tilt = wind</button>
+                    </div>
+                </section>
+
+                <section>
+                    <h2>Share</h2>
+                    <div class="sp-row">
+                        <button type="button" class="sp-pill" @onclick="ShotAsync">📷 Screenshot</button>
+                        <button type="button" class="sp-pill" disabled="@Recording" @onclick="ClipAsync">
+                            @(Recording ? "● Recording…" : "🎬 Clip (8 s)")
+                        </button>
+                    </div>
+                </section>
+            </div>
+        }
+
+        @* One transient line: a tool's hint when it is picked, a save confirmation,
+           a challenge result. Keyed so each message restarts the fade. *@
+        @if (!string.IsNullOrEmpty(_toast))
+        {
+            <div class="sand-playground-toast" role="status" @key="_toastId">
+                @_toast
+                @if (_toastUndo)
+                {
+                    <button type="button" class="sp-pill" @onclick="UndoAsync">Undo</button>
+                }
+            </div>
+        }
+    </div>
 </div>

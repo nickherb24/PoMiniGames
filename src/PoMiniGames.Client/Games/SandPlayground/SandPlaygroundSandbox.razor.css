@@ -1,283 +1,373 @@
 /* SandPlayground sandbox chrome.
-   Ported from the standalone PoSandCL app and re-pointed at the app's theme
-   tokens: the original hardcoded a dark palette in raw hex, which renders
-   unthemed under `prefers-color-scheme: light`. Only the viewport interior
-   stays literally black — that is the simulation's own sky, painted by the
-   renderer, not app chrome. */
+   The canvas takes the whole game area and the controls float over the sim's sky
+   as a glass dock. Colours come from the app's theme tokens; only the viewport
+   interior stays literally black — that is the simulation's own letterbox,
+   painted by the renderer, not app chrome.
+
+   --sp-flash / --sp-shake-* are written by the engine (pushChromeVars) so the dock
+   lights up and rides the shake when a blast goes off. They default to rest here. */
 
 .sand-playground-root {
-    display: inline-flex;
-    flex-direction: column;
-    background: color-mix(in srgb, var(--color-surface) 62%, transparent);
-    -webkit-backdrop-filter: blur(24px) saturate(1.5);
-    backdrop-filter: blur(24px) saturate(1.5);
-    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-    border-radius: var(--radius-lg, 1rem);
-    padding: 12px;
+    --sp-flash: 0;
+    --sp-shake-x: 0px;
+    --sp-shake-y: 0px;
+    position: relative;
+    /* The largest 4:3 box the game area can hold. --gps-area-h is published by
+       .gps-shell (viewport minus the top bar); a percentage height would resolve
+       against a flex item with no definite height and collapse to zero, which is
+       what the phone layout used to do. */
+    width: min(100%, calc((var(--gps-area-h, 80vh) - 12px) * 4 / 3));
     font-family: var(--font-mono);
     user-select: none;
-    box-shadow:
-        0 24px 70px rgba(0, 0, 0, 0.45),
-        0 0 90px color-mix(in srgb, var(--accent-amber) 8%, transparent),
-        inset 0 1px 0 rgba(255, 255, 255, 0.09);
-    max-width: 100%;
-    box-sizing: border-box;
-}
-
-.sand-playground-toolbar {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex-wrap: wrap;
-    padding: 2px 4px 12px 4px;
-}
-
-.sand-playground-title {
-    color: var(--accent-amber);
-    font-weight: bold;
-    font-size: 13px;
-    letter-spacing: 2px;
-    margin-right: 8px;
-    text-shadow: 0 0 14px color-mix(in srgb, var(--accent-amber) 45%, transparent);
-}
-
-.sand-playground-btn {
-    background: var(--tint-soft);
-    color: var(--color-text-primary);
-    border: 1px solid var(--color-border);
-    border-radius: 10px;
-    padding: 6px 11px;
-    font-family: inherit;
-    font-size: 12px;
-    cursor: pointer;
-    -webkit-backdrop-filter: blur(8px);
-    backdrop-filter: blur(8px);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 2px 6px rgba(0, 0, 0, 0.2);
-    transition: background 120ms, transform 120ms, box-shadow 120ms, border-color 120ms;
-}
-
-.sand-playground-btn:hover {
-    background: var(--tint-medium);
-    transform: translateY(-1px);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 5px 14px rgba(0, 0, 0, 0.3);
-}
-
-.sand-playground-btn:active { transform: translateY(1px); }
-
-.sand-playground-btn:focus-visible {
-    outline: 2px solid var(--accent-ring);
-    outline-offset: 2px;
-}
-
-.sand-playground-btn.active {
-    background: var(--accent-amber);
-    color: #241305;
-    border-color: color-mix(in srgb, var(--accent-amber) 85%, white);
-    font-weight: bold;
-    box-shadow:
-        0 0 16px color-mix(in srgb, var(--accent-amber) 45%, transparent),
-        inset 0 1px 0 rgba(255, 255, 255, 0.5);
-}
-
-/* The original pulsed the active tool forever. Keep the cue, but respect a
-   reduced-motion preference — this toolbar is on screen for a whole session. */
-@media (prefers-reduced-motion: no-preference) {
-    .sand-playground-btn.active { animation: sand-playground-active-glow 2.2s ease-in-out infinite; }
-}
-
-@keyframes sand-playground-active-glow {
-    0%, 100% { box-shadow: 0 0 14px color-mix(in srgb, var(--accent-amber) 40%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
-    50%      { box-shadow: 0 0 22px color-mix(in srgb, var(--accent-amber) 60%, transparent), inset 0 1px 0 rgba(255, 255, 255, 0.5); }
-}
-
-.sand-playground-btn:disabled {
-    opacity: 0.35;
-    cursor: default;
-    transform: none;
-}
-
-.sand-playground-ctrl {
-    background: var(--accent-success-soft);
-    border-color: color-mix(in srgb, var(--accent-success) 30%, transparent);
-}
-
-.sand-playground-ctrl:hover:not(:disabled) {
-    background: color-mix(in srgb, var(--accent-success) 24%, transparent);
-}
-
-.sand-playground-danger {
-    background: var(--accent-danger-soft);
-    border-color: color-mix(in srgb, var(--accent-danger) 35%, transparent);
-    color: var(--accent-danger-ink);
-}
-
-.sand-playground-danger:hover {
-    background: color-mix(in srgb, var(--accent-danger) 28%, transparent);
-}
-
-.sand-playground-sep {
-    width: 1px;
-    height: 22px;
-    background: linear-gradient(180deg, transparent, var(--color-border), transparent);
-    margin: 0 5px;
-}
-
-.sand-playground-brush-label {
-    color: var(--color-text-secondary);
-    font-size: 12px;
-}
-
-.sand-playground-slider {
-    width: 110px;
-    accent-color: var(--accent-amber);
-}
-
-.sand-playground-vol { width: 70px; }
-
-.sand-playground-brush-val {
-    color: var(--color-text-primary);
-    font-size: 12px;
-    min-width: 40px;
-    text-align: right;
+    -webkit-user-select: none;
 }
 
 .sand-playground-viewport {
     position: relative;
-    width: 800px;
-    max-width: 100%;
-    border: 1px solid var(--color-border);
-    border-radius: 14px;
+    width: 100%;
+    aspect-ratio: 4 / 3;
     overflow: hidden;
+    border-radius: 12px;
+    border: 1px solid var(--color-border);
     /* The simulation paints its own sky; this is the letterbox behind it. */
     background: #000;
-    box-shadow:
-        0 10px 40px rgba(0, 0, 0, 0.5),
-        inset 0 0 60px rgba(0, 0, 0, 0.4);
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.45);
 }
 
-/* The simulation canvas has a fixed 800x600 backing store (set in the markup,
-   not by JS). To scale it down without re-tiling, keep the rendered box at the
-   backing store's intrinsic ratio — width:100%, height:auto. */
+/* Both canvases stack; only the overlay takes pointer input. The engine sizes
+   both drawing buffers to the displayed size, so neither is scaled by CSS. */
 .sand-playground-viewport canvas {
-    display: block;
-    width: 100%;
-    height: auto;
-    aspect-ratio: 4 / 3;
-    image-rendering: pixelated;
-    touch-action: none;
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-/* Both canvases stack; only the overlay takes pointer input. */
-.sand-playground-overlay {
     position: absolute;
     inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    touch-action: none;
+}
+
+.sand-playground-overlay {
     cursor: crosshair;
 }
 
-.sand-playground-hint {
+/* ── Dock ─────────────────────────────────────────────────────────────── */
+
+.sand-playground-dock {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    max-width: calc(100% - 16px);
+    padding: 5px 7px;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 58%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    backdrop-filter: blur(18px) saturate(1.5);
+    box-shadow:
+        0 6px 22px rgba(0, 0, 0, 0.35),
+        0 0 calc(var(--sp-flash) * 46px) color-mix(in srgb, var(--accent-amber) calc(var(--sp-flash) * 90%), transparent),
+        inset 0 1px 0 rgba(255, 255, 255, 0.1);
+    transform: translate(calc(-50% + var(--sp-shake-x)), var(--sp-shake-y));
+}
+
+.sp-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 34px;
+    height: 34px;
+    padding: 0 7px;
+    border-radius: 9px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-family: inherit;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+    transition: background 120ms, border-color 120ms, transform 120ms;
+}
+
+.sp-btn:hover:not(:disabled) {
+    background: var(--tint-medium);
+}
+
+.sp-btn:active:not(:disabled) {
+    transform: translateY(1px);
+}
+
+.sp-btn:focus-visible,
+.sp-pill:focus-visible,
+.sp-line:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+.sp-btn.active {
+    background: var(--accent-amber);
+    border-color: color-mix(in srgb, var(--accent-amber) 85%, white);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--accent-amber) 45%, transparent);
+}
+
+.sp-btn:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+.sp-sep {
+    flex: 0 0 1px;
+    height: 20px;
+    margin: 0 3px;
+    background: linear-gradient(180deg, transparent, var(--color-border), transparent);
+}
+
+.sp-brush {
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* The dot is the brush: its diameter tracks the real size (3..32 px -> 5..17 px). */
+.sp-brush-dot {
+    width: calc(4px + var(--sp-brush) * 0.42px);
+    height: calc(4px + var(--sp-brush) * 0.42px);
+    border-radius: 50%;
+    background: var(--accent-amber);
+}
+
+.sp-detonate {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent-danger-ink);
+    background: var(--accent-danger-soft);
+    border-color: color-mix(in srgb, var(--accent-danger) 40%, transparent);
+}
+
+/* The tray: what the active tool carries, on its own row under the dock. */
+.sand-playground-tray {
+    position: absolute;
+    top: 56px;
+    left: 50%;
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 4px;
+    max-width: calc(100% - 16px);
+    padding: 4px 6px;
+    border-radius: 11px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 58%, transparent);
+    -webkit-backdrop-filter: blur(18px) saturate(1.5);
+    backdrop-filter: blur(18px) saturate(1.5);
+    color: var(--color-text-primary);
+    font-size: 11px;
+    transform: translate(calc(-50% + var(--sp-shake-x)), var(--sp-shake-y));
+}
+
+/* ── Menu ─────────────────────────────────────────────────────────────── */
+
+.sand-playground-menu {
+    position: absolute;
+    top: 58px;
+    right: 8px;
+    width: min(300px, calc(100% - 16px));
+    max-height: calc(100% - 66px);
+    overflow-y: auto;
+    padding: 4px 10px 10px;
+    border-radius: 14px;
+    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.4);
+    backdrop-filter: blur(22px) saturate(1.4);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+    color: var(--color-text-primary);
+    font-size: 12px;
+}
+
+.sand-playground-menu h2 {
+    margin: 9px 0 5px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--accent-amber);
+}
+
+.sp-row {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 4px;
+}
+
+.sp-row--slot > .sp-dim {
+    flex: 1 1 auto;
+}
+
+.sp-row input[type="range"] {
+    flex: 1 1 auto;
+    min-width: 0;
+    accent-color: var(--accent-amber);
+}
+
+.sp-dim {
+    min-width: 46px;
     color: var(--color-text-secondary);
     font-size: 11px;
-    margin-top: 10px;
-    padding: 6px 12px;
-    background: var(--tint-subtle);
-    border: 1px solid var(--hairline);
-    border-radius: 10px;
 }
 
-/* ===== Phones / coarse pointers =====
-   The standalone app pinned its root with `position: fixed; inset: 0`, which
-   inside GameShell would cover the app top bar and strand the player with no
-   way back. The shell already gives a fullscreen game area (GameShell
-   Fullscreen="true"), so fill *it* instead. */
-@media (max-width: 700px), (pointer: coarse) and (max-aspect-ratio: 4/5) {
+.sp-pill,
+.sp-line {
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    background: var(--tint-soft);
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.sp-pill {
+    padding: 4px 8px;
+}
+
+.sp-line {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 8px;
+    width: 100%;
+    margin-bottom: 4px;
+    padding: 6px 8px;
+    text-align: left;
+}
+
+.sp-line .sp-dim {
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.sp-pill:hover:not(:disabled),
+.sp-line:hover {
+    background: var(--tint-medium);
+}
+
+.sp-pill.active,
+.sp-line.active {
+    border-color: var(--accent-amber);
+    background: color-mix(in srgb, var(--accent-amber) 22%, transparent);
+}
+
+.sp-pill:disabled {
+    opacity: 0.4;
+    cursor: default;
+}
+
+/* Tilt-to-wind needs an orientation sensor; a mouse-driven machine has none. */
+.sp-touch-only {
+    display: none;
+}
+
+@media (pointer: coarse) {
+    .sp-touch-only {
+        display: inline-block;
+    }
+}
+
+/* ── Toast ────────────────────────────────────────────────────────────── */
+
+/* Sits above the HUD row at the foot of the view, clear of the dock and its tray.
+   It fades out but its Undo button must stay pressable while it is visible, so
+   the element ends hidden (visibility), not merely transparent. */
+.sand-playground-toast {
+    position: absolute;
+    left: 50%;
+    bottom: 34px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    max-width: calc(100% - 24px);
+    padding: 5px 12px;
+    border-radius: 10px;
+    background: rgba(10, 14, 22, 0.78);
+    color: #f1f4f9;
+    font-size: 11px;
+    text-align: center;
+    transform: translateX(-50%);
+    opacity: 0;
+    visibility: hidden;
+    animation: sp-toast 5s ease-out;
+}
+
+.sand-playground-toast .sp-pill {
+    color: #f1f4f9;
+    border-color: rgba(255, 255, 255, 0.35);
+    background: rgba(255, 255, 255, 0.12);
+}
+
+@keyframes sp-toast {
+    0%, 85% { opacity: 1; visibility: visible; }
+    100% { opacity: 0; visibility: hidden; }
+}
+
+/* ===== Phones in portrait =====
+   Strict 4:3 is traded away so the simulation gets the screen; the image is
+   scaled, never tiled, and the engine's pointer math uses the bounding rect so
+   touch stays accurate. */
+@media (max-width: 700px) and (orientation: portrait), (pointer: coarse) and (max-aspect-ratio: 4/5) {
     .sand-playground-root {
-        display: flex;
         width: 100%;
-        height: 100%;
-        min-height: 0;
-        padding: 6px calc(6px + env(safe-area-inset-right, 0px))
-                 calc(6px + env(safe-area-inset-bottom, 0px)) calc(6px + env(safe-area-inset-left, 0px));
+    }
+
+    .sand-playground-viewport {
+        aspect-ratio: auto;
+        height: calc(var(--gps-area-h, 80vh) - 8px);
         border-radius: 0;
         border: none;
-        gap: 4px;
-        align-items: stretch;
     }
 
-    .sand-playground-title {
-        font-size: 10px;
-        letter-spacing: 1.5px;
-        margin-right: 4px;
-        flex: 0 0 auto;
+    .sand-playground-dock {
+        top: calc(4px + env(safe-area-inset-top, 0px));
+        gap: 1px;
+        padding: 3px 4px;
     }
 
-    /* Wraps to two rows on narrow phones: tools, then controls. Auto-height so
-       every control stays reachable; the canvas absorbs what is left. */
-    .sand-playground-toolbar {
-        flex: 0 0 auto;
-        gap: 2px;
-        padding: 0 2px 2px 2px;
-        justify-content: flex-start;
+    .sp-btn {
+        min-width: 29px;
+        height: 32px;
+        padding: 0 3px;
+        font-size: 15px;
     }
 
-    .sand-playground-btn {
-        padding: 1px 6px;
-        font-size: 10px;
-        min-height: 24px;
-        border-radius: 6px;
-        flex: 0 0 auto;
-    }
-
-    .sand-playground-sep {
-        height: 12px;
+    .sp-sep {
         margin: 0 1px;
-        flex: 0 0 auto;
     }
 
-    /* Drop the brush row on phones — 8 px is a sensible default and the space
-       is worth more to the canvas. Volume stays. */
-    .sand-playground-brush-label,
-    .sand-playground-brush-val,
-    .sand-playground-toolbar > .sand-playground-slider:not(.sand-playground-vol) { display: none; }
-
-    .sand-playground-slider { flex: 0 0 auto; }
-    .sand-playground-vol { width: 50px; }
-
-    /* Fill the remaining height. Strict 4:3 is traded away in portrait so the
-       simulation gets the screen; the image is scaled, never tiled, and the
-       engine's pointer math uses the bounding rect so touch stays accurate. */
-    .sand-playground-viewport {
-        flex: 1 1 auto;
-        width: 100%;
-        min-height: 0;
-        margin: 0 auto;
-        border-radius: 8px;
+    .sand-playground-menu {
+        top: 48px;
     }
 
-    .sand-playground-viewport canvas {
-        position: absolute;
-        inset: 0;
-        width: 100%;
-        height: 100%;
-        aspect-ratio: auto;
+    .sand-playground-tray {
+        top: 44px;
+        gap: 2px;
+        padding: 3px 4px;
     }
 
-    /* The active tool's name is already legible in the toolbar. */
-    .sand-playground-hint { display: none; }
-    .sand-playground-overlay { cursor: default; }
+    .sand-playground-tray .sp-pill {
+        padding: 4px 6px;
+    }
 }
 
-@media (max-width: 380px) {
-    .sand-playground-btn { padding: 3px 7px; font-size: 10px; min-height: 28px; }
-    .sand-playground-toolbar { gap: 2px; }
-    .sand-playground-vol { width: 44px; }
-}
+@media (prefers-reduced-motion: reduce) {
+    .sp-btn,
+    .sand-playground-dock {
+        transition: none;
+    }
 
-/* Phone in landscape: keep the desktop layout, just tighten it. */
-@media (max-height: 500px) and (orientation: landscape) {
-    .sand-playground-root { padding: 6px; }
-    .sand-playground-toolbar { padding-bottom: 4px; }
-    .sand-playground-hint { margin-top: 4px; padding: 4px 10px; font-size: 10px; }
-    .sand-playground-btn { padding: 4px 8px; font-size: 11px; min-height: 28px; }
+    .sand-playground-toast {
+        animation-duration: 6s;
+    }
 }

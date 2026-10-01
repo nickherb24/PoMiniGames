@@ -31,7 +31,10 @@ precision highp int;
 uniform sampler2D u_state;
 uniform sampler2D u_light;    // half-res propagated light field
 uniform sampler2D u_heights;  // 800x1: column surface height / 600
+uniform sampler2D u_smoke;    // half-res advected field: R = smoke, G = vapour
 uniform float u_time;
+uniform vec4 u_sky;           // sun elevation -1..1, overcast 0..1, lightning 0..1, sun x 0..1
+uniform int u_view;           // 0 = normal, 1 = support, 2 = water pressure, 3 = moisture
 in vec2 v_uv;
 out vec4 outColor;
 
@@ -70,6 +73,50 @@ float hash(vec2 q) {
     return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453123);
 }
 
+// Sky colour at height t (0 = horizon, 1 = zenith) for the current sun.
+vec3 skyColor(float t) {
+    float day = smoothstep(-0.12, 0.25, u_sky.x);
+    float dusk = 1.0 - smoothstep(0.0, 0.45, abs(u_sky.x));
+    vec3 dayC = mix(vec3(0.76, 0.88, 0.94), vec3(0.25, 0.44, 0.72), clamp(pow(t, 1.6), 0.0, 1.0));
+    vec3 nightC = mix(vec3(0.07, 0.09, 0.17), vec3(0.012, 0.016, 0.045), t);
+    vec3 c = mix(nightC, dayC, day);
+    c = mix(c, mix(vec3(1.0, 0.56, 0.28), vec3(0.42, 0.30, 0.46), t), dusk * 0.7 * (1.0 - t * 0.5));
+    c = mix(c, vec3(dot(c, vec3(0.33))) * vec3(0.78, 0.82, 0.88), u_sky.y * 0.75);
+    return c + vec3(0.75, 0.80, 1.0) * u_sky.z * 0.6;
+}
+
+// Blue -> cyan -> green -> yellow -> red.
+vec3 ramp(float t) {
+    t = clamp(t, 0.0, 1.0);
+    return clamp(vec3(1.5 - abs(4.0 * t - 3.0), 1.5 - abs(4.0 * t - 2.0), 1.5 - abs(4.0 * t - 1.0)), 0.0, 1.0);
+}
+
+// X-ray views: the simulation's own fields, drawn instead of the materials.
+vec3 xray(vec4 self, int m, ivec2 p) {
+    float rb = floor(self.r * 255.0 + 0.5);
+    bool glass = m == SAND && rb >= 81.0 && rb <= 84.0;
+    if (m == CONCRETE || m == BEDROCK) return vec3(m == CONCRETE ? 0.62 : 0.34);
+    if (m == AIR) return vec3(0.015, 0.02, 0.03);
+    if (u_view == 1) {
+        // Support: how much of the arch reserve is left. Red is about to go.
+        if (m == WATER) return vec3(0.04, 0.09, 0.16);
+        vec3 c = ramp(1.0 - self.a);
+        if (self.a < COHESION_THRESH) c = mix(c, vec3(1.0), 0.5 + 0.5 * sin(u_time * 9.0 + float(p.x + p.y)));
+        return c;
+    }
+    if (u_view == 2) {
+        // Hydrostatic head, brightened by flow speed.
+        if (m == SAND) return rb >= 85.0 ? vec3(0.10, 0.20, 0.34) : vec3(0.10, 0.09, 0.08);
+        float sp = length(self.gb - vec2(0.5)) * 255.0 / 62.0;
+        return ramp(self.a * 255.0 / 90.0) * (0.55 + 0.9 * clamp(sp, 0.0, 1.0));
+    }
+    // Moisture: dry tan -> damp blue, saturated cyan, glass green.
+    if (m == WATER) return vec3(0.04, 0.16, 0.55);
+    if (glass) return vec3(0.25, 0.90, 0.50);
+    if (rb >= 85.0) return vec3(0.30, 0.92, 1.0);
+    return mix(vec3(0.50, 0.38, 0.20), vec3(0.10, 0.42, 0.95), wetOf(self) / 20.0);
+}
+
 void main() {
     ivec2 p = ivec2(v_uv * vec2(float(W), float(H)));
     p = clamp(p, ivec2(0), ivec2(W - 1, H - 1));
@@ -77,6 +124,14 @@ void main() {
     vec4 self = get(p);
     int m = matOf(self);
     float g = hash(vec2(p) * 0.7131); // static per-position grain seed
+
+    if (u_view != 0) { outColor = vec4(xray(self, m, p), 0.0); return; }
+
+    float day = smoothstep(-0.12, 0.25, u_sky.x);
+    // What daylight is left to fall on the ground: a cool, dim night that a
+    // blast or a bolt lights back up.
+    vec3 dayTint = mix(vec3(0.44, 0.50, 0.74), vec3(1.0), day) * (1.0 - 0.28 * u_sky.y)
+                 + vec3(0.6, 0.65, 0.8) * u_sky.z;
 
     vec4 up = get(p + ivec2(0, 1));
     vec4 dn = get(p + ivec2(0, -1));
@@ -96,8 +151,28 @@ void main() {
     if (m == AIR) {
         float t = float(p.y) / float(H - 1);
         t = floor(t * 24.0) / 23.0;
-        col = mix(vec3(0.76, 0.88, 0.94), vec3(0.25, 0.44, 0.72), clamp(pow(t, 1.6), 0.0, 1.0));
+        col = skyColor(t);
         if (mod(float(p.x + p.y * 2), 4.0) < 1.0) col *= 0.985;
+        if (depthBelow <= 1.0) {
+            float clear = 1.0 - u_sky.y;
+            // Stars come out as the sun goes down; cloud hides them.
+            if (g > 0.9978) {
+                float tw = 0.6 + 0.4 * sin(u_time * 2.3 + g * 400.0);
+                col += vec3(0.85, 0.90, 1.0) * tw * (1.0 - day) * clear;
+                emis += 0.25 * tw * (1.0 - day) * clear;
+            }
+            // Sun by day, moon by night, on opposite sides of the sky.
+            vec2 sun = vec2(u_sky.w * float(W), 318.0 + u_sky.x * 250.0);
+            vec2 moon = vec2((1.0 - u_sky.w) * float(W), 318.0 - u_sky.x * 250.0);
+            float ds = distance(vec2(p), sun), dm = distance(vec2(p), moon);
+            col += vec3(1.0, 0.86, 0.55) * exp(-ds / 46.0) * 0.45 * clear * step(0.0, u_sky.x);
+            if (ds < 13.0 && u_sky.x > -0.05) { col = mix(col, vec3(1.0, 0.95, 0.78), clear); emis += 0.9 * clear; }
+            if (dm < 10.0 && u_sky.x < 0.05) {
+                float crater = hash(floor(vec2(p) / 3.0)) * 0.12;
+                col = mix(col, vec3(0.86, 0.89, 0.95) - crater, clear);
+                emis += 0.35 * clear;
+            }
+        }
         // Smoke/dust haze and white steam.
         float gg = self.g;
         if (gg >= 136.0 / 255.0) {
@@ -119,7 +194,7 @@ void main() {
         // the conservative occupancy grid remains one-material-per-cell.
         float partialWater = waterMask(p + ivec2(0, -1)) *
             (0.28 + 0.22 * max(waterMask(p + ivec2(-1, 0)), waterMask(p + ivec2(1, 0))));
-        col = mix(col, vec3(0.30, 0.62, 0.82), partialWater);
+        col = mix(col, vec3(0.30, 0.62, 0.82) * dayTint, partialWater);
     } else if (m == SAND) {
         float rb = floor(self.r * 255.0 + 0.5);
         float depth = clamp(1.0 - float(p.y) / 360.0, 0.0, 1.0);
@@ -209,7 +284,7 @@ void main() {
         if (mu == AIR) {
             float glint = 0.75 + 0.25 * sin(float(p.x) * 0.35 + u_time * 2.4 + g * 6.28);
             float fresnel = 0.02 + 0.98 * pow(1.0 - clamp(normal.y, 0.0, 1.0), 5.0);
-            vec3 skyReflection = mix(vec3(0.32, 0.58, 0.82), vec3(0.92, 0.97, 1.0), glint);
+            vec3 skyReflection = mix(skyColor(0.75), skyColor(0.05) + 0.1, glint) / max(dayTint, vec3(0.3));
             col = mix(col, skyReflection, clamp(fresnel + 0.18, 0.0, 0.82));
             emis += 0.12 * glint;
         } else if (ml == AIR || mr == AIR) {
@@ -245,10 +320,17 @@ void main() {
         emis += llum * 0.45;
     } else {
         float amb = 0.34 + 0.66 * exp(-depthBelow / 110.0);
-        col *= amb;
+        // Scorch glows by itself; daylight only falls on what it lights.
+        col *= amb * mix(dayTint, vec3(1.0), clamp(emis, 0.0, 1.0));
         col += col * light * 1.7 + light * 0.16;
         emis += llum * 0.35;
     }
+
+    // Lingering smoke and vapour, lit by whatever is burning inside it.
+    vec2 sm = texture(u_smoke, v_uv).rg;
+    vec3 smokeCol = mix(vec3(0.10, 0.10, 0.11), vec3(0.42, 0.40, 0.38), day) + light * 0.9;
+    col = mix(col, smokeCol, clamp(sm.r * 1.25, 0.0, 0.82));
+    col = mix(col, vec3(0.90, 0.93, 0.96) * max(dayTint, vec3(0.45)), clamp(sm.g * 0.8, 0.0, 0.55));
 
     // Acoustic blast flash rings.
     float s = shockOf(self);
@@ -344,13 +426,84 @@ void main() {
     outColor = vec4(c, 1.0);
 }
 
+//====== SMOKE ======
+#version 300 es
+// Smoke/vapour field (half res, ping-pong). The grid's own smoke cells clear
+// in about a second; this is what is left hanging in the air afterwards. It
+// rises, leans with the wind, billows, thins, and is blocked by solid ground.
+// R = dark smoke, G = white vapour. Render-only: it carries no mass.
+precision highp float;
+precision highp int;
+
+uniform sampler2D u_state;   // full-res sim state
+uniform sampler2D u_prev;    // previous field
+uniform vec4 u_src[8];       // x, y (sim px), radius, amount
+uniform int u_nsrc;
+uniform float u_wind;
+uniform float u_time;
+uniform float u_k;           // time scale (0 = paused)
+uniform float u_seed;
+in vec2 v_uv;
+out vec4 outColor;
+
+float hash(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453123); }
+int matOf(vec4 c) { return (int(floor(c.r * 255.0 + 0.5)) + 30) / 60; }
+
+void main() {
+    vec2 texel = vec2(1.0 / 400.0, 1.0 / 300.0);
+    vec4 s = texture(u_state, v_uv);
+    int m = matOf(s);
+    if (m != 0) { outColor = vec4(0.0, 0.0, 0.0, 1.0); return; }
+
+    vec2 vel = vec2(u_wind * 0.55 + sin(v_uv.y * 38.0 + u_time * 0.9) * 0.28,
+                    0.50 + cos(v_uv.x * 31.0 + u_time * 0.7) * 0.18) * u_k;
+    vec2 from = v_uv - vel * texel;
+    vec2 d = texture(u_prev, from).rg;
+    vec2 n = (texture(u_prev, from + vec2(texel.x, 0.0)).rg + texture(u_prev, from - vec2(texel.x, 0.0)).rg
+            + texture(u_prev, from + vec2(0.0, texel.y)).rg + texture(u_prev, from - vec2(0.0, texel.y)).rg) * 0.25;
+    d = mix(d, n, 0.30 * min(u_k, 1.0));
+    // Whole-quantum stochastic decay: a multiplicative fade under one byte
+    // per pass is rounded away on an RGBA8 target and the haze never clears.
+    float rq = hash(gl_FragCoord.xy * 0.37 + vec2(u_seed, u_seed * 1.7));
+    if (rq < 0.42 * u_k) d.r = max(d.r - 1.0 / 255.0, 0.0);
+    if (fract(rq * 7.3) < 0.75 * u_k) d.g = max(d.g - 1.0 / 255.0, 0.0);
+
+    // Sources: the grid's smoke and steam cells, smouldering ground just
+    // below, and the CPU emitters (blasts, the torch, lightning strikes).
+    if (s.g >= 136.0 / 255.0) d.g = max(d.g, 0.55);
+    else if (s.g > 0.02) d.r = max(d.r, s.g * 1.3);
+    vec4 below = texture(u_state, v_uv - vec2(0.0, 2.0 / 600.0));
+    if (matOf(below) == 1 && below.g > 0.25) d.r += 0.035 * below.g * u_k;
+    vec2 px = v_uv * vec2(800.0, 600.0);
+    for (int i = 0; i < 8; i++) {
+        if (i >= u_nsrc) break;
+        vec4 e = u_src[i];
+        float q = distance(px, e.xy);
+        d.r += e.w * exp(-q * q / (e.z * e.z)) * u_k;
+    }
+    outColor = vec4(clamp(d, 0.0, 1.0), 0.0, 1.0);
+}
+
+//====== COPY ======
+#version 300 es
+// Packs the (possibly half-float) state into an RGBA8 target so the CPU
+// mirror is read back as bytes: no float readPixels, no per-frame JS convert.
+precision highp float;
+uniform sampler2D u_state;
+out vec4 outColor;
+void main() { outColor = texelFetch(u_state, ivec2(gl_FragCoord.xy), 0); }
+
 //====== COMPOSITE ======
 #version 300 es
-// Final composite: screen shake, expanding shock-ring refraction, bloom,
-// blast flash, vignette, film grain, ACES tonemap.
+// Final composite at the canvas's own resolution: sharp-bilinear upscale of
+// the 800x600 scene, screen shake, expanding shock-ring refraction, bloom,
+// blast flash, vignette, film grain, ACES tonemap, and the reset transition.
 precision highp float;
 uniform sampler2D u_scene;
 uniform sampler2D u_bloom;
+uniform sampler2D u_old;   // scene frozen at reset (the world being replaced)
+uniform vec2 u_out;        // canvas backing size, px
+uniform float u_melt;      // 0 none | (0,1] old world drains out | (1,2] new one pours in
 uniform vec4 u_rings[4];   // x, y (sim px), radius, amplitude (px)
 uniform int u_nrings;
 uniform vec2 u_shake;      // sim px
@@ -365,6 +518,17 @@ vec3 aces(vec3 x) {
     return clamp((x * (2.51 * x + 0.03)) / (x * (2.43 * x + 0.59) + 0.14), 0.0, 1.0);
 }
 
+// Cell edges stay crisp at any scale but are antialiased over a fraction of
+// an output pixel, which is what CSS image-rendering: pixelated cannot do at a
+// non-integer scale (uneven cell widths that shimmer under screen shake).
+vec2 sharp(vec2 uv, vec2 res) {
+    vec2 scale = max(u_out / res * 0.6, vec2(1.0));
+    vec2 tx = uv * res - 0.5;
+    vec2 ti = floor(tx);
+    vec2 f = clamp((tx - ti - 0.5) * scale + 0.5, 0.0, 1.0);
+    return (ti + f + 0.5) / res;
+}
+
 void main() {
     vec2 res = vec2(800.0, 600.0);
     vec2 uv = v_uv + u_shake / res;
@@ -375,6 +539,8 @@ void main() {
         vec2 d = px - r.xy;
         float dist = max(length(d), 0.6);
         float w = exp(-pow(dist - r.z, 2.0) / 260.0);
+        uv += (d / dist) * (w * r.w) / res;
+    }
     // Thermal Heat-Shimmer Refraction above hot/molten regions
     vec3 bloomSample = texture(u_bloom, uv).rgb;
     float heat = clamp(bloomSample.r * 1.6 - bloomSample.b * 0.4, 0.0, 1.0);
@@ -386,8 +552,22 @@ void main() {
         uv += shimmer;
     }
 
-    vec3 col = texture(u_scene, uv).rgb;
-    col += texture(u_bloom, uv).rgb * 0.85;
+    // Reset transition, in ragged columns: the old world slides down out of
+    // frame, then the new one drops in from above and lands.
+    const vec3 VOID = vec3(0.02, 0.025, 0.04);
+    float lag = hash(vec2(floor(v_uv.x * 160.0), 3.7)) * 0.4;
+    vec3 col;
+    if (u_melt > 0.0 && u_melt <= 1.0) {
+        float k = clamp((u_melt - lag) / 0.6, 0.0, 1.0);
+        vec2 ouv = vec2(uv.x, uv.y + k * k * 1.1);
+        col = ouv.y < 1.0 ? texture(u_old, sharp(ouv, res)).rgb : VOID;
+    } else {
+        if (u_melt > 1.0) {
+            float k = clamp((u_melt - 1.0 - lag) / 0.6, 0.0, 1.0);
+            uv.y -= (1.0 - k * k) * 1.1;
+        }
+        col = uv.y >= 0.0 ? texture(u_scene, sharp(uv, res)).rgb + texture(u_bloom, uv).rgb * 0.85 : VOID;
+    }
     col += vec3(1.0, 0.86, 0.62) * u_flash;
     vec2 vd = v_uv - 0.5;
     col *= 1.0 - dot(vd, vd) * 0.5;
@@ -395,18 +575,83 @@ void main() {
     outColor = vec4(aces(col * 1.05), 1.0);
 }
 
+//====== PUPDATE ======
+#version 300 es
+// Juice particles (sparks, dust, mist, bubbles, foam) integrated on the GPU
+// by transform feedback. Each one reads the sim state where it stands, so it
+// dies on solid ground, a bubble pops at the surface and a spark is quenched
+// by water, exactly as the CPU version did for a tenth as many.
+precision highp float;
+precision highp int;
+layout(location = 0) in vec4 a_pv;    // x, y, vx, vy (sim px, y up)
+layout(location = 1) in vec4 a_meta;  // age, life, kind, size
+uniform sampler2D u_state;
+uniform float u_k;                    // time scale (0 = paused)
+uniform float u_seed;
+out vec4 o_pv;
+out vec4 o_meta;
+
+float hash(vec2 q) { return fract(sin(dot(q, vec2(127.1, 311.7))) * 43758.5453123); }
+int matAt(vec2 q) {
+    ivec2 c = ivec2(floor(q + 0.5));
+    if (c.y < 0) return 4;
+    if (c.x < 0 || c.x >= 800 || c.y >= 600) return 0;
+    return (int(floor(texelFetch(u_state, c, 0).r * 255.0 + 0.5)) + 30) / 60;
+}
+
+void main() {
+    vec2 p = a_pv.xy, v = a_pv.zw;
+    float age = a_meta.x + u_k, life = a_meta.y, kind = a_meta.z;
+    o_pv = a_pv; o_meta = a_meta;
+    if (kind < 0.5 || u_k <= 0.0) return;
+    if (age >= life) { o_meta.z = 0.0; return; }
+    float jit = hash(vec2(float(gl_VertexID) * 0.731, u_seed)) - 0.5;
+    if (kind < 1.5)      { v.y -= 0.13 * u_k; v *= pow(0.965, u_k); }                               // spark
+    else if (kind < 2.5) { v.y -= 0.02 * u_k; v *= pow(0.94, u_k); }                                // dust
+    else if (kind < 3.5) { v.y += 0.012 * u_k; v.x = v.x * pow(0.96, u_k) + jit * 0.06 * u_k; }     // mist
+    else if (kind < 4.5) { v.y = min(v.y + 0.05 * u_k, 1.6); v.x = v.x * pow(0.9, u_k) + jit * 0.3 * u_k; } // bubble
+    else                 { v.x *= pow(0.97, u_k); v.y *= pow(0.82, u_k); }                          // foam
+    p += v * u_k;
+    int m = matAt(p);
+    bool dead = p.x < 1.0 || p.x >= 799.0 || p.y < 8.0;
+    if (kind > 3.5 && kind < 4.5) dead = dead || m != 3;                        // surfaced
+    else if (kind > 4.5) dead = dead || (m != 3 && matAt(p - vec2(0.0, 1.0)) != 3);
+    else {
+        dead = dead || m == 1 || m == 2 || m == 4;
+        if (m == 3 && kind < 1.5) life = min(life, age + 5.0);                  // quenched
+    }
+    o_pv = vec4(p, v);
+    o_meta = vec4(age, life, dead ? 0.0 : kind, a_meta.w);
+}
+
+//====== PNULL ======
+#version 300 es
+precision mediump float;
+void main() { }
+
 //====== PVERTEX ======
 #version 300 es
-// Additive point-sprite particles (sparks, dust, mist, bubbles), positions
-// in sim pixel coords (y-up), rendered 1:1 into the 800x600 scene FBO.
-layout(location = 0) in vec2 a_pos;
-layout(location = 1) in float a_size;
-layout(location = 2) in vec4 a_col;
+// Additive point sprites straight from the particle state, positions in sim
+// pixel coords (y-up), rendered 1:1 into the 800x600 scene FBO.
+precision highp float;
+layout(location = 0) in vec4 a_pv;
+layout(location = 1) in vec4 a_meta;
 out vec4 v_col;
 void main() {
-    v_col = a_col;
-    gl_PointSize = max(a_size, 1.5);
-    gl_Position = vec4(a_pos / vec2(400.0, 300.0) - 1.0, 0.0, 1.0);
+    float kind = a_meta.z;
+    if (kind < 0.5) { v_col = vec4(0.0); gl_PointSize = 1.0; gl_Position = vec4(2.0, 2.0, 0.0, 1.0); return; }
+    float k = clamp(1.0 - a_meta.x / a_meta.y, 0.0, 1.0);
+    float size = a_meta.w;
+    if (kind < 1.5) {
+        float heat = k * k;
+        v_col = vec4(1.0, 0.25 + 0.65 * heat, 0.06 + 0.5 * heat * heat, 0.85 * k);
+        size *= 0.5 + k;
+    } else if (kind < 2.5) v_col = vec4(0.45, 0.38, 0.28, 0.10 * k);
+    else if (kind < 3.5) v_col = vec4(0.55, 0.72, 0.85, 0.09 * k);
+    else if (kind < 4.5) v_col = vec4(0.5, 0.8, 0.95, 0.35);
+    else { v_col = vec4(0.82, 0.90, 0.94, 0.24 * k); size *= 0.75 + 0.5 * k; }
+    gl_PointSize = max(size, 1.5);
+    gl_Position = vec4(a_pv.xy / vec2(400.0, 300.0) - 1.0, 0.0, 1.0);
 }
 
 //====== PFRAG ======
