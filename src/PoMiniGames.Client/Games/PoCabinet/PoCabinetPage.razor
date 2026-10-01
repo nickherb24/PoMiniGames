@@ -270,10 +270,18 @@
                                             </div>
                                             @if (standings.Count > 3)
                                             {
-                                                <ol class="pocabinet-standings" start="4">
-                                                    @foreach (var entry in standings.Skip(3))
+                                                <ol class="pocabinet-standings">
+                                                    @foreach (var (place, entry) in StandingsBelowPodium(standings))
                                                     {
-                                                        <li>@entry.Name — @entry.Detail</li>
+                                                        @if (entry is null)
+                                                        {
+                                                            <li class="pocabinet-standings__gap" aria-hidden="true">⋯</li>
+                                                        }
+                                                        else
+                                                        {
+                                                            @* The place is written out: with gaps in the list the markers (hidden by the reset anyway) would lie. *@
+                                                            <li value="@place" class="@(entry.IsLocal ? "pocabinet-standings__me" : null)">P@(place) · @entry.Name — @entry.Detail</li>
+                                                        }
                                                     }
                                                 </ol>
                                             }

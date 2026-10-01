@@ -12,7 +12,8 @@
 //
 // update() returns the frame's contact events so race.js can play the crunch
 // (positional when it is someone else's shunt), and the frame's barrier hits
-// (first touch only), which race.js turns into dents on that car (cars.js).
+// (first touch only, as strong as the car was closing on the wall), which race.js
+// turns into dents on that car (cars.js) and, for the player's, into wear.
 //
 // One-shots race.js fires (2026-09-29): backfire() — a flame out of the tail on
 // every exhaust pop audio.js reports; debris() — chunks and paint flakes off a
@@ -20,7 +21,7 @@
 
 import * as THREE from 'three';
 import { wrapAngle } from './track.js';
-import { GRIP_ACCEL, RUN_OFF, CAR_RADIUS } from './physics.js';
+import { GRIP_ACCEL, RUN_OFF, CAR_RADIUS, hullContact } from './physics.js';
 
 const WS = 10;
 const MAX_SMOKE = 700;
@@ -175,8 +176,9 @@ class SkidMarks {
         this.dirtyTo = -1;
     }
 
-    /** One quad from (ax,az)→(bx,bz), width across the direction of travel. */
-    add(ax, az, bx, bz) {
+    /** One quad from (ax,az)→(bx,bz) on a road at height `y`, width across the direction of travel. */
+    add(ax, az, bx, bz, y = 0) {
+        y += SKID_Y;
         const dx = bx - ax, dz = bz - az;
         const len = Math.hypot(dx, dz);
         if (len < 1e-4) return;
@@ -184,10 +186,10 @@ class SkidMarks {
         const q = this.next;
         const k = q * 12;
         const p = this.pos;
-        p[k] = ax - nx; p[k + 1] = SKID_Y; p[k + 2] = az - nz;
-        p[k + 3] = ax + nx; p[k + 4] = SKID_Y; p[k + 5] = az + nz;
-        p[k + 6] = bx - nx; p[k + 7] = SKID_Y; p[k + 8] = bz - nz;
-        p[k + 9] = bx + nx; p[k + 10] = SKID_Y; p[k + 11] = bz + nz;
+        p[k] = ax - nx; p[k + 1] = y; p[k + 2] = az - nz;
+        p[k + 3] = ax + nx; p[k + 4] = y; p[k + 5] = az + nz;
+        p[k + 6] = bx - nx; p[k + 7] = y; p[k + 8] = bz - nz;
+        p[k + 9] = bx + nx; p[k + 10] = y; p[k + 11] = bz + nz;
         if (this.dirtyFrom < 0) { this.dirtyFrom = q; this.dirtyTo = q; }
         else { this.dirtyFrom = Math.min(this.dirtyFrom, q); this.dirtyTo = Math.max(this.dirtyTo, q); }
         this.next = (q + 1) % MAX_SKID;
@@ -246,7 +248,7 @@ class CarFx {
     }
 
     newState() {
-        return { h: null, x: 0, y: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0 };
+        return { h: null, x: 0, y: 0, up: 0, v: 0, lat: 0, hint: -1, skid: [null, null], launch: 0, launchStrength: 1, acc: 0, walled: false, wallAt: 0, off: null, out: 0, hl: null };
     }
 
     /** A flame out of the tail of car `id` (its last pose), `strength` 0..1. */
@@ -263,15 +265,15 @@ class CarFx {
             // Core blue-white, tips orange: brighter the closer to the pipe.
             const hot = k < 0.3;
             this.sparks.spawn(
-                x + (rnd() - 0.5) * 0.25, 0.3 + rnd() * 0.08, z + (rnd() - 0.5) * 0.25,
+                x + (rnd() - 0.5) * 0.25, s.up + 0.3 + rnd() * 0.08, z + (rnd() - 0.5) * 0.25,
                 -fx * out + (rnd() - 0.5) * 0.8, 0.2 + rnd() * 0.5, -fz * out + (rnd() - 0.5) * 0.8,
                 0.06 + rnd() * 0.1 * (0.5 + strength), 0.55 + strength * 0.35, 0.12, 1,
                 hot ? 0.6 : 1.0, hot ? 0.75 : 0.45 + k * 0.25, hot ? 1.0 : 0.12, 7, -1.5);
         }
     }
 
-    /** Chunks of trim and flakes of `paint` (hex) flying off a shunt at world (x, z). */
-    debris(x, z, paint, strength = 1) {
+    /** Chunks of trim and flakes of `paint` (hex) flying off a shunt at world (x, z), road height `up`. */
+    debris(x, z, paint, strength = 1, up = 0) {
         if (this.disposed) return;
         const rnd = Math.random;
         const c = new THREE.Color(paint || '#888888');
@@ -279,21 +281,21 @@ class CarFx {
         for (let i = 0; i < n; i++) {
             const flake = rnd() < 0.55;
             const shade = 0.08 + rnd() * 0.1;
-            this.smoke.spawn(x, 0.4 + rnd() * 0.3, z,
+            this.smoke.spawn(x, up + 0.4 + rnd() * 0.3, z,
                 (rnd() - 0.5) * 7 * strength, 1.5 + rnd() * 3.5 * strength, (rnd() - 0.5) * 7 * strength,
                 0.7 + rnd() * 0.8, 0.14 + rnd() * 0.08, 0.1, 1,
                 flake ? c.r : shade, flake ? c.g : shade, flake ? c.b : shade, 0.4, 9.8);
         }
     }
 
-    /** A shower of confetti over world (x, z) — the podium moment. */
-    confetti(x, z, count = 160) {
+    /** A shower of confetti over world (x, z), road height `up` — the podium moment. */
+    confetti(x, z, count = 160, up = 0) {
         if (this.disposed) return;
         const rnd = Math.random;
         const col = new THREE.Color();
         for (let i = 0; i < count; i++) {
             col.setHSL(rnd(), 0.85, 0.58);
-            this.smoke.spawn(x + (rnd() - 0.5) * 8, 7 + rnd() * 4, z + (rnd() - 0.5) * 8,
+            this.smoke.spawn(x + (rnd() - 0.5) * 8, up + 7 + rnd() * 4, z + (rnd() - 0.5) * 8,
                 (rnd() - 0.5) * 5, 2 + rnd() * 4, (rnd() - 0.5) * 5,
                 3 + rnd() * 2, 0.16, 0.14, 1, col.r, col.g, col.b, 1.6, 1.4);
         }
@@ -301,7 +303,8 @@ class CarFx {
 
     /**
      * @param dt   seconds (already scaled for slow motion)
-     * @param cars [{ id, x, y, heading, speed, sliding?, visible }] — sim units
+     * @param cars [{ id, x, y, heading, speed, sliding?, visible, h? }] — sim units; h is the
+     *             road height under the car in world units (0 on a flat track)
      * @param opts { skids: bool } — false during replays (marks are already down)
      * @returns {{ contacts: Array<{ x, z, strength, ids: [a, b] }>, scraping: Map<id, number> }}
      */
@@ -316,14 +319,17 @@ class CarFx {
         for (const c of cars) {
             let s = this.state.get(c.id);
             if (!s) { s = this.newState(); this.state.set(c.id, s); }
+            if (c.hint >= 0) s.hint = c.hint;
             const proj = t.project(c.x, c.y, s.hint);
             s.hint = proj.index;
+            const up = s.up = Number(c.h) || 0;
             const v = Math.abs(c.speed);
             // A pose that jumped (replay seek, snapshot snap, respawn) is not a slide.
             if (s.h !== null && Math.hypot(c.x - s.x, c.y - s.y) > v * dt * 3 + 20) {
                 s.h = null;
                 s.lat = 0;
                 s.skid = [null, null];
+                s.off = null; s.out = 0; s.hl = null;
             }
             s.x = c.x; s.y = c.y;
             // Yaw-rate × speed = lateral acceleration; smoothed so interpolation noise never flickers smoke.
@@ -351,24 +357,25 @@ class CarFx {
                 const side = w ? 1 : -1;
                 const wx = x - fx * REAR + rx * TRACK_HALF * side;
                 const wz = z - fz * REAR + rz * TRACK_HALF * side;
-                // Tyre smoke (tarmac) or dust (grass).
-                if (slip > 0.2 || (onGrass && v > 20)) {
-                    s.acc += dt * (onGrass ? 26 * Math.min(1, v / 60) : 55 * slip);
+                // Tyre smoke (tarmac) or dust (grass). A wisp, not a cloud: with a hundred cars
+                // sliding at once the old puffs (twice the rate, size and opacity) hid the pack.
+                if (slip > 0.35 || (onGrass && v > 20)) {
+                    s.acc += dt * (onGrass ? 14 * Math.min(1, v / 60) : 22 * slip);
                     while (s.acc >= 1) {
                         s.acc -= 1;
                         const col = onGrass ? this.dust : null;
                         const shade = 0.72 + rnd() * 0.12;
                         this.smoke.spawn(
-                            wx + (rnd() - 0.5) * 0.3, 0.25, wz + (rnd() - 0.5) * 0.3,
+                            wx + (rnd() - 0.5) * 0.3, up + 0.25, wz + (rnd() - 0.5) * 0.3,
                             vx * 0.25 + (rnd() - 0.5) * 1.2, 0.5 + rnd() * 0.9, vz * 0.25 + (rnd() - 0.5) * 1.2,
-                            onGrass ? 0.9 : 1.2 + rnd() * 0.9, 0.5, onGrass ? 2.4 : 3.6 + rnd() * 1.4,
-                            onGrass ? 0.35 : 0.22 + slip * 0.2,
+                            onGrass ? 0.7 : 0.8 + rnd() * 0.6, 0.4, onGrass ? 1.8 : 2.1 + rnd() * 0.9,
+                            onGrass ? 0.18 : 0.07 + slip * 0.08,
                             col ? col.r : shade, col ? col.g : shade, col ? col.b : shade * 1.02, 1.4, -0.25);
                     }
                 }
                 // Rain spray off the rear wheels.
                 if (this.raining && v > 35 && !onGrass && rnd() < dt * 22 * (v / 140)) {
-                    this.smoke.spawn(wx, 0.2, wz, vx * 0.35 + (rnd() - 0.5), 0.6 + rnd() * 0.5, vz * 0.35 + (rnd() - 0.5),
+                    this.smoke.spawn(wx, up + 0.2, wz, vx * 0.35 + (rnd() - 0.5), 0.6 + rnd() * 0.5, vz * 0.35 + (rnd() - 0.5),
                         0.55, 0.6, 2.6, 0.11, 0.8, 0.84, 0.88, 2.2, 0.4);
                 }
                 // Skid marks.
@@ -377,7 +384,7 @@ class CarFx {
                     if (prev) {
                         const d2 = (wx - prev[0]) ** 2 + (wz - prev[1]) ** 2;
                         if (d2 > 0.35 * 0.35) {
-                            if (d2 < 9) this.skids.add(prev[0], prev[1], wx, wz);
+                            if (d2 < 9) this.skids.add(prev[0], prev[1], wx, wz, up);
                             s.skid[w] = [wx, wz];
                         }
                     } else {
@@ -388,8 +395,18 @@ class CarFx {
                 }
             }
 
+            // How fast the car was closing on the barrier and which way it pointed, both trailing
+            // by ~100 ms: on the tick it hits, the physics has already stopped the approach and
+            // turned the car to face along the wall.
+            const off = Math.abs(proj.lateral);
+            const lag = Math.min(1, dt * 10);
+            const out = s.out, hl = s.hl === null ? c.heading : s.hl;
+            s.out += ((s.off === null ? 0 : (off - s.off) / dt) - s.out) * lag;
+            s.hl = hl + wrapAngle(c.heading - hl) * lag;
+            s.off = off;
+
             // Barrier scrape: the physics clamps a car's centre at wallLat.
-            const wall = Math.abs(proj.lateral) >= this.wallLat - 0.8 && v > 18;
+            const wall = off >= this.wallLat - 0.8 && v > 18;
             if (wall) {
                 const side = proj.lateral > 0 ? 1 : -1;
                 const nx = -proj.ty * side, nz = proj.tx * side;
@@ -397,34 +414,44 @@ class CarFx {
                 const n = Math.min(6, Math.ceil(v / 25));
                 for (let i = 0; i < n; i++) {
                     if (rnd() > dt * 40) continue;
-                    this.spark(px, 0.35, pz, -vx * 0.5 + (rnd() - 0.5) * 4 - nx * 2, 1.5 + rnd() * 3.5, -vz * 0.5 + (rnd() - 0.5) * 4 - nz * 2);
+                    this.spark(px, up + 0.35, pz, -vx * 0.5 + (rnd() - 0.5) * 4 - nx * 2, 1.5 + rnd() * 3.5, -vz * 0.5 + (rnd() - 0.5) * 4 - nz * 2);
                 }
                 events.scraping.set(c.id, Math.min(1, v / 100));
                 // First touch of a stint along the wall is the hit; riding it is only the scrape.
                 const now = performance.now();
                 if (!s.walled && now - s.wallAt > 500) {
                     s.wallAt = now;
-                    events.walls.push({ id: c.id, x: px, z: pz, strength: Math.min(1, v / 110) });
+                    // Strength is the speed INTO the wall (a glancing scrape at full speed is a
+                    // scuff, a square hit at half of it is a wreck), and the hit lands on the
+                    // part of the body that was facing the wall as the car went in.
+                    const ahead = nx * Math.cos(hl) + nz * Math.sin(hl), across = nz * Math.cos(hl) - nx * Math.sin(hl);
+                    events.walls.push({
+                        id: c.id, strength: Math.min(1, Math.max(0, out) / 55),
+                        x: x + fx * ahead * 1.9 + rx * across * 0.83, z: z + fz * ahead * 1.9 + rz * across * 0.83,
+                    });
                 }
             }
             s.walled = wall;
         }
 
-        // Car-to-car contact: centres closer than two radii (+ a little for interpolation).
+        // Car-to-car contact: the physics' own hull test (+ a little for interpolation), so the
+        // sparks fly from where the bodies touch. Different road heights are different levels
+        // of a crossing, not a contact.
         const now = performance.now();
         for (let i = 0; i < cars.length; i++) {
             for (let j = i + 1; j < cars.length; j++) {
                 const a = cars[i], b = cars[j];
-                const dx = b.x - a.x, dy = b.y - a.y;
-                const d = Math.hypot(dx, dy);
-                if (d > CAR_RADIUS * 2 + 1.5 || d < 1e-6) continue;
-                const mx = (a.x + b.x) / 2 / WS, mz = (a.y + b.y) / 2 / WS;
+                const up = Number(a.h) || 0;
+                if (Math.abs(up - (Number(b.h) || 0)) > 3) continue;
+                const hit = hullContact(a, b, 1.5);
+                if (!hit) continue;
+                const mx = hit.x / WS, mz = hit.y / WS;
                 const rel = Math.hypot(
                     Math.cos(a.heading) * a.speed - Math.cos(b.heading) * b.speed,
                     Math.sin(a.heading) * a.speed - Math.sin(b.heading) * b.speed);
                 const n = Math.min(10, 2 + Math.floor(rel / 8));
                 for (let k = 0; k < n; k++) {
-                    this.spark(mx, 0.45, mz, (rnd() - 0.5) * 6, 1 + rnd() * 3, (rnd() - 0.5) * 6);
+                    this.spark(mx, up + 0.45, mz, (rnd() - 0.5) * 6, 1 + rnd() * 3, (rnd() - 0.5) * 6);
                 }
                 const key = a.id < b.id ? `${a.id}:${b.id}` : `${b.id}:${a.id}`;
                 if (now - (this.pairs.get(key) || 0) > 350) {

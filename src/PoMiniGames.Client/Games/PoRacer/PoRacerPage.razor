@@ -1,5 +1,6 @@
 @page "/poracer"
 @page "/poracer/1player"
+@page "/poracer/multi"
 @page "/poracer/demo"
 @using PoMiniGames.Shared.Games
 @inject IJSRuntime JS
@@ -13,61 +14,134 @@
 @inject ApiService Api
 @inject ApiEndpoints Endpoints
 @inject UiFeedbackService Feedback
+@inject ToastService ToastService
 @implements IAsyncDisposable
 
 <PageTitle>Racer · PoMiniGames</PageTitle>
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
-           GameOver="@(_phase == RacePhase.Finished && !_isDemo)" GameKey="poracer"
+           GameOver="@_showResults" GameKey="@BoardKey"
            GameSummary="@SummaryContent" PlayAgain="RestartRaceAsync">
-    <div class="racer-root" data-reduced-effects="true">
+    <div class="racer-root">
         <canvas id="racerCanvas" class="racer-canvas" role="img" tabindex="0" aria-label="Race track. Your car is marked YOU. Arrow keys or W A S D drive; Space drifts."></canvas>
         @if (_phase == RacePhase.Start)
         {
             <section class="racer-start" aria-label="Start a race">
                 <div class="racer-card">
-                    <h1>@(_isDemo ? "Watch a race" : "Ready to race?")</h1>
-                    <p>@PoRacerCatalog.CarCount cars · @PoRacerCatalog.TotalLaps laps · best laps reach the leaderboard</p>
-                    @if (!_isDemo && string.IsNullOrWhiteSpace(MatchCode))
-                    {
-                        <PoRacerTrackSelector SelectedTrackId="@_selectedTrackId" SelectedTrackIdChanged="SelectTrack" />
-                        <details><summary>Customize car</summary><PoRacerPaintShop @bind-Customization="_customization" /></details>
-                    }
-                    <div class="racer-actions">
-                        <button class="racer-primary" disabled="@(!_engineReady || _isStarting)" @onclick="StartRaceAsync">
-                            @(_isStarting ? "Joining race…" : !_engineReady ? "Loading track…" : _isDemo ? "Watch race" : "Start race")
-                        </button>
-                        @if (!_isDemo && string.IsNullOrWhiteSpace(MatchCode))
-                        {
-                            <a href="/poracer/multi">Multiplayer</a>
-                        }
-                        <a href="/leaderboards">Leaderboard</a>
+                    @* One card, three modes. The lobby used to be a page of its own at this same
+                       /poracer/multi address; it is the Online tab now, so switching mode never
+                       reloads the engine. Buttons, not links, although each mode is an address:
+                       js/app.js turns every click on an in-app <a> into a full page load, which
+                       would boot the whole WASM app again to change tab. *@
+                    <div class="racer-modes" role="tablist" aria-label="Mode">
+                        <button type="button" role="tab" aria-selected="@Selected(RaceMode.Solo)" @onclick="@(() => Nav.NavigateTo("/poracer/1player"))">Solo</button>
+                        <button type="button" role="tab" aria-selected="@Selected(RaceMode.Online)" @onclick="@(() => Nav.NavigateTo("/poracer/multi"))">Online</button>
+                        <button type="button" role="tab" aria-selected="@Selected(RaceMode.Demo)" @onclick="@(() => Nav.NavigateTo("/poracer/demo"))">Demo</button>
                     </div>
+
+                    @if (_mode == RaceMode.Online && string.IsNullOrWhiteSpace(MatchCode))
+                    {
+                        <LobbyPanel TPlayer="PoRacerLobbyPlayer"
+                                    State="@_lobby?.State"
+                                    LocalConnectionId="@(_lobby?.ConnectionId ?? "")"
+                                    ConnectionState="@(_lobby?.ConnectionState ?? Microsoft.AspNetCore.SignalR.Client.HubConnectionState.Disconnected)"
+                                    Hint="One shared room. The first driver in hosts and picks the track; bots fill the empty seats."
+                                    MaxPlayersHint="8"
+                                    StartLabel="Start Race"
+                                    OnReady="@(() => _lobby?.ToggleReadyAsync() ?? Task.CompletedTask)"
+                                    OnStart="@(() => _lobby?.StartGameAsync() ?? Task.CompletedTask)"
+                                    OnLeave="LeaveLobbyAsync">
+                            <Picker>
+                                <PoRacerTrackSelector SelectedTrackId="@LobbyTrackId" SelectedTrackIdChanged="PickLobbyTrackAsync"
+                                                      Disabled="@(_lobby?.IsHost != true)" Bests="_bests" />
+                            </Picker>
+                        </LobbyPanel>
+                        <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
+                    }
+                    else if (_mode == RaceMode.Solo)
+                    {
+                        <PoRacerTrackSelector SelectedTrackId="@_selectedTrackId" SelectedTrackIdChanged="SelectTrack" Bests="_bests" />
+                        <div class="racer-options">
+                            <div class="racer-chips" role="radiogroup" aria-label="Race">
+                                <span class="racer-chips-label">Race</span>
+                                <label><input type="radio" name="poracer-mode" checked="@(!_trial)" @onchange="() => SetTrial(false)" />7 rivals</label>
+                                <label><input type="radio" name="poracer-mode" checked="@_trial" @onchange="() => SetTrial(true)" />Time trial</label>
+                            </div>
+                            @if (!_trial)
+                            {
+                                <div class="racer-chips" role="radiogroup" aria-label="Rival pace">
+                                    <span class="racer-chips-label">Pace</span>
+                                    @foreach (var tier in PoRacerCatalog.Difficulties)
+                                    {
+                                        <label><input type="radio" name="poracer-pace" checked="@(_difficulty == tier)" @onchange="() => SetDifficulty(tier)" />@(char.ToUpperInvariant(tier[0]) + tier[1..])</label>
+                                    }
+                                </div>
+                            }
+                        </div>
+                        <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
+                    }
+                    else if (_mode == RaceMode.Demo)
+                    {
+                        <p class="racer-note">Eight bots, three laps, nothing to drive.</p>
+                    }
+
+                    @if (_mode != RaceMode.Online)
+                    {
+                        <div class="racer-actions">
+                            <button class="racer-primary" disabled="@(!_engineReady || _isStarting)" @onclick="StartRaceAsync">
+                                @(_isStarting ? "Joining race…" : !_engineReady ? "Loading track…" : _isDemo ? "Watch race" : "Start race")
+                            </button>
+                            <span class="racer-note">@(_isDemo ? "" : _trial ? $"Empty track · {PoRacerCatalog.TotalLaps} laps · best lap goes on the board" : $"{PoRacerCatalog.CarCount} cars · {PoRacerCatalog.TotalLaps} laps · best lap goes on the board")</span>
+                            <a href="/leaderboards">Leaderboard</a>
+                        </div>
+                    }
+                    else if (!string.IsNullOrWhiteSpace(MatchCode))
+                    {
+                        <p class="racer-note" role="status">@(_error is null ? "Joining the race…" : "")</p>
+                    }
                     @if (_error is not null)
                     {
                         <p class="racer-error" role="alert">@_error</p>
-                    }
-                    @if (!_isDemo)
-                    {
-                        <details>
-                            <summary>Controls</summary>
-                            <p>W / ↑ accelerate · S / ↓ brake · A D / ← → steer · Space drift.</p>
-                            <p>On touch screens, hold the steering and pedal buttons. Drive over orange pads for a boost.</p>
-                        </details>
                     }
                 </div>
             </section>
         }
         @if (_phase == RacePhase.Racing)
         {
-            <PoRacerHud Cars="_cars" PlayerId="_localCarId" TotalLaps="_totalLaps" ElapsedSeconds="_elapsed" IsDemo="_isDemo" />
+            <PoRacerHud Cars="_cars" Roster="_roster" PlayerId="_localCarId" TotalLaps="_totalLaps" IsDemo="_isDemo" OnPause="TogglePauseAsync" />
             @if (!_raceStarted || _elapsed < 0.9)
             {
+                @* Five lamps come on one at a time over the last 2.5 s, hold, and go out together:
+                   lights out is the start. The server's CountdownMs drives them, so a driver who
+                   joins late sees the lamps everyone else sees. *@
                 <div class="race-countdown" role="status" aria-live="assertive">
-                    <strong>@(_countdown > 0 ? _countdown.ToString() : "GO!")</strong>
-                    @if (!_isDemo) { <span>Hold W / ↑ to accelerate · A D / ← → steer · S / ↓ brake · Space drift</span> }
+                    <div class="race-gantry @(_raceStarted ? "is-go" : "")" aria-hidden="true">
+                        @for (var lamp = 0; lamp < 5; lamp++)
+                        {
+                            <i class="@(lamp < Lit ? "on" : "")"></i>
+                        }
+                    </div>
+                    <strong class="@(_raceStarted ? "" : "sr-only")">@(_raceStarted ? "GO!" : _countdown.ToString())</strong>
+                    @if (!_isDemo) { <PoRacerControls /> }
                 </div>
             }
-            <button class="racer-back" @onclick="RestartRaceAsync">Back to start</button>
+            @if (_pauseOpen)
+            {
+                <div class="racer-pause" role="dialog" aria-modal="true" aria-label="@(CanPause ? "Paused" : "Race menu")">
+                    <div class="racer-pause-card">
+                        <h2>@(CanPause ? "Paused" : "Race menu")</h2>
+                        @if (!CanPause) { <p class="racer-note">The race keeps running while this is open.</p> }
+                        <div class="racer-actions">
+                            <button class="racer-primary" @ref="_resumeButton" @onclick="TogglePauseAsync">Resume</button>
+                            <button class="racer-ghost" @onclick="RestartRaceAsync">Back to start</button>
+                        </div>
+                        @if (!_isDemo) { <PoRacerControls /> }
+                    </div>
+                </div>
+            }
+        }
+        @if (_phase == RacePhase.Finished && !_showResults && !_isDemo)
+        {
+            <div class="race-flag" aria-hidden="true"></div>
         }
         @if (_connectionStatus is not null)
         {
@@ -79,6 +153,11 @@
 
 @code {
     private RenderFragment TitleContent => @<span>🏎️ Racer</span>;
-    private RenderFragment SummaryContent => @<PoRacerResults Result="_result" PlayerId="_localCarId"
+    private RenderFragment SummaryContent => @<PoRacerResults Result="_result" Roster="_roster" PlayerId="_localCarId"
+        Track="@PoRacerCatalog.GetTrack(_raceTrackId)" PreviousBest="_previousBest" IsTrial="_raceTrial"
         SubmitStatus="@_submitStatus" Retry="SubmitScoreAsync" />;
+    private string Selected(RaceMode mode) => _mode == mode ? "true" : "false";
+    // Each track has its own board (UnifiedLeaderboardEndpoints): the oval keeps the original
+    // "poracer" key, the other two are "poracer-{trackId}". The results' Top 3 is the raced track's.
+    private string BoardKey => _raceTrackId == PoRacerCatalog.DefaultTrackId ? "poracer" : "poracer-" + _raceTrackId;
 }

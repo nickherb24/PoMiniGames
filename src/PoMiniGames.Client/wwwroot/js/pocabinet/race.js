@@ -2,9 +2,14 @@
 //
 // The per-frame race driver. Runs on the scene's frame loop for every mode:
 //
-//   solo / 2p — the whole race simulates here (physics.js, the same model the
+//   solo      — the whole race simulates here (physics.js, the same model the
 //               server runs), fixed 30 Hz ticks, rendered interpolated at the
-//               display rate. A HUD snapshot goes to Blazor every tick.
+//               display rate. A HUD snapshot goes to Blazor every tick. The field
+//               is 100 cars (2026-09-30): the player in grid slot 50 and the 99
+//               rivals of physics.soloField(). Everything per-car below is sized
+//               for that: only the nearest cars are drawn in full (the rest are one
+//               instanced mesh, cars.js CarCrowd) or heard, and the HUD snapshot
+//               carries the whole field only when it has to.
 //   demo      — as solo, with the local car on autopilot and the camera
 //               cycling chase → far chase → TV.
 //
@@ -47,7 +52,7 @@ import { Vector3 } from 'three';
 import { buildTrack, wrapAngle } from './track.js';
 import * as ph from './physics.js';
 import { attachInput } from './input.js';
-import { mountCar, unmountCar } from './cars.js';
+import { mountCar, unmountCar, CarCrowd } from './cars.js';
 import * as audio from './audio.js';
 import { currentEnvironment } from './environment.js';
 import { lapTraces, bestTrace, loadPbTrace, savePbTrace, renderTelemetry, debriefFacts } from './telemetry.js';
@@ -63,12 +68,21 @@ const FINISH_GRACE = 15;
 const MAX_RECORD_FRAMES = 30 * 60 * 8;
 const INTERP_DELAY_MS = 100;
 const SNAP_DISTANCE = 40;
-const PLAYER_SLOT = 2;
+const FULL_CARS = 10;             // rivals drawn in full (the nearest); the rest are the instanced crowd
+const RIVAL_VOICES = 6;          // engines heard at once (each is an oscillator through an HRTF panner)
 const SLOW_MO_SCALE = 0.28;
 const GANTRY_PODS = 5;
 const BATTLE_NEAR = 25;          // sim units between centres: side by side
 const BATTLE_FAR = 95;           // …fading out by here (about six car lengths)
 const STAND_PASS = 24;           // world units from the grandstand that count as a pass-by
+const AXLE = 14;                 // sim units from a car's centre to each axle (height sampling)
+// What a wrecked car loses, at worst: a steady pull on the wheel, a share of its lock and of
+// its throttle. Subtle on purpose (a bent car is slower, not undriveable) and meant to be tuned.
+const WEAR_PULL = 0.06;
+const WEAR_LOCK = 0.15;
+const WEAR_POWER = 0.15;
+const WEAR_FLOOR = 0.3;          // a hit weaker than this only marks the paint
+const WEAR_GAIN = 0.6;           // a flat-out hit into a wall costs about 0.4 of the worst
 
 let race = null;
 
@@ -160,6 +174,14 @@ class Race {
         this.prevLocalPos = 0;
         this.wallHits = 0;
         this.lastWallAt = 0;
+        // What the hits have cost the player's car, each 0..1 of the worst (pull is signed,
+        // + = right). It shapes the INPUT in tick(), like the driver aids, before the input
+        // is recorded or sent: both physics copies and the lap verifier are untouched, the lap
+        // proof replays as driven, and online it needs no server support or snapshot field.
+        // ponytail: the rivals only dent. Their controls come from aiControls, which the lap
+        // verifier re-runs, so wearing them down needs a deterministic damage state in all
+        // three sim mirrors. Do that if the field should limp too.
+        this.wear = { pull: 0, lock: 0, power: 0 };
 
         this.input = attachInput({
             touchRoot: 'pocabinetTouch',
@@ -169,6 +191,11 @@ class Race {
 
         this.cars = this.mode === 'net' ? this.buildNetCars(opts) : this.buildSoloCars(opts);
         this.local = this.cars.find(c => c.isLocal) || null;
+        this.crowd = null;
+        if (this.cars.length > FULL_CARS + 1) {
+            try { this.crowd = new CarCrowd(this.scene.scene, this.cars.length); } catch { this.crowd = null; }
+        }
+        this.byRange = [];
         if (this.mode === 'net' && opts.initialSnapshot) this.onServerSnapshot(opts.initialSnapshot);
         this.startRecording();
         this.applySettings(opts.settings || {});
@@ -191,9 +218,10 @@ class Race {
             this.scene.scenery.onFlash = (pos) => audio.shutter(pos, 0.8);
         }
 
-        // Wet-road light streaks: rain only (dry tarmac has nothing to mirror them in).
+        // Wet-road light streaks: rain only (dry tarmac has nothing to mirror them in), and
+        // only on a flat track: the streaks are drawn on the ground plane.
         this.reflections = null;
-        if (currentEnvironment().raining) {
+        if (currentEnvironment().raining && !this.track.z) {
             try { this.reflections = new WetReflections(this.scene); } catch { this.reflections = null; }
         }
         this.moments = { lastPos: this.local?.position ?? 0, overtakeAt: 0, standAt: 0, finished: false, raceStart: 0 };
@@ -216,16 +244,16 @@ class Race {
             player.maxSpeed = ph.MAX_SPEED * 0.97;
             player.corneringSkill = 0.8;
         }
-        ph.gridSlot(this.track, player.body, PLAYER_SLOT);
+        ph.gridSlot(this.track, player.body, ph.PLAYER_SLOT);
         cars.push(player);
-        let slot = 0;
-        ph.OFFICIALS.forEach((o, i) => {
-            if (slot === PLAYER_SLOT) slot++;
+        // MIRRORED by PoCabinetLapVerifier.Replay: the rivals in soloField order, each in its
+        // own index's slot (one further back from the player's slot on), in this car order.
+        ph.soloField().forEach((o, i) => {
             const car = this.makeCar({ id: i + 1, name: o.name, officialId: o.id, color: o.color, isPlayer: false, isLocal: false });
             car.persona = o.persona;
             car.maxSpeed = o.maxSpeed;
             car.corneringSkill = o.corneringSkill;
-            ph.gridSlot(this.track, car.body, slot++);
+            ph.gridSlot(this.track, car.body, i < ph.PLAYER_SLOT ? i : i + 1);
             cars.push(car);
         });
         for (const c of cars) this.savePrev(c);
@@ -263,8 +291,8 @@ class Race {
         const car = {
             ...meta,
             body: ph.createBody(),
-            prev: { x: 0, y: 0, heading: 0 },
-            render: { x: 0, y: 0, heading: 0, speed: 0, along: 0 },
+            prev: { x: 0, y: 0, heading: 0, along: 0 },
+            render: { x: 0, y: 0, heading: 0, speed: 0, along: 0, h: 0, pitch: 0, roll: 0 },
             persona: null, maxSpeed: ph.MAX_SPEED, corneringSkill: 0.7,
             lapsDone: 0, lapStart: 0, lastLap: 0, bestLap: 0,
             finished: false, finishTime: 0, finishOrder: 0, position: meta.id + 1,
@@ -272,7 +300,8 @@ class Race {
             mesh: null,
         };
         try {
-            car.mesh = mountCar(this.scene.scene, { id: meta.officialId === 'player' ? undefined : meta.officialId, name: meta.name, color: meta.color });
+            // Body style by car id: the player's (0) is the coupe, the field takes the styles in turn.
+            car.mesh = mountCar(this.scene.scene, { id: meta.officialId === 'player' ? undefined : meta.officialId, name: meta.name, color: meta.color, style: meta.id });
             car.mesh.group.visible = !meta.isLocal;
         } catch { car.mesh = null; }
         return car;
@@ -283,6 +312,9 @@ class Race {
         body.y = Number(s.y) || 0;
         body.heading = Number(s.heading) || 0;
         body.speed = (Number(s.speedKmh) || 0) / ph.KMH_PER_UNIT;
+        // A body with no hint yet takes the server's lap fraction as one: the Playground run
+        // crosses over itself, and a blind nearest-point search can land on the wrong level.
+        if (body.segHint < 0) body.segHint = this.track.indexAt((Number(s.lapProgress) || 0) * this.track.length);
         const proj = this.track.project(body.x, body.y, body.segHint);
         body.segHint = proj.index;
         body.along = proj.along;
@@ -294,6 +326,29 @@ class Race {
         car.prev.x = car.body.x;
         car.prev.y = car.body.y;
         car.prev.heading = car.body.heading;
+        car.prev.along = car.body.along;
+    }
+
+    /**
+     * Road height, pitch and roll under a pose whose `along` is set (render-only; flat
+     * tracks read 0). Sampled under both axles, so the car bridges a crest instead of
+     * sinking into it. A banked road tilts about its centerline: a car off-centre sits
+     * higher or lower, and how far it points along or across the road splits the slope
+     * and the bank between its pitch and roll.
+     */
+    place(r) {
+        const t = this.track;
+        if (!t.z) { r.h = 0; r.pitch = 0; r.roll = 0; return; }
+        const p = t.pointAt(r.along);
+        const c = Math.cos(r.heading) * p.tx + Math.sin(r.heading) * p.ty;      // along the road
+        const s = Math.sin(r.heading) * p.tx - Math.cos(r.heading) * p.ty;      // across it
+        const front = t.heightAt(r.along + AXLE * c), rear = t.heightAt(r.along - AXLE * c);
+        const slope = (front - rear) / (AXLE * 2 * (Math.abs(c) > 0.2 ? c : 1));
+        const bank = t.bankAt(r.along);
+        const lateral = (r.x - p.x) * -p.ty + (r.y - p.y) * p.tx;
+        r.h = ((front + rear) / 2 + lateral * bank) / 10;
+        r.pitch = Math.atan(slope * c + bank * s);
+        r.roll = Math.atan(bank * c - slope * s);
     }
 
     applySettings(settings) {
@@ -350,6 +405,12 @@ class Race {
         if (this.local && this.mode !== 'demo') {
             controls = ph.assistControls(this.track, this.local.body, raw,
                 { steering: this.settings.steeringAssist, autoBrake: !!this.settings.autoBrake }, this.grip);
+            const w = this.wear;
+            controls = {
+                throttle: controls.throttle * (1 - WEAR_POWER * w.power),
+                brake: controls.brake,
+                steer: Math.min(1, Math.max(-1, controls.steer * (1 - WEAR_LOCK * w.lock) + WEAR_PULL * w.pull)),
+            };
         }
         if (this.proof) {
             // Quantize BEFORE stepping, so what is recorded is exactly what was simulated:
@@ -385,13 +446,13 @@ class Race {
             if (car.isLocal && !car.finished && this.mode !== 'demo') c = controls;
             else {
                 const persona = car.persona || ph.AUTOPILOT;
-                c = ph.aiControls(this.track, car.body, persona, car.finished ? car.maxSpeed * 0.6 : car.maxSpeed,
+                c = ph.aiControls(this.track, car.body, persona, car.finished ? car.maxSpeed * this.track.coolDownAt(car.body.distance) : car.maxSpeed,
                     car.corneringSkill, bodies, this.grip);
                 if (car.isLocal) this.lastControls = c;
             }
             ph.step(this.track, car.body, c, stepDt, this.grip);
         }
-        ph.resolveContacts(bodies);
+        ph.resolveContacts(this.track, bodies);
         this.lapBookkeeping(tickStart, stepDt, elapsed);
         this.checkPhotoFinish();
         this.feedback();
@@ -400,7 +461,7 @@ class Race {
     }
 
     lapBookkeeping(tickStart, stepDt, elapsed) {
-        const L = this.track.length;
+        const L = this.track.lapLength;
         for (const car of this.cars) {
             if (car.finished) continue;
             if (car.isLocal) this.checkSectors(car.prevDistance, car.body.distance, tickStart, stepDt);
@@ -477,7 +538,7 @@ class Race {
      */
     checkSectors(prev, dist, tickStart, stepDt) {
         const s = this.sectors;
-        const third = this.track.length / 3;
+        const third = this.track.lapLength / 3;
         while (dist >= s.next * third) {
             const boundary = s.next * third;
             const span = dist - prev;
@@ -520,7 +581,8 @@ class Race {
         }
         if (me.finished && !this.saidFinish) {
             this.saidFinish = true;
-            const winner = order.find(c => !c.isLocal) || order[0];
+            // The best-placed official: the field racers have no radio.
+            const winner = order.find(c => !c.isLocal && this.banter[c.officialId]) || order[0];
             this.say(winner.officialId, 'finish', true);
         }
         this.prevLocalPos = me.position;
@@ -570,7 +632,7 @@ class Race {
     checkPhotoFinish() {
         const p = this.photo, me = this.local;
         if (!me || this.mode === 'net' || p.state === 'done') return;
-        const L = this.track.length;
+        const L = this.track.lapLength;
         if (p.state === 'idle') {
             if (me.finished || me.lapsDone !== this.totalLaps - 1) return;
             const toGo = this.totalLaps * L - me.body.distance;
@@ -672,14 +734,18 @@ class Race {
         const sa = a.cars.find(c => c.id === car.id);
         if (!sa) return null;
         const sb = b ? b.cars.find(c => c.id === car.id) : null;
+        // Where along the loop (for the road height): the server's lap fraction, not a projection.
+        const L = this.track.length;
+        const alongA = (Number(sa.lapProgress) || 0) * L;
         if (!sb) {
             // Past the newest snapshot: extrapolate briefly along the heading.
             const ahead = Math.min(0.1, Math.max(0, (renderMs - a.t) / 1000));
             const v = (Number(sa.speedKmh) || 0) / ph.KMH_PER_UNIT;
-            return { x: sa.x + Math.cos(sa.heading) * v * ahead, y: sa.y + Math.sin(sa.heading) * v * ahead, heading: sa.heading, speed: v };
+            return { x: sa.x + Math.cos(sa.heading) * v * ahead, y: sa.y + Math.sin(sa.heading) * v * ahead, heading: sa.heading, speed: v, along: alongA + v * ahead };
         }
         const f = b.t > a.t ? Math.min(1, Math.max(0, (renderMs - a.t) / (b.t - a.t))) : 1;
         return {
+            along: alongA + wrapHalf((Number(sb.lapProgress) || 0) * L - alongA, L) * f,
             x: sa.x + (sb.x - sa.x) * f,
             y: sa.y + (sb.y - sa.y) * f,
             heading: sa.heading + wrapAngle(sb.heading - sa.heading) * f,
@@ -711,6 +777,7 @@ class Race {
                     y: car.prev.y + (b.y - car.prev.y) * alpha,
                     heading: car.prev.heading + wrapAngle(b.heading - car.prev.heading) * alpha,
                     speed: b.speed,
+                    along: car.prev.along + wrapHalf(b.along - car.prev.along, this.track.length) * alpha,
                 };
                 if (isNet && car.isLocal) {
                     pose.x += this.net.renderOffset.x;
@@ -722,8 +789,11 @@ class Race {
             car.render.y = pose.y;
             car.render.heading = pose.heading;
             car.render.speed = pose.speed;
-            car.mesh?.update({ x: pose.x, y: pose.y, heading: pose.heading, speedKmh: pose.speed * ph.KMH_PER_UNIT });
+            car.render.along = pose.along;
+            this.place(car.render);
+            car.mesh?.update({ x: pose.x, y: pose.y, heading: pose.heading, speedKmh: pose.speed * ph.KMH_PER_UNIT, h: car.render.h, pitch: car.render.pitch, roll: car.render.roll });
         }
+        this.cull();
 
         // Camera: the local car, or the race leader when spectating.
         let mode = this.cameraMode;
@@ -738,8 +808,7 @@ class Race {
         const focus = this.local || [...this.cars].sort((a, b) => a.position - b.position)[0];
         if (!this.local) mode = 'chase';
         if (focus) {
-            const along = this.track.project(focus.render.x, focus.render.y, focus.body.segHint).along;
-            this.scene.setView({ ...focus.render, along, mode, dt });
+            this.scene.setView({ ...focus.render, mode, dt });
             if (focus.mesh) focus.mesh.group.visible = true;
         }
         this.effects(dt, mode, focus);
@@ -753,6 +822,40 @@ class Race {
                 })));
             } catch { /* decorative */ }
         }
+    }
+
+    /**
+     * A hundred cars at fourteen draw calls each, all casting shadows, is more than the
+     * frame has: only the rivals nearest the camera's car are drawn in full, the rest go
+     * into the instanced crowd. A rival that has parked in a point-to-point run-out is not
+     * drawn at all (the physics stops colliding it there, so they stack). A field small
+     * enough to draw whole (online) has no crowd and is left alone.
+     */
+    cull() {
+        const crowd = this.crowd;
+        const focus = this.local || this.cars[0];
+        if (!crowd || !focus) return;
+        const live = this.mode !== 'net' && !this.replay;
+        const order = this.byRange;
+        order.length = 0;
+        for (const car of this.cars) {
+            if (!car.mesh || car === focus) continue;
+            if (live && this.track.parked(car.body.distance) && Math.abs(car.body.speed) < 1) {
+                car.mesh.group.visible = false;
+                continue;
+            }
+            const dx = car.render.x - focus.render.x, dy = car.render.y - focus.render.y;
+            car.range = dx * dx + dy * dy;
+            order.push(car);
+        }
+        order.sort((a, b) => a.range - b.range);
+        crowd.begin();
+        order.forEach((car, i) => {
+            const full = i < FULL_CARS;
+            car.mesh.group.visible = full;
+            if (!full) crowd.add(car.mesh);
+        });
+        crowd.end();
     }
 
     // ── Feel layer: particles, post inputs, audio, gantry ────────────────
@@ -777,7 +880,7 @@ class Race {
         const speed01 = focus ? Math.min(1, Math.abs(focus.render.speed) / ph.MAX_SPEED) : 0;
         // Speed blur belongs to a camera that moves with the car, not a trackside one.
         fx.speed = racing && mode !== 'tv' ? speed01 : 0;
-        fx.focus = focus ? { x: focus.render.x / 10, z: focus.render.y / 10, speed01 } : null;
+        fx.focus = focus ? { x: focus.render.x / 10, y: focus.render.h, z: focus.render.y / 10, speed01 } : null;
 
         const events = this.fx?.update(this.paused ? 0 : dt * this.timeScale, this.fxCars(), { skids: true });
 
@@ -826,11 +929,30 @@ class Race {
         this.updateAudioScene(dt, racing || preStart);
     }
 
-    /** A hit on car `id` at world (x, z): dent it, and throw debris off a real one. */
+    /** A hit on car `id` at world (x, z): dent it, throw debris off a real one, and wear the player's. */
     damage(id, x, z, strength) {
         const car = this.cars.find(c => c.id === id);
-        if (!car?.mesh || !(strength > 0.12)) return;
-        if (car.mesh.addDamage(x, z, strength) && strength > 0.3) this.fx?.debris(x, z, car.mesh.paintHex, strength);
+        if (!car || !(strength > 0.12)) return;
+        if (car === this.local && this.mode !== 'demo' && !car.finished) this.wearFrom(car.render, x, z, strength);
+        if (car.mesh?.addDamage(x, z, strength) && strength > 0.3) this.fx?.debris(x, z, car.mesh.paintHex, strength, car.render.h);
+    }
+
+    /**
+     * What a hit at world (x, z) costs the car at pose `r`. Where it landed decides what broke:
+     * a front corner bends the steering (the car pulls toward the hit and loses lock) and can
+     * hole the radiator; a hit further back mostly knocks the tracking out a little.
+     */
+    wearFrom(r, x, z, strength) {
+        const s = (strength - WEAR_FLOOR) * WEAR_GAIN;
+        if (s <= 0) return;
+        const dx = x * 10 - r.x, dy = z * 10 - r.y;
+        const ch = Math.cos(r.heading), sh = Math.sin(r.heading);
+        const front = dx * ch + dy * sh > 6;                                       // the hull is 39 long
+        const side = Math.min(1, Math.max(-1, (dy * ch - dx * sh) / ph.HULL_RADIUS));
+        const w = this.wear;
+        w.pull = Math.min(1, Math.max(-1, w.pull + side * s * (front ? 1 : 0.4)));
+        if (front) w.lock = Math.min(1, w.lock + s);
+        w.power = Math.min(1, w.power + s * (front ? 0.8 : 0.3));
     }
 
     /** Grandstand, overtakes, the finish, and the score's battle/final-lap state. */
@@ -868,8 +990,10 @@ class Race {
         if (me && me.finished && !m.finished) {
             m.finished = true;
             scenery?.exciteCrowd(1);
-            audio.cheer(me.position <= 3 ? 1 : 0.5);
-            if (me.position <= 3 && !this.scene.fx.reduced) this.fx?.confetti(me.render.x / 10, me.render.y / 10);
+            // The podium, or the top ten of the 100-car solo field (PoCabinetCatalog.SoloFrontRunners).
+            const front = me.position <= (this.cars.length > 8 ? 10 : 3);
+            audio.cheer(front ? 1 : 0.5);
+            if (front && !this.scene.fx.reduced) this.fx?.confetti(me.render.x / 10, me.render.y / 10, 160, me.render.h);
         }
 
         let battle = 0;
@@ -911,8 +1035,11 @@ class Race {
     fxCars() {
         const exact = this.mode !== 'net';
         return this.cars.map(c => ({
-            id: c.id, x: c.render.x, y: c.render.y, heading: c.render.heading, speed: c.render.speed,
+            id: c.id, x: c.render.x, y: c.render.y, h: c.render.h, heading: c.render.heading, speed: c.render.speed,
             sliding: (exact || c.isLocal) ? !!c.body.sliding : false,
+            // Where the sim has the car on the road, when it knows (fx.js would otherwise
+            // search blind, and on a course that crosses itself find the wrong level).
+            hint: (exact || c.isLocal) ? c.body.segHint : -1,
         }));
     }
 
@@ -941,9 +1068,15 @@ class Race {
             if (car.isLocal) continue;
             const h = car.render.heading, v = car.render.speed;
             list.push({
-                id: car.id, x: car.render.x / 10, y: 0.5, z: car.render.y / 10,
+                id: car.id, x: car.render.x / 10, y: car.render.h + 0.5, z: car.render.y / 10,
                 vx: Math.cos(h) * v / 10, vz: Math.sin(h) * v / 10, kmh: Math.abs(v) * ph.KMH_PER_UNIT,
             });
+        }
+        // The nearest few: a voice per car was fine for four rivals, not for ninety-nine.
+        if (list.length > RIVAL_VOICES) {
+            for (const r of list) r.d2 = (r.x - p.x) ** 2 + (r.z - p.z) ** 2;
+            list.sort((a, b) => a.d2 - b.d2);
+            list.length = RIVAL_VOICES;
         }
         audio.updateRivals(list);
     }
@@ -977,6 +1110,11 @@ class Race {
         if (this.hudFinishedSent) return;
         const local = this.local;
         const finished = !!local?.finished;
+        // The page needs the whole field twice: once to count it, and at the finish for the
+        // standings. In between it only reads the local car, and marshalling a hundred rows
+        // into .NET thirty times a second costs more than the race does.
+        const whole = finished || !this.hudFieldSent || !local;
+        this.hudFieldSent = true;
         const snap = {
             gameCode: 'SOLO',
             serverTimeMs: Math.round(this.clock * 1000),
@@ -985,7 +1123,7 @@ class Race {
             countdownSeconds: elapsed < 0 ? Math.ceil(-elapsed) : 0,
             finished,
             localCarId: local ? local.id : null,
-            cars: this.cars.map(c => ({
+            cars: (whole ? this.cars : [local]).map(c => ({
                 id: c.id, name: c.name, officialId: c.officialId, color: c.color,
                 x: round2(c.body.x), y: round2(c.body.y), heading: round3(c.body.heading),
                 speedKmh: Math.round(Math.abs(c.body.speed) * ph.KMH_PER_UNIT),
@@ -1006,10 +1144,10 @@ class Race {
     startRecording() {
         this.rec = {
             trackId: this.track.id,
-            trackLength: this.track.length,
+            trackLength: this.track.lapLength,
             cars: this.cars.map(c => ({ id: c.id, isLocal: c.isLocal })),
             t: [],
-            poses: [],   // per frame: flat [x, y, heading, speed] × cars
+            poses: [],   // per frame: flat [x, y, heading, speed, along] × cars
             local: { dist: [], kmh: [], thr: [], brk: [], str: [] },
             laps: [],
         };
@@ -1020,12 +1158,13 @@ class Race {
         if (!r || this.simDone || r.t.length >= MAX_RECORD_FRAMES || raceTime < 0) return;
         const isNet = this.mode === 'net';
         const renderMs = isNet ? this.estServerMs() - INTERP_DELAY_MS : 0;
-        const frame = [];
-        for (const car of this.cars) {
+        // Float32: a hundred cars for a three-minute run is over three million numbers.
+        const frame = new Float32Array(this.cars.length * 5);
+        this.cars.forEach((car, k) => {
             let p = car.body;
             if (isNet && !car.isLocal) p = this.remotePose(car, renderMs) || car.render;
-            frame.push(round2(p.x), round2(p.y), round3(p.heading), round2(p.speed));
-        }
+            frame[k * 5] = p.x; frame[k * 5 + 1] = p.y; frame[k * 5 + 2] = p.heading; frame[k * 5 + 3] = p.speed; frame[k * 5 + 4] = p.along;
+        });
         r.t.push(raceTime);
         r.poses.push(frame);
         const l = this.local;
@@ -1038,7 +1177,7 @@ class Race {
         // Online lap boundaries come from the local car's own distance (the server
         // counts the official laps; this only slices the telemetry).
         if (isNet && l) {
-            const L = this.track.length;
+            const L = this.track.lapLength;
             const done = r.laps.length;
             if (l.body.distance >= (done + 1) * L && done < this.totalLaps) {
                 const startT = done === 0 ? 0 : r.laps[done - 1].endT;
@@ -1141,19 +1280,21 @@ class Race {
         const f = Math.min(1, Math.max(0, fi - i0));
         let focus = null;
         this.cars.forEach((car, k) => {
-            const a = r.poses[i0], b = r.poses[i1];
-            const x = a[k * 4] + (b[k * 4] - a[k * 4]) * f;
-            const y = a[k * 4 + 1] + (b[k * 4 + 1] - a[k * 4 + 1]) * f;
-            const heading = a[k * 4 + 2] + wrapAngle(b[k * 4 + 2] - a[k * 4 + 2]) * f;
-            const speed = a[k * 4 + 3];
+            const a = r.poses[i0], b = r.poses[i1], o = k * 5;
+            const x = a[o] + (b[o] - a[o]) * f;
+            const y = a[o + 1] + (b[o + 1] - a[o + 1]) * f;
+            const heading = a[o + 2] + wrapAngle(b[o + 2] - a[o + 2]) * f;
+            const speed = a[o + 3];
             car.render.x = x; car.render.y = y; car.render.heading = heading; car.render.speed = speed;
-            car.mesh?.update({ x, y, heading, speedKmh: speed * ph.KMH_PER_UNIT });
+            car.render.along = a[o + 4] + wrapHalf(b[o + 4] - a[o + 4], this.track.length) * f;
+            this.place(car.render);
+            car.mesh?.update({ x, y, heading, speedKmh: speed * ph.KMH_PER_UNIT, h: car.render.h, pitch: car.render.pitch, roll: car.render.roll });
             if (car.mesh) car.mesh.group.visible = true;
             if (car.isLocal) focus = car;
         });
+        this.cull();
         focus = focus || this.cars[0];
-        const along = this.track.project(focus.render.x, focus.render.y, focus.body.segHint).along;
-        this.scene.setView({ ...focus.render, along, mode: rp.camera, dt });
+        this.scene.setView({ ...focus.render, mode: rp.camera, dt });
         if (focus.mesh) focus.mesh.group.visible = true;
         // The replay gets the same smoke, sparks and speed blur; its skid marks are already down.
         const fx = this.scene.fx;
@@ -1236,6 +1377,7 @@ class Race {
         this.scene.offFrame?.(this.frameCb);
         this.input.detach();
         for (const car of this.cars) if (car.mesh) unmountCar(car.mesh);
+        this.crowd?.dispose();
         this.fx?.dispose();
         this.reflections?.dispose();
         audio.silenceRace();
@@ -1250,3 +1392,5 @@ class Race {
 function round2(v) { return Math.round((Number(v) || 0) * 100) / 100; }
 function round3(v) { return Math.round((Number(v) || 0) * 1000) / 1000; }
 function fraction(v) { const f = v % 1; return f < 0 ? f + 1 : f; }
+/** A difference of two loop positions, taken the short way round a loop of length L. */
+function wrapHalf(d, L) { return d > L / 2 ? d - L : d < -L / 2 ? d + L : d; }

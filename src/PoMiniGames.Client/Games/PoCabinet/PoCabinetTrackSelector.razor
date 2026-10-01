@@ -1,5 +1,5 @@
 @*
-    PoCabinetTrackSelector — the three themed tracks. Keyboard navigation + screen reader
+    PoCabinetTrackSelector — the four themed tracks. Keyboard navigation + screen reader
     labels; the parent owns the selection (two-way binding).
 
     Campaign (1P, 2026-09-29): the championship strip that used to repeat the same three
@@ -9,7 +9,7 @@
     "doesn't count yet", which is what the card now says instead of implying you can't
     pick it.
 
-    Compact (the lobby host): a plain dropdown instead of three big cards.
+    Compact (the lobby host): a plain dropdown instead of four big cards.
 *@
 
 @using PoMiniGames.Shared.Games
@@ -80,6 +80,7 @@ else
             ["capitol"] = ("#d4af37", 3, "Easy"),
             ["maralago"] = ("#2e7d4f", 4, "Medium"),
             ["pressbriefing"] = ("#c0392b", 3, "Hard"),
+            ["playground"] = ("#f39c12", 3, "Medium"),
         };
 
     protected override void OnInitialized() => Career.Changed += OnCareerChanged;
@@ -92,12 +93,14 @@ else
         TrackInfo.TryGetValue(id, out var info) ? info.Accent : "#888";
 
     private static string TrackMeta(string id) =>
-        TrackInfo.TryGetValue(id, out var info) ? $"{info.LengthKm} km · {info.Difficulty}" : "";
+        !TrackInfo.TryGetValue(id, out var info) ? ""
+        : PoCabinetTrackGeometry.Get(id).Laps == 1 ? $"One run · {info.Difficulty}"
+        : $"{info.LengthKm} km · {info.Difficulty}";
 
     private (string Kind, string Text) StageNote(int stage)
     {
         if (Career.Current.CompletedStages.Contains(stage)) return ("done", $"Stage {stage + 1} ✓ cleared");
-        if (stage == Career.Current.CurrentStageIndex) return ("active", $"Stage {stage + 1} · top 3 advances");
+        if (stage == Career.Current.CurrentStageIndex) return ("active", $"Stage {stage + 1} · top {PoCabinetCatalog.CampaignPassPlace} advances");
         return ("free", $"Stage {stage + 1} · free race for now");
     }
 

@@ -9,24 +9,24 @@ function lerpAngle(a, b, t) {
 
 /**
  * Build the car array for a point in time between two snapshots.
- * Identity is by array index rather than by name: the server sends a stable
- * ordering, and matching on a string per car per frame would allocate.
+ * Identity is by array index, checked against the car id: the server sends a stable
+ * ordering, and searching for each car on every frame would allocate.
  */
 function interpolate(a, b, t) {
     const out = new Array(b.cars.length);
     for (let i = 0; i < b.cars.length; i++) {
         const cb = b.cars[i];
-        const ca = a && a.cars[i] && a.cars[i].name === cb.name ? a.cars[i] : cb;
+        const ca = a && a.cars[i] && a.cars[i].id === cb.id ? a.cars[i] : cb;
         out[i] = {
             ...cb,
             x: ca.x + (cb.x - ca.x) * t,
             y: ca.y + (cb.y - ca.y) * t,
             h: lerpAngle(ca.h, cb.h, t),
             v: ca.v + (cb.v - ca.v) * t,
-            // boost and skid are 0..1 intensities that drive particle spawns and
-            // glow; interpolating them keeps those effects smooth too.
             boost: (ca.boost || 0) + ((cb.boost || 0) - (ca.boost || 0)) * t,
             skid: (ca.skid || 0) + ((cb.skid || 0) - (ca.skid || 0)) * t,
+            // Shedding more than ~30 units/s² between two snapshots: the brake lights are on.
+            braking: cb.v < ca.v - 1.5 && cb.v > 8,
         };
     }
     return out;
@@ -50,10 +50,10 @@ export function sampleAt(buf, ts) {
 
     const last = buf[n - 1];
     if (ts >= last.st) {
-        // Past the newest snapshot — a packet is late. Extrapolate along the last
-        // known trajectory, but only briefly: beyond about one interval the guess
-        // diverges badly on corners, and a car that visibly drives through a wall
-        // and snaps back is worse than one that pauses.
+        // Past the newest snapshot — a packet is late, or this is the local car, which is
+        // sampled ahead on purpose. Extrapolate along the last known trajectory, but only
+        // briefly: beyond about one interval the guess diverges badly on corners, and a car
+        // that visibly drives through a wall and snaps back is worse than one that pauses.
         const before = buf[n - 2];
         const span = last.st - before.st;
         if (span <= 0) return last.cars;
@@ -66,6 +66,3 @@ export function sampleAt(buf, ts) {
     }
     return buf[0].cars;
 }
-
-// ── GL composite ───────────────────────────────────────────────────────────
-

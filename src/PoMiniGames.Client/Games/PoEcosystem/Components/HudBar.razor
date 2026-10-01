@@ -1,11 +1,15 @@
-@* Top-left of the HUD. One status chip carries everything the clock block used to spread
-   over four badges (date, season, alive, tribe tier) — clicking it opens the dashboard,
-   which owns the detail. The sound / cinematic / pop-out pills are icon-only: labels and
-   shortcut keys live in the title tooltips and the key legend, not on the bar. Speed
-   stays on keys 0–3 inside the dashboard. *@
+@* Top-left of the HUD. The status chip is the one standing summary and the one way into
+   the dashboard (click it, or Tab) — the separate dashboard pill it used to sit beside did
+   the same thing and is gone. Speed lives here now rather than three taps deep in Settings:
+   it is the control most used, and on a phone the 0–3 keys do not exist.
+
+   Everything else is an icon. The two that are a choice rather than a switch open a small
+   menu: the lens (what the creatures are coloured by) and "more" (pop-out, reel, ambient
+   mode, the key legend). The menus are plain component state — no popover API, because a
+   top-layer element escapes .poeco-hud's idle fade and would hang over a hidden HUD. *@
 <div class="poeco-hudbar">
-    <button type="button" class="poeco-chip" title="Island status — click for the full dashboard"
-            aria-label="Island status: year @(Stats?.Year ?? 0), day @(Stats?.Day ?? 1), @(Stats?.Alive ?? 0) creatures alive@(Stats?.Tech is { } t ? $", {t.Tribe} tribe at {t.Name}" : "")"
+    <button type="button" class="poeco-chip" title="Island status — click for the dashboard (Tab)"
+            aria-label="Island status: year @(Stats?.Year ?? 0), day @(Stats?.Day ?? 1), @(Stats?.Alive ?? 0) creatures alive@(Stats?.Tech is { } t ? $", {t.Tribe} tribe at {t.Name}" : ""). Open the dashboard."
             @onclick="OnDashboard">
         @{
             var seasonIcon = (Stats?.Season ?? 0) switch
@@ -28,39 +32,124 @@
         }
     </button>
 
+    <div class="poeco-speed" role="group" aria-label="Simulation speed">
+        @foreach (var s in Speeds)
+        {
+            <button type="button" class="poeco-pill @(Stats?.Speed == s ? "poeco-pill--on" : "")" aria-pressed="@(Stats?.Speed == s ? "true" : "false")"
+                    title="@(s == 0 ? "Pause (0)" : $"{s}× speed ({(s == 4 ? 3 : s)})")" aria-label="@(s == 0 ? "Pause" : $"{s} times speed")"
+                    @onclick="() => OnSpeed.InvokeAsync(s)">@(s == 0 ? "⏸" : $"{s}×")</button>
+        }
+    </div>
+
     <button type="button" class="poeco-pill poeco-sound-btn" aria-pressed="@(Sound ? "true" : "false")"
             aria-label="@(Sound ? "Mute ambience" : "Unmute ambience")"
             title="@(Sound ? "Mute ambience" : "Unmute ambience")"
             @onclick="() => OnSound.InvokeAsync(!Sound)">@(Sound ? "🔊" : "🔇")</button>
 
     <button type="button" class="poeco-pill @(Director ? "poeco-pill--on" : "")" aria-pressed="@(Director ? "true" : "false")"
-            title="Cinematic camera — let the director find the drama (C)"
+            title="Cinematic camera — let the director find the drama (C)" aria-label="Cinematic camera"
             @onclick="OnDirector">🎬</button>
 
-    <button type="button" class="poeco-pill @(Pip ? "poeco-pill--on" : "")" aria-pressed="@(Pip ? "true" : "false")"
-            title="Pop the island out into a small always-on-top window (P)"
-            @onclick="OnPip">⧉</button>
+    <button type="button" class="poeco-pill" title="Find a creature or a clan (/)" aria-label="Find a creature or a clan"
+            @onclick="Find">🔍</button>
 
-    <button type="button" class="poeco-pill poeco-reel-btn" title="Island reel — replays of the big moments, photos and miniatures"
-            aria-label="Open the island reel" @onclick="OnReel">🎞</button>
+    <div class="poeco-menu">
+        <button type="button" class="poeco-pill @(Lens != EcoLens.None ? "poeco-pill--on" : "")" aria-haspopup="true" aria-expanded="@(_menu == "lens" ? "true" : "false")"
+                title="Lens — colour every creature by a trait, hunger, health, heat or kinship (L)" aria-label="Lens: @EcoLens.LabelOf(Lens)"
+                @onclick="@(() => Toggle("lens"))">👁@(Lens != EcoLens.None ? $" {EcoLens.LabelOf(Lens)}" : "")</button>
+        @if (_menu == "lens")
+        {
+            <div class="poeco-menu-panel" role="menu" aria-label="Lens">
+                @foreach (var (id, label, _, _) in EcoLens.All)
+                {
+                    <button type="button" role="menuitemradio" aria-checked="@(Lens == id ? "true" : "false")"
+                            class="poeco-menu-item @(Lens == id ? "poeco-menu-item--on" : "")" @onclick="() => PickLens(id)">@label</button>
+                }
+            </div>
+        }
+    </div>
 
-    <button type="button" class="poeco-pill poeco-dashboard-btn" @onclick="OnDashboard"
-            title="Dashboard — populations, tribe, chronicle, cloud saves (Tab)"
-            aria-label="Open the dashboard">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true"><path d="M3 17l6-6 4 4 8-8" /></svg>
-    </button>
+    <div class="poeco-menu">
+        <button type="button" class="poeco-pill poeco-reel-btn @(Pip || Ambient ? "poeco-pill--on" : "")" aria-haspopup="true" aria-expanded="@(_menu == "more" ? "true" : "false")"
+                title="More — pop-out window, island reel, ambient mode, keys" aria-label="More views"
+                @onclick="@(() => Toggle("more"))">⋯</button>
+        @if (_menu == "more")
+        {
+            <div class="poeco-menu-panel" role="menu" aria-label="More views">
+                <button type="button" role="menuitem" class="poeco-menu-item" @onclick="@(() => Run(OnReel))">🎞 Island reel <span class="poeco-menu-hint">replays · photos · long exposure</span></button>
+                <button type="button" role="menuitemcheckbox" aria-checked="@(Pip ? "true" : "false")" class="poeco-menu-item @(Pip ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnPip))">⧉ Pop out <kbd>P</kbd> <span class="poeco-menu-hint">a small always-on-top window</span></button>
+                <button type="button" role="menuitemcheckbox" aria-checked="@(Ambient ? "true" : "false")" class="poeco-menu-item @(Ambient ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnAmbient))">🌙 Ambient mode <span class="poeco-menu-hint">director on, HUD off, screen kept awake</span></button>
+                <button type="button" role="menuitemcheckbox" aria-checked="@(Keys ? "true" : "false")" class="poeco-menu-item @(Keys ? "poeco-menu-item--on" : "")" @onclick="@(() => Run(OnKeys))">⌨ Keys <kbd>H</kbd></button>
+            </div>
+        }
+    </div>
 </div>
 
+@if (Lens != EcoLens.None && EcoLens.All.FirstOrDefault(l => l.Id == Lens) is { Label: not null } lens)
+{
+    <p class="poeco-lens-legend" role="status">
+        <strong>@lens.Label</strong>
+        @if (Lens == EcoLens.Kin)
+        {
+            <span class="poeco-lens-key"><i class="poeco-lens-dot poeco-lens-dot--self"></i>on camera</span>
+            <span class="poeco-lens-key"><i class="poeco-lens-dot poeco-lens-dot--elder"></i>elders</span>
+            <span class="poeco-lens-key"><i class="poeco-lens-dot poeco-lens-dot--young"></i>young</span>
+            <span class="poeco-lens-key"><i class="poeco-lens-dot poeco-lens-dot--sibling"></i>siblings</span>
+            @if (!HasSubject) { <span class="poeco-lens-key">inspect or follow a creature to see its family</span> }
+        }
+        else
+        {
+            <span>@lens.Low</span>
+            <i class="poeco-lens-ramp poeco-lens-ramp--@RampOf(Lens)" aria-hidden="true"></i>
+            <span>@lens.High</span>
+        }
+    </p>
+}
+
 @code {
+    private static readonly int[] Speeds = [0, 1, 2, 4];
+
     [Parameter] public EcoStats? Stats { get; set; }
     [Parameter] public bool Sound { get; set; } = true;
     [Parameter] public bool Director { get; set; }
     [Parameter] public bool Pip { get; set; }
+    [Parameter] public bool Ambient { get; set; }
+    [Parameter] public bool Keys { get; set; }
+    [Parameter] public int Lens { get; set; } = EcoLens.None;
+    /// <summary>Is a creature inspected or followed? The kin lens has nothing to show without one.</summary>
+    [Parameter] public bool HasSubject { get; set; }
     [Parameter] public EventCallback<bool> OnSound { get; set; }
     [Parameter] public EventCallback OnDashboard { get; set; }
     [Parameter] public EventCallback OnDirector { get; set; }
     [Parameter] public EventCallback OnPip { get; set; }
     [Parameter] public EventCallback OnReel { get; set; }
+    [Parameter] public EventCallback OnAmbient { get; set; }
+    [Parameter] public EventCallback OnKeys { get; set; }
+    [Parameter] public EventCallback OnFind { get; set; }
+    [Parameter] public EventCallback<int> OnSpeed { get; set; }
+    [Parameter] public EventCallback<int> OnLens { get; set; }
+
+    private string? _menu;
+
+    /// <summary>Esc, or anything else that should put the menus away.</summary>
+    public bool CloseMenu()
+    {
+        if (_menu is null) return false;
+        _menu = null;
+        StateHasChanged();
+        return true;
+    }
+
+    private void Toggle(string menu) => _menu = _menu == menu ? null : menu;
+
+    private Task Find() { _menu = null; return OnFind.InvokeAsync(); }
+    private Task PickLens(int id) { _menu = null; return OnLens.InvokeAsync(id); }
+    private Task Run(EventCallback action) { _menu = null; return action.InvokeAsync(); }
+
+    private static string RampOf(int lens) => lens switch
+    {
+        EcoLens.Hunger => "hunger", EcoLens.Health => "health", EcoLens.Thermal => "thermal", _ => "trait",
+    };
 
     private static string WeatherIcon(int kind) => kind switch { 1 => "🌧️", 2 => "⛈️", 3 => "🌵", 4 => "🌨️", _ => "" };
 }

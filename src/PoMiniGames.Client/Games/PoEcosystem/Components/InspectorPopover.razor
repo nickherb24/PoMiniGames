@@ -1,8 +1,13 @@
-@* The creature under the crosshair (SPEC J2). Anchored beside the crosshair, never over it. *@
-<aside class="poeco-inspector" data-testid="poeco-inspector" role="dialog" aria-label="Creature details">
+@* The creature under the crosshair (SPEC J2). Anchored beside the crosshair, never over it.
+
+   2026-09-30: the family lives here now. It used to open a second floating panel in the
+   bottom-left corner (LineagePanel) holding an SVG tree and a card tree of the same six
+   relatives; the cards are the ones kept, as a section of this panel that Family toggles.
+   Every action sits on one row — follow, watch, family, rename, close. *@
+<aside class="poeco-inspector @(FamilyOpen ? "poeco-inspector--family" : "")" data-testid="poeco-inspector" role="dialog" aria-label="Creature details">
     <header class="poeco-inspector-head">
         <i class="poeco-species-chip" style="background: @Colour" aria-hidden="true"></i>
-        <div>
+        <div class="poeco-inspector-title">
             @if (_renaming)
             {
                 <form class="poeco-rename" @onsubmit="SubmitRename">
@@ -13,27 +18,60 @@
             }
             else
             {
-                <h2>@Detail.Name <button type="button" class="poeco-icon-btn poeco-icon-btn--inline" title="Give this creature a name" aria-label="Rename" @onclick="() => { _newName = Detail.Name; _renaming = true; }">✎</button></h2>
+                <h2>@Detail.Name</h2>
             }
             <p>@Detail.SpeciesName · @Detail.AgeYears.ToString("0.0") y · @Stage @Sex@if (Detail.Sick) { <span class="poeco-badge poeco-badge--sick" title="Sick: losing health while it lasts, then immune for a while">sick</span> }</p>
         </div>
-        <button type="button" class="poeco-pill" @onclick="OnFollow" aria-label="Follow this creature">Follow <kbd>T</kbd></button>
-        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close">✕</button>
+        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close" title="Close (Esc)">✕</button>
     </header>
 
     <div class="poeco-inspector-actions">
+        <button type="button" class="poeco-pill" @onclick="OnFollow" title="The camera stays behind this creature">Follow <kbd>T</kbd></button>
         <button type="button" class="poeco-pill @(Detail.Watched ? "poeco-pill--on" : "")" aria-pressed="@(Detail.Watched ? "true" : "false")"
                 title="Get a toast when this creature dies or has young" @onclick="OnWatch">
             @(Detail.Watched ? "★ Watching" : "☆ Watch")
         </button>
-        <button type="button" class="poeco-pill" title="Parents, grandparents, children and descendants" @onclick="OnFamily">
+        <button type="button" class="poeco-pill @(FamilyOpen ? "poeco-pill--on" : "")" aria-expanded="@(FamilyOpen ? "true" : "false")"
+                title="Parents, grandparents and young — @Detail.Children young, @Detail.Descendants descendants" @onclick="OnFamily">
             Family · gen @Detail.Generation
         </button>
-        @if (Detail.Children > 0)
-        {
-            <span class="poeco-note">@Detail.Children young · @Detail.Descendants descendants</span>
-        }
+        <button type="button" class="poeco-pill" title="Give this creature a name" aria-label="Rename" @onclick="() => { _newName = Detail.Name; _renaming = true; }">✎</button>
     </div>
+
+    @if (FamilyOpen && Family is { } tree && tree.Self.Handle == Detail.Handle)
+    {
+        <section class="poeco-tree" aria-label="Family of @Detail.Name">
+            <p class="poeco-note">@tree.Siblings siblings · @tree.Children.Length young · @tree.Descendants descendants</p>
+            <div class="poeco-tree-row poeco-tree-row--grand">
+                @for (var k = 0; k < 4; k++)
+                {
+                    var g = tree.Grandparents.Length > k ? tree.Grandparents[k] : null;
+                    @Kin(g, k switch { 0 => "mother's mother", 1 => "mother's father", 2 => "father's mother", _ => "father's father" })
+                }
+            </div>
+            <div class="poeco-tree-row">
+                @Kin(tree.Mother, "mother")
+                @Kin(tree.Father, "father")
+            </div>
+            <div class="poeco-tree-row poeco-tree-row--kids">
+                @if (tree.Children.Length == 0)
+                {
+                    <span class="poeco-note">No young yet.</span>
+                }
+                else
+                {
+                    @foreach (var c in tree.Children.Take(8))
+                    {
+                        @Kin(c, c.Sex == 1 ? "daughter" : "son")
+                    }
+                    @if (tree.Children.Length > 8)
+                    {
+                        <span class="poeco-note">+@(tree.Children.Length - 8) more</span>
+                    }
+                }
+            </div>
+        </section>
+    }
 
     <div class="poeco-bars">
         @Bar("Hunger", Detail.Hunger, "var(--accent-warning)")
@@ -68,18 +106,26 @@
         </blockquote>
     }
 
-    <p class="poeco-parents">@Parents</p>
+    @if (!FamilyOpen)
+    {
+        <p class="poeco-parents">@Parents</p>
+    }
 </aside>
 
 @code {
     private static readonly string[] TraitNames = EcoSpeciesInfo.Traits;
 
     [Parameter, EditorRequired] public EcoDetail Detail { get; set; } = default!;
+    /// <summary>The family tree last asked for (it may be another creature's until the answer lands).</summary>
+    [Parameter] public EcoLineage? Family { get; set; }
+    [Parameter] public bool FamilyOpen { get; set; }
     [Parameter] public EventCallback OnFollow { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback OnWatch { get; set; }
     [Parameter] public EventCallback OnFamily { get; set; }
     [Parameter] public EventCallback<string> OnRename { get; set; }
+    /// <summary>A relative was clicked: inspect it and walk the tree there.</summary>
+    [Parameter] public EventCallback<int> OnSelectKin { get; set; }
 
     private bool _renaming;
     private string _newName = "";
@@ -108,5 +154,27 @@
         <span class="poeco-bar-label">@label</span>
         <span class="poeco-bar-track"><span class="poeco-bar-fill" style="width: @Pct(value); background: @colour"></span></span>
         <span class="poeco-bar-value">@($"{value * 100:0}%")</span>
+    </div>;
+
+    // Every named relative is a button: clicking one inspects it and walks the tree there,
+    // so a dynasty can be followed back to its founder or forward to the living. The dead
+    // stay listed, greyed, with what killed them.
+    private RenderFragment Kin(EcoKin? kin, string role) => @<div class="poeco-kin @(kin is null ? "poeco-kin--unknown" : "") @(kin is { Alive: false } ? "poeco-kin--dead" : "")">
+        @if (kin is null)
+        {
+            <span class="poeco-kin-name">unknown</span>
+        }
+        else
+        {
+            <button type="button" class="poeco-kin-name" disabled="@(!kin.Alive)" title="@(kin.Alive ? $"Inspect {kin.Name}" : $"{kin.Name} died: {kin.Cause.Replace('_', ' ')}")" @onclick="() => OnSelectKin.InvokeAsync(kin.Handle)">
+                <i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(kin.Species)" aria-hidden="true"></i>
+                @kin.Name @(kin.Sex == 1 ? "♀" : "♂")
+            </button>
+            @if (!kin.Alive)
+            {
+                <span class="poeco-kin-fate">† @kin.Cause.Replace('_', ' ')</span>
+            }
+        }
+        <span class="poeco-kin-role">@role</span>
     </div>;
 }

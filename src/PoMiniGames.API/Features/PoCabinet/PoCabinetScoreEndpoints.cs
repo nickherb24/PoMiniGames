@@ -61,8 +61,8 @@ public static class PoCabinetScoreEndpoints
         var errors = new Dictionary<string, string[]>();
         if (!double.IsFinite(dto.BestLapSeconds) || dto.BestLapSeconds is <= 0 or > 3600)
             errors[nameof(dto.BestLapSeconds)] = ["Best lap must be between 0 and 3600 seconds."];
-        if (dto.FinalPosition is < 1 or > 9)
-            errors[nameof(dto.FinalPosition)] = ["Final position must be between 1 and 9."];
+        if (dto.FinalPosition is < 1 or > PoCabinetCatalog.SoloCarCount)
+            errors[nameof(dto.FinalPosition)] = [$"Final position must be between 1 and {PoCabinetCatalog.SoloCarCount}."];
         if (!PoCabinetCatalog.IsKnownTrack(dto.TrackId))
             errors[nameof(dto.TrackId)] = ["Choose a supported track."];
         if (errors.Count > 0)

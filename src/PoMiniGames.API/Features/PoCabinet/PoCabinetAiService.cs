@@ -273,7 +273,7 @@ public sealed class PoCabinetAiService : IPoCabinetAiService
         var sectors = r.SectorDeltas is { Length: 3 } s && s.All(double.IsFinite)
             ? s.Select(d => Math.Clamp(Math.Round(d, 2), -30, 30)).ToArray()
             : [];
-        var total = Math.Clamp(r.TotalCars, 1, PoCabinetCatalog.CarCount + 1);
+        var total = Math.Clamp(r.TotalCars, 1, PoCabinetCatalog.SoloCarCount);
         return new Facts(
             track.Name, Math.Clamp(r.Position, 1, total), total, Sec(r.BestLapSeconds, 600), Sec(r.PbSeconds, 600), sectors,
             Pct(r.FullThrottlePct), Pct(r.BrakePct), Math.Clamp(r.TopKmh, 0, 400), Math.Clamp(r.SlowestKmh, 0, 400),

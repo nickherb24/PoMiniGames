@@ -10,13 +10,16 @@
 //
 // Hazards (ARENAS below) are static and chosen by the seed, so they replay with the match:
 // pillars block bodies and projectiles and are what Jev's take_cover option hides behind, brush
-// softens ranged hits on whoever stands in it, and tar slows and burns.
+// softens ranged hits on whoever stands in it, and tar slows and burns. Every match also gets its
+// own wall layout from the seed (mazeFor): blocks stop bodies and everything thrown, count as
+// cover exactly as pillars do, and are the one obstacle units plan a way round (aroundWalls).
 
 import { HANDLERS } from './abilities.js';
 
 export const PPM = 40;
 export const ARENA_W = 800 / PPM;   // 20 m
 export const ARENA_H = 600 / PPM;   // 15 m
+const SPAWN_X_M = 130 / PPM;        // Blue's spawn centre, on the midline; Red's is its mirror image
 export const DT = 1 / 60;
 export const MATCH_SECONDS = 180;
 
@@ -91,6 +94,9 @@ const TAR_DPS = 2;
 const BRUSH_RANGED_FACTOR = 0.7;
 const COVER_GAP_M = 0.15;
 const AVOID_LOOKAHEAD_M = 1.2;
+const NAV_SKIN_M = 0.06;                         // turning points sit this far outside a body's reach of the stone
+const CORNER_MS = 3;                             // pace taken through a turning point (a 1.1 m radius on packed dirt)
+const SHOT_CLEARANCE_M = 0.15;                   // a shot needs this much room past a block's edge (projectiles are 0.12 wide)
 
 // Every blow's damage, after the formulas above. The PRD numbers make a 10v10 blob of focus
 // fire end in ~25 s at designed HP; halving them was the tuned pace until 2026-09-30, when the
@@ -130,9 +136,94 @@ export const ARENAS = [
     },
 ];
 
-export const arenaFor = (seed) => ARENAS[(seed >>> 0) % ARENAS.length];
+/** The match's map: one of the three hazard layouts plus this seed's walls. Rebuilt identically from the seed. */
+export function arenaFor(seed) {
+    const base = ARENAS[(seed >>> 0) % ARENAS.length];
+    const walls = mazeFor(seed, base);
+    // The walls come first: a pillar with less than a lane between it and a block sits the match
+    // out. A three-piece maze leaves room for very few (about three matches in a hundred keep
+    // any), so in practice the walls are the cover: pillars and a real maze do not both fit in 20 x 15 m.
+    const pillars = base.pillars.filter(p => walls.every(b => rectDist(b, p.x, p.y) - p.r >= LANE_M));
+    return { ...base, walls, pillars, nav: new Map() };
+}
 
-/** mulberry32 — tiny seeded PRNG; the sim's only randomness is spawn jitter. */
+// ── Walls ────────────────────────────────────────────────────────────────────
+// A wall layout in the manner of the Atari 2600 Combat tank mazes: not a labyrinth, a few chunky
+// blocks (bars, brackets, ells, a square) with wide lanes between them. A block is
+// { x, y, hw, hh }: centre and half extents, in metres. Each piece is laid in the upper left and
+// copied into the other three quarters, so the layout is its own mirror image left to right and
+// top to bottom: neither team's side is the easier one, whichever symmetry the map's own hazards
+// have. Nothing can be sealed off, by construction: every piece keeps LANE_M of open ground to
+// every other piece, to every pillar left standing and to the arena edge, a bracket's mouth is a
+// lane wide, and the spawn circles are kept clear. LANE_M is wider than the largest body (1.44 m)
+// plus the turning room aroundWalls needs, so shrinking it means re-running the flood-fill check.
+const WALL_THICK_M = 0.8;
+const LANE_M = 2.0;
+const SPAWN_CLEAR_M = 3.4;                       // from a spawn centre; the formation reaches 2.4 m
+const MAZE_PIECES = 3;                           // pieces per quarter, at most
+const MAZE_TRIES = 80;
+
+/** Distance from a point to a block (0 inside it). */
+const rectDist = (b, x, y) => Math.hypot(Math.max(0, Math.abs(x - b.x) - b.hw), Math.max(0, Math.abs(y - b.y) - b.hh));
+
+function mazeFor(seed, arena) {
+    const rng = mulberry32((seed ^ 0x9E3779B9) >>> 0);                      // its own stream: spawn jitter keeps the seed's
+    const half = (lo, hi) => lo + Math.round(rng() * (hi - lo) * 2) / 2;    // half-metre steps
+    const T = WALL_THICK_M / 2;
+    const gap = (a, b) => Math.hypot(Math.max(0, Math.abs(a.x - b.x) - a.hw - b.hw), Math.max(0, Math.abs(a.y - b.y) - a.hh - b.hh));
+    const fits = (blocks, placed) => blocks.every(b =>
+        b.x - b.hw >= LANE_M && b.x + b.hw <= ARENA_W - LANE_M && b.y - b.hh >= LANE_M && b.y + b.hh <= ARENA_H - LANE_M
+        && rectDist(b, SPAWN_X_M, ARENA_H / 2) >= SPAWN_CLEAR_M && rectDist(b, ARENA_W - SPAWN_X_M, ARENA_H / 2) >= SPAWN_CLEAR_M
+        && arena.tar.every(z => rectDist(b, z.x, z.y) - z.r >= 0.3)
+        && placed.every(q => gap(b, q) >= LANE_M));
+    const same = (a, b) => Math.abs(a.x - b.x) + Math.abs(a.y - b.y) < 1e-6 && a.hw === b.hw && a.hh === b.hh;
+    const copies = [(b) => b, (b) => ({ ...b, x: ARENA_W - b.x }), (b) => ({ ...b, y: ARENA_H - b.y }), (b) => ({ ...b, x: ARENA_W - b.x, y: ARENA_H - b.y })];
+
+    const walls = [];
+    for (let tries = 0, pieces = 0; tries < MAZE_TRIES && pieces < MAZE_PIECES; tries++) {
+        // A piece on the centre line or the midline is its own mirror image there.
+        const x = rng() < 0.25 ? ARENA_W / 2 : half(2.5, 8.5), y = rng() < 0.25 ? ARENA_H / 2 : half(2.5, 6.5);
+        const kind = Math.floor(rng() * 5);
+        const len = half(2, 3) / 2, tall = half(3.6, 4.4) / 2, stub = half(1, 1.5) / 2;
+        const dir = rng() < 0.5 ? 1 : -1, end = rng() < 0.5 ? 1 : -1;
+        const arm = (reach, side) => ({ x: x + dir * (T + stub), y: y + side * (reach - T), hw: stub, hh: T });
+        const piece = kind === 0 ? [{ x, y, hw: T, hh: len }]                               // upright bar
+            : kind === 1 ? [{ x, y, hw: len, hh: T }]                                       // flat bar
+            : kind === 2 ? [{ x, y, hw: 0.7, hh: 0.7 }]                                     // square
+            : kind === 3 ? [{ x, y, hw: T, hh: tall }, arm(tall, -1), arm(tall, 1)]         // bracket
+            : [{ x, y, hw: T, hh: len }, arm(len, end)];                                    // ell
+        // All four copies go in or none do. A copy that lands exactly on one already in (the
+        // piece sits on an axis and has that symmetry) is that copy; one that only overlaps fails.
+        const set = [];
+        const ok = copies.every(to => {
+            const copy = piece.map(to);
+            if (copy.every(b => set.some(q => same(b, q)))) return true;
+            if (!fits(copy, walls.concat(set))) return false;
+            set.push(...copy);
+            return true;
+        });
+        if (ok) { walls.push(...set); pieces++; }
+    }
+    return walls;
+}
+
+/**
+ * Does the segment a→b pass through block `q` grown by `m` on every side? Running along a face
+ * or touching a corner is not passing through.
+ */
+function crosses(ax, ay, bx, by, q, m) {
+    const hw = q.hw + m, hh = q.hh + m, dx = bx - ax, dy = by - ay;
+    let t0 = 0, t1 = 1;
+    if (dx === 0) { if (Math.abs(ax - q.x) >= hw) return false; }
+    else { const a = (q.x - hw - ax) / dx, b = (q.x + hw - ax) / dx; t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b)); }
+    if (dy === 0) { if (Math.abs(ay - q.y) >= hh) return false; }
+    else { const a = (q.y - hh - ay) / dy, b = (q.y + hh - ay) / dy; t0 = Math.max(t0, Math.min(a, b)); t1 = Math.min(t1, Math.max(a, b)); }
+    return t1 - t0 > 1e-9;
+}
+
+const walled = (arena, ax, ay, bx, by, m) => arena.walls.some(q => crosses(ax, ay, bx, by, q, m));
+
+/** mulberry32 — tiny seeded PRNG; the sim's only randomness is spawn jitter and the wall layout. */
 export function mulberry32(seed) {
     let a = seed >>> 0;
     return () => {
@@ -155,7 +246,7 @@ export function createWorld({ seed, blue, red, abilities }) {
     const rng = mulberry32(seed);
     const units = [];
     const spawn = (roster, isBlue) => {
-        const cx = (isBlue ? 130 : 670) / PPM, cy = 300 / PPM;
+        const cx = isBlue ? SPAWN_X_M : ARENA_W - SPAWN_X_M, cy = ARENA_H / 2;
         roster.forEach((creature, slot) => {
             // 7 on an outer ring, 3 inside, with a little seeded jitter; overlaps settle on tick 1.
             const outer = slot < 7;
@@ -226,10 +317,12 @@ const alliesOf = (w, u) => w.units.filter(o => o.alive && o.team === u.team && o
 const hpPct = (u) => u.hp / u.maxHp;
 const inside = (zones, u) => zones.some(z => Math.hypot(u.x - z.x, u.y - z.y) <= z.r);
 
-function nearestPillar(w, u) {
-    let best = null, bd = Infinity;
-    for (const p of w.arena.pillars) { const d = Math.hypot(p.x - u.x, p.y - u.y) - p.r; if (d < bd) { bd = d; best = p; } }
-    return best;
+/** The nearest thing to hide behind, a pillar or a wall block, and the distance from the unit's centre to its edge. */
+function nearestCover(w, u) {
+    let at = null, d = Infinity;
+    for (const p of w.arena.pillars) { const e = Math.hypot(p.x - u.x, p.y - u.y) - p.r; if (e < d) { d = e; at = p; } }
+    for (const b of w.arena.walls) { const e = rectDist(b, u.x, u.y); if (e < d) { d = e; at = b; } }
+    return at && { at, d };
 }
 
 function nearest(list, u) {
@@ -293,11 +386,14 @@ export function measure(w, idx) {
     };
 }
 
-/** Edge-to-edge metres to the nearest pillar, or -1 on a map without any (the prompt's contract). */
+/**
+ * Edge-to-edge metres to the nearest cover, or -1 on a map without any (the prompt's contract).
+ * The server words it as "nearest pillar"; a wall block is cover in exactly the same sense.
+ */
 function coverDistance(w, u) {
-    const p = nearestPillar(w, u);
-    if (!p) return -1;
-    return Math.min(25, Math.round(Math.max(0, Math.hypot(p.x - u.x, p.y - u.y) - p.r - u.r) * 10) / 10);
+    const c = nearestCover(w, u);
+    if (!c) return -1;
+    return Math.min(25, Math.round(Math.max(0, c.d - u.r) * 10) / 10);
 }
 
 // ── Decisions ────────────────────────────────────────────────────────────────
@@ -420,9 +516,12 @@ export function heal(w, u, amount, source) {
 const kit = {
     dist, edge, nearest, enemiesOf, alliesOf, hpPct,
     ready: (a) => a.cd <= 0,
-    towards: (u, t, k = 1) => steer(t.x - u.x, t.y - u.y, k),
+    /** Heads for `t`. The command remembers where it is going (`to`), which is what lets think() route it round walls. */
+    towards: (u, t, k = 1) => ({ ...steer(t.x - u.x, t.y - u.y, k), to: t }),
     away: (u, t, k = 1) => steer(u.x - t.x, u.y - t.y, k),
     hold: () => ({ x: 0, y: 0, k: 0 }),
+    /** No wall on the straight line from `u` to `t`: something thrown would arrive. */
+    sight: (w, u, t) => !walled(w.arena, u.x, u.y, t.x, t.y, SHOT_CLEARANCE_M),
     /** Starts a wind-up; the handler's release() runs when it completes. */
     cast(w, u, a, target, windup) {
         u.cast = { id: a.id, t: 0, windup, target };
@@ -502,19 +601,21 @@ function think(w, u, dt) {
             cmd = ally && edge(u, ally) > 0.6 ? kit.towards(u, ally, 1) : kit.hold();
         } else if (action === 'fall_back' || action === 'take_cover') {
             const threat = nearest(enemiesOf(w, u), u);
-            const pillar = action === 'take_cover' ? nearestPillar(w, u) : null;
-            if (pillar && threat) {
-                // The spot on the pillar's far side from the threat, just clear of the stone.
-                const dx = pillar.x - threat.x, dy = pillar.y - threat.y, len = Math.hypot(dx, dy) || 1;
-                const gap = pillar.r + u.r + COVER_GAP_M;
-                const sx = pillar.x + (dx / len) * gap, sy = pillar.y + (dy / len) * gap;
-                cmd = Math.hypot(sx - u.x, sy - u.y) > 0.25 ? steer(sx - u.x, sy - u.y, 1) : kit.hold();
+            const cover = action === 'take_cover' ? nearestCover(w, u)?.at : null;
+            if (cover && threat) {
+                // The spot on the cover's far side from the threat, just clear of the stone. For a
+                // block, "far side" is where the line from the threat through its centre comes out.
+                const dx = cover.x - threat.x, dy = cover.y - threat.y, len = Math.hypot(dx, dy) || 1;
+                const through = cover.r ?? Math.min(cover.hw * len / Math.abs(dx), cover.hh * len / Math.abs(dy));
+                const gap = through + u.r + COVER_GAP_M;
+                const spot = { x: cover.x + (dx / len) * gap, y: cover.y + (dy / len) * gap };
+                cmd = Math.hypot(spot.x - u.x, spot.y - u.y) > 0.25 ? kit.towards(u, spot, 1) : kit.hold();
             } else {
                 cmd = threat ? kit.away(u, threat, 1) : kit.hold();
             }
         }
     }
-    cmd = avoidPillars(w, u, cmd);
+    cmd = avoidPillars(w, u, aroundWalls(w, u, cmd));
 
     if (u.shell > 0 || u.braced || u.stagger > 0) cmd = kit.hold();
     // The lunge is an explosive step at the one it is striking.
@@ -569,6 +670,96 @@ function avoidPillars(w, u, cmd) {
     }
     u.avoid = null;
     return cmd;
+}
+
+/**
+ * The turning points for a body of radius `r`: the corners of every block grown by r plus a skin,
+ * with the shortest way between each pair of them. Walls never move, so it is built once per
+ * body size and kept on the arena. A corner swallowed by a neighbouring block (the inside of a
+ * bracket) is not a turning point.
+ */
+function navFor(arena, r) {
+    let nav = arena.nav.get(r);
+    if (nav) return nav;
+    const solid = r - 1e-3, skin = r + NAV_SKIN_M;       // a body's centre stays `r` off the stone; corners sit a skin further out
+    const nodes = [];
+    for (const b of arena.walls) for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+        const x = b.x + sx * (b.hw + skin), y = b.y + sy * (b.hh + skin);
+        if (!arena.walls.some(q => Math.abs(x - q.x) < q.hw + solid && Math.abs(y - q.y) < q.hh + solid)) nodes.push({ x, y });
+    }
+    const far = nodes.map((a, i) => nodes.map((b, j) =>
+        i === j ? 0 : walled(arena, a.x, a.y, b.x, b.y, solid) ? Infinity : Math.hypot(b.x - a.x, b.y - a.y)));
+    for (let k = 0; k < nodes.length; k++) for (let i = 0; i < nodes.length; i++) for (let j = 0; j < nodes.length; j++)
+        if (far[i][k] + far[k][j] < far[i][j]) far[i][j] = far[i][k] + far[k][j];
+    arena.nav.set(r, nav = { solid, skin, nodes, far });
+    return nav;
+}
+
+/**
+ * Re-aims a command that is going somewhere (kit.towards) when a wall stands in the straight
+ * line: it heads for the first corner of the shortest way round instead. Commands with no
+ * destination (backing away, strafing, a dash, panic) are left alone; those slide along the
+ * stone on their own, because the contact only takes the part of the push that goes into it.
+ * Re-planned every tick from where the unit and its goal are now, and pure geometry, so replays agree.
+ */
+function aroundWalls(w, u, cmd) {
+    const arena = w.arena;
+    if (!cmd.to || !cmd.k || !arena.walls.length) return cmd;
+    const { solid, skin, nodes, far } = navFor(arena, u.r);
+
+    // A goal this body cannot stand on (a target hugging a wall) becomes the nearest spot it can.
+    let gx = cmd.to.x, gy = cmd.to.y, moved = false;
+    for (let pass = 0; pass < 2; pass++) for (const b of arena.walls) {
+        const ox = b.hw + skin - Math.abs(gx - b.x), oy = b.hh + skin - Math.abs(gy - b.y);
+        if (ox <= 0 || oy <= 0) continue;
+        if (ox < oy) gx = b.x + (gx < b.x ? -1 : 1) * (b.hw + skin); else gy = b.y + (gy < b.y ? -1 : 1) * (b.hh + skin);
+        moved = true;
+    }
+
+    let ends = null;                                    // corners that can see the goal, found on first need
+    /** The shortest way from (px, py) to the goal: its length `d` and the first point to head for. */
+    const plan = (px, py) => {
+        if (!walled(arena, px, py, gx, gy, solid)) return { d: Math.hypot(gx - px, gy - py), x: gx, y: gy };
+        ends ??= nodes.map((n, j) => j).filter(j => !walled(arena, nodes[j].x, nodes[j].y, gx, gy, solid));
+        const best = { d: Infinity, x: gx, y: gy };
+        for (let i = 0; i < nodes.length; i++) {
+            const n = nodes[i], d = Math.hypot(n.x - px, n.y - py);
+            // Standing on a corner already: it has nothing left to steer at, the next one does.
+            if (d < 0.05 || walled(arena, px, py, n.x, n.y, solid)) continue;
+            for (const j of ends) {
+                const c = d + far[i][j] + Math.hypot(gx - nodes[j].x, gy - nodes[j].y);
+                if (c < best.d) { best.d = c; best.x = n.x; best.y = n.y; }
+            }
+        }
+        return best;
+    };
+
+    // Reach is tested against square-cornered boxes, but a round body can tuck in past a box's
+    // corner (it only has to stay `r` from the block's own corner, and a shove puts it there).
+    // From in there every line reads as blocked, so it steps straight out of the box, sideways
+    // or lengthways, whichever leaves it the shorter way to go.
+    const boxed = (x, y, b) => Math.abs(x - b.x) < b.hw + solid && Math.abs(y - b.y) < b.hh + solid;
+    const box = arena.walls.find(b => boxed(u.x, u.y, b));
+    let p;
+    if (box) {
+        p = { d: Infinity };
+        for (const out of [{ x: box.x + (u.x < box.x ? -1 : 1) * (box.hw + skin), y: u.y }, { x: u.x, y: box.y + (u.y < box.y ? -1 : 1) * (box.hh + skin) }]) {
+            if (arena.walls.some(b => boxed(out.x, out.y, b))) continue;
+            const d = Math.hypot(out.x - u.x, out.y - u.y) + plan(out.x, out.y).d;
+            if (d < p.d) p = { d, x: out.x, y: out.y };
+        }
+    } else {
+        p = plan(u.x, u.y);
+        if (p.x === gx && p.y === gy) {                 // nothing in the way (or no way at all: go straight)
+            if (!moved || !Number.isFinite(p.d)) return cmd;
+            return p.d < 0.25 ? kit.hold() : steer(gx - u.x, gy - u.y, cmd.k);
+        }
+    }
+    if (!Number.isFinite(p.d)) return cmd;
+    // Not flat out into a turn. A body cannot corner at a sprint (9 m/s on this grip is a 10 m
+    // radius): it sails past the corner and has to come back, so it brakes down to cornering pace.
+    const dx = p.x - u.x, dy = p.y - u.y;
+    return steer(dx, dy, Math.min(cmd.k, (CORNER_MS + Math.sqrt(2 * MU_GRIP * G * Math.hypot(dx, dy))) / u.speed));
 }
 
 
@@ -636,15 +827,33 @@ function integrate(u, dt, w) {
     confine(u, w);
 }
 
-/** Pillar and wall bounce; also re-run after contacts, since de-penetration can push a body into either. */
+/** Pillar, block and arena-edge bounce; also re-run after contacts, since de-penetration can push a body into any of them. */
 function confine(u, w) {
+    const rebound = (nx, ny) => {
+        const into = u.vx * nx + u.vy * ny;
+        if (into < 0) { u.vx -= (1 + WALL_RESTITUTION) * into * nx; u.vy -= (1 + WALL_RESTITUTION) * into * ny; }
+    };
     for (const p of w.arena.pillars) {
         const dx = u.x - p.x, dy = u.y - p.y, d = Math.hypot(dx, dy), min = p.r + u.r;
         if (d >= min) continue;
         const nx = d > 1e-9 ? dx / d : 1, ny = d > 1e-9 ? dy / d : 0;
         u.x = p.x + nx * min; u.y = p.y + ny * min;
-        const into = u.vx * nx + u.vy * ny;
-        if (into < 0) { u.vx -= (1 + WALL_RESTITUTION) * into * nx; u.vy -= (1 + WALL_RESTITUTION) * into * ny; }
+        rebound(nx, ny);
+    }
+    for (const b of w.arena.walls) {
+        // The block's nearest point to the body's centre; the contact normal runs from it to the centre.
+        let qx = Math.max(b.x - b.hw, Math.min(b.x + b.hw, u.x)), qy = Math.max(b.y - b.hh, Math.min(b.y + b.hh, u.y));
+        let nx = u.x - qx, ny = u.y - qy;
+        const d = Math.hypot(nx, ny);
+        if (d >= u.r) continue;
+        if (d > 1e-9) { nx /= d; ny /= d; } else {
+            // Centre inside the stone (only a shove could do it): out through the nearest face.
+            const side = b.hw - Math.abs(u.x - b.x) < b.hh - Math.abs(u.y - b.y);
+            nx = side ? (u.x < b.x ? -1 : 1) : 0; ny = side ? 0 : (u.y < b.y ? -1 : 1);
+            if (side) qx = b.x + nx * b.hw; else qy = b.y + ny * b.hh;
+        }
+        u.x = qx + nx * u.r; u.y = qy + ny * u.r;
+        rebound(nx, ny);
     }
     if (u.x < u.r) { u.x = u.r; u.vx = Math.abs(u.vx) * WALL_RESTITUTION; }
     if (u.x > ARENA_W - u.r) { u.x = ARENA_W - u.r; u.vx = -Math.abs(u.vx) * WALL_RESTITUTION; }
@@ -774,7 +983,10 @@ function moveProjectiles(w, dt) {
         }
 
         const inArena = p.x > 0 && p.x < ARENA_W && p.y > 0 && p.y < ARENA_H;
-        const stone = w.arena.pillars.some(q => Math.hypot(p.x - q.x, p.y - q.y) <= q.r);
+        // Stone stops everything thrown, a boulder at the top of its arc included: pillars and
+        // blocks stand taller than any arc here (a 7 m lob peaks under a metre).
+        const stone = w.arena.pillars.some(q => Math.hypot(p.x - q.x, p.y - q.y) <= q.r)
+            || w.arena.walls.some(q => Math.abs(p.x - q.x) <= q.hw && Math.abs(p.y - q.y) <= q.hh);
         if (p.age < p.ttl && inArena && !stone && !landed) keep.push(p);
 
         else w.events.push({ type: 'fizzle', kind: p.kind, x: p.x, y: p.y, projectile: p.id, pillar: stone });

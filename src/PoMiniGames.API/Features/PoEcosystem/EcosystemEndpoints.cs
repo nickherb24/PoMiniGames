@@ -139,17 +139,6 @@ public static class EcosystemEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting("ai-generation");
 
-        group.MapPost("/decree", async (EcoDecreeRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
-            {
-                if (string.IsNullOrWhiteSpace(request.DecreeText) || request.DecreeText.Length > 300) return Results.BadRequest(new { error = "decree text required (1-300 chars)" });
-                try { return Results.Ok(await chronicler.InterpretDecreeAsync(request, ct)); }
-                catch (InvalidOperationException) { return Results.StatusCode(StatusCodes.Status503ServiceUnavailable); }
-            })
-            .WithName("PoEcosystemDecree")
-            .Produces<EcoDecreeReply>()
-            .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
-            .RequireRateLimiting("ai-generation");
-
         group.MapPost("/milestone-lore", async (EcoMilestoneLoreRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
             {
                 if (string.IsNullOrWhiteSpace(request.MilestoneType)) return Results.BadRequest(new { error = "milestone type required" });

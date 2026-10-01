@@ -154,12 +154,16 @@ export class Scenery {
 
         this.buildKerbs(world.kerbs);
         this.buildGantry();
-        this.buildLandmarks();
-        this.buildLamps();
-        this.buildPlanting();
-        this.buildBillboards();
-        this.buildPressPen();
-        this.buildGrandstand();
+        // A track with height (the Playground run) rides on a model that IS the scenery;
+        // everything below stands on the ground beside a flat road.
+        if (!track.z) {
+            this.buildLandmarks();
+            this.buildLamps();
+            this.buildPlanting();
+            this.buildBillboards();
+            this.buildPressPen();
+            this.buildGrandstand();
+        }
         this.group.traverse(o => {
             if (!o.isMesh || o.userData.noShadow) return;
             const m = o.material;
@@ -177,9 +181,10 @@ export class Scenery {
         const hw = t.halfWidth;
         const pos = [], col = [];
         const red = new THREE.Color('#d42a2a'), white = new THREE.Color('#f0f0f0');
+        // [x, z, y]: y is the road's own height on a track that has one.
         const edge = (i, lat) => {
             const k = i % n;
-            return [(t.x[k] + -t.ty[k] * lat) / WS, (t.y[k] + t.tx[k] * lat) / WS];
+            return [(t.x[k] + -t.ty[k] * lat) / WS, (t.y[k] + t.tx[k] * lat) / WS, 0.045 + (t.z ? t.z[k] / WS : 0)];
         };
         for (let i = 0; i < n; i++) {
             const s = kerbs[i];
@@ -188,11 +193,10 @@ export class Scenery {
             const a0 = edge(i, inLat), a1 = edge(i, outLat), b0 = edge(i + 1, inLat), b1 = edge(i + 1, outLat);
             for (let h = 0; h < 2; h++) {
                 const f0 = h / 2, f1 = (h + 1) / 2;
-                const lerp = (p, q, f) => [p[0] + (q[0] - p[0]) * f, p[1] + (q[1] - p[1]) * f];
+                const lerp = (p, q, f) => p.map((v, j) => v + (q[j] - v) * f);
                 const p0 = lerp(a0, b0, f0), p1 = lerp(a1, b1, f0), q0 = lerp(a0, b0, f1), q1 = lerp(a1, b1, f1);
-                const y = 0.045;
-                pos.push(p0[0], y, p0[1], p1[0], y, p1[1], q0[0], y, q0[1]);
-                pos.push(p1[0], y, p1[1], q1[0], y, q1[1], q0[0], y, q0[1]);
+                pos.push(p0[0], p0[2], p0[1], p1[0], p1[2], p1[1], q0[0], q0[2], q0[1]);
+                pos.push(p1[0], p1[2], p1[1], q1[0], q1[2], q1[1], q0[0], q0[2], q0[1]);
                 const c = (i * 2 + h) % 2 ? white : red;
                 for (let v = 0; v < 6; v++) col.push(c.r, c.g, c.b);
             }
@@ -218,7 +222,7 @@ export class Scenery {
         const p = simAt(t, 20, 0);
         const g = new THREE.Group();
         g.name = 'pocabinet-gantry';
-        g.position.set(p.x / WS, 0, p.y / WS);
+        g.position.set(p.x / WS, t.heightAt(20) / WS, p.y / WS);
         g.rotation.y = yawTo(p.tx, p.ty);
         const steel = lam('#2b2f38', { roughness: 0.45, metalness: 0.6 });
         // Posts stand just outside the barrier, so no car can ever drive through one.

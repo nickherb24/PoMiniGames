@@ -21,7 +21,7 @@
 //   PoCabinet.startReplay() / replayCommand(cmd, value) / stopReplay()
 //   PoCabinet.recordClip() -> 'shared' | 'downloaded' | 'unavailable'
 //   PoCabinet.lapProof() -> { inputs, wet }               — solo score verification
-//   PoCabinet.setBanter(lines) / speak(officialId, text)  — officials' radio (AI pool, voices)
+//   PoCabinet.setBanter(lines)                             — officials' radio (AI pool; text only)
 //
 //   PoCabinet.loadSettings() / saveSettings(patch) / applySettings(scene, settings)
 //   PoCabinet.getRecords(trackId) / recordTrackResult(trackId, bestLap, sectors)
@@ -30,7 +30,7 @@
 //   PoCabinet.showModal(id)                                — pause dialog (focus trap, inert page)
 
 import { mount as sceneMount, unmount as sceneUnmount } from './scene.js';
-import { mount as mountDialogue, unmount as unmountDialogue, show, hide, officialName, speak } from './dialogue.js';
+import { mount as mountDialogue, unmount as unmountDialogue, show, hide, officialName } from './dialogue.js';
 import {
     startRace, stopRace, pauseRace, resumeRace, pushServerSnapshot, updateRaceSettings, cycleCamera,
     showTelemetry, startReplay, replayCommand, stopReplay, recordClip, lapProof, setBanter,
@@ -48,7 +48,6 @@ const api = {
     hideDialogue: hide,
     unmountDialogue,
     officialName,
-    speak,
 
     startRace,
     stopRace,

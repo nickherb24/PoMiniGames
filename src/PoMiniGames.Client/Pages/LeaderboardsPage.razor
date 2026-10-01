@@ -477,11 +477,17 @@
         List<GameLeaderboardDto> Claim(Func<GameLeaderboardDto, bool> belongs) =>
             _boards.Where(b => belongs(b) && claimed.Add(b.GameKey)).ToList();
 
+        // Racer has one board per track ("poracer", "poracer-neonskyline", …). They are all the
+        // Racer game's, so they group by its catalog key; without this the two newer tracks fell
+        // to "Other" at the bottom of the page, away from the Grand Prix board.
+        static GameKey Game(GameLeaderboardDto b) =>
+            b.GameKey.StartsWith("poracer-", StringComparison.OrdinalIgnoreCase) ? GameKeys.PoRacer : (GameKey)b.GameKey;
+
         _groupedBoards = new List<BoardGroup>
         {
-            new BoardGroup("1p",      "1 Player",       Claim(b => spKeys.Contains(b.GameKey) || string.Equals(b.GameKey, brawlDemoKey, StringComparison.OrdinalIgnoreCase))),
-            new BoardGroup("2p",      "2 Player",       Claim(b => lpKeys.Contains(b.GameKey))),
-            new BoardGroup("multi",   "Multiplayer",    Claim(b => mpKeys.Contains(b.GameKey))),
+            new BoardGroup("1p",      "1 Player",       Claim(b => spKeys.Contains(Game(b)) || string.Equals(b.GameKey, brawlDemoKey, StringComparison.OrdinalIgnoreCase))),
+            new BoardGroup("2p",      "2 Player",       Claim(b => lpKeys.Contains(Game(b)))),
+            new BoardGroup("multi",   "Multiplayer",    Claim(b => mpKeys.Contains(Game(b)))),
             new BoardGroup("other",   "Other",          Claim(_ => true)),
         }.Where(g => g.Boards.Count > 0).ToList();
 

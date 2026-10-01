@@ -1,87 +1,112 @@
 @using PoMiniGames.Shared.Games.PoEcosystem
 @inject UiFeedbackService Feedback
-@* The tribe's ladder and the island's chronicle. The ladder is read straight from the sim
-   (sim/behavior/tech.js); the chronicle is a server-side model call, so it is written on
-   request — one saga per decade at most, and the button says so. *@
+@* The Tribes tab (2026-09-30): the clans side by side, the ladder, their diplomacy, and the
+   island's written record. The clan cards and the territory map used to be the Analytics
+   tab while the ladder and the web were here — one subject on two tabs.
+
+   The ladder is read straight from the sim (sim/behavior/tech.js); the chronicle is a
+   server-side model call, so it is written on request — one saga per decade at most. Sagas
+   are kept IN the island now (the sim's journal, carried by the snapshot), so a resumed or
+   cloud-loaded island still has its chronicle, and the journal can be printed. *@
 <div class="poeco-tribe">
-    <h3>The @(Stats?.Tech?.Tribe ?? "island") tribe</h3>
-    <ol class="poeco-ladder" aria-label="The tribe's ladder">
-        @for (var k = 0; k < Tiers.Length; k++)
-        {
-            var level = Stats?.Tech?.Level ?? 0;
-            <li class="@(k <= level ? "poeco-ladder--done" : "") @(k == level + 1 ? "poeco-ladder--next" : "")">
-                <span class="poeco-ladder-name">@Tiers[k].Name</span>
-                <span class="poeco-ladder-what">@Tiers[k].What</span>
-            </li>
-        }
-    </ol>
-    @if (Stats?.Tech is { } tech)
-    {
-        <p class="poeco-note">
-            @(tech.Campfire ? "The fire is lit. " : "")@(tech.Fields > 0 ? $"{tech.Fields} field plots. " : "")@(tech.Tower ? "The tower stands." : "")
-        </p>
-    }
-
-    @if (Stats?.Tribes is not null && Stats.Tribes.Length >= 2)
-    {
-        <DiplomacyWeb Tribes="@Stats.Tribes" Caravans="@Stats.Caravans" OnFocusTribe="@OnFocusTribe" />
-    }
-
-    <h3>Council pacts</h3>
-    @if (Stats?.Treaties is { Length: > 0 } pacts)
-    {
-        <ul class="poeco-pacts">
-            @foreach (var t in pacts.Reverse().Take(8))
+    <div class="poeco-tribe-top">
+        <TerritoryMinimap Tribes="@Stats?.Tribes" Buildings="@Stats?.Buildings" Caravans="@Stats?.Caravans" Thumb="@Thumb" OnFocusTribe="@OnFocusTribe" />
+        <div class="poeco-tribe-side">
+            @if (Stats?.Tribes is { Length: > 0 } clans)
             {
-                <li>
-                    <strong>@t.Title</strong> <span class="poeco-badge">@ActionLabel(t.Action)</span>
-                    <span class="poeco-note">@TribeName(t.TribeA) · @TribeName(t.TribeB)@(t.Paid > 0 ? $" · {t.Paid} {t.Resource} paid" : "")</span>
-                    @if (!string.IsNullOrWhiteSpace(t.Narrative)) { <p>@t.Narrative</p> }
-                </li>
+                var total = Math.Max(1, clans.Sum(t => t.Population));
+                <div class="poeco-tribe-stacked-bar" role="img" aria-label="Share of the people: @string.Join(", ", clans.Select(t => $"{t.Name} {t.Population}"))">
+                    @foreach (var clan in clans)
+                    {
+                        var pct = clan.Population * 100.0 / total;
+                        <div class="poeco-tribe-bar-seg" style="width: @pct.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)%; background-color: @clan.BannerColor;"
+                             title="@clan.Name: @clan.Population people (@pct.ToString("F0")%)">
+                            @if (pct > 15)
+                            {
+                                <span class="poeco-tribe-bar-text">@clan.Name</span>
+                            }
+                        </div>
+                    }
+                </div>
             }
-        </ul>
-    }
-    else
-    {
-        <p class="poeco-note">When clans make peace or go to war, the Chieftain Council (a server model) decides what the pact says: tribute, armistice, or a war that goes on. It needs sign-in, and it is the clans' decision, not yours.</p>
-    }
-
-    @if (Legends.Count > 0)
-    {
-        <h3>Legends</h3>
-        <ul class="poeco-legends">
-            @foreach (var l in Legends)
-            {
-                <li><strong>@l.Epithet</strong> <span class="poeco-note">year @l.Year</span><p>@l.Legend</p></li>
-            }
-        </ul>
-    }
-
-    <h3>Chronicle</h3>
-    <div class="poeco-chronicle-actions">
-        <button type="button" class="poeco-btn poeco-btn--primary" disabled="@(Busy || Stats is null || Stats.Year <= FromYear)" @onclick="HandleWriteAsync">
-            @(Busy ? "The chronicler is writing…" : Stats is null || Stats.Year <= FromYear ? "Nothing new to chronicle yet" : $"Write the chronicle of years {FromYear}–{Stats.Year}")
-        </button>
-        <p class="poeco-note">A short saga of the island's recent history, written by a model from the world log. Spends a little of your daily AI allowance.</p>
-    </div>
-    @if (Chronicles.Count == 0)
-    {
-        <p class="poeco-note">No sagas yet.</p>
-    }
-    else
-    {
-        @foreach (var c in Chronicles)
-        {
-            <article class="poeco-saga" @onclick="async () => await Feedback.CrystalPingAsync()">
-                <h4>@c.Title @if (c.Mock) { <span class="poeco-badge">mock</span> }</h4>
-                <p>@c.Saga</p>
-                @if (!string.IsNullOrWhiteSpace(c.Epigraph))
+            <h3>The @(Stats?.Tech?.Tribe ?? "island") tribe's ladder</h3>
+            <ol class="poeco-ladder" aria-label="The tribe's ladder">
+                @for (var k = 0; k < Tiers.Length; k++)
                 {
-                    <p class="poeco-saga-epigraph">— @c.Epigraph</p>
+                    var level = Stats?.Tech?.Level ?? 0;
+                    <li class="@(k <= level ? "poeco-ladder--done" : "") @(k == level + 1 ? "poeco-ladder--next" : "")" title="@Tiers[k].What">
+                        <span class="poeco-ladder-name">@Tiers[k].Name</span>
+                        <span class="poeco-ladder-what">@Tiers[k].What</span>
+                    </li>
                 }
-            </article>
-        }
-    }
+            </ol>
+        </div>
+    </div>
+
+    <TribeComparisonGrid Tribes="@Stats?.Tribes" Buildings="@Stats?.Buildings" OnSelectTribe="@OnFocusTribe" />
+
+    <div class="poeco-tribe-record">
+        <section>
+            @if (Stats?.Tribes is not null && Stats.Tribes.Length >= 2)
+            {
+                <DiplomacyWeb Tribes="@Stats.Tribes" Caravans="@Stats.Caravans" OnFocusTribe="@OnFocusTribe" />
+            }
+
+            <h3 title="When clans make peace or go to war, the Chieftain Council (a server model) decides what the pact says: tribute, armistice, or a war that goes on. It needs sign-in, and it is the clans' decision, not yours.">Council pacts</h3>
+            @if (Stats?.Treaties is { Length: > 0 } pacts)
+            {
+                <ul class="poeco-pacts">
+                    @foreach (var t in pacts.Reverse().Take(8))
+                    {
+                        <li>
+                            <strong>@t.Title</strong> <span class="poeco-badge">@ActionLabel(t.Action)</span>
+                            <span class="poeco-note">@TribeName(t.TribeA) · @TribeName(t.TribeB)@(t.Paid > 0 ? $" · {t.Paid} {t.Resource} paid" : "")</span>
+                            @if (!string.IsNullOrWhiteSpace(t.Narrative)) { <p>@t.Narrative</p> }
+                        </li>
+                    }
+                </ul>
+            }
+            else
+            {
+                <p class="poeco-note">None yet — the council speaks when clans make war or peace.</p>
+            }
+        </section>
+
+        <section>
+            <div class="poeco-cloud-head">
+                <h3>Chronicle</h3>
+                <button type="button" class="poeco-pill" disabled="@(Sagas.Count == 0 && Legends.Count == 0)" title="Print the journal, or save it as a PDF: the sagas, the legends, the timeline and your field notes"
+                        @onclick="OnPrint">🖨 Journal</button>
+            </div>
+            <button type="button" class="poeco-btn poeco-btn--primary" disabled="@(Busy || Stats is null || Stats.Year <= FromYear || ReadOnly)"
+                    title="A short saga of the island's recent history, written by a model from the world log. Spends a little of your daily AI allowance."
+                    @onclick="HandleWriteAsync">
+                @(Busy ? "The chronicler is writing…" : ReadOnly ? "A visit cannot be chronicled" : Stats is null || Stats.Year <= FromYear ? "Nothing new to chronicle yet" : $"Write the chronicle of years {FromYear}–{Stats.Year}")
+            </button>
+            @foreach (var c in Sagas.Reverse())
+            {
+                <article class="poeco-saga">
+                    <h4>@c.Title <span class="poeco-note">years @c.FromYear–@c.ToYear</span></h4>
+                    <p>@c.Saga</p>
+                    @if (!string.IsNullOrWhiteSpace(c.Epigraph))
+                    {
+                        <p class="poeco-saga-epigraph">— @c.Epigraph</p>
+                    }
+                </article>
+            }
+
+            @if (Legends.Count > 0)
+            {
+                <h3>Legends</h3>
+                <ul class="poeco-legends">
+                    @foreach (var l in Legends)
+                    {
+                        <li><strong>@l.Epithet</strong> <span class="poeco-note">year @l.Year</span><p>@l.Legend</p></li>
+                    }
+                </ul>
+            }
+        </section>
+    </div>
 </div>
 
 @code {
@@ -95,10 +120,16 @@
     ];
 
     [Parameter] public EcoStats? Stats { get; set; }
-    [Parameter] public IReadOnlyList<EcoChronicle> Chronicles { get; set; } = [];
+    /// <summary>The island's journal, oldest first (sim/world.js; carried by the snapshot).</summary>
+    [Parameter] public IReadOnlyList<EcoSaga> Sagas { get; set; } = [];
     [Parameter] public bool Busy { get; set; }
     [Parameter] public int FromYear { get; set; }
+    /// <summary>A visited island or a past decade: nothing is written into it.</summary>
+    [Parameter] public bool ReadOnly { get; set; }
+    /// <summary>The island's map (a data URL drawn from its seed), behind the territories.</summary>
+    [Parameter] public string? Thumb { get; set; }
     [Parameter] public EventCallback OnWrite { get; set; }
+    [Parameter] public EventCallback OnPrint { get; set; }
     [Parameter] public EventCallback<int> OnFocusTribe { get; set; }
     [Parameter] public IReadOnlyList<(int Year, string Epithet, string Legend)> Legends { get; set; } = [];
 
@@ -109,9 +140,12 @@
         "PeaceTreaty" => "peace", "Armistice" => "armistice", "DemandTribute" => "tribute", "WarDeclaration" => "war", _ => action,
     };
 
-    private async Task HandleWriteAsync()
+    private Task HandleWriteAsync()
     {
-        await Feedback.GongAsync(110);
-        await OnWrite.InvokeAsync();
+        // The gong is not awaited: the saga must not wait on a sound, and where the audio
+        // context has not been woken yet the cue's promise does not settle — the button then
+        // did nothing at all.
+        _ = Feedback.GongAsync(110).AsTask();
+        return OnWrite.InvokeAsync();
     }
 }

@@ -95,3 +95,42 @@ export async function loadWorld(store) {
 }
 export const loadWorldMeta = (store) => store.get(META);
 export async function deleteWorld(store) { await store.delete(CURRENT); await store.delete(META); }
+
+// ── Keyframes (the time machine, 2026-09-30) ───────────────────────────────────────────
+// One whole snapshot per decade of the CURRENT world, beside the autosave: `kf:index` lists
+// them ({ seed, frames: [{ year, tick, counts, savedAt }] }) and `kf:<year>` holds each. A
+// frame is only ever opened read-only (simRuntime marks the world ephemeral), so the past
+// can be visited and never rewritten. Bounded: the oldest frame goes when a ninth arrives.
+const KF_INDEX = 'kf:index';
+const kfKey = (year) => `kf:${year}`;
+export const KEYFRAME_MAX = 8;
+
+export async function listKeyframes(store, seed) {
+  const idx = await store.get(KF_INDEX);
+  return idx && idx.seed === seed && Array.isArray(idx.frames) ? idx.frames : [];
+}
+
+export async function saveKeyframe(store, snapshot) {
+  const idx = await store.get(KF_INDEX);
+  const old = Array.isArray(idx?.frames) ? idx.frames : [];
+  // Another world's frames, or frames from a future this world has not reached (a save
+  // older than its newest frame was resumed), are dropped before the new one is filed.
+  const keep = idx?.seed === snapshot.seed ? old.filter(f => f.year < snapshot.year) : [];
+  for (const f of old) if (!keep.includes(f)) await store.delete(kfKey(f.year));
+  keep.push({ year: snapshot.year, tick: snapshot.tick, counts: snapshot.counts, savedAt: snapshot.savedAt });
+  while (keep.length > KEYFRAME_MAX) await store.delete(kfKey(keep.shift().year));
+  await store.put(kfKey(snapshot.year), snapshot);
+  await store.put(KF_INDEX, { seed: snapshot.seed, frames: keep });
+  return keep;
+}
+
+export async function loadKeyframe(store, year) {
+  const snap = await store.get(kfKey(year));
+  return snap ? migrateSnapshot(snap) : null;
+}
+
+export async function clearKeyframes(store) {
+  const idx = await store.get(KF_INDEX);
+  for (const f of idx?.frames ?? []) await store.delete(kfKey(f.year));
+  await store.delete(KF_INDEX);
+}

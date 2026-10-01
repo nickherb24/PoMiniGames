@@ -3,8 +3,10 @@ namespace PoMiniGamesClient.Games.PoRacer;
 public partial class PoRacerPage
 {
     private int _lastLap, _lastPosition;
-    private bool _boosting;
 
+    // Lap and place changes: the two cues that come with a screen-reader announcement. Everything
+    // a car does continuously or physically (engine, skid, crash, sand, passes, start lamps) is
+    // sounded by js/poracer/audio.js straight off the snapshots, with no interop per event.
     private async Task UpdateAudioAsync()
     {
         if (Player is not { } player) return;
@@ -23,9 +25,6 @@ public partial class PoRacerPage
             _announcement = $"Position {player.Position}.";
             await Feedback.CueAtAsync("poracer", "shift", gain: 0.85);
         }
-        var boosting = player.BoostTimer > 0;
-        if (boosting && !_boosting) await Feedback.CueAtAsync("poracer", "boostPad");
-        _boosting = boosting;
         _lastLap = player.Lap;
         _lastPosition = player.Position;
     }

@@ -8,7 +8,7 @@ using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoRacer;
 
-/// <summary>Authenticated best-lap submission; reads use the unified leaderboard.</summary>
+/// <summary>Authenticated best-lap submission, stored from the server-timed race; reads use the unified leaderboard.</summary>
 public static class PoRacerScoreEndpoints
 {
     public static void MapPoRacerScoreEndpoints(this IEndpointRouteBuilder app)
@@ -19,6 +19,7 @@ public static class PoRacerScoreEndpoints
             [FromBody] PoRacerScoreDto dto,
             HttpContext http,
             StorageService storage,
+            PoRacerRaceRegistry races,
             IScoreIntegrityGuard integrity,
             ILoggerFactory loggerFactory) =>
         {
@@ -38,20 +39,28 @@ public static class PoRacerScoreEndpoints
                 return Results.ValidationProblem(errors);
             }
 
+            // Authoritative identity from the auth cookie — NEVER trust the client.
+            var (userId, displayName, isGuest, _) = RequestIdentity.Resolve(http.User);
+
+            // The lap, the position and the track that get stored are the ones this server timed
+            // in the race the code names. The body only says which race; a code this identity did
+            // not finish a lap in (or one older than the registry remembers) is refused, not trusted.
+            if (races.VerifiedLap(userId, dto.GameCode) is not { } timed)
+            {
+                return Results.Problem("No finished race on this server backs that lap.", statusCode: StatusCodes.Status422UnprocessableEntity);
+            }
+
             // A best lap cannot be longer than the play session that produced it.
-            var verdict = integrity.Inspect(http, GameKey.PoRacer, dto.BestLapSeconds);
+            var verdict = integrity.Inspect(http, GameKey.PoRacer, timed.BestLapSeconds);
             if (!verdict.Allowed)
             {
                 return verdict.ToProblem();
             }
 
-            // Authoritative identity from the auth cookie — NEVER trust the client.
-            var (userId, displayName, isGuest, _) = RequestIdentity.Resolve(http.User);
-
             var log = loggerFactory.CreateLogger("PoRacerScores");
-            var trackId = string.IsNullOrWhiteSpace(dto.TrackId) ? "circuit" : dto.TrackId.Trim().ToLowerInvariant();
-            log.LogInformation("PoRacer score POST user={UserId} guest={Guest} track={Track} t={T}s pos={Pos}",
-                userId, isGuest, trackId, dto.BestLapSeconds, dto.FinalPosition);
+            var trackId = timed.TrackId;
+            log.LogInformation("PoRacer score POST user={UserId} guest={Guest} track={Track} t={T}s pos={Pos} claimed={Claimed}s",
+                userId, isGuest, trackId, timed.BestLapSeconds, timed.Position, dto.BestLapSeconds);
 
             PoRacerHighScore saved;
             try
@@ -61,9 +70,9 @@ public static class PoRacerScoreEndpoints
                     PlayerName = integrity.ResolveDisplayName(displayName, isGuest ? "Guest" : "Player"),
                     UserId = userId,
                     TrackId = trackId,
-                    TotalTimeSeconds = dto.BestLapSeconds,
-                    FinalPosition = dto.FinalPosition,
-                    Date = (dto.AchievedAtUtc == default ? DateTimeOffset.UtcNow : dto.AchievedAtUtc).ToString("yyyy-MM-ddTHH:mm:ssZ"),
+                    TotalTimeSeconds = timed.BestLapSeconds,
+                    FinalPosition = timed.Position,
+                    Date = timed.FinishedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
                     IsGuest = isGuest,
                     GameCode = dto.GameCode ?? "",
                 });

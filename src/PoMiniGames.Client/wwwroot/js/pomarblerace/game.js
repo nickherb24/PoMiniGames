@@ -580,6 +580,20 @@ export class Game {
     }
   }
 
+  // Course drive (track.driveAccel): a steady push along the course for marbles touching the track,
+  // on a map whose grade is too gentle to race on under gravity alone (Playground Run). Only on the
+  // track, so a free fall is untouched; clampSpeeds still caps the result. A no-op elsewhere.
+  _applyDrive(sdt) {
+    const a = this.track.driveAccel;
+    if (!a) return;
+    for (const m of this.marbleSet.marbles) {
+      if (m.finished || m.eliminated || !m.proj || !this._touch.has(m.body)) continue;
+      const d = this.track.flowDir ? this.track.flowDir(m.proj, _camRoad) : this.track.dirAt(m.s, _camRoad);
+      const v = m.body.velocity;
+      v.x += d.x * a * sdt; v.y += d.y * a * sdt; v.z += d.z * a * sdt;
+    }
+  }
+
   _savePrev() {
     for (const m of this.marbleSet.marbles) {
       if (m.finished || m.eliminated) continue;
@@ -741,12 +755,16 @@ export class Game {
       // times stay measured in simulation seconds and remain comparable across races.
       this.slowmo = !!leaderPre && !leaderPre.finished &&
         (this.track.finishS - leaderPre.s) < SLOWMO_DIST;
-      const sdt = this.slowmo ? dt * SLOWMO_SCALE : dt;
+      const want = this.slowmo ? dt * SLOWMO_SCALE : dt;
 
       this.track.driveMotors();
-      this._applySteer(sdt);   // player's held steering, integrated by the step below
+      this._applySteer(want);   // player's held steering, integrated by the step below
       this._savePrev();
-      stepWorld(this.world, sdt);
+      // sdt is the time the physics actually advanced, which is less than `want` on any frame
+      // where cannon-es gives up catching up (see stepWorld). Everything below runs on it: with
+      // the race clock on `want`, a page at 15 fps ran the clock at twice the pace of the marbles
+      // and the race ended at RACE_TIMEOUT with two thirds of the field still on the course.
+      const sdt = stepWorld(this.world, want);
       // Interlock, not tuning: cannon-es has no CCD and the course's collision shell is a single
       // surface with nothing behind it, so a marble must never carry a velocity that would step
       // it further than its own diameter. See MAX_SPEED in marbles.js.
@@ -764,6 +782,7 @@ export class Game {
       this._applyBrakes(sdt);
       this._applyKickers();
       this._markContacts();
+      this._applyDrive(sdt);
       this._unstick(sdt);
       this._surface = this._surfaceOf(this._lastFocus, dt);
       this.marbleSet.sync(this.track, this.scene.camera.position, this._leaders);
@@ -806,7 +825,9 @@ export class Game {
       // would re-trigger it a hundred times as the pack crosses, which reads as
       // the image pumping rather than as a photo finish.
       if (justFinished.length && justFinished.some((m) => m.finishOrder === 0)) {
-        this.scene.photoFinish();
+        // Only when the shot is ON the winner: the focus plane is the chase distance, so with the
+        // camera locked to your own marble back in the pack it blurred your view of the course.
+        if (this._lastFocus && this._lastFocus.finishOrder === 0) this.scene.photoFinish();
         window.PoImpact?.impact('win', 1);
         // §GFX-14/§GFX-18: photo-finish post preset + the finish-gate chime.
         window.PoImpactFx?.win(1);
@@ -1139,7 +1160,7 @@ export class Game {
         m.body.position.set(m.netTarget.x, m.netTarget.y, m.netTarget.z);
         this.scene.burstConfetti(m.mesh.position);
         this.audio.playFinish(this.scene.audioCue(m.mesh.position));
-        if (m.finishOrder === 0) this.scene.photoFinish();
+        if (m.finishOrder === 0 && m === this._lastFocus) this.scene.photoFinish();
         if (m.index === this.guestIndex) this._celebrateOwnFinish(m, m.finishOrder + 1);
       }
     }

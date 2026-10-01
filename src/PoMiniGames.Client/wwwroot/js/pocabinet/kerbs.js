@@ -50,7 +50,7 @@ export function computeKerbs(track) {
     }
     for (let i = 0; i < n; i++) {
         const d = track.cum[i];
-        if (d < START_CLEAR_AHEAD || d > track.length - START_CLEAR_BEHIND) side[i] = 0;
+        if (d < START_CLEAR_AHEAD || d > track.length - START_CLEAR_BEHIND || !track.drawn(i)) side[i] = 0;
     }
     // Drop slivers: a run shorter than MIN_RUN reads as a glitch, not a kerb.
     let i = 0;

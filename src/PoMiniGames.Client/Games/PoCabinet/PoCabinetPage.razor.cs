@@ -65,7 +65,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     protected string PosBadgeKey => $"pos-{_position}";
     protected string PosBadgeClass => _positionDelta > 0 ? "pocabinet-posbadge--up" : _positionDelta < 0 ? "pocabinet-posbadge--down" : "";
     protected int _totalLaps = PoCabinetCatalog.TotalLaps;
-    protected int _totalCars = 5;
+    protected int _totalCars = PoCabinetCatalog.SoloCarCount;
     protected double _speedKmh;
     protected double _lapSeconds;
     /// <summary>The screen-reader channel (laps, places, radio lines, the finish).</summary>
@@ -139,10 +139,37 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     };
 
     protected string Lede => Mode == GameMode.Demo
-        ? "The officials race themselves while the camera roams. 3 laps."
+        ? $"A hundred cars race themselves while the camera roams. {RaceLength}."
         : IsMultiplayerMode
-            ? "Everyone who joins lands in one lobby — first in hosts and picks the track. 3 laps."
-            : "Pick a track and take on the officials. 3 laps; top 3 moves the campaign on.";
+            ? $"Everyone who joins lands in one lobby — first in hosts and picks the track. {RaceLength}."
+            : $"Pick a track and take on 99 rivals from the middle of the grid. {RaceLength}; a top-{PoCabinetCatalog.CampaignPassPlace} finish moves the campaign on.";
+
+    /// <summary>The place that earns the fanfare and counts as a win: the podium in a
+    /// multiplayer-sized field, the top ten of the 100-car solo field.</summary>
+    private int FrontRunnerCut => _totalCars > PoCabinetCatalog.CarCount ? PoCabinetCatalog.SoloFrontRunners : 3;
+
+    /// <summary>
+    /// The standings below the podium. A solo field is a hundred rows, so only the top ten and
+    /// the places round the player are listed; a gap shows as a null row.
+    /// </summary>
+    protected IEnumerable<(int Place, StandingRow? Row)> StandingsBelowPodium(List<StandingRow> standings)
+    {
+        var mine = standings.FindIndex(r => r.IsLocal);
+        var last = 3;
+        for (var i = 3; i < standings.Count; i++)
+        {
+            if (standings.Count > 12 && i >= 10 && (mine < 0 || Math.Abs(i - mine) > 2)) continue;
+            if (i > last) yield return (0, null);
+            yield return (i + 1, standings[i]);
+            last = i + 1;
+        }
+        if (last < standings.Count) yield return (0, null);
+    }
+
+    /// <summary>"3 laps" on a circuit; the Playground run is point-to-point, once.</summary>
+    private string RaceLength => PoCabinetTrackGeometry.Get(_trackId).Laps is var laps && laps == 1
+        ? "One run, start to finish"
+        : $"{laps} laps";
 
     protected RenderFragment TitleContent => builder => builder.AddMarkupContent(0, "🏛️ Cabinet");
 
@@ -212,6 +239,9 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     {
         if (Mode == GameMode.Demo && firstRender && _phase == Phase.Start)
         {
+            // The demo that starts itself shows a different track each visit; a track picked
+            // on the card afterwards ("Watch demo") is still the one that runs.
+            _trackId = PoCabinetCatalog.Tracks[Random.Shared.Next(PoCabinetCatalog.Tracks.Count)].Id;
             _playerName = PlayerNameSvc.GetOrReadInitialName();
             _phase = Phase.Loading;
             await InvokeAsync(StateHasChanged);
@@ -325,6 +355,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _localCarId = null;
             ResetTelemetry();
             _world = PoCabinetTrackGeometry.BuildStaticWorld(trackId);
+            _totalLaps = _world.TotalLaps;
             await LoadStoredRecordsAsync(trackId);
             await EnsureEngineAsync();
             await MountSceneAsync(_world);
@@ -553,7 +584,9 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _showGo = _goUntilElapsed > 0 && snap.ElapsedRaceTime <= _goUntilElapsed;
 
         var cars = snap.Cars ?? Array.Empty<PoCabinetCarState>();
-        _totalCars = cars.Count > 0 ? cars.Count : _totalCars;
+        // Solo snapshots carry the whole field only on the first tick and at the finish
+        // (race.js pushHud); in between there is one row, the local car's.
+        _totalCars = Math.Max(_totalCars, cars.Count);
         var localCar = FindLocal(snap);
         if (localCar is not null)
         {
@@ -578,7 +611,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 if (snap.Started && nowMs - _placeAnnouncedAt > 4000)
                 {
                     _placeAnnouncedAt = nowMs;
-                    _liveAnnouncement = $"Position {localCar.Position} of {cars.Count}.";
+                    _liveAnnouncement = $"Position {localCar.Position} of {_totalCars}.";
                 }
             }
             _position = localCar.Position;
@@ -614,7 +647,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         if ((localDone || (IsMultiplayerMode && snap.Finished)) && _phase == Phase.Racing)
         {
             _finalStandings ??= cars.OrderBy(c => c.Position)
-                .Select(c => new StandingRow(c.Name, c.Id == localCar?.Id ? "You" : c.IsPlayer ? "Player" : "AI official", c.Id == localCar?.Id))
+                .Select(c => new StandingRow(c.Name, c.Id == localCar?.Id ? "You" : c.IsPlayer ? "Player" : c.OfficialId == "field" ? "AI racer" : "AI official", c.Id == localCar?.Id))
                 .ToList();
             _awaitingFinal = IsMultiplayerMode && _finalResult is null;
             EnterFinished();
@@ -635,7 +668,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _phase = Phase.Finished;
         _telemetryDrawn = false;
         _liveAnnouncement = IsSpectating ? "Race finished." : $"Race finished. Position {_position} of {_totalCars}.";
-        Fire("PoCabinet.fanfare", _position <= 3 && !IsSpectating);
+        Fire("PoCabinet.fanfare", _position <= FrontRunnerCut && !IsSpectating);
     }
 
     private async Task ShowDialogueAsync(PoCabinetDialogueEvent d)
@@ -652,7 +685,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             {
                 await JS.InvokeVoidAsync("PoCabinet.showDialogue", _dialogueHandle, d.Text, 2400);
                 await JS.InvokeVoidAsync("PoCabinet.blip");
-                await JS.InvokeVoidAsync("PoCabinet.speak", d.OfficialId, d.Text);
             }
         }
         catch { /* dialogue is flavour */ }
@@ -687,7 +719,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
                 await InvokeAsync(StateHasChanged);
                 return;
             }
-            var outcome = _position <= 3 ? GameResult.Win : GameResult.Loss;
+            var outcome = _position <= FrontRunnerCut ? GameResult.Win : GameResult.Loss;
             // Solo laps carry their input log; the server re-runs the race and stores the lap
             // time it computes (PoCabinetLapVerifier). Online laps need no proof — the server
             // timed them — and a solo submit without one is refused.
@@ -706,7 +738,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             var req = new PoCabinetHighScoreRequest(
                 TrackId: trackId,
                 BestLapSeconds: lapSeconds,
-                FinalPosition: Math.Clamp(_position, 1, 9),
+                FinalPosition: Math.Clamp(_position, 1, PoCabinetCatalog.SoloCarCount),
                 IsGuest: !(AuthState?.IsAuthenticated == true),
                 GameCode: _gameCode ?? "SOLO",
                 Inputs: inputs,
@@ -716,7 +748,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             if (Mode == GameMode.OnePlayer)
             {
                 var stageIndex = StageIndexFor(trackId);
-                if (stageIndex >= 0) await Career.RecordStageResultAsync(stageIndex, _position, isFinalRace: stageIndex == 2);
+                if (stageIndex >= 0) await Career.RecordStageResultAsync(stageIndex, _position, isFinalRace: stageIndex == 3);
             }
             _status = $"Race saved — position {_position}/{_totalCars}.";
         }
@@ -787,6 +819,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _replayStatus = null;
         _lap = 1;
         _position = 1;
+        _totalCars = 0;
         _speedKmh = 0;
         _lapSeconds = 0;
     }
@@ -1129,6 +1162,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         "capitol" => 0,
         "maralago" => 1,
         "pressbriefing" => 2,
+        "playground" => 3,
         _ => -1,
     };
 

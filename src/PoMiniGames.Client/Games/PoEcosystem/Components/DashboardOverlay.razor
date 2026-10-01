@@ -1,87 +1,35 @@
 @using PoMiniGames.Shared.Games.PoEcosystem
-@* Tab overlay: the full population chart, the world log and settings. Releases pointer
-   lock while open (the engine does that), and Esc closes it.
+@* The Tab overlay. Releases pointer lock while open (the engine does that); Esc closes it.
 
-   Five tabs since the lineage, evolution, tribe, chronicle and cloud panels arrived: one
-   grid of ten panels did not fit a laptop screen, and the original five are what a first
-   visit wants to see. The active tab is component state — the dashboard is reopened
-   often and remembers where it was. *@
-<div class="poeco-overlay" role="dialog" aria-modal="true" aria-label="Dashboard" @onkeydown="OnKeyDown" tabindex="-1" @ref="_root">
+   2026-09-30: four tabs and a gear, where there were eight tabs under a header.
+     Island  the timeline (the one population chart — it used to be drawn three times, on
+             Analytics, Island and Timeline), the world log, the almanac, field notes, wagers
+     Life    thoughts, the watch-list and its alerts, evolution
+     Tribes  the clans side by side, their territories, the ladder, diplomacy, the chronicle
+     Worlds  which island this is: seed and new world (were in Settings), cloud slots and
+             the gallery (were in Cloud)
+     ⚙       AI thoughts, graphics, accessibility, controls
+   The header row repeated the HUD chip (year, day, alive) and is gone; Close sits on the
+   tab row. Speed moved to the HUD. The active tab is component state — the dashboard is
+   reopened often and remembers where it was. *@
+<div class="poeco-overlay" role="dialog" aria-modal="true" aria-label="Dashboard — year @(Stats?.Year ?? 0), @(Stats?.Alive ?? 0) alive" @onkeydown="OnKeyDown" tabindex="-1" @ref="_root">
     <div class="poeco-overlay-card">
-        <header class="poeco-overlay-head">
-            <h2>Year @(Stats?.Year ?? 0) · Day @(Stats?.Day ?? 1)</h2>
-            <span class="poeco-badge">@(Stats?.Alive ?? 0) alive</span>
-            <span class="poeco-badge">@(Stats?.Huts ?? 0) huts</span>
-            <span class="poeco-spacer"></span>
-            <button type="button" class="poeco-pill" @onclick="OnClose" aria-label="Close the dashboard">Close <kbd>Esc</kbd></button>
-        </header>
-
         <nav class="poeco-tabs" role="tablist" aria-label="Dashboard sections">
             @foreach (var (id, label) in Tabs)
             {
-                <button type="button" role="tab" class="poeco-tab @(_tab == id ? "poeco-tab--on" : "")" aria-selected="@(_tab == id ? "true" : "false")" @onclick="() => SelectTab(id)">@label</button>
+                <button type="button" role="tab" class="poeco-tab @(_tab == id ? "poeco-tab--on" : "")" aria-selected="@(_tab == id ? "true" : "false")"
+                        aria-label="@(id == "settings" ? "Settings" : label)" title="@(id == "settings" ? "Settings" : null)" @onclick="() => SelectTab(id)">@label</button>
             }
+            <span class="poeco-spacer"></span>
+            <button type="button" class="poeco-pill" @onclick="OnClose" aria-label="Close the dashboard">Close <kbd>Esc</kbd></button>
         </nav>
 
-        @if (_tab == "analytics")
-        {
-            <div class="poeco-overlay-grid poeco-analytics-grid">
-                <section class="poeco-panel poeco-panel--minimap">
-                    <TerritoryMinimap Tribes="@Stats?.Tribes" Buildings="@Stats?.Buildings" Caravans="@Stats?.Caravans" OnFocusTribe="@OnFocusTribe" />
-                </section>
-                <section class="poeco-panel poeco-panel--chart">
-                    <PopulationChart Stats="@Stats" Tribes="@Stats?.Tribes" />
-                </section>
-                <section class="poeco-panel poeco-panel--wide">
-                    <h3>Civilization Overview</h3>
-                    <TribeComparisonGrid Tribes="@Stats?.Tribes" Buildings="@Stats?.Buildings" OnSelectTribe="@OnFocusTribe" />
-                </section>
-            </div>
-        }
-        else if (_tab == "timeline")
+        @if (_tab == "island")
         {
             <div class="poeco-overlay-grid">
                 <section class="poeco-panel poeco-panel--wide">
-                    <h3>Timeline</h3>
-                    <TimelinePanel History="@History" OnFly="@OnFlyToTile" />
-                </section>
-            </div>
-        }
-        else if (_tab == "notes")
-        {
-            <div class="poeco-overlay-grid">
-                <section class="poeco-panel poeco-panel--wide">
-                    <h3>Field notes</h3>
-                    <MilestonesPanel Unlocked="@Milestones" />
-                </section>
-            </div>
-        }
-        else if (_tab == "island")
-        {
-            <div class="poeco-overlay-grid">
-                <section class="poeco-panel poeco-panel--chart">
-                    <h3>Population over time</h3>
-                    <svg viewBox="0 0 320 160" preserveAspectRatio="none" class="poeco-chart" role="img" aria-label="@ChartSummary">
-                        <line x1="0" y1="159" x2="320" y2="159" class="poeco-chart-axis" />
-                        @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
-                        {
-                            var pts = Series[s];
-                            if (pts.Length > 0)
-                            {
-                                <polyline class="poeco-chart-line" style="stroke: @EcoSpeciesInfo.ColourOf(s)" points="@pts" />
-                            }
-                        }
-                    </svg>
-                    <div class="poeco-tiles">
-                        @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
-                        {
-                            <div class="poeco-tile" style="border-top-color: @EcoSpeciesInfo.ColourOf(s)">
-                                <span>@EcoSpeciesInfo.PluralOf(s)</span>
-                                <strong>@Count(s)</strong>
-                            </div>
-                        }
-                    </div>
-                    <p class="gps-sr-only" aria-live="polite">@ChartSummary</p>
+                    <TimelinePanel History="@History" Stats="@Stats" OnFly="@OnFlyToTile" Keyframes="@Keyframes" Past="@Past"
+                                   OnOpenKeyframe="@OnOpenKeyframe" OnReturn="@OnReturn" OnSonify="@OnSonify" />
                 </section>
 
                 <section class="poeco-panel poeco-panel--log">
@@ -96,12 +44,14 @@
 
                 <section class="poeco-panel poeco-panel--almanac">
                     <h3>Almanac</h3>
-                    <AlmanacPanel Stats="@Stats" Cards="@Cards" />
-                    <button type="button" class="poeco-btn" @onclick="OnExportTelemetry"
-                            title="Download every recorded life: lifespans, causes, movement, predation">
-                        Export telemetry (JSON)
-                    </button>
-                    <p class="poeco-note">One record per creature that ever lived — lifespan, cause of death, killer, distance travelled, offspring, drives and personality. Feed it to an AI to rebalance the island.</p>
+                    <AlmanacPanel Stats="@Stats" Cards="@Cards" OnExportTelemetry="@OnExportTelemetry" />
+                </section>
+
+                <section class="poeco-panel">
+                    <h3>Wagers</h3>
+                    <WagerPanel Book="@Wagers" Years="@(History?.Years ?? [])" Year="@(Stats?.Year ?? 0)" Enabled="@(!ReadOnly)" />
+                    <h3>Field notes · @Milestones.Count of @EcoMilestones.All.Length</h3>
+                    <MilestonesPanel Unlocked="@Milestones" />
                 </section>
             </div>
         }
@@ -115,8 +65,10 @@
                 <section class="poeco-panel">
                     <h3>Watching</h3>
                     <WatchPanel Watched="@(Stats?.Watched ?? [])" OnSelect="@OnSelectKin" OnUnwatch="@OnUnwatch" />
+                    <h3>Alerts</h3>
+                    <AlertsPanel Book="@Alerts" Stats="@Stats" />
                 </section>
-                <section class="poeco-panel poeco-panel--wide">
+                <section class="poeco-panel">
                     <h3>Evolution</h3>
                     <EvolutionPanel Stats="@Stats" Tint="@Tint" OnTint="@OnTint" />
                 </section>
@@ -124,31 +76,24 @@
         }
         else if (_tab == "tribe")
         {
-            <div class="poeco-overlay-grid">
-                <section class="poeco-panel poeco-panel--wide">
-                    <TribePanel Stats="@Stats" Chronicles="@Chronicles" Busy="@ChronicleBusy" FromYear="@ChronicleFromYear" OnWrite="@OnWriteChronicle" OnFocusTribe="@OnFocusTribe" Legends="@Legends" />
-                </section>
-            </div>
+            <TribePanel Stats="@Stats" Sagas="@Sagas" Busy="@ChronicleBusy" FromYear="@ChronicleFromYear" ReadOnly="@ReadOnly" Thumb="@CurrentThumb"
+                        OnWrite="@OnWriteChronicle" OnPrint="@OnPrintJournal" OnFocusTribe="@OnFocusTribe" Legends="@Legends" />
         }
-        else if (_tab == "cloud")
+        else if (_tab == "worlds")
         {
-            <div class="poeco-overlay-grid">
-                <section class="poeco-panel poeco-panel--wide">
-                    <CloudPanel Stats="@Stats" Worlds="@Worlds" Gallery="@Gallery" SignedIn="@SignedIn" Busy="@CloudBusy" Message="@CloudMessage"
-                                OnRefresh="@OnCloudRefresh" OnSave="@OnCloudSave" OnLoad="@OnCloudLoad" OnDelete="@OnCloudDelete" OnShare="@OnCloudShare" OnVisit="@OnVisit" />
-                </section>
-            </div>
+            <WorldsPanel Stats="@Stats" Worlds="@Worlds" Gallery="@Gallery" SignedIn="@SignedIn" Busy="@CloudBusy" Message="@CloudMessage"
+                         Visiting="@ReadOnly" CurrentSeed="@CurrentSeed" Seed="@Seed" SeedChanged="@SeedChanged" DailySeed="@DailySeed"
+                         Thumbs="@Thumbs" MyYears="@(History?.Years ?? [])" Compare="@Compare"
+                         OnNewWorld="@OnNewWorld" OnTodaysIsland="@OnTodaysIsland" OnReturn="@OnReturn"
+                         OnRefresh="@OnCloudRefresh" OnSave="@OnCloudSave" OnLoad="@OnCloudLoad" OnDelete="@OnCloudDelete" OnShare="@OnCloudShare"
+                         OnVisit="@OnVisit" OnCompare="@OnCompare" OnLink="@OnLink" OnNeedThumbs="@OnNeedThumbs" />
         }
         else
         {
             <div class="poeco-overlay-grid">
                 <section class="poeco-panel poeco-panel--settings">
                     <h3>AI thoughts</h3>
-                    @if (!WebGpu)
-                    {
-                        <p class="poeco-note">This browser has no WebGPU, so creature thoughts come from instinct templates — or from the cloud model below. Chrome or Edge on a desktop can run a model locally.</p>
-                    }
-                    else
+                    @if (WebGpu)
                     {
                         <label class="poeco-switch">
                             <input type="checkbox" checked="@LlmOn" @onchange="ToggleLlm" />
@@ -166,46 +111,20 @@
                         @if (Llm is not null && Llm.State == "loading")
                         {
                             <div class="poeco-progress"><span style="width: @($"{Llm.Progress * 100:0}%")"></span></div>
-                            <p class="poeco-note">@Llm.Message</p>
                         }
-                        else if (Llm is not null && !string.IsNullOrWhiteSpace(Llm.Message))
+                        @if (Llm is not null && !string.IsNullOrWhiteSpace(Llm.Message))
                         {
                             <p class="poeco-note">@Llm.Message</p>
                         }
                     }
-                    <label class="poeco-switch">
+                    <label class="poeco-switch" title="Routes creatures' thoughts through the server model every twenty seconds. Works without WebGPU; spends your daily AI allowance, so it is capped per session.">
                         <input type="checkbox" checked="@CloudThoughts" @onchange="ToggleCloud" />
                         <span>Cloud thoughts (@CloudThoughtsLeft left this session)</span>
                     </label>
-                    <p class="poeco-note">Routes a creature's thought through the server model every twenty seconds. Works without WebGPU; spends your daily AI allowance, so it is capped.</p>
-                    @if (Stats?.Llm is { } counters)
-                    {
-                        <p class="poeco-note">@counters.Applied thoughts applied, @counters.Rejected rejected.</p>
-                    }
-
-                    <h3>World</h3>
-                    <label class="poeco-field">
-                        <span>Seed</span>
-                        <input type="text" value="@Seed" @oninput="e => SeedChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
-                    </label>
-                    <div class="poeco-world-actions">
-                        <button type="button" class="poeco-btn poeco-btn--primary" @onclick="() => OnNewWorld.InvokeAsync(Seed)">New world</button>
-                        <button type="button" class="poeco-btn" @onclick="OnTodaysIsland" title="Everyone who opens today's island watches the same world unfold">Today's island</button>
-                    </div>
-                    <p class="poeco-note">Today's island is the same seed for everyone (<code>@DailySeed</code>), so its history can be compared and discussed. The island is deterministic: the same seed tells the same story.</p>
-
-                    <h3>Speed</h3>
-                    <div class="poeco-speed">
-                        @foreach (var s in new[] { 0, 1, 2, 4 })
-                        {
-                            <button type="button" class="poeco-pill @(Stats?.Speed == s ? "poeco-pill--on" : "")" @onclick="() => OnSpeed.InvokeAsync(s)">@(s == 0 ? "⏸" : $"{s}×")</button>
-                        }
-                    </div>
-
-                    <h3>Tour</h3>
+                    <p class="poeco-note">@ThoughtsNote</p>
                     <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnReplayTour">Show the getting-started tour again</button>
                 </section>
-                <section class="poeco-panel poeco-panel--settings">
+                <section class="poeco-panel poeco-panel--chart">
                     <ViewSettingsPanel Settings="@ViewSettings" Capturing="@Capturing" OnQuality="@OnQuality" OnPalette="@OnPalette"
                                        OnReducedMotion="@OnReducedMotion" OnRebind="@OnRebind" OnResetBindings="@OnResetBindings" />
                 </section>
@@ -217,17 +136,26 @@
 @code {
     private static readonly (string Id, string Label)[] Tabs =
     [
-        ("analytics", "Analytics"), ("timeline", "Timeline"), ("island", "Island"), ("life", "Life"), ("tribe", "Tribe & chronicle"),
-        ("notes", "Field notes"), ("cloud", "Cloud"), ("settings", "Settings"),
+        ("island", "Island"), ("life", "Life"), ("tribe", "Tribes"), ("worlds", "Worlds"), ("settings", "⚙"),
     ];
 
     private ElementReference _root;
-    private string _tab = "analytics";
+    private string _tab = "island";
+
+    /// <summary>The tab to open on. The overlay is rebuilt every time it opens, so the viewer
+    /// holds the last tab and hands it back — that is what makes "remembers where it was" true.</summary>
+    [Parameter] public string InitialTab { get; set; } = "island";
+
+    protected override void OnInitialized() => _tab = Tabs.Any(t => t.Id == InitialTab) ? InitialTab : "island";
+
+    private string ThoughtsNote =>
+        (WebGpu ? "" : "No WebGPU here, so thoughts come from instinct templates or the cloud model. ")
+        + (Stats?.Llm is { } counters ? $"{counters.Applied} thoughts applied, {counters.Rejected} rejected." : "");
 
     [Parameter] public EcoStats? Stats { get; set; }
     [Parameter] public IReadOnlyList<EcoEvent> Events { get; set; } = [];
     [Parameter] public IReadOnlyList<EcoThought> Thoughts { get; set; } = [];
-    [Parameter] public IReadOnlyList<EcoChronicle> Chronicles { get; set; } = [];
+    [Parameter] public IReadOnlyList<EcoSaga> Sagas { get; set; } = [];
     [Parameter] public EcoWorldMeta[] Worlds { get; set; } = [];
     [Parameter] public EcoSharedWorld[] Gallery { get; set; } = [];
     [Parameter] public EcoLlmState? Llm { get; set; }
@@ -242,6 +170,9 @@
     [Parameter] public int ChronicleFromYear { get; set; }
     [Parameter] public int Tint { get; set; } = -1;
     [Parameter] public string Seed { get; set; } = "";
+    [Parameter] public int CurrentSeed { get; set; }
+    /// <summary>A visited island or a past decade: nothing is saved, wagered or chronicled.</summary>
+    [Parameter] public bool ReadOnly { get; set; }
     [Parameter] public EventCallback<string> SeedChanged { get; set; }
     [Parameter] public EventCallback OnClose { get; set; }
     [Parameter] public EventCallback<int> OnFocusTribe { get; set; }
@@ -250,19 +181,31 @@
     [Parameter] public EventCallback<int> OnSelectKin { get; set; }
     [Parameter] public EventCallback<int> OnUnwatch { get; set; }
     [Parameter] public EventCallback<int> OnTint { get; set; }
-    [Parameter] public EventCallback<int> OnSpeed { get; set; }
     [Parameter] public EventCallback<(bool Enabled, string? ModelId)> OnLlmToggle { get; set; }
     [Parameter] public EventCallback<string?> OnNewWorld { get; set; }
     [Parameter] public EventCallback OnWriteChronicle { get; set; }
+    [Parameter] public EventCallback OnPrintJournal { get; set; }
     [Parameter] public EventCallback OnCloudRefresh { get; set; }
     [Parameter] public EventCallback<string> OnCloudSave { get; set; }
     [Parameter] public EventCallback<string> OnCloudLoad { get; set; }
     [Parameter] public EventCallback<string> OnCloudDelete { get; set; }
     [Parameter] public EventCallback<(string Slot, bool Public)> OnCloudShare { get; set; }
     [Parameter] public EventCallback<string> OnVisit { get; set; }
+    [Parameter] public EventCallback<EcoSharedWorld> OnCompare { get; set; }
+    [Parameter] public EventCallback<(string Code, string Name)> OnLink { get; set; }
+    [Parameter] public EventCallback<int[]> OnNeedThumbs { get; set; }
+    [Parameter] public IReadOnlyDictionary<int, string> Thumbs { get; set; } = new Dictionary<int, string>();
+    [Parameter] public (string Code, string Name, int[][] Years)? Compare { get; set; }
     [Parameter] public EcoHistory? History { get; set; }
     [Parameter] public EventCallback<int> OnFlyToTile { get; set; }
+    [Parameter] public IReadOnlyList<EcoKeyframe> Keyframes { get; set; } = [];
+    [Parameter] public int Past { get; set; } = -1;
+    [Parameter] public EventCallback<int> OnOpenKeyframe { get; set; }
+    [Parameter] public EventCallback OnReturn { get; set; }
+    [Parameter] public EventCallback<(int[][] Rows, int Peak)> OnSonify { get; set; }
     [Parameter] public IReadOnlyDictionary<string, string> Milestones { get; set; } = new Dictionary<string, string>();
+    [Parameter, EditorRequired] public EcoWagerBook Wagers { get; set; } = default!;
+    [Parameter, EditorRequired] public EcoAlertBook Alerts { get; set; } = default!;
     [Parameter] public IReadOnlyList<EcoSpeciesCard> Cards { get; set; } = [];
     [Parameter] public IReadOnlyList<(int Year, string Epithet, string Legend)> Legends { get; set; } = [];
     [Parameter] public EcoSettings? ViewSettings { get; set; }
@@ -275,18 +218,14 @@
     [Parameter] public EventCallback<bool> OnReducedMotion { get; set; }
     [Parameter] public EventCallback<string> OnRebind { get; set; }
     [Parameter] public EventCallback OnResetBindings { get; set; }
-    /// <summary>Raised when a tab opens, so the viewer can load what that tab needs (field guide).</summary>
+    /// <summary>Raised when a tab opens, so the viewer can load what that tab needs (field guide, cloud).</summary>
     [Parameter] public EventCallback<string> OnTab { get; set; }
+
+    private string? CurrentThumb => Thumbs.TryGetValue(CurrentSeed, out var url) && url.Length > 0 ? url : null;
 
     private bool LlmOn => Llm is not null && Llm.State is "loading" or "ready" && Llm.ModelId != "cloud";
     private string SelectedModel => Llm?.ModelId is { } id && id != "cloud" ? id : Models.FirstOrDefault()?.Id ?? "";
     private string ModelLabel => Models.FirstOrDefault(m => m.Id == SelectedModel)?.Label ?? "in-browser model";
-
-    private int Count(int species) => Stats?.Counts is { Length: EcoSpeciesInfo.Count } c ? c[species] : 0;
-
-    private string[] Series => PopulationSeries.AllSeries(Stats?.PopHistory, 320, 156);
-
-    private string ChartSummary => PopulationSeries.Summary(Stats);
 
     // The log carries the tick; the year it fell in is derived from the sim's own clock
     // constants rather than a hardcoded ticks-per-year in the markup.
@@ -306,6 +245,9 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender) { try { await _root.FocusAsync(); } catch { /* the overlay may already be gone */ } }
+        if (!firstRender) return;
+        try { await _root.FocusAsync(); } catch { /* the overlay may already be gone */ }
+        // The first tab needs what any tab needs when it opens (the field guide for Island).
+        await OnTab.InvokeAsync(_tab);
     }
 }

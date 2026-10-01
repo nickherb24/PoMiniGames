@@ -164,8 +164,8 @@ public static class GameCatalog
             new(GameMode.Demo, "/poracer/demo"),
         ]) { ChipPrimary = true },
 
-        // PoCabinet (2026-09-17): third-person arcade racing, four named officials, three
-        // themed tracks (Capitol Speedway / Mar-a-Lago GP / Press Briefing 500).
+        // PoCabinet (2026-09-17): third-person arcade racing, four named officials, four
+        // tracks (Capitol Speedway / Mar-a-Lago GP / Press Briefing 500 / Playground Marble Run).
         // Three modes: 1P championship, multi SignalR lobby, demo AI showcase. The 2P
         // mode was dropped on 2026-09-29 (it only ever ran the solo race); old
         // /pocabinet/2player links land on 1P (PoCabinetPage.Mode). The lobby endpoint at /api/pocabinet is
@@ -251,9 +251,13 @@ public static class GameCatalog
             ChipPrimary = true,
         },
 
-        // PoEcosystem is autonomous simulation only — Demo mode only.
+        // PoEcosystem is an autonomous simulation that is watched, never played. 1P is "your
+        // island": kept in this browser and offered back on the next visit (2026-09-30 — the
+        // card used to offer Demo only, so nothing could ever be resumed). Demo is the kiosk:
+        // a fresh island every time, never saved.
         new(GameKeys.PoEcosystem, "PoEcosystem", "🌿",
         [
+            new(GameMode.OnePlayer, "/poecosystem/1player"),
             new(GameMode.Demo, "/poecosystem/demo"),
         ])
         {

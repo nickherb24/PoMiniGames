@@ -21,10 +21,11 @@
 import * as THREE from 'three';
 import { CREATURE_CAP, PROP_CAP } from '../sim/core/config.js';
 import { FRAME, frameViews } from '../sim/frame.js';
-import { TILE_STATE } from '../sim/terrain/tiles.js';
+import { TILE, TILE_STATE } from '../sim/terrain/tiles.js';
 import { createTerrainMesh } from './terrainMesh.js';
 import { createLighting } from './lighting.js';
-import { createCreatureMeshes } from './creatureMeshes.js';
+import { LENS, createCreatureMeshes } from './creatureMeshes.js';
+import { createKinThreads } from './kin.js';
 import { createPropMeshes } from './propMeshes.js';
 import { createFloraMeshes } from './floraMeshes.js';
 import { createMinimap } from './minimap.js';
@@ -37,7 +38,7 @@ import { createEventFx } from './eventFx.js';
 import { createDirector } from './director.js';
 import { createPip } from './pip.js';
 import { createSky } from './sky.js';
-import { materialClock, materialDetail, materialSeason, materialSnow, materialWet, materialSky } from './materials.js';
+import { materialClock, materialCloud, materialDetail, materialSeason, materialSnow, materialWet, materialSky } from './materials.js';
 import { applyCameraShake } from '../../postFx.js';
 import { createSettlementMeshes, bannerColour } from './settlementMesh.js';
 import { createFauna } from './fauna.js';
@@ -65,6 +66,13 @@ const WEATHER_MOOD = [null, [0.97, 0.99, 1.02, 0.92], [0.94, 0.97, 1.02, 0.82], 
 const EPIDEMIC_MOOD = [0.95, 1.05, 0.9, 0.9];
 const VOICE_RANGE = 70;           // metres: creatures further than this are not voiced
 const HEAT_RANGE = 85;
+// GFX pass 3 (2026-09-30).
+const THERMAL_MOOD = [0.5, 0.62, 0.95, 0.12];   // the world behind a thermal lens: cold and nearly grey
+const UNDER_FOG = new THREE.Color(0x0b5f73);
+const UNDER_FOG_DENSITY = 0.05;
+const CLOUD_SHADE = 0.42;         // how much sun a cloud takes at noon under a broken sky
+const GRAZE_CELL = 4;             // metres per cell of the minimap's grazing layer
+const TRAFFIC_BLOCK = 4;          // trail texels per cell of the traffic layer
 /** Deterministic 0..1 from a few integers — the world's seed and the date, never the viewer. */
 function hash01(...parts) {
   let h = 2166136261;
@@ -132,6 +140,7 @@ export function createRenderer(container, {
   const skyDome = createSky(scene, { tier });
   materialDetail.value = tier === 'low' ? 0 : 1;
   const creatures = createCreatureMeshes(scene, cap);
+  const kinThreads = createKinThreads(scene);
   const props = createPropMeshes(scene, propCap);
   const particles = createParticles(scene, { tier });
   const eventFx = createEventFx(particles, audio, { tier });
@@ -164,6 +173,11 @@ export function createRenderer(container, {
   const heatList = [];
   let voiceAt = 0; let howlAt = -1e9; let barkAt = -1e9; let thumpAt = -1e9; let drumBarAt = 0;
   const howlTimers = new Set();
+  // GFX pass 3 state: how far under water the camera is (eased), the season's shedding,
+  // the minimap's data layer and what feeds it, and where each watched creature last stood.
+  let underK = 0; let bubbleDebt = 0; let seasonDebt = 0;
+  let layer = 'none'; let heat = null; let lastGrass = null; let layerAt = 0;
+  let watchedAt = new Map(); let watchedNow = new Map();
   // The tour (Blazor) wants to know the first look and the first step, once each.
   const told = { look: false, move: false };
   // The page can hold the director off (the onboarding tour needs the camera to stay put).
@@ -318,6 +332,9 @@ export function createRenderer(container, {
     trails = createTrails(terrainApi.size);
     grass?.dispose();
     grass = createGrass(scene, terrainApi, { tier });
+    // A new island: nothing the last one fed the data layers or the watch marks carries over.
+    heat = null; lastGrass = null; watchedAt.clear(); watchedNow.clear();
+    refreshLayer();
     // A pose set before the terrain arrived (Resume reads prefs synchronously at start)
     // must survive the rebuild, or the god is teleported back to the island's centre.
     // Fresh players float ('fly') until they press F to walk (2026-09-02 user call).
@@ -339,6 +356,8 @@ export function createRenderer(container, {
     grass?.setTiles(msg.tileState, msg.grass);
     flora?.update(msg, lastTime / 1000);
     minimap?.setTiles(msg);
+    lastGrass = msg.grass ?? lastGrass;
+    if (layer === 'grazing') refreshLayer();
 
     // One pass over the tile states per sync, converted straight to world points. Capped
     // because a full firestorm is 400 tiles and the emitter only ever samples a handful.
@@ -463,8 +482,114 @@ export function createRenderer(container, {
     bioTarget = hash01(seed, year, day, 4) < BIO_CHANCE[season] ? 0.6 + 0.4 * hash01(seed, year, day, 5) : 0;
   }
 
+  /**
+   * The minimap's data layer (2026-09-30). Three come from the sim's heat book (setHeat),
+   * two are already on this side of the worker: grazing pressure is the tile sync's grass
+   * biomass read backwards, and traffic is the wear grid trails.js keeps for the paths.
+   */
+  function refreshLayer() {
+    if (!minimap) return;
+    if (layer === 'deaths' && heat) minimap.setLayer(layer, heat.deaths, heat.side);
+    else if (layer === 'predation' && heat) minimap.setLayer(layer, heat.kills, heat.side);
+    else if (layer === 'sickness' && heat) minimap.setLayer(layer, heat.sick, heat.side);
+    else if (layer === 'grazing' && lastGrass && terrainApi) {
+      const size = terrainApi.size; const side = Math.ceil(size / GRAZE_CELL);
+      const out = new Float32Array(side * side); const n = new Uint16Array(side * side);
+      for (let t = 0; t < size * size; t++) {
+        const type = terrainApi.type[t];
+        if (type !== TILE.GRASS && type !== TILE.HILL) continue;
+        const c = (((t / size) | 0) / GRAZE_CELL | 0) * side + ((t % size) / GRAZE_CELL | 0);
+        out[c] += 255 - lastGrass[t]; n[c]++;
+      }
+      for (let c = 0; c < out.length; c++) if (n[c]) out[c] /= n[c];
+      minimap.setLayer(layer, out, side);
+    } else if (layer === 'traffic' && trails) {
+      const W = trails.width; const wear = trails.wear; const side = Math.floor(W / TRAFFIC_BLOCK);
+      const out = new Float32Array(side * side);
+      for (let z = 0; z < W; z++) {
+        const row = ((z / TRAFFIC_BLOCK) | 0) * side;
+        for (let x = 0; x < W; x++) { const c = row + ((x / TRAFFIC_BLOCK) | 0); const v = wear[z * W + x]; if (v > out[c]) out[c] = v; }
+      }
+      minimap.setLayer(layer, out, side);
+    } else minimap.setLayer(null);
+  }
+
+  /** Blossom in spring, leaves in autumn: let go from canopy height near the camera. */
+  function emitSeason(dt) {
+    const season = stats?.season;
+    if (!particles.enabled || !terrainApi || (season !== 0 && season !== 2) || surface.snow > 0.3) return;
+    seasonDebt += dt * (tier === 'high' ? 7 : 4);
+    let n = Math.min(4, Math.floor(seasonDebt));
+    seasonDebt -= n;
+    const size = terrainApi.size;
+    while (n-- > 0) {
+      const x = player.x + (Math.random() - 0.5) * 56; const z = player.z + (Math.random() - 0.5) * 56;
+      if (x < 1 || z < 1 || x >= size - 1 || z >= size - 1) continue;
+      const type = terrainApi.type[(z | 0) * size + (x | 0)];
+      // Forest sheds everywhere; open grass only now and then, as if a tree were near.
+      if (type !== TILE.FOREST && (type !== TILE.GRASS || Math.random() < 0.75)) continue;
+      particles.emit(season === 0 ? 'petal' : 'leaf', x, terrainApi.heightAt(x, z) + 2.5 + Math.random() * 3.5, z, { count: 1, dir: [0.45, -0.2, 0.2] });
+    }
+  }
+
+  /**
+   * Below the waterline (2026-09-30): the fog closes in and turns teal, the composer sways
+   * and takes the red out, the mix goes through a low-pass, and air rises past the lens.
+   * Returns the eased 0..1 factor.
+   */
+  function updateUnderwater(dt) {
+    const target = terrainApi ? Math.max(0, Math.min(1, (-0.12 - player.y) / 0.5)) : 0;
+    underK += (target - underK) * Math.min(1, dt * 6);
+    if (underK < 0.004) underK = 0;
+    audio?.setUnderwater?.(underK > 0.5);
+    post.setUnderwater(underK);
+    if (underK > 0.01) {
+      lighting.fog.color.lerp(UNDER_FOG, underK);
+      lighting.fog.density += (UNDER_FOG_DENSITY - lighting.fog.density) * underK;
+    }
+    if (underK > 0.4 && particles.enabled) {
+      bubbleDebt += dt * 14;
+      let n = Math.min(3, Math.floor(bubbleDebt));
+      bubbleDebt -= n;
+      const d = player.direction();
+      while (n-- > 0) {
+        particles.emit('bubble', player.x + d.x * 3 + (Math.random() - 0.5) * 6, player.y - 1.5 + Math.random() * 1.5, player.z + d.z * 3 + (Math.random() - 0.5) * 6, { count: 1 });
+      }
+    }
+    return underK;
+  }
+
+  /**
+   * Life and death marks for the watch-list (2026-09-30). The frame flags every watched
+   * creature, so a watched handle that is in one sim frame and gone from the next has died:
+   * a wisp rises from where it last stood and a bell rings from there. No event needed —
+   * the position is exactly the one the event would not have carried.
+   */
+  function trackWatched(views, count) {
+    watchedNow.clear();
+    for (let k = 0; k < count; k++) {
+      const o = k * FRAME.CREATURE_STRIDE;
+      if ((views.creatures[o + FRAME.STATE] | 0) & FRAME.C_WATCHED) watchedNow.set(views.handles[k], [views.creatures[o], views.creatures[o + 1], views.creatures[o + 2]]);
+    }
+    let alive = null;
+    for (const [handle, at] of watchedAt) {
+      if (watchedNow.has(handle)) continue;
+      if (!alive) { alive = new Set(); for (let k = 0; k < count; k++) alive.add(views.handles[k]); }
+      if (alive.has(handle)) continue;            // taken off the watch-list, not dead
+      particles.emit('wisp', at[0], at[1] + 0.6, at[2], { count: 18, radius: 0.45 });
+      audio?.knell?.({ x: at[0], y: at[1] + 1, z: at[2] });
+    }
+    const swap = watchedAt; watchedAt = watchedNow; watchedNow = swap;
+  }
+
   /** The mood grade (idea 8): season, weather and sickness tint the whole frame. */
-  function decideMood(s) {
+  function decideMood(s, snap = false) {
+    // A thermal lens is a camera, not a season: the world goes cold so the animals read.
+    if (creatures.tint === LENS.THERMAL) {
+      moodGrade.setRGB(THERMAL_MOOD[0], THERMAL_MOOD[1], THERMAL_MOOD[2]);
+      post.setMood(moodGrade, THERMAL_MOOD[3], snap);
+      return;
+    }
     const m = SEASON_MOOD[s.season ?? 0] ?? SEASON_MOOD[0];
     let r = m[0]; let g = m[1]; let b = m[2]; let sat = m[3];
     const w = WEATHER_MOOD[weatherKind];
@@ -479,7 +604,7 @@ export function createRenderer(container, {
       b *= 1 + (EPIDEMIC_MOOD[2] - 1) * epidemic; sat *= 1 + (EPIDEMIC_MOOD[3] - 1) * epidemic;
     }
     moodGrade.setRGB(r, g, b);
-    post.setMood(moodGrade, sat);
+    post.setMood(moodGrade, sat, snap);
   }
 
   /**
@@ -640,13 +765,20 @@ export function createRenderer(container, {
           break;
         }
       }
-      creatures.draw(interp, interpCount, timeSec, speeds);
+      creatures.draw(interp, interpCount, timeSec, speeds, curr.views.handles, terrainApi?.heightAt);
+      kinThreads.update(interp, curr.views.handles, interpCount, timeSec);
       trails?.stamp(interp, interpCount, speeds, dt);
       props.draw(curr.views.props, propCount);
       // Only on a frame the sim actually produced: see eventFx.props for why feeding it
       // repeated rows would read every falling body as one that had just landed.
       const tick = curr.views.header[FRAME.H_TICK];
-      if (tick !== lastPropTick) { lastPropTick = tick; eventFx.props(curr.views.props, propCount, currAt, terrainApi); }
+      if (tick !== lastPropTick) {
+        lastPropTick = tick;
+        eventFx.props(curr.views.props, propCount, currAt, terrainApi);
+        trackWatched(curr.views, curr.views.header[FRAME.H_COUNT]);
+      }
+      // The traffic layer follows a grid that changes every frame; two seconds is plenty.
+      if (layer === 'traffic' && timeSec - layerAt > 2) { layerAt = timeSec; refreshLayer(); }
       hovered = pickCreature(camera.position, dir, interp, curr.views.handles, interpCount);
       minimap?.draw(interp, interpCount, player);
     }
@@ -659,7 +791,17 @@ export function createRenderer(container, {
     if (stats && stats.season !== undefined) materialSeason.value = stats.season;
     updateSurface(dt);
     materialSky.value.copy(sky.sky);
+    // A bow needs rain that has just eased off, ground still wet, a sun that is up, and a
+    // sky that has opened; the dome hides it again when the sun climbs past 42 degrees.
+    skyDome.setRainbow(Math.max(0, Math.min(1, surface.wet * 1.7 - 0.25)) * Math.max(0, 1 - surface.rain * 3.5)
+      * (sky.day > 0.28 ? 1 : 0) * (1 - skyDome.overcast * 0.85));
     skyDome.update(sky, player, timeSec);
+    // Cloud shadows: the deck the dome has just drawn, handed to every hooked surface.
+    materialCloud.uCloudTime.value = timeSec;
+    materialCloud.uCloudCover.value = skyDome.cover;
+    materialCloud.uCloudSun.value.copy(sky.sunDir);
+    materialCloud.uCloudShade.value = tier === 'low' ? 0 : CLOUD_SHADE * Math.min(1, sky.day * 2.5) * (1 - skyDome.overcast * 0.75);
+    updateUnderwater(dt);
     island?.update(timeSec, sky, surface);
     const windy = weatherKind === WEATHER_STORM ? weatherIntensity : weatherKind === WEATHER_RAIN ? weatherIntensity * 0.4 : 0.12;
     grass?.update(dt, player, windy);
@@ -671,6 +813,7 @@ export function createRenderer(container, {
 
     eventFx.ambient(dt, { fireTiles, lavaTiles, player, dayFraction: stats?.dayFraction ?? 0.5 });
     emitWeather(dt);
+    emitSeason(dt);
     fauna?.update(dt, timeSec, { player, night: sky.night ?? 0, storm: weatherKind === WEATHER_STORM ? weatherIntensity : 0 });
     particles.update(dt, {
       fogColor: sky.sky, fogDensity: sky.fogDensity,
@@ -681,8 +824,6 @@ export function createRenderer(container, {
     updateShafts(sky, dir);
     updateHeat();
     post.setHaze(weatherKind === WEATHER_DROUGHT && !motionReduced ? weatherIntensity * (sky.day ?? 1) : 0);
-    // Lens rain only while the camera is out in it: a god flying above the storm deck is dry.
-    post.setLensRain(motionReduced ? 0 : surface.rain * (player.y < 90 ? 1 : 0));
     updateVoices(timeSec, sky.night ?? 0);
     post.update(dt);
     // Shake LAST, after everything that reads the camera has read it: applyCameraShake
@@ -805,8 +946,30 @@ export function createRenderer(container, {
     // (creatureMeshes.js). Kept as a no-op so the engine API stays one shape.
     select() {},
     follow(handle) { if (handle >= 0) noteInput(); followHandle = handle ?? -1; },
-    setTint: (traitIndex) => creatures.setTint(traitIndex),
+    /** A lens: a trait index 0–4, a LENS value (hunger, health, thermal, kin), or -1 for none. */
+    setTint(lens) { creatures.setTint(lens); if (stats) decideMood(stats, true); },
     get tint() { return creatures.tint; },
+    /** The camera's subject and its living relatives (index.js asks the sim every two seconds). */
+    setKin(handle, list) { creatures.setKin(handle, list); kinThreads.set(handle, list); },
+    get kinThreads() { return kinThreads.count; },
+    /** The minimap's data layer: 'none' | 'deaths' | 'predation' | 'sickness' | 'grazing' | 'traffic'. */
+    setLayer(name) { layer = name || 'none'; layerAt = 0; refreshLayer(); },
+    get layer() { return layer; },
+    /** The sim's heat book ({ side, deaths, kills, sick }), for the three layers it feeds. */
+    setHeat(h) { heat = h; refreshLayer(); },
+    /** A birth in a watched family: a ring opens around the parent and a chime rises from it. */
+    birthMark(handle) {
+      if (!curr) return;
+      for (let k = 0; k < interpCount; k++) {
+        if (curr.views.handles[k] !== handle) continue;
+        const o = k * FRAME.CREATURE_STRIDE;
+        particles.ring('mote', interp[o], interp[o + 1] + 0.35, interp[o + 2], 28);
+        audio?.chime?.({ x: interp[o], y: interp[o + 1] + 1, z: interp[o + 2] });
+        return;
+      }
+    },
+    get underwater() { return underK; },
+    get rainbow() { return skyDome.rainbow; },
     // The page's 🎬 button goes through the same switch the C key does, so an explicit
     // off is remembered rather than undone by the idle timer.
     setDirector(on) { if (director.enabled === !!on) return; toggleDirector(); },
@@ -851,6 +1014,8 @@ export function createRenderer(container, {
       pip.dispose();
       scene.remove(campfireLight);
       settlementMeshes?.dispose();
+      audio?.setUnderwater?.(false);
+      kinThreads.dispose();
       creatures.dispose(); props.dispose(); flora?.dispose(); island?.dispose(); lighting.dispose(); skyDome.dispose(); minimap?.dispose();
       particles.dispose(); post.dispose();
       renderer.dispose();

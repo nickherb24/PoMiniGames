@@ -25,6 +25,7 @@ const SEGMENT_MS = 16000;
 const POST_ROLL_MS = 2600;
 const MIN_CLIP_MS = 3000;
 const MAX_CLIPS = 6;
+const EXPOSURE_MS = 4000;
 const MIRROR_FPS = 30;
 const MIME = ['video/webm;codecs=vp8', 'video/webm;codecs=vp9', 'video/webm', 'video/mp4'];
 
@@ -84,6 +85,7 @@ export function createReel(host, { tier = 'high', photo = null } = {}) {
     <div class="poeco-reel-actions">
       <button type="button" class="poeco-btn" data-act="photo">📷 Photo</button>
       <button type="button" class="poeco-btn" data-act="mini">🔍 Miniature</button>
+      <button type="button" class="poeco-btn" data-act="long" title="Four seconds of light on one frame: star trails, firelight, lava">🌠 Long exposure</button>
     </div>
     <p class="poeco-reel-note"></p>
     <ol class="poeco-reel-list"></ol>`;
@@ -97,6 +99,32 @@ export function createReel(host, { tier = 'high', photo = null } = {}) {
   drawer.querySelector('.poeco-reel-close').addEventListener('click', () => setOpen(false));
   drawer.querySelector('[data-act="photo"]').addEventListener('click', () => takePhoto(false));
   drawer.querySelector('[data-act="mini"]').addEventListener('click', () => takePhoto(true));
+  drawer.querySelector('[data-act="long"]').addEventListener('click', () => startExposure());
+
+  // ── long exposure (GFX pass 3, 2026-09-30) ──────────────────────────
+  // Every composed frame for EXPOSURE_MS is laid onto one canvas with the `lighten`
+  // operator, which keeps the brightest value each pixel ever had: the stars draw their
+  // arcs, a campfire becomes a column, lava a river, and a still landscape stays as it was.
+  // It rides the same after-render hook the mirror does, so the drawing buffer is valid.
+  let exposure = null;
+  function startExposure() {
+    if (exposure || !source || !source.width || !source.height) return;
+    const w = Math.min(1920, source.width); const h = Math.max(1, Math.round(w * source.height / source.width));
+    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+    exposure = { canvas, ctx: canvas.getContext('2d', { alpha: false }), until: performance.now() + EXPOSURE_MS, frames: 0 };
+    note.textContent = 'Exposing — four seconds. Best after dark, with the camera still.';
+  }
+  function expose(now) {
+    const e = exposure;
+    try {
+      e.ctx.globalCompositeOperation = e.frames === 0 ? 'source-over' : 'lighten';
+      e.ctx.drawImage(source, 0, 0, e.canvas.width, e.canvas.height);
+      e.frames++;
+    } catch { /* context lost: the frames already laid still make a picture */ }
+    if (now < e.until) return;
+    exposure = null;
+    e.canvas.toBlob((blob) => { if (!disposed) addClip(blob, 'Long exposure', 'photo'); }, 'image/png');
+  }
 
   function setNote() {
     note.textContent = recordable
@@ -234,8 +262,10 @@ export function createReel(host, { tier = 'high', photo = null } = {}) {
     setSource(canvas) { source = canvas; ensureRecording(); },
     /** Called by the renderer right after each composed frame. */
     mirror() {
-      if (!mirrorCtx || !source) return;
+      if (!source) return;
       const now = performance.now();
+      if (exposure) expose(now);
+      if (!mirrorCtx) return;
       if (now - lastMirror < 1000 / MIRROR_FPS - 2) return;
       lastMirror = now;
       const sw = source.width; const sh = source.height;
@@ -251,6 +281,9 @@ export function createReel(host, { tier = 'high', photo = null } = {}) {
     get open() { return !drawer.hidden; },
     get clips() { return clips.map(c => ({ caption: c.caption, kind: c.kind, bytes: c.blob.size })); },
     get recording() { return !!stream; },
+    /** Begin a long exposure (also the drawer's button); the still lands in the reel. */
+    longExposure: startExposure,
+    get exposing() { return !!exposure; },
     dispose() {
       disposed = true;
       if (pendingCapture) clearTimeout(pendingCapture);

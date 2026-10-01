@@ -16,14 +16,18 @@ public class PoCabinetLapVerifierTests
     [InlineData("capitol-clean")]
     [InlineData("capitol-wild")]
     [InlineData("maralago-clean")]
+    [InlineData("playground-run")]
     public void Replay_ReproducesTheBrowserLap_AndRejectsWhatPhysicsCannotProduce(string proofName)
     {
         var proof = PoCabinetLapProofs.Get(proofName);
         var inputs = PoCabinetLapVerifier.Decode(proof.Inputs);
         inputs.Should().NotBeNull();
 
+        // Exactly, not approximately: both copies use only operations IEEE 754 pins to the last
+        // bit (their own sin/cos/atan2 included). A 100-car field is chaotic, so one ulp of
+        // disagreement becomes a different race, and "close" would not stay close.
         PoCabinetLapVerifier.Replay(proof.TrackId, proof.Wet, inputs!)
-            .Should().BeApproximately(proof.JsBestLap, 1e-6, "JS and C# physics are line-for-line mirrors");
+            .Should().Be(proof.JsBestLap, "JS and C# physics are line-for-line mirrors");
 
         // Same log, claimed wet: lower grip, different (valid, re-timed) race — never the dry time.
         PoCabinetLapVerifier.Replay(proof.TrackId, !proof.Wet, inputs!)

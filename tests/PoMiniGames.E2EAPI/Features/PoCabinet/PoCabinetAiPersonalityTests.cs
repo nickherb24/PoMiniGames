@@ -15,6 +15,9 @@ namespace PoMiniGames.E2EAPI.Features.PoCabinet;
 ///   <item>A human car obeys its inputs and the barrier: full throttle with full right lock
 ///         ends up pinned at the wall, never through it, and every applied input's
 ///         sequence number is acknowledged.</item>
+///   <item>A car-to-car contact is an impulse between car-shaped hulls: momentum is kept, a
+///         centred hit moves nobody sideways, an off-centre one shoves and turns both cars,
+///         and cars on different levels of a crossing do not touch.</item>
 ///   <item><see cref="PoCabinetDialogue.PickLine"/> is deterministic by
 ///         <c>(official, kind, raceTick)</c>, and the pool passes the banned-token scan.</item>
 /// </list>
@@ -73,6 +76,37 @@ public sealed class PoCabinetAiPersonalityTests
         }
         me.AckSeq.Should().Be(150, "every applied input must be acknowledged");
         me.Speed.Should().BeGreaterThan(0, "throttle moves the car");
+
+        // ── Part 1c: a contact is an impulse between car-shaped hulls ───
+        // Nose to tail, dead centre: equal masses and restitution 0.2 turn 100 into 60 as 76
+        // and 84 (momentum kept, the 40 of closing speed leaves as 8 of separation), nothing
+        // sideways. The hulls are 39 long, so 36 apart is already a hit — the old round
+        // hulls only met at 28.
+        static PoCabinetCarBody Car(double x, double y, double speed) => new() { X = x, Y = y, Speed = speed };
+        var rear = Car(0, 0, 100);
+        var front = Car(36, 0, 60);
+        PoCabinetPhysics.ResolveContacts(human.Track, [rear, front]);
+        rear.Speed.Should().BeApproximately(76, 1e-9);
+        front.Speed.Should().BeApproximately(84, 1e-9);
+        (rear.Slip, rear.Spin, front.Slip, front.Spin).Should().Be((0d, 0d, 0d, 0d), "a centred hit shoves nobody sideways");
+
+        // The same hit on a rear corner: momentum is still kept, but both cars are shoved
+        // apart sideways and both are turned.
+        var tapper = Car(0, 0, 100);
+        var tapped = Car(30, 14, 60);
+        PoCabinetPhysics.ResolveContacts(human.Track, [tapper, tapped]);
+        (tapper.Speed + tapped.Speed).Should().BeApproximately(160, 1e-9);
+        (tapper.Slip + tapped.Slip).Should().BeApproximately(0, 1e-9);
+        tapped.Slip.Should().BeGreaterThan(1, "the car hit on its left rear corner is pushed right");
+        tapped.Spin.Should().NotBe(0, "an off-centre hit turns the car");
+        tapper.Spin.Should().NotBe(0);
+
+        // Overlapping on the map but far apart along the road: two levels of a crossing, no contact.
+        var above = Car(0, 0, 100);
+        var below = Car(36, 0, 60);
+        below.Along = 500;
+        PoCabinetPhysics.ResolveContacts(human.Track, [above, below]);
+        (above.Speed, below.Speed).Should().Be((100d, 60d));
 
         // ── Part 2: dialogue determinism ─────────────────────────────────
         var firstCall = PoCabinetDialogue.PickLine("sean-s", DialogueKind.PreRace, 12);

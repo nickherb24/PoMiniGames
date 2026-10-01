@@ -1,14 +1,53 @@
 @using System.Globalization
-@* The island's history (feature #9, 2026-09-23). One row per year from the sim (populations,
-   the tribe's tier and Shannon diversity), with the landmarks — tech, wars and pacts, storms
-   and droughts, outbreaks, extinctions, new varieties — as markers along the top. A window
-   (start year + span) scrubs through it; clicking a landmark that happened somewhere flies
-   the camera there. Native SVG: the rows are at most two thousand, which a polyline draws
-   without help, and the no-heavy-libraries rule stands. *@
+@* The island's history, and since 2026-09-30 the dashboard's ONE population chart. It used
+   to share the dashboard with two others (a "live" chart on the Analytics tab and another on
+   the Island tab, both drawing the same four lines); "Follow the present" is the live chart,
+   and until the first two years have passed the per-second samples stand in for the rows.
+
+   One row per year from the sim (populations, the tribe's tier and Shannon diversity), with
+   the landmarks — tech, wars and pacts, storms and droughts, outbreaks, extinctions, new
+   varieties — as markers along the top. A window (start year + span) scrubs through it;
+   clicking a landmark that happened somewhere flies the camera there. Native SVG: the rows
+   are at most two thousand, which a polyline draws without help.
+
+   Also here: the time machine (the decades this browser has kept of this island, each
+   opened read-only), and the timeline HEARD — the window played as chords, one voice per
+   species, which is also how the chart reads without sight. *@
 <div class="poeco-timeline">
+    <div class="poeco-chart-legend" role="list" aria-label="Alive now">
+        @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+        {
+            <div class="poeco-legend-item" role="listitem" style="border-left: 3px solid @EcoSpeciesInfo.ColourOf(s);">
+                <span class="poeco-legend-label">@EcoSpeciesInfo.PluralOf(s)</span>
+                <strong class="poeco-legend-count">@CountNow(s)</strong>
+            </div>
+        }
+        @if (Rows.Length >= 2)
+        {
+            <label class="poeco-legend-item poeco-timeline-diversity-key">
+                <input type="checkbox" checked="@_showDiversity" @onchange="e => _showDiversity = e.Value is true" />
+                <span class="poeco-legend-label" title="Shannon diversity H′ (0 = one species, 1.39 = all four equally common)">Diversity H′</span>
+            </label>
+        }
+    </div>
+
     @if (Rows.Length < 2)
     {
-        <p class="poeco-note">The timeline fills in as the years pass — one row per year, from the island's first.</p>
+        @* The first two years: the per-second samples, so the chart is never an empty box. *@
+        <svg viewBox="0 0 @W @H" preserveAspectRatio="none" class="poeco-chart poeco-timeline-chart" role="img" aria-label="@PopulationSeries.Summary(Stats)">
+            <line x1="0" y1="@(H - 1)" x2="@W" y2="@(H - 1)" class="poeco-chart-axis" />
+            @{
+                var live = PopulationSeries.AllSeries(Stats?.PopHistory, W, H - 6);
+            }
+            @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+            {
+                if (live[s].Length > 0)
+                {
+                    <polyline class="poeco-chart-line" style="stroke: @EcoSpeciesInfo.ColourOf(s)" points="@live[s]" />
+                }
+            }
+        </svg>
+        <p class="poeco-note">Live, second by second. Year rows and landmarks take over once two years have passed.</p>
     }
     else
     {
@@ -30,6 +69,8 @@
                 <input type="checkbox" checked="@_follow" @onchange="e => _follow = e.Value is true" />
                 <span>Follow the present</span>
             </label>
+            <button type="button" class="poeco-btn poeco-btn--sm" title="Play these years as chords — one voice per species, pitch is how many there were"
+                    @onclick="PlayWindowAsync">♪ Hear it</button>
         </div>
 
         <svg viewBox="0 0 @W @H" preserveAspectRatio="none" class="poeco-chart poeco-timeline-chart" role="img" aria-label="@Summary">
@@ -63,19 +104,6 @@
             }
         </svg>
 
-        <div class="poeco-chart-legend">
-            @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
-            {
-                <div class="poeco-legend-item" style="border-left: 3px solid @EcoSpeciesInfo.ColourOf(s);">
-                    <span class="poeco-legend-label">@EcoSpeciesInfo.PluralOf(s)</span>
-                </div>
-            }
-            <label class="poeco-legend-item poeco-timeline-diversity-key">
-                <input type="checkbox" checked="@_showDiversity" @onchange="e => _showDiversity = e.Value is true" />
-                <span class="poeco-legend-label" title="Shannon diversity H′ (0 = one species, 1.39 = all four equally common)">Diversity H′</span>
-            </label>
-        </div>
-
         <div class="poeco-timeline-filters" role="group" aria-label="Landmark kinds">
             @foreach (var (kind, label) in Kinds)
             {
@@ -105,11 +133,27 @@
             }
         </ol>
     }
+
+    @if (Keyframes.Count > 0 || Past >= 0)
+    {
+        <div class="poeco-timemachine" role="group" aria-label="Time machine">
+            <strong title="A copy of this island is kept every ten years. Open one to watch that decade again — read-only: the past cannot be saved over the present.">Time machine</strong>
+            @foreach (var k in Keyframes)
+            {
+                <button type="button" class="poeco-pill @(Past == k.Year ? "poeco-pill--on" : "")" aria-pressed="@(Past == k.Year ? "true" : "false")"
+                        title="Year @k.Year — @CountsOf(k)" @onclick="() => OnOpenKeyframe.InvokeAsync(k.Year)">Y@(k.Year)</button>
+            }
+            @if (Past >= 0)
+            {
+                <button type="button" class="poeco-btn poeco-btn--sm poeco-btn--primary" @onclick="OnReturn">Back to the present</button>
+            }
+        </div>
+    }
 </div>
 
 @code {
     private const int W = 640;
-    private const int H = 210;
+    private const int H = 190;
     private const int MarkTop = 12;
     private static readonly int[] Spans = [10, 25, 50, 100, 0];
     private static readonly (string Kind, string Label)[] Kinds =
@@ -120,8 +164,18 @@
     private static readonly double MaxShannon = Math.Log(4);
 
     [Parameter] public EcoHistory? History { get; set; }
+    /// <summary>The live counters: the legend's numbers, and the chart itself for the first two years.</summary>
+    [Parameter] public EcoStats? Stats { get; set; }
     [Parameter] public int TicksPerYear { get; set; } = 600;
     [Parameter] public EventCallback<int> OnFly { get; set; }
+    /// <summary>The decades the time machine has kept of this island.</summary>
+    [Parameter] public IReadOnlyList<EcoKeyframe> Keyframes { get; set; } = [];
+    /// <summary>The year being visited, -1 in the present.</summary>
+    [Parameter] public int Past { get; set; } = -1;
+    [Parameter] public EventCallback<int> OnOpenKeyframe { get; set; }
+    [Parameter] public EventCallback OnReturn { get; set; }
+    /// <summary>Play rows of [rabbits, deer, wolves, humans] as chords: (rows, peak).</summary>
+    [Parameter] public EventCallback<(int[][] Rows, int Peak)> OnSonify { get; set; }
 
     private int _span = 25;
     private int _start;
@@ -138,6 +192,8 @@
     private int WindowEnd => Math.Min(MaxYear, WindowStart + Span);
 
     private IEnumerable<int[]> WindowRows => Rows.Where(r => r[0] >= WindowStart && r[0] <= WindowEnd);
+
+    private int CountNow(int species) => Stats?.Counts is { Length: EcoSpeciesInfo.Count } c ? c[species] : 0;
 
     private double XOf(double year) => WindowEnd == WindowStart ? 0 : (year - WindowStart) / (WindowEnd - WindowStart) * W;
 
@@ -186,9 +242,21 @@
         : $"Years {WindowStart} to {WindowEnd}: {VisibleLandmarks.Count} landmarks. Latest counts " +
           string.Join(", ", Enumerable.Range(0, EcoSpeciesInfo.Count).Select(s => $"{Rows[^1][s + 1]} {EcoSpeciesInfo.PluralOf(s).ToLowerInvariant()}"));
 
-    private void OnStart(ChangeEventArgs e)
+    private static string CountsOf(EcoKeyframe k) => k.Counts is { Length: EcoSpeciesInfo.Count } c
+        ? string.Join(", ", Enumerable.Range(0, EcoSpeciesInfo.Count).Select(s => $"{c[s]} {EcoSpeciesInfo.PluralOf(s).ToLowerInvariant()}"))
+        : "kept";
+
+    private static int[] Voices(int[] row) => [row[1], row[2], row[3], row[4]];
+
+    private Task PlayWindowAsync() =>
+        OnSonify.InvokeAsync((WindowRows.Where(r => r.Length >= 5).Select(Voices).ToArray(), PeakCount));
+
+    private async Task OnStart(ChangeEventArgs e)
     {
-        if (int.TryParse(e.Value?.ToString(), out var v)) { _start = v; _follow = false; }
+        if (!int.TryParse(e.Value?.ToString(), out var v)) return;
+        _start = v; _follow = false;
+        // Scrubbing is heard: the year under the handle, as one chord.
+        if (Rows.FirstOrDefault(r => r[0] == v && r.Length >= 5) is { } row) await OnSonify.InvokeAsync((new[] { Voices(row) }, PeakCount));
     }
 
     private void OnSpan(ChangeEventArgs e)

@@ -33,8 +33,6 @@
 //   SHOCKWAVE  two ring slots. An eruption or a near strike sends a refracting ring out
 //              from its screen position; it is the one effect that tells you WHERE an
 //              off-centre blast was before the sound arrives.
-//   LENS RAIN  procedural beads sliding down the lens while it rains, each one a tiny
-//              refracting lens of its own. Off under reduced motion.
 //   MOOD       a second grade on top of the day/night one: season, weather and sickness
 //              tint the frame (warm summer, cold winter, a sickly green in an epidemic),
 //              plus a saturation control the chronicle uses to drain the colour out of
@@ -83,32 +81,12 @@ uniform float uAspect;
 uniform vec4 uHeat[4];      // uv.x, uv.y, radius (uv, vertical), strength
 uniform float uHaze;        // drought shimmer, 0..1
 uniform vec4 uShock[2];     // uv.x, uv.y, radius (uv, aspect-corrected), strength
-uniform float uLensRain;    // 0..1
 uniform vec3 uMood;         // per-channel mood grade
 uniform float uSaturation;  // 1 = unchanged
+uniform float uUnder;       // 0..1 the camera is below the waterline
 varying vec2 vUv;
 
 float luma(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
-float pHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-
-// One layer of lens drops: each cell may hold a bead that slides down and wobbles.
-// Returns the refraction offset it contributes.
-vec2 dropLayer(vec2 uv, float t, float scale, float density) {
-  vec2 p = uv * vec2(uAspect, 1.0) * scale;
-  vec2 id = floor(p);
-  vec2 st = fract(p) - 0.5;
-  float n = pHash(id);
-  if (n > density) return vec2(0.0);
-  float slide = fract(t * (0.08 + n * 0.14) + n * 13.0);
-  float y = 0.42 - slide * 0.84;
-  float x = (pHash(id + 3.7) - 0.5) * 0.6 + sin(slide * 14.0 + n * 30.0) * 0.035;
-  vec2 d = (st - vec2(x, y)) * vec2(1.0, 0.85);
-  float r = 0.08 + pHash(id + 9.1) * 0.06;
-  float bead = smoothstep(r, r * 0.35, length(d));
-  // A thin wet trail left above the bead.
-  float trail = smoothstep(0.035, 0.0, abs(st.x - x)) * smoothstep(y, y + 0.35, st.y) * (1.0 - smoothstep(y + 0.35, y + 0.6, st.y)) * 0.25;
-  return -d * bead * 0.9 / scale + vec2(0.0, trail * 0.004);
-}
 
 void main() {
   // ── refraction: every term bends the UV that all the reads below use ──
@@ -137,9 +115,9 @@ void main() {
     float ring = exp(-k * k) * s.w;
     bend += (away / max(dist, 1e-4)) * vec2(1.0 / uAspect, 1.0) * ring * 0.028;
   }
-  if (uLensRain > 0.01) {
-    bend += dropLayer(vUv, uTime, 5.0, 0.55 * uLensRain);
-    bend += dropLayer(vUv + 0.37, uTime * 1.3, 9.0, 0.4 * uLensRain) * 0.7;
+  // Underwater (2026-09-30): the whole frame sways on a slow swell.
+  if (uUnder > 0.01) {
+    bend += vec2(sin(vUv.y * 22.0 + uTime * 2.1), cos(vUv.x * 18.0 + uTime * 1.7)) * 0.0038 * uUnder;
   }
   uv += bend;
 
@@ -192,6 +170,11 @@ void main() {
   // frame, scaled down in the highlights so the sky does not sizzle.
   col *= uGrade * uMood;
   col = mix(vec3(luma(col)), col, uSaturation);
+  // Water takes the red first and the edges of the frame with it.
+  if (uUnder > 0.01) {
+    col = mix(col, col * vec3(0.3, 0.8, 0.92) + vec3(0.0, 0.025, 0.045), uUnder * 0.88);
+    col *= 1.0 - uUnder * 0.4 * smoothstep(0.18, 0.85, r);
+  }
   if (uGrain > 0.0001) {
     float gr = fract(sin(dot(vUv * vec2(1213.0, 819.0) + fract(uTime) * 7.31, vec2(12.9898, 78.233))) * 43758.5453) - 0.5;
     col += gr * uGrain * (1.0 - smoothstep(0.6, 1.4, luma(col)) * 0.7);
@@ -218,9 +201,9 @@ function atmosphereShader(taps) {
       uHeat: { value: [0, 1, 2, 3].map(() => new THREE.Vector4(0, 0, 0, 0)) },
       uHaze: { value: 0 },
       uShock: { value: [0, 1].map(() => new THREE.Vector4(0, 0, 0, 0)) },
-      uLensRain: { value: 0 },
       uMood: { value: new THREE.Color(1, 1, 1) },
       uSaturation: { value: 1 },
+      uUnder: { value: 0 },
     },
     vertexShader: ATMOSPHERE_VERT,
     fragmentShader: atmosphereFrag(taps),
@@ -243,8 +226,8 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
       render: () => renderer.render(scene, camera),
       setSize: () => {}, setPixelRatio: () => {}, update: () => {},
       setSun: () => {}, setNight: () => {}, rack: () => {}, dispose: () => {},
-      setHeat: () => {}, setHaze: () => {}, shockwave: () => {}, setLensRain: () => {},
-      setMood: () => {}, dip: () => {},
+      setHeat: () => {}, setHaze: () => {}, shockwave: () => {},
+      setMood: () => {}, dip: () => {}, setUnderwater: () => {},
     };
   }
 
@@ -335,9 +318,16 @@ export function createPostProcess(renderer, scene, camera, { tier = 'high', widt
       if (shocks.length >= 2) shocks.shift();
       shocks.push({ x, y, age: 0, strength: Math.min(1, strength) });
     },
-    setLensRain(v) { u.uLensRain.value = Math.max(0, Math.min(1, v)); },
-    /** Mood grade (a THREE.Color multiplier) and saturation, eased toward. */
-    setMood(grade, saturation = 1) { moodTarget.copy(grade); satTarget = saturation; },
+    /** 0..1: how far under the waterline the camera is (the renderer eases it). */
+    setUnderwater(v) { u.uUnder.value = Math.max(0, Math.min(1, v)); },
+    /**
+     * Mood grade (a THREE.Color multiplier) and saturation, eased toward. `snap` jumps
+     * there: a lens being switched is the viewer's own act and should answer at once.
+     */
+    setMood(grade, saturation = 1, snap = false) {
+      moodTarget.copy(grade); satTarget = saturation;
+      if (snap) { u.uMood.value.copy(grade); u.uSaturation.value = saturation; }
+    },
     /** Drain the colour out of the frame for `seconds`, then let it come back slowly. */
     dip(amount = 1, seconds = 4) { dipAmount = Math.max(dipAmount, Math.min(1, amount)); dipHold = Math.max(dipHold, seconds); },
 

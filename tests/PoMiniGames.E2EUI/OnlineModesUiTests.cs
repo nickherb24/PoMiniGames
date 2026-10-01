@@ -49,7 +49,7 @@ public class OnlineModesUiTests
 
     [Theory]
     [InlineData("/pobrawl/multi", "Start Fight", "/pobrawl/online", "#pobrawl-container canvas")]
-    [InlineData("/poracer/multi", "Start Race", "/poracer", ".race-hud")]
+    [InlineData("/poracer/multi", "Start Race", "/poracer/multi?code=", ".race-hud")]
     // Voxel Strike's lobby is the Online tab of the game page itself (2026-09-30): the run starts
     // in place, so the URL does not move and the engine canvas — which only exists once the
     // host has started and the squad's arena is built — is what proves both arrived.

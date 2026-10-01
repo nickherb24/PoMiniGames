@@ -51,7 +51,7 @@ public static class PoCabinetCareerEndpoints
             return Results.BadRequest(new { error = "invalid_json", detail = ex.Message });
         }
         if (dto is null) return Results.BadRequest(new { error = "empty_body" });
-        if (dto.CurrentStageIndex < 0 || dto.CurrentStageIndex > 2)
+        if (dto.CurrentStageIndex < 0 || dto.CurrentStageIndex > 3)
             return Results.BadRequest(new { error = "current_stage_index_out_of_range" });
 
         // Echo the saved state for now. T5 wires Azure Table Storage here.

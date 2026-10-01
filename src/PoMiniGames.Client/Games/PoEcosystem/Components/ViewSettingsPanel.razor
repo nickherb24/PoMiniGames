@@ -3,7 +3,7 @@
    (sim/persistence/prefs.js), and none of it reaches the simulation. *@
 <div class="poeco-viewsettings">
     <h3>Graphics</h3>
-    <label class="poeco-field">
+    <label class="poeco-field" title="Resolution also scales itself when the frame rate drops. Changing quality rebuilds the view; the island keeps running.">
         <span>Quality</span>
         <select value="@(Settings?.Quality ?? "auto")" @onchange="QualityChanged">
             <option value="auto">Auto (detect this device)</option>
@@ -12,7 +12,6 @@
             <option value="low">Low — no shadows or particles</option>
         </select>
     </label>
-    <p class="poeco-note">Resolution also scales itself when the frame rate drops. Changing quality rebuilds the view; the island keeps running.</p>
 
     <h3>Accessibility</h3>
     <label class="poeco-field">
@@ -28,14 +27,9 @@
     </label>
 
     <h3>Controls</h3>
-    @if (Settings?.Gamepad == true)
-    {
-        <p class="poeco-note">Gamepad connected: left stick moves, right stick looks, A inspect, B float/walk, X follow, Y dashboard, bumpers rise/sink, Start cinematic.</p>
-    }
-    else
-    {
-        <p class="poeco-note">Gamepads work too — connect one and press a button.</p>
-    }
+    <p class="poeco-note" title="Left stick moves, right stick looks, A inspect, B float/walk, X follow, Y dashboard, bumpers rise/sink, Start cinematic.">
+        @(Settings?.Gamepad == true ? "Gamepad connected (hover for its buttons)." : "Gamepads work too: connect one and press a button.")
+    </p>
     @if (Settings is { } s)
     {
         <table class="poeco-bindings">
@@ -57,7 +51,7 @@
         </table>
         <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnResetBindings">Reset to defaults</button>
     }
-    <p class="poeco-note"><kbd>Tab</kbd> dashboard · <kbd>Esc</kbd> close · <kbd>0</kbd>–<kbd>3</kbd> speed are fixed.</p>
+    <p class="poeco-note">Fixed: <kbd>Tab</kbd> dashboard · <kbd>Esc</kbd> close · <kbd>0</kbd>–<kbd>3</kbd> speed · <kbd>/</kbd> find · <kbd>L</kbd> lens · <kbd>H</kbd> keys</p>
 </div>
 
 @code {

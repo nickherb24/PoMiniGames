@@ -48,10 +48,6 @@ const CALL_MARKS = 2.9;
 const CALL_SET = 1.3;
 /** Each sequence key is a note; a clean cadence climbs, a wrong key scuffs. */
 const KEY_PITCH = [0.84, 0.94, 1.06, 1.26];
-/** Photo finish: the leader this close to the line with a rival this close behind. */
-const PHOTO_ZONE_M = 6;
-const PHOTO_GAP_M = 1.5;
-const PHOTO_SCALE = 0.35;
 
 /** Anims every meet needs; punch/kick belong to the field events (events.js). */
 const MEET_ANIMS = ['idle', 'walk', 'run', 'jump', 'hitreact', 'dance'];
@@ -157,7 +153,6 @@ export class SportsGame {
     this.legTicks = 0;
     this.finishOrder = [];
     this.tape = { broken: false, age: 0 };
-    this.timeScale = 1;
     this.freeze = 0;
     this.banner = null;
     this.startCall = '';
@@ -218,11 +213,11 @@ export class SportsGame {
       const real = Math.min((now - last) / 1000, 0.25); // clamp tab-switch spikes
       last = now;
       pollGamepads();
-      // Hit-stop holds the simulation for a beat; the photo finish stretches it.
-      // Both scale how much real time FEEDS the fixed-step accumulator, so leg times
-      // stay on the sim clock and a slow-motion finish costs nobody a hundredth.
+      // Hit-stop holds the simulation for a beat by withholding real time from the
+      // fixed-step accumulator, so leg times stay on the sim clock. Nothing else may
+      // scale what feeds it: the meet runs at one speed, finish included.
       if (this.freeze > 0) this.freeze -= real;
-      else acc += real * (this.remote ? 1 : this.timeScale);
+      else acc += real;
       while (acc >= FIXED_DT) {
         if (!this.remote) this.tick(FIXED_DT);
         else this.tickRemoteClock(FIXED_DT);
@@ -441,13 +436,11 @@ export class SportsGame {
 
     this.renderer.updateCamera(dt, this.lanes.map((l) => l.state), legLength);
     this.driveTension(this.lanes.map((l) => l.state), legLength);
-    this.photoFinish(legLength);
 
     if (this.lanes.every((l) => l.state.finished)) {
       if (this.leg === 'sprint') {
         this.setPhase('interstitial');
         this.phaseClock = CONSTANTS.INTERSTITIAL_SECONDS;
-        this.timeScale = 1;
         const winner = [...this.lanes].sort((a, b) => a.sprintSeconds - b.sprintSeconds)[0];
         this.announce(`${winner.name} takes the sprint in ${winner.sprintSeconds.toFixed(1)} seconds`);
         try { this.dotnet?.invokeMethodAsync('OnLegDone', 'sprint', this.lanes.map((l) => l.sprintSeconds)); } catch { }
@@ -502,23 +495,7 @@ export class SportsGame {
         lines: [`${a.lane.name}  ${a.time.toFixed(2)}`, `${b.lane.name}  +${(b.at - a.at).toFixed(2)}`],
         until: performance.now() + 2600,
       };
-      if (!this.reduced && !this.remote) this.freeze = Math.max(this.freeze, 0.45); // hold the frame
     }
-  }
-
-  /**
-   * Slow the last strides of a tight finish. Local modes only: online the clock is
-   * the server's and every client must see the same instant.
-   */
-  photoFinish(legLength) {
-    let tight = false;
-    if (!this.reduced && this.finishOrder.length < 2 && this.lanes.length > 1) {
-      const pos = this.lanes.map((l) => l.state.position).sort((a, b) => b - a);
-      const front = this.finishOrder.length ? pos[1] : pos[0];
-      const chaser = this.finishOrder.length ? pos[2] ?? -99 : pos[1];
-      tight = front >= legLength - PHOTO_ZONE_M && front < legLength && front - chaser < PHOTO_GAP_M;
-    }
-    this.timeScale += ((tight ? PHOTO_SCALE : 1) - this.timeScale) * 0.2;
   }
 
   /**
@@ -585,7 +562,6 @@ export class SportsGame {
     this.setPhase('podium');
     this.phaseClock = PODIUM_SECONDS;
     this.podiumClock = 0;
-    this.timeScale = 1;
     const results = {
       lanes: this.lanes.map((l) => ({
         lane: l.index, name: l.name, character: l.character, human: l.human,
@@ -770,15 +746,12 @@ export class SportsGame {
     this.punch = Math.max(0, (this.punch || 0) - real * 3.5);
     if (this.tape.broken) this.tape.age += real;
     for (const l of this.lanes) for (const [k, v] of l.knocked) l.knocked.set(k, v + real);
-    const slow = 1 - (this.remote ? 1 : this.timeScale);
-    r.zoom += ((1 + slow * 0.26) - r.zoom) * 0.12;
 
     const leader = Math.max(0, ...states.map((s) => s.position));
     r.drawScene(this.leg === 'hurdles' ? 'hurdles' : 'sprint', laneCount, {
       knocked: this.lanes.map((l) => l.knocked),
       tape: this.tape,
       waveX: this.phase === 'racing' ? r.toX(leader) : undefined,
-      focusX: Math.min(r.viewW * 0.8, Math.max(r.viewW * 0.2, r.toX(legLength))),
     });
     this.fx.draw(ctx, (m) => r.toX(m), true);
 
@@ -814,9 +787,7 @@ export class SportsGame {
     this.fx.draw(ctx, null, false);
     this.drawOverlay(now);
 
-    if (this.post && !this.post.render({
-      punch: this.punch, grade: slow / (1 - PHOTO_SCALE), heat: this.night ? 0 : 1, night: this.night ? 1 : 0, time: now / 1000,
-    })) {
+    if (this.post && !this.post.render({ punch: this.punch, night: this.night ? 1 : 0 })) {
       this.post.dispose();
       this.post = null;
     }
@@ -829,7 +800,7 @@ export class SportsGame {
     const r = this.renderer;
     const s = g.state;
     const anim = s.finished ? 'idle' : s.stumbling > 0 ? 'hitreact' : s.airborne > 0 ? 'jump' : s.speed > 3 ? 'run' : s.speed > 0.3 ? 'walk' : 'idle';
-    if (anim !== g.anim) { g.anim = anim; g.animTime = 0; } else g.animTime += real * this.timeScale;
+    if (anim !== g.anim) { g.anim = anim; g.animTime = 0; } else g.animTime += real;
     const i = g.lane.index;
     const h = r.spriteHeight(i, laneCount);
     const jumpT = s.airborne > 0 ? 1 - s.airborne / CONSTANTS.JUMP_DURATION : 0;

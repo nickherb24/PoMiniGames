@@ -23,6 +23,9 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player?autoGuest=1");
         await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         await page.Locator($"input[name=poracer-track][value={track}]").CheckAsync();
+        // The scripted driver holds 235-300 units/s on the centerline: a bronze-medal lap. That
+        // keeps up with the Easy field; Medium and Hard would win and close the race on it.
+        await page.GetByText("Easy", new() { Exact = true }).ClickAsync();
         var save = page.WaitForResponseAsync(r => r.Url.EndsWith("/api/poracer/scores", StringComparison.Ordinal) && r.Request.Method == "POST", new() { Timeout = 200000 });
         await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
         await page.Locator(".race-countdown").WaitForAsync();
@@ -41,14 +44,12 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{track}-results.png" });
         await page.GetByRole(AriaRole.Button, new() { Name = "Play again" }).ClickAsync();
         await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync();
-        (await page.Locator(".racer-gl").CountAsync()).Should().Be(0);
-        // Reduced effects are always on now (the toggle was removed), so the GL
-        // layer must stay absent across the restart too.
+        // The lap just driven is on its track card as a personal best.
+        (await page.Locator(".track-card.selected .track-best").InnerTextAsync()).Should().Contain("Your best");
         driver.Reset();
         await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
         await page.Locator(".race-metrics").WaitForAsync();
-        (await page.Locator(".racer-gl").CountAsync()).Should().Be(0);
-        await page.GetByRole(AriaRole.Button, new() { Name = "Back to start", Exact = true }).ClickAsync();
+        await BackToStartAsync(page);
         errors.Should().BeEmpty();
     }
 
@@ -101,6 +102,14 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         hostDriver.Should().NotBe(guestDriver);
     }
 
+    /// <summary>Leave a race the way a player does: the pause menu, then Back to start.</summary>
+    private static async Task BackToStartAsync(IPage page)
+    {
+        await page.GetByRole(AriaRole.Button, new() { Name = "Pause", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Back to start", Exact = true }).ClickAsync();
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync();
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -134,11 +143,13 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         if (touch) await page.Locator("[data-po-input=up]").DispatchEventAsync("pointerup", new { pointerId = 1, bubbles = true });
         else await page.Keyboard.UpAsync("ArrowUp");
         await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{(touch ? "mobile" : "desktop")}.png" });
-        await page.GetByRole(AriaRole.Button, new() { Name = "Back to start", Exact = true }).ClickAsync();
-        (await page.Locator(".racer-gl").CountAsync()).Should().Be(0);
+        // The minimap and the mini standings are on screen at both sizes (the phone used to lose the standings).
+        (await page.Locator("#racerMinimap").IsVisibleAsync()).Should().BeTrue();
+        (await page.Locator(".race-standings li").CountAsync()).Should().Be(4);
+        await BackToStartAsync(page);
         await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).ClickAsync();
         await page.Locator(".race-metrics").WaitForAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Back to start", Exact = true }).ClickAsync();
+        await BackToStartAsync(page);
         errors.Should().BeEmpty();
         (await page.EvaluateAsync<bool>("() => document.documentElement.scrollWidth <= innerWidth")).Should().BeTrue();
     }

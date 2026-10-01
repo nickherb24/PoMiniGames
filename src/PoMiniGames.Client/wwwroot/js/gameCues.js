@@ -327,7 +327,14 @@ const CUES = {
                 v('noise', 0, 0.50, 0.26, { decay: 0.48, cutoff: 4200, cutoffEnd: 260, q: 1.1, sweep: 0.45 }),
                 v('sine', 96, 0.30, 0.26, { freqEnd: 40, sweep: 0.28, decay: 0.28, drive: 0.7 }),
             ],
-            feel: 'heavy', duck: 0.5,
+            // 'medium', not 'heavy': heavy throws a shockwave from the centre of the viewport,
+            // which is where the camera keeps your car. Same reasoning as the fx note above.
+            feel: 'medium', duck: 0.5,
+        },
+        // Start gantry: one of these per lamp as it comes on (js/poracer/audio.js `lights`).
+        light: {
+            voices: [v('square', 520, 0.11, 0.09, { decay: 0.10, cutoff: 2600 })],
+            feel: null, jitter: 0,
         },
         checkpoint: {
             voices: [

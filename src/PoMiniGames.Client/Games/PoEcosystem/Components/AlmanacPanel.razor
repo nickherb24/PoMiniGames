@@ -12,7 +12,7 @@
         </div>
     </div>
 
-    <h3>Weather</h3>
+    <h3 title="Rain and storms speed up grass and berries and douse fires; droughts slow growth, make everything thirstier and let fire run. Storms throw their own lightning.">Weather</h3>
     <p class="poeco-note">
         Now: <strong>@(Stats?.Weather?.Name ?? "Clear")</strong>@(Stats?.Weather is { Kind: > 0 } w ? $" ({w.Intensity:P0})" : "") ·
         soil moisture @((Stats?.Weather?.Wetness ?? 0.5).ToString("P0")).
@@ -21,7 +21,6 @@
             <span> Spells so far — rain @wc[1], storms @wc[2], droughts @wc[3], snow @wc[4].</span>
         }
     </p>
-    <p class="poeco-note">Rain and storms speed up grass and berries and douse fires; droughts slow growth, make everything thirstier and let fire run. Storms throw their own lightning.</p>
 
     <h3>Species totals</h3>
     <table class="poeco-species-table">
@@ -62,7 +61,7 @@
         </div>
     }
 
-    <h3>Age structure</h3>
+    <h3 title="Shades per row: light = young, full = adult, dark = old">Age structure</h3>
     <div class="poeco-ages">
         @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
         {
@@ -77,9 +76,8 @@
             </div>
         }
     </div>
-    <p class="poeco-note">Shades per row: light = young, full = adult, dark = old.</p>
 
-    <h3>Varieties</h3>
+    <h3 title="When a species' average personality drifts far from where it started, the island names the new variety after the biggest shift">Varieties</h3>
     @if (Stats?.Varieties is { Length: > 0 } vs)
     {
         <ul class="poeco-varieties">
@@ -91,16 +89,12 @@
     }
     else
     {
-        <p class="poeco-note">None yet. When a species' average personality drifts far from where it started, the island names the new variety after the biggest shift.</p>
+        <p class="poeco-note">None yet.</p>
     }
 
-    <h3>Field guide</h3>
-    @if (Cards.Count == 0)
+    @if (Cards.Count > 0)
     {
-        <p class="poeco-note">Real-world notes on the four species load from iNaturalist and Wikipedia when you are online.</p>
-    }
-    else
-    {
+        <h3>Field guide</h3>
         <div class="poeco-fieldguide">
             @foreach (var c in Cards.OrderBy(c => c.Species))
             {
@@ -122,6 +116,11 @@
             }
         </div>
     }
+
+    <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnExportTelemetry"
+            title="One record per creature that ever lived — lifespan, cause of death, killer, distance travelled, offspring, drives and personality. Feed it to a model to study the island.">
+        Export telemetry (JSON)
+    </button>
 </div>
 
 @code {
@@ -142,6 +141,7 @@
 
     [Parameter, EditorRequired] public EcoStats? Stats { get; set; }
     [Parameter] public IReadOnlyList<EcoSpeciesCard> Cards { get; set; } = [];
+    [Parameter] public EventCallback OnExportTelemetry { get; set; }
 
     private string DiversityText => Stats?.Biodiversity is { } b ? $"{b.Shannon:0.00} · {b.Evenness:0.00} · {b.Richness}" : "—";
     private int SickOf(int s) => Stats?.Sick is { Length: EcoSpeciesInfo.Count } k ? k[s] : 0;

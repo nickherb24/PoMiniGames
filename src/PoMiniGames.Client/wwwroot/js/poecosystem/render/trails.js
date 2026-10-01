@@ -76,6 +76,9 @@ export function createTrails(size) {
 
   return {
     texture,
+    /** The WEAR grid (width × width floats, 0..1) — the minimap's traffic layer reads it. */
+    get wear() { return wear; },
+    get width() { return W; },
     /**
      * Per rendered frame. `rows` is the renderer's interpolated creature buffer; `speeds`
      * its per-row ground speed (m/s).

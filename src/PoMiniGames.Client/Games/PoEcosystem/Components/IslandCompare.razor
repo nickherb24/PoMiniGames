@@ -1,0 +1,57 @@
+@using System.Globalization
+@* Two islands on one chart (2026-09-30): the one on screen, solid, and a shared one from the
+   gallery, dashed — the same four species lines over the years both have lived. The shared
+   island's rows are read out of its snapshot without booting it (index.js peekHistory). *@
+<figure class="poeco-compare">
+    <figcaption>
+        <strong>This island</strong> <span class="poeco-compare-key poeco-compare-key--solid" aria-hidden="true"></span>
+        against <strong>@TheirName</strong> <span class="poeco-compare-key poeco-compare-key--dashed" aria-hidden="true"></span>
+    </figcaption>
+    @if (Span < 1)
+    {
+        <p class="poeco-note">Neither island has a year of history yet.</p>
+    }
+    else
+    {
+        <svg viewBox="0 0 @W @H" preserveAspectRatio="none" class="poeco-chart poeco-compare-chart" role="img" aria-label="@Summary">
+            <line x1="0" y1="@(H - 1)" x2="@W" y2="@(H - 1)" class="poeco-chart-axis" />
+            @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+            {
+                <polyline class="poeco-chart-line" style="stroke: @EcoSpeciesInfo.ColourOf(s)" points="@Points(Mine, s + 1)" />
+                <polyline class="poeco-chart-line poeco-compare-theirs" style="stroke: @EcoSpeciesInfo.ColourOf(s)" points="@Points(Theirs, s + 1)" />
+            }
+        </svg>
+        <p class="poeco-note">Years 0–@Span. @Summary</p>
+    }
+</figure>
+
+@code {
+    private const int W = 480;
+    private const int H = 130;
+
+    [Parameter] public int[][] Mine { get; set; } = [];
+    [Parameter] public int[][] Theirs { get; set; } = [];
+    [Parameter] public string TheirName { get; set; } = "";
+
+    private int Span => Math.Max(Mine.Length > 0 ? Mine[^1][0] : 0, Theirs.Length > 0 ? Theirs[^1][0] : 0);
+
+    private int Peak => Math.Max(1, Mine.Concat(Theirs).Where(r => r.Length >= 5).SelectMany(r => r.Skip(1).Take(EcoSpeciesInfo.Count)).DefaultIfEmpty(1).Max());
+
+    private string Points(int[][] rows, int column)
+    {
+        var span = Math.Max(1, Span); var peak = Peak;
+        return string.Join(' ', rows.Where(r => r.Length > column).Select(r =>
+            $"{F(W * (double)r[0] / span)},{F(H - 4 - (H - 10) * (double)r[column] / peak)}"));
+    }
+
+    private string Summary
+    {
+        get
+        {
+            static int Alive(int[][] rows) => rows.Length == 0 || rows[^1].Length < 5 ? 0 : rows[^1].Skip(1).Take(EcoSpeciesInfo.Count).Sum();
+            return $"Now: {Alive(Mine)} alive here, {Alive(Theirs)} there.";
+        }
+    }
+
+    private static string F(double v) => v.ToString("0.#", CultureInfo.InvariantCulture);
+}

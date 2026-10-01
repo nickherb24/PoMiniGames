@@ -225,9 +225,6 @@ public sealed class AIFoundryOptions
         /// <summary>PoEcosystem: chieftain council diplomatic treaty negotiation.</summary>
         public const string EcosystemTreaty = "ecosystem.treaty";
 
-        /// <summary>PoEcosystem: player natural language divine decree interpretation.</summary>
-        public const string EcosystemDecree = "ecosystem.decree";
-
         /// <summary>PoEcosystem: historical oral legends commemorating civilization milestones.</summary>
         public const string EcosystemMilestoneLore = "ecosystem.lore";
 

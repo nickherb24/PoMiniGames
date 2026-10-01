@@ -1,6 +1,7 @@
 using FluentAssertions;
 using PoMiniGames.Features.PoEcosystem;
 using PoMiniGames.Shared.Games.PoEcosystem;
+using PoMiniGamesClient.Games.PoEcosystem.Models;
 
 namespace PoMiniGames.Unit.Features.PoEcosystem;
 
@@ -9,6 +10,12 @@ namespace PoMiniGames.Unit.Features.PoEcosystem;
 /// One theory over the three because the Unit tier sits at its ceiling; each row is one
 /// contract the endpoint and the mock-mode E2E path rely on.
 /// </summary>
+/// <remarks>
+/// The last two rows (2026-09-30) are the viewer's own pure logic, kept in this theory for
+/// the same reason: how a wager is settled from the island's per-year rows, and when a
+/// watch alert fires. Both only ever read what the sim reports — the island is observed,
+/// never steered — so "what the page concludes from the numbers" is all there is to test.
+/// </remarks>
 public sealed class EcosystemChronicleServiceTests
 {
     private static EcoChronicleRequest Request(int lines = 3) => new(
@@ -25,8 +32,9 @@ public sealed class EcosystemChronicleServiceTests
     [InlineData("compress_log")]
     [InlineData("batch_thought")]
     [InlineData("treaty")]
-    [InlineData("decree")]
     [InlineData("lore_culture")]
+    [InlineData("wager")]
+    [InlineData("alerts")]
     public void Chronicler_PureEdges_HoldTheirContracts(string edge)
     {
         switch (edge)
@@ -201,25 +209,6 @@ public sealed class EcosystemChronicleServiceTests
                     parsedTreaty.ResourceAmount.Should().Be(25);
                     break;
                 }
-            case "decree":
-                {
-                    var decreeReq = new EcoDecreeRequest(123, 5, "Send a pack of wolves to test the village");
-                    var mockDecree = EcosystemChronicleService.MockDecree(decreeReq);
-                    mockDecree.Should().NotBeNull();
-                    mockDecree.ActionType.Should().Be("SpawnCreatures");
-                    mockDecree.TargetEntity.Should().Be("Wolf");
-                    mockDecree.Quantity.Should().BeInRange(1, 10);
-
-                    var rainReq = new EcoDecreeRequest(123, 5, "Bring rain and storm to the parched lands");
-                    var rainDecree = EcosystemChronicleService.MockDecree(rainReq);
-                    rainDecree.ActionType.Should().Be("NudgeWeather");
-
-                    var parsedDecree = EcosystemChronicleService.ParseDecree("{\"intent\":\"Bounty\",\"actionType\":\"SpawnResource\",\"targetTribeId\":1,\"targetEntity\":\"Food\",\"quantity\":60,\"divineMessage\":\"May your granaries swell.\"}");
-                    parsedDecree.Should().NotBeNull();
-                    parsedDecree!.ActionType.Should().Be("SpawnResource");
-                    parsedDecree.Quantity.Should().Be(60);
-                    break;
-                }
             case "lore_culture":
                 {
                     var loreReq = new EcoMilestoneLoreRequest(77, 25, "FirstGranary", "Amber Clan", "Completed the first stone storehouse");
@@ -231,6 +220,70 @@ public sealed class EcosystemChronicleServiceTests
                     var parsedLore = EcosystemChronicleService.ParseLore("{\"epithet\":\"The Stone Age Dawn\",\"oralLegend\":\"When the storehouses rose, winter held no fear.\"}");
                     parsedLore.Should().NotBeNull();
                     parsedLore!.Epithet.Should().Be("The Stone Age Dawn");
+                    break;
+                }
+            case "wager":
+                {
+                    // Rows are [year, rabbits, deer, wolves, humans, tech, H'×1000], one per year.
+                    static int[][] Years(int to, Func<int, int[]> row) => Enumerable.Range(0, to + 1).Select(y => new[] { y }.Concat(row(y)).ToArray()).ToArray();
+                    var extinct = EcoWagers.All.Single(q => q.Id == "extinct");
+                    var alive = EcoWagers.All.Single(q => q.Id == "alive10");
+                    var tech = EcoWagers.All.Single(q => q.Id == "tech20");
+
+                    // Wolves die out in year 7: settled the moment the row says so, long before year 30.
+                    var wolvesGone = Years(12, y => [40 + y, 20, y >= 7 ? 0 : 6, 18, Math.Min(4, y / 5), 900]);
+                    EcoWagers.Outcome(extinct, wolvesGone).Should().Be(2);
+                    EcoWagers.Outcome(alive, wolvesGone).Should().Be(0, "50 + 20 + 0 + 18 = 88 at year 10 is under 100");
+                    EcoWagers.Outcome(tech, wolvesGone).Should().BeNull("year 20 has not been lived yet");
+
+                    // Nobody dies out: unknown until year 30, then "none of them".
+                    EcoWagers.Outcome(extinct, Years(29, _ => [100, 60, 12, 30, 2, 900])).Should().BeNull();
+                    var thriving = Years(30, _ => [100, 60, 12, 30, 2, 900]);
+                    EcoWagers.Outcome(extinct, thriving).Should().Be(4);
+                    EcoWagers.Outcome(alive, thriving).Should().Be(2, "202 alive is the 175–249 bucket");
+                    EcoWagers.Outcome(tech, thriving).Should().Be(2);
+                    EcoWagers.Outcome(extinct, []).Should().BeNull();
+
+                    // The book scores each bet once, however often the history is re-sent.
+                    var book = new EcoWagerBook();
+                    book.Open(seed: 99);
+                    book.Pick("extinct", 4);
+                    book.Pick("alive10", 0);
+                    var before = (book.Record.Points, book.Record.Right, book.Record.Settled);
+                    book.Settle(thriving).Should().HaveCount(2);
+                    book.Settle(thriving).Should().BeEmpty("a settled bet is not scored twice");
+                    (book.Record.Points - before.Points).Should().Be(extinct.Points, "one right, one wrong");
+                    (book.Record.Right - before.Right).Should().Be(1);
+                    (book.Record.Settled - before.Settled).Should().Be(2);
+                    break;
+                }
+            case "alerts":
+                {
+                    static EcoStats Stats(int wolves) => new(
+                        Tick: 1, Speed: 1, Year: 1, Day: 1, DayFraction: 0.5, Alive: 60 + wolves, Huts: 3,
+                        Counts: [40, 20, wolves, 0], Extinct: [false, false, false, false], LastStanding: -1, Silent: false,
+                        Carcasses: 0, SimLag: 0, LlmEnabled: false, Llm: new EcoLlmCounters(0, 0, 0), PopHistory: [],
+                        NaturalEvents: new EcoNaturalEvents(0, 0, 0));
+
+                    var rule = new EcoAlertRule(Species: 2, Below: true, Value: 5);
+                    rule.Describe().Should().Be("Wolves below 5");
+                    rule.Holds(Stats(4)).Should().BeTrue();
+                    rule.Holds(Stats(5)).Should().BeFalse();
+                    new EcoAlertRule(-1, Below: false, Value: 64).Holds(Stats(5)).Should().BeTrue("65 creatures alive is above 64");
+
+                    // An alert is an edge, not a level: once when it starts to hold, again only
+                    // after it has stopped holding — and never for the state a world opens in.
+                    var book = new EcoAlertBook();
+                    foreach (var old in book.Rules.ToArray()) book.Remove(old);
+                    book.Add(rule).Should().BeTrue();
+                    book.Add(rule).Should().BeFalse("the same rule twice is one rule");
+                    book.ResetWorld();
+                    book.Observe(Stats(3)).Should().BeEmpty("what holds on a world's first message is not news");
+                    book.Observe(Stats(8)).Should().BeEmpty();
+                    book.Observe(Stats(4)).Should().ContainSingle();
+                    book.Observe(Stats(2)).Should().BeEmpty("still holding");
+                    book.Observe(Stats(9)).Should().BeEmpty();
+                    book.Observe(Stats(1)).Should().ContainSingle("it re-armed when the wolves recovered");
                     break;
                 }
         }

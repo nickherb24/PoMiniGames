@@ -17,7 +17,6 @@ public sealed class PoCabinetUiSettings
     public double MasterVolume { get; set; } = 0.7;
     public bool Muted { get; set; }
     public bool Music { get; set; } = true;
-    public bool Voices { get; set; } = true;
     public double HudScale { get; set; } = 1;
     public bool ReducedMotion { get; set; }
     public bool ColorSafe { get; set; }

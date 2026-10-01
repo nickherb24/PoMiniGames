@@ -1,11 +1,15 @@
 // posports/postfx.js — one WebGL2 pass over the finished Canvas 2D frame.
 //
 // Same arrangement as pojevarena/postfx.js: the meet is drawn in Canvas 2D and this
-// pass only grades the picture. A glow on the bright pixels (floodlights, chalk,
-// confetti), a heat shimmer low over the far straight on a day meet, a chromatic
-// kick on a stumble, and the washed, slowed look of a photo finish. The 2D canvas
-// stays underneath as the input (made transparent, not hidden), and must stay first
-// in the DOM so anything that samples "the game's canvas" still finds it.
+// pass only grades the picture: a glow on the bright pixels (floodlights, chalk,
+// confetti), a chromatic kick on a stumble and a vignette. The 2D canvas stays
+// underneath as the input (made transparent, not hidden), and must stay first in
+// the DOM so anything that samples "the game's canvas" still finds it.
+//
+// Nothing here may move a pixel sideways by where it sits in the frame. A day-meet
+// heat shimmer used to (a sine of y added to x across the band 20-50% down the
+// frame), and that band is the top lane: its hurdles and runner were drawn wavy
+// while every lane below stayed straight. Removed 2026-10-01.
 //
 // Optional by design: no WebGL2, the low quality tier, reduced motion, or a lost
 // context all return null / false, and the caller simply shows the 2D canvas.
@@ -24,13 +28,9 @@ in vec2 v;
 out vec4 o;
 uniform sampler2D tex;
 uniform vec2 px;
-uniform float punch, grade, heat, night, time;
+uniform float punch, night;
 void main() {
     vec2 uv = v;
-    // Shimmer in a band over the far side of the track (v.y is up: the track's far
-    // edge sits at ~0.78 of the frame).
-    float band = smoothstep(0.50, 0.66, uv.y) * smoothstep(0.80, 0.70, uv.y);
-    uv.x += sin(uv.y * 150.0 + time * 5.0) * 0.0011 * heat * band;
     vec2 c = uv - 0.5;
     float ca = punch * 0.006;
     vec3 col = vec3(texture(tex, uv + c * ca).r, texture(tex, uv).g, texture(tex, uv - c * ca).b);
@@ -42,10 +42,8 @@ void main() {
         glow += max(texture(tex, uv + d * 6.0).rgb - knee, 0.0) + max(texture(tex, uv + d * 15.0).rgb - knee, 0.0) * 0.6;
     }
     col += glow * mix(0.035, 0.06, night);
-    float l = dot(col, vec3(0.299, 0.587, 0.114));
-    col = mix(col, vec3(l) * vec3(1.08, 1.0, 0.9), grade * 0.5);
     float vig = smoothstep(0.9, 0.3, length(c * vec2(1.1, 1.0)));
-    col *= mix(1.0, vig, 0.22 + grade * 0.3);
+    col *= mix(1.0, vig, 0.22);
     o = vec4(col, 1.0);
 }`;
 
@@ -71,7 +69,7 @@ function build(gl) {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
   const u = (n) => gl.getUniformLocation(prog, n);
-  return { prog, tex, loc: { px: u('px'), punch: u('punch'), grade: u('grade'), heat: u('heat'), night: u('night'), time: u('time') } };
+  return { prog, tex, loc: { px: u('px'), punch: u('punch'), night: u('night') } };
 }
 
 /**
@@ -91,7 +89,7 @@ export function createPostFx(target, source, { reduced = false } = {}) {
 
   return {
     /** Draws one frame; false means the pass is unusable now and the 2D canvas must show. */
-    render({ punch = 0, grade = 0, heat = 0, night = 0, time = 0 }) {
+    render({ punch = 0, night = 0 }) {
       if (gl.isContextLost() || !source.width) return false;
       if (target.width !== source.width || target.height !== source.height) {
         target.width = source.width;
@@ -103,10 +101,7 @@ export function createPostFx(target, source, { reduced = false } = {}) {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source);
       gl.uniform2f(loc.px, 1 / target.width, 1 / target.height);
       gl.uniform1f(loc.punch, punch);
-      gl.uniform1f(loc.grade, grade);
-      gl.uniform1f(loc.heat, heat);
       gl.uniform1f(loc.night, night);
-      gl.uniform1f(loc.time, time);
       gl.drawArrays(gl.TRIANGLES, 0, 3);
       return true;
     },

@@ -82,6 +82,7 @@ public class MarbleRaceMapCertificationTests
     [InlineData(2)]   // Spiral Works
     [InlineData(3)]   // Grand Spiral
     [InlineData(4)]   // Canyon Run (procedural)
+    [InlineData(5)]   // Playground Run (imported scene)
     public async Task Map_KeepsEveryMarbleOnTheCourse_AndBringsTheFieldHome(int mapId)
     {
         using var playwright = await Playwright.CreateAsync();

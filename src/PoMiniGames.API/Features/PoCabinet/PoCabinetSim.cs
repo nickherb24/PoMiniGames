@@ -27,6 +27,8 @@ public sealed class PoCabinetSim
 
     private readonly PoCabinetTrack _track;
     private readonly List<SimCar> _cars = new();
+    /// <summary><see cref="_cars"/> as the array the physics and the AI scan every tick.</summary>
+    private readonly PoCabinetCarBody[] _bodies;
     private readonly Dictionary<string, SimCar> _byOwnerId = new(StringComparer.Ordinal);
     private readonly Random _rng;
     private double _clock;
@@ -42,6 +44,7 @@ public sealed class PoCabinetSim
             throw new ArgumentException($"max {PoCabinetCatalog.CarCount} drivers", nameof(drivers));
 
         _track = PoCabinetTrack.Get(trackId);
+        TotalLaps = _track.Laps;
         _rng = new Random(seed);
 
         for (int i = 0; i < drivers.Count; i++)
@@ -64,6 +67,7 @@ public sealed class PoCabinetSim
             _cars.Add(car);
             if (d.IsPlayer) _byOwnerId[d.OwnerId] = car;
         }
+        _bodies = [.. _cars];
     }
 
     /// <summary>Track this sim is running on (id is the geometry key).</summary>
@@ -71,8 +75,8 @@ public sealed class PoCabinetSim
 
     public PoCabinetTrack Track => _track;
 
-    /// <summary>Total laps configured for this race.</summary>
-    public int TotalLaps { get; init; } = PoCabinetCatalog.TotalLaps;
+    /// <summary>Total laps configured for this race (the track's own count unless overridden).</summary>
+    public int TotalLaps { get; init; }
 
     /// <summary>Grid countdown before GO. 0 = cars move on the first tick (tests, demos).</summary>
     public double CountdownSeconds { get; init; }
@@ -136,10 +140,11 @@ public sealed class PoCabinetSim
             PoCabinetControls controls;
             if (car.Finished || !car.IsPlayer)
             {
-                // Finished humans roll a cool-down lap on autopilot so they never park on the line.
+                // Finished humans roll a cool-down lap on autopilot so they never park on the line
+                // (on a point-to-point track everyone rolls into the run-out and parks there).
                 var persona = car.Personality ?? PoCabinetPersonality.Officials.BillB;
-                controls = PoCabinetAiDriver.Decide(_track, car, persona, car.Finished ? car.MaxSpeed * 0.6 : car.MaxSpeed,
-                    car.CorneringSkill, _cars, Grip);
+                controls = PoCabinetAiDriver.Decide(_track, car, persona, car.Finished ? car.MaxSpeed * _track.CoolDownAt(car.Distance) : car.MaxSpeed,
+                    car.CorneringSkill, _bodies, Grip);
             }
             else
             {
@@ -148,14 +153,14 @@ public sealed class PoCabinetSim
             }
             PoCabinetPhysics.Step(_track, car, controls, stepDt, Grip);
         }
-        PoCabinetPhysics.ResolveContacts(_cars);
+        PoCabinetPhysics.ResolveContacts(_track, _bodies);
 
         foreach (var car in _cars)
         {
             if (car.Finished) continue;
-            while (car.Distance >= (car.LapsDone + 1) * _track.Length)
+            while (car.Distance >= (car.LapsDone + 1) * _track.LapLength)
             {
-                double boundary = (car.LapsDone + 1) * _track.Length;
+                double boundary = (car.LapsDone + 1) * _track.LapLength;
                 double span = car.Distance - car.PrevDistance;
                 double frac = span > 1e-9 ? Math.Clamp((boundary - car.PrevDistance) / span, 0, 1) : 1;
                 double crossedAt = tickStart + frac * stepDt;
@@ -283,7 +288,9 @@ public sealed record PoCabinetPersonality(
     double LateralOffset = 0.0,
     double BrakingAggression = 0.5,
     double CollisionTolerance = 0.5,
-    double DraftingAffinity = 0.0)
+    double DraftingAffinity = 0.0,
+    double Wildness = 0.0,
+    int Seed = 0)
 {
     /// <summary>The four named officials. Mirrored in <c>js/pocabinet/physics.js</c> (<c>OFFICIALS</c>).</summary>
     public static class Officials
@@ -292,16 +299,16 @@ public sealed record PoCabinetPersonality(
         // (PoCabinetAiPersonalityTests asserts it over a full lap).
         public static readonly PoCabinetPersonality SeanS = new(
             LookaheadDistance: 25, LateralOffset: -0.95, BrakingAggression: 0.95,
-            CollisionTolerance: 0.2, DraftingAffinity: 0.1);
+            CollisionTolerance: 0.2, DraftingAffinity: 0.1, Wildness: 0.12, Seed: 201);
         public static readonly PoCabinetPersonality SteveB = new(
             LookaheadDistance: 45, LateralOffset: 0.85, BrakingAggression: 0.20,
-            CollisionTolerance: 0.6, DraftingAffinity: 0.2);
+            CollisionTolerance: 0.6, DraftingAffinity: 0.2, Wildness: 0.03, Seed: 202);
         public static readonly PoCabinetPersonality BillB = new(
             LookaheadDistance: 100, LateralOffset: 0.0, BrakingAggression: 0.50,
-            CollisionTolerance: 0.9, DraftingAffinity: 0.0);
+            CollisionTolerance: 0.9, DraftingAffinity: 0.0, Wildness: 0.01, Seed: 203);
         public static readonly PoCabinetPersonality MikeP = new(
             LookaheadDistance: 130, LateralOffset: -0.40, BrakingAggression: 0.40,
-            CollisionTolerance: 0.3, DraftingAffinity: 0.95);
+            CollisionTolerance: 0.3, DraftingAffinity: 0.95, Wildness: 0.06, Seed: 204);
     }
 
     /// <summary>The AI roster in seat order: id, display name, colour, line, pace and cornering.
@@ -314,4 +321,44 @@ public sealed record PoCabinetPersonality(
         ("bill-b", "Bill B.", "#a02c2c", Officials.BillB, PoCabinetPhysics.MaxSpeed * 0.91, 0.70),
         ("mike-p", "Mike P.", "#1c8054", Officials.MikeP, PoCabinetPhysics.MaxSpeed * 0.96, 0.60),
     ];
+
+    /// <summary>
+    /// The 99 rivals of a solo race in grid order: the four officials, then 95 field racers from
+    /// the quickest to the slowest. Qualifying order on purpose: a grid sorted any other way has
+    /// to overtake itself, and a hundred cars doing that on a 27-second lap is a traffic jam,
+    /// not a race. A field racer's pace comes from its index; so does its personality, every
+    /// trait from a byte of its own (two hashes of the index), so no two cars drive alike and
+    /// no trait follows from another. The arithmetic is exact on both sides of the mirror
+    /// (<c>physics.js</c> <c>soloField</c>). No names or colours here: the server only re-runs
+    /// the physics (<see cref="PoCabinetLapVerifier"/>).
+    /// </summary>
+    public static IReadOnlyList<(PoCabinetPersonality Personality, double MaxSpeed, double CorneringSkill)> SoloField { get; } = BuildSoloField();
+
+    private static (PoCabinetPersonality, double, double)[] BuildSoloField()
+    {
+        var field = new (PoCabinetPersonality, double, double)[PoCabinetCatalog.SoloCarCount - 1];
+        for (int i = 0; i < Roster.Count; i++) field[i] = (Roster[i].Personality, Roster[i].MaxSpeed, Roster[i].CorneringSkill);
+        int n = field.Length - Roster.Count;
+        for (int i = 0; i < n; i++)
+        {
+            uint h = unchecked((uint)(i + 1) * 0x9E3779B1u);
+            uint g = unchecked((uint)(i + 1) * 0x85EBCA6Bu);
+            double a = (h & 0xff) / 255.0, b = ((h >> 8) & 0xff) / 255.0, c = ((h >> 16) & 0xff) / 255.0, d = (h >> 24) / 255.0;
+            double e = (g & 0xff) / 255.0, f = ((g >> 8) & 0xff) / 255.0, k = ((g >> 16) & 0xff) / 255.0, m = (g >> 24) / 255.0;
+            double pace = 1 - i / (double)(n - 1);
+            field[Roster.Count + i] = (
+                new PoCabinetPersonality(
+                    LookaheadDistance: 30 + 90 * c,
+                    LateralOffset: -0.9 + 1.8 * d,
+                    BrakingAggression: 0.05 + 0.9 * e,
+                    CollisionTolerance: 0.1 + 0.8 * k,
+                    DraftingAffinity: 0.7 * m,
+                    // Most of the field is tidy; a few are a liability.
+                    Wildness: 0.01 + 0.2 * f * f,
+                    Seed: i + 1),
+                PoCabinetPhysics.MaxSpeed * (0.7 + 0.2 * pace + 0.03 * a),
+                0.25 + 0.35 * pace + 0.08 * b);
+        }
+        return field;
+    }
 }

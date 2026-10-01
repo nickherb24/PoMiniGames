@@ -1,7 +1,7 @@
 // pojevarena/render.js — Canvas 2D composition of one arena frame.
 //
 // Layers, bottom to top: cached floor (with tar and brush beds) → stains → tar bubbles → team
-// base markers → target lines → creatures (y-sorted) → pillars → brush tufts → projectiles →
+// base markers → target lines → creatures (y-sorted) → walls and pillars → brush tufts → projectiles →
 // particles → Jev blooms → overlay (HP bars, intent glyphs, slot badges, stale bubbles,
 // selection) → popups → MVP spotlight → kill-cam letterbox. The renderer never reads the sim: it
 // draws "views" (plain unit snapshots, see viewOf) so live play and Black Box replay are drawn by
@@ -72,11 +72,12 @@ export function createRenderer(canvas, { creatures, fx, reduced = false, seed = 
     const looks = creatures.map((c, i) => lookFor(c, i < creatures.length / 2 ? 'blue' : 'red', palette));
     const memory = creatures.map(() => newMemory());
     const arena = arenaFor(seed);
-    // Grass tufts per brush patch, placed once from the patch index so every frame agrees.
+    // Grass tufts per brush patch, placed once from the patch index so every frame agrees. A wall
+    // may stand in a patch; nothing grows on top of it.
     const tufts = arena.brush.flatMap((b, bi) => Array.from({ length: Math.round(b.r * 11) }, (_, i) => {
         const a = (i * 2.399963 + bi) % TAU, d = b.r * Math.sqrt(((i * 7919 + bi * 31) % 97) / 97) * 0.92;
         return { x: b.x + Math.cos(a) * d, y: b.y + Math.sin(a) * d, s: 0.8 + ((i * 13) % 5) / 10, ph: i * 1.7 };
-    }));
+    })).filter(t => !arena.walls.some(b => Math.abs(t.x - b.x) < b.hw + 0.15 && Math.abs(t.y - b.y) < b.hh + 0.3));
     let floor = null;
     let map = null;
     let dpr = 1;
@@ -150,10 +151,14 @@ export function createRenderer(canvas, { creatures, fx, reduced = false, seed = 
             g.lineWidth = Math.max(2, r * 0.08);
             g.stroke();
         }
+        g.fillStyle = 'rgba(0,0,0,0.35)';
         for (const p of arena.pillars) {
-            g.fillStyle = 'rgba(0,0,0,0.35)';
             g.beginPath(); g.ellipse(map.px(p.x + 0.12), map.py(p.y + 0.18), p.r * map.s * 1.1, p.r * map.s, 0, 0, TAU); g.fill();
         }
+        // One path for every block, so the arms of a bracket do not double their shadow where they meet.
+        g.beginPath();
+        for (const b of arena.walls) g.rect(map.px(b.x - b.hw + 0.12), map.py(b.y - b.hh + 0.18), b.hw * 2 * map.s, b.hh * 2 * map.s);
+        g.fill();
         // Wall lip.
         g.strokeStyle = 'rgba(0,0,0,0.55)';
         g.lineWidth = 6 * map.k;
@@ -199,6 +204,31 @@ export function createRenderer(canvas, { creatures, fx, reduced = false, seed = 
             ctx.strokeStyle = 'rgba(40,36,30,0.6)';
             ctx.lineWidth = Math.max(1, r * 0.05);
             ctx.beginPath(); ctx.arc(x, y, r * 0.62, 0.3, 2.1); ctx.moveTo(x - r * 0.2, y - r * 0.5); ctx.lineTo(x + r * 0.1, y - r * 0.1); ctx.stroke();
+        }
+    }
+
+    /**
+     * The wall blocks, in the pillars' stone. All of them go down as one path (outline, then face)
+     * so a bracket or an ell reads as one piece with no seam where its blocks meet; each block
+     * then gets a lit top edge and a shaded foot. The stone is far lighter than the floor and
+     * carries neither team's hue, and the canvas tokens do not change with the colour scheme.
+     */
+    function drawWalls() {
+        if (!arena.walls.length) return;
+        const lip = Math.max(2, 0.13 * map.s);
+        ctx.beginPath();
+        for (const b of arena.walls) ctx.rect(map.px(b.x - b.hw), map.py(b.y - b.hh), b.hw * 2 * map.s, b.hh * 2 * map.s);
+        ctx.strokeStyle = '#3d3933';
+        ctx.lineWidth = Math.max(3, 0.12 * map.s);
+        ctx.stroke();
+        ctx.fillStyle = '#8a8378';
+        ctx.fill();
+        for (const b of arena.walls) {
+            const x = map.px(b.x - b.hw), y = map.py(b.y - b.hh), w = b.hw * 2 * map.s, h = b.hh * 2 * map.s;
+            ctx.fillStyle = '#c9c2b4';
+            ctx.fillRect(x, y, w, lip);
+            ctx.fillStyle = '#5a544b';
+            ctx.fillRect(x, y + h - lip, w, lip);
         }
     }
 
@@ -468,6 +498,7 @@ export function createRenderer(canvas, { creatures, fx, reduced = false, seed = 
                 drawCreature(ctx, looks[v.idx], v, memory[v.idx], x, y, R, time, dt, reduced);
             }
 
+            drawWalls();
             drawPillars();
             drawBrush(time);
             fx.drawProjectiles(ctx, projectiles, map, time);

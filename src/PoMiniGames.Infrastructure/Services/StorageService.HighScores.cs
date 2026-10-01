@@ -352,11 +352,17 @@ public partial class StorageService
                 < (existing.GetDouble("TotalTimeSeconds") ?? double.MaxValue),
     };
 
-    public Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(PoSportsScores, limit);
+    // The daily meet's board is the same table and descriptor in a partition of its own
+    // per UTC day, so "one row per player, faster replaces slower" holds per day too and
+    // yesterday's board simply stops being read.
+    private static string? PoSportsDailyPartition(string? day) =>
+        string.IsNullOrWhiteSpace(day) ? null : $"{PoSportsPartition}_daily_{day.Trim()}";
 
-    public Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry) =>
-        SaveHighScoreAsync(PoSportsScores, entry);
+    public Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10, string? day = null) =>
+        GetHighScoresAsync(PoSportsScores, limit, partition: PoSportsDailyPartition(day));
+
+    public Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry, string? day = null) =>
+        SaveHighScoreAsync(PoSportsScores, entry, partition: PoSportsDailyPartition(day));
 
     // ── PoCabinet High Scores (T5) ────────────────────────────────────────────
     // TrackId partitions the leaderboard: Capitol best-lap never competes with
@@ -374,7 +380,7 @@ public partial class StorageService
             // will fall through to default as well until the descriptor is updated.
             TrackId = string.IsNullOrWhiteSpace(e.TrackId) ? "capitol" : e.TrackId.Trim().ToLowerInvariant(),
             BestLapSeconds = double.IsFinite(e.BestLapSeconds) ? Math.Clamp(e.BestLapSeconds, 0.001, 3600) : 0,
-            FinalPosition = e.FinalPosition is >= 1 and <= 9 ? e.FinalPosition : 1,
+            FinalPosition = e.FinalPosition is >= 1 and <= 100 ? e.FinalPosition : 1, // PoCabinetCatalog.SoloCarCount
             IsGuest = e.IsGuest,
             Date = DefaultDate(e.Date),
             GameCode = SanitizeName(e.GameCode),

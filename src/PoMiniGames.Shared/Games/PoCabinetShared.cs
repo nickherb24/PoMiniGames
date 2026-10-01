@@ -8,6 +8,7 @@ public enum PoCabinetTrackId
     Capitol = 0,
     MarALago = 1,
     PressBriefing = 2,
+    Playground = 3,
 }
 
 public enum PoCabinetOfficialId
@@ -34,7 +35,7 @@ public enum PoCabinetDialogueKind
 /// </summary>
 public sealed class PoCabinetCareerDto
 {
-    public int CurrentStageIndex { get; set; }   // 0 = Capitol, 1 = Mar-a-Lago, 2 = Press Briefing
+    public int CurrentStageIndex { get; set; }   // 0 = Capitol, 1 = Mar-a-Lago, 2 = Press Briefing, 3 = Playground (final)
     public bool TrophyUnlocked { get; set; }
     public bool GoldLiveryUnlocked { get; set; }
     public IReadOnlyList<int> CompletedStages { get; set; } = new List<int>();
@@ -152,6 +153,21 @@ public sealed class PoCabinetStaticWorld
     public double MaxX { get; set; }
     public double MaxY { get; set; }
     public int TotalLaps { get; set; } = PoCabinetCatalog.TotalLaps;
+    /// <summary>Road height per centerline sample (sim units); empty on a flat track. Drawn only.</summary>
+    public IReadOnlyList<double> CenterZ { get; set; } = new List<double>();
+    /// <summary>Point-to-point tracks: the centerline sample the finish line is on (0 = a circuit).
+    /// Both physics copies turn it into the lap length.</summary>
+    public int FinishIndex { get; set; }
+    /// <summary>Centerline samples <c>[HiddenFrom, HiddenTo)</c> are the return link of a
+    /// point-to-point track and are not drawn.</summary>
+    public int HiddenFrom { get; set; }
+    public int HiddenTo { get; set; }
+    /// <summary>Cross slope per centerline sample (tan of the bank, + = right side higher); empty
+    /// on an unbanked track. Drawn only.</summary>
+    public IReadOnlyList<double> CenterBank { get; set; } = new List<double>();
+    /// <summary>The centerline sample the scene starts laying tarmac at (0 = the whole track);
+    /// before it the track is an open chute in place of a model's gutter. Drawn only.</summary>
+    public int RoadFrom { get; set; }
 }
 
 // ──────────────────────────────  Player input  ──────────────────────────────

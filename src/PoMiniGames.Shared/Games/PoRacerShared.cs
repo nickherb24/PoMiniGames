@@ -55,24 +55,43 @@ public sealed class PoRacerSurfaceZoneWire
 
 // The lobby state and event records live in LobbyShared.cs (LobbyState<PoRacerLobbyPlayer>,
 // LobbyEvent) since 2026-09-14 — one wire shape for every ready/start lobby.
+// TrackId is this seat's track pick. Only the host's counts (PoRacerRaceRegistry.StartMultiplayer
+// reads it), but it rides on the seat so the shared lobby state carries it with no extra message.
 public sealed record PoRacerLobbyPlayer(
     string ConnectionId,
     string DisplayName,
     bool IsGuest,
     bool IsReady,
-    [property: System.Text.Json.Serialization.JsonIgnore] string UserId = "") : ILobbyPlayer;
+    [property: System.Text.Json.Serialization.JsonIgnore] string UserId = "",
+    string TrackId = PoRacerCatalog.DefaultTrackId) : ILobbyPlayer;
 
 // ──────────────────────────────  Race  ──────────────────────────────
 
 /// <summary>
-/// Server-authoritative snapshot of every car in the race. Broadcast hub → client at ~20 Hz.
+/// What never changes during a race, per car. Sent in <see cref="PoRacerStaticWorld.Roster"/> on
+/// join and re-broadcast as <c>raceRoster</c> when a driver's paint arrives; until 2026-09-30 the
+/// name and three colour strings rode every 20 Hz snapshot for all eight cars.
+/// </summary>
+public sealed record PoRacerCarInfo(int Id, string Name, string Color, string ColorDark, string Livery, bool IsPlayer, string Trait);
+
+/// <summary>What a driver asks for when joining: solo mode and pace, and the paint the others will see.</summary>
+public sealed class PoRacerJoinOptions
+{
+    /// <summary>"race" (seven bots) or "trial" (an empty track). Solo races only.</summary>
+    public string Mode { get; set; } = "race";
+    /// <summary>"easy" / "medium" / "hard" bot pace. Solo races only.</summary>
+    public string Difficulty { get; set; } = "medium";
+    public string? ColorHex { get; set; }
+    public string? Livery { get; set; }
+}
+
+/// <summary>
+/// Server-authoritative state of one car, numbers only. Broadcast hub → client at ~20 Hz;
+/// identity and paint are in <see cref="PoRacerCarInfo"/>.
 /// </summary>
 public sealed class PoRacerCarState
 {
     public int Id { get; set; }
-    public string Name { get; set; } = "";
-    public string Color { get; set; } = "#ffffff";
-    public string ColorDark { get; set; } = "#222222";
     public double X { get; set; }
     public double Y { get; set; }
     public double Heading { get; set; }
@@ -84,15 +103,18 @@ public sealed class PoRacerCarState
     public double CurrentLapSeconds { get; set; }
     public double LastLapSeconds { get; set; } = -1;
     public double LapProgress { get; set; }
-    public bool IsPlayer { get; set; }
     public bool Finished { get; set; }
     public int Position { get; set; }
     public double SkidIntensity { get; set; }
     public double BoostGlow { get; set; }
     public double BoostTimer { get; set; }
     public string Surface { get; set; } = "asphalt";
-    public string LiveryStyle { get; set; } = "default";
+    /// <summary>0..1, added by impacts only. Costs up to a tenth of top speed.</summary>
     public double Damage { get; set; }
+    /// <summary>True while the car sits in another car's tow (more push, 4% more top speed).</summary>
+    public bool Drafting { get; set; }
+    /// <summary>0..1 drift charge. Letting go of a drift at 0.3 or more pays it out as a short boost.</summary>
+    public double Drift { get; set; }
 }
 
 /// <summary>
@@ -108,6 +130,9 @@ public sealed class PoRacerRaceSnapshot
     public PoRacerFinalResult? Result { get; set; }
     public bool Started { get; set; }
     public int CountdownSeconds { get; set; }
+    /// <summary>Milliseconds until lights out; the start gantry lights one lamp per 600 ms of it.</summary>
+    public int CountdownMs { get; set; }
+    public bool Paused { get; set; }
     public bool Finished { get; set; }
     public PoRacerStaticWorld? Static { get; set; }
 }
@@ -122,6 +147,7 @@ public sealed class PoRacerStaticWorld
     public IReadOnlyList<double> WallsXY { get; set; } = new List<double>();
     public IReadOnlyList<PoRacerBoostPadWire> BoostPads { get; set; } = new List<PoRacerBoostPadWire>();
     public IReadOnlyList<PoRacerSurfaceZoneWire> SurfaceZones { get; set; } = new List<PoRacerSurfaceZoneWire>();
+    public IReadOnlyList<PoRacerCarInfo> Roster { get; set; } = new List<PoRacerCarInfo>();
     public double TrackWidth { get; set; }
     public double MinX { get; set; }
     public double MinY { get; set; }
@@ -130,7 +156,10 @@ public sealed class PoRacerStaticWorld
     public int TotalLaps { get; set; } = 3;
 }
 
-/// <summary>Client → hub input packet. Matches the keyboard + touch shape used by the JS thin client.</summary>
+/// <summary>
+/// Client → hub input packet. The booleans are the keyboard + touch shape; a gamepad also sends
+/// the analog trio, and a non-zero analog value wins over its boolean (the sim clamps all three).
+/// </summary>
 public sealed class PoRacerInput
 {
     public bool Up { get; set; }
@@ -138,6 +167,10 @@ public sealed class PoRacerInput
     public bool Left { get; set; }
     public bool Right { get; set; }
     public bool Space { get; set; }
+    /// <summary>-1 (full left) … 1 (full right).</summary>
+    public double Steer { get; set; }
+    public double Throttle { get; set; }
+    public double Brake { get; set; }
 }
 
 public sealed record PoRacerFinalResult(

@@ -51,6 +51,134 @@
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+
+// Draco-compressed courses (the Playground Run export) need a decoder; it is fetched only when a
+// compressed primitive is actually met, so the uncompressed courses never download it.
+let _draco = null;
+function gltfLoader() {
+  const loader = new GLTFLoader();
+  _draco = _draco || new DRACOLoader().setDecoderPath('https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/');
+  return loader.setDRACOLoader(_draco);
+}
+
+/**
+ * Lane shells synthesized from a baked cross-section table, for a course whose model is a plain
+ * trimesh with no ring-major channel layout (the Playground Run export). PATH.RINGS carries eight
+ * numbers per sample in that sample's frame — (lateral, height) of the left rim, left floor edge,
+ * right floor edge and right rim — so each sample becomes one 4-vertex ring in the authored
+ * shells' layout, and LANES, CONTAIN and the collider below treat it exactly like one.
+ *
+ * The shell IS the collider for the gutter. The export's own collision mesh is the finely
+ * tessellated visual gutter, and cannon-es bled a lone marble from ~100 u/s to 30 on it rolling
+ * over internal edges (the export's Rapier demo needed FIX_INTERNAL_EDGES for the same reason).
+ */
+function ringShell(PATH, lanes) {
+  const { POINTS: P, RIGHTS: R, UPS: U, RINGS } = PATH;
+  const verts = [], indices = [], SEGMENTS = [], COLSEG = [];
+  const at = (i, lat, h) => [0, 1, 2].map((k) => P[i * 3 + k] + R[i * 3 + k] * lat + U[i * 3 + k] * h);
+  for (const { name, from, to, collide, kerb } of lanes) {
+    const base = verts.length / 12;   // rings so far
+    for (let i = from; i <= to; i++) {
+      const [aL, aH, bL, bH, cL, cH, dL, dH] = RINGS.subarray(i * 8, i * 8 + 8);
+      verts.push(...at(i, aL, aH), ...at(i, bL, bH), ...at(i, cL, cH), ...at(i, dL, dH));
+    }
+    // Rim–floor, floor, floor–rim strips between consecutive rings, as the baked shells index them.
+    // A lane over authored geometry that already collides (the slide) is containment only.
+    if (collide) {
+      for (let r = 0; r < to - from; r++) {
+        for (let k = 0; k < 3; k++) {
+          const a = (base + r) * 4 + k;
+          indices.push(a, a + 5, a + 4, a, a + 1, a + 5);
+        }
+      }
+    }
+    SEGMENTS.push({ name, from, to });
+    COLSEG.push({ name, kept: to - from + 1, kerb });
+  }
+  const none = Uint32Array.from([]);
+  return {
+    PATH: { ...PATH, SEGMENTS },
+    COL: { VERTICES: Float32Array.from(verts), INDICES: Uint32Array.from(indices), RUMBLE_INDICES: none, BUMP_INDICES: none, ICE_INDICES: none, SEGMENTS: COLSEG },
+  };
+}
+
+/**
+ * Re-pose the drawn channel onto its ring shell (2026-10-01), for a course whose shell is NOT the
+ * model's own surface. Playground Run's shell is a smoothed fit (see ringShell): its floor sat up
+ * to 2.7 units off the floor the model draws and up to 59° off its bank, so marbles rolled sunk to
+ * the centre in the drawn floor on some stretches and floated over it on others. The shell is the
+ * one the map is certified on — laying it on the drawn gutter instead (tried) pools the field in
+ * the low corner of the authored 50° banks and adds half a minute to the race — so the DRAWING
+ * moves: each vertex of `nodes` within a channel's reach of the gutter is carried by the 2D map
+ * that takes the drawn section (PATH.DRAWN) to the ring at its sample, blended between the two
+ * samples it lies between. Floor centre lands on floor centre, floor line on floor line.
+ *
+ * Where the ring's floor is wider than a marble can use of the drawn one, the section is widened
+ * with it (WIDEN): the drawn floor curves up into its walls from ±3.2, and a marble against a ring
+ * wall 5.2 out stood 0.3 deep in that curve.
+ *
+ * Runs once on the cached model, in the model's own units. Nothing here touches a collider.
+ */
+function conformToShell(scene, PATH, nodes) {
+  const { POINTS: P, DIRS: D, RIGHTS: R, UPS: U, RINGS, DRAWN, SCALE } = PATH;
+  const REACH = 14 / SCALE;      // the section's far rim corner is 9.3 units from its floor centre
+  const USABLE = 4.2 / SCALE;    // widest ring floor a marble can ride without meeting the drawn curve
+  const WIDEN = 1.25;
+  const n = DRAWN.length / 3;
+  const centre = new Float32Array(n * 3), map = new Float32Array(n * 6);
+  for (let i = 0; i < n; i++) {
+    const lat = DRAWN[i * 3], h = DRAWN[i * 3 + 1], c = Math.cos(DRAWN[i * 3 + 2]), s = Math.sin(DRAWN[i * 3 + 2]);
+    for (let k = 0; k < 3; k++) centre[i * 3 + k] = P[i * 3 + k] + R[i * 3 + k] * lat + U[i * 3 + k] * h;
+    const bl = RINGS[i * 8 + 2], bh = RINGS[i * 8 + 3], cl = RINGS[i * 8 + 4], ch = RINGS[i * 8 + 5];
+    const hw = Math.hypot(cl - bl, ch - bh) / 2, tx = (cl - bl) / (2 * hw), ty = (ch - bh) / (2 * hw);
+    const w = Math.min(WIDEN, Math.max(1, hw / USABLE));
+    // (x, y) from the drawn floor centre -> ring frame: floor centre, then across (widened) and up.
+    map.set([(bl + cl) / 2, (bh + ch) / 2, w * c * tx + s * ty, w * s * tx - c * ty, w * c * ty - s * tx, w * s * ty + c * tx], i * 6);
+  }
+  const v = new THREE.Vector3(), a = new THREE.Vector3(), b = new THREE.Vector3(), inv = new THREE.Matrix4();
+  const dot = (arr, i, x, y, z) => arr[i * 3] * x + arr[i * 3 + 1] * y + arr[i * 3 + 2] * z;
+  const carry = (i, p, out) => {
+    const qx = p.x - P[i * 3], qy = p.y - P[i * 3 + 1], qz = p.z - P[i * 3 + 2];
+    const along = dot(D, i, qx, qy, qz), x = dot(R, i, qx, qy, qz) - DRAWN[i * 3], y = dot(U, i, qx, qy, qz) - DRAWN[i * 3 + 1];
+    const m = i * 6, x2 = map[m] + map[m + 2] * x + map[m + 3] * y, y2 = map[m + 1] + map[m + 4] * x + map[m + 5] * y;
+    return out.set(
+      P[i * 3] + R[i * 3] * x2 + U[i * 3] * y2 + D[i * 3] * along,
+      P[i * 3 + 1] + R[i * 3 + 1] * x2 + U[i * 3 + 1] * y2 + D[i * 3 + 1] * along,
+      P[i * 3 + 2] + R[i * 3 + 2] * x2 + U[i * 3 + 2] * y2 + D[i * 3 + 2] * along);
+  };
+  const ahead = (i, p) => dot(D, i, p.x - P[i * 3], p.y - P[i * 3 + 1], p.z - P[i * 3 + 2]);
+  scene.updateMatrixWorld(true);
+  scene.traverse((o) => {
+    if (!o.isMesh || !nodes.test(o.name)) return;
+    const pos = o.geometry.attributes.position;
+    inv.copy(o.matrixWorld).invert();
+    for (let k = 0; k < pos.count; k++) {
+      v.fromBufferAttribute(pos, k).applyMatrix4(o.matrixWorld);
+      let j = 0, best = Infinity;
+      for (let i = 0; i < n; i++) {
+        const dx = v.x - centre[i * 3], dy = v.y - centre[i * 3 + 1], dz = v.z - centre[i * 3 + 2], d = dx * dx + dy * dy + dz * dz;
+        if (d < best) { best = d; j = i; }
+      }
+      // Reach is judged in the section plane, so the gutter's run past either end of the lane
+      // still moves (with the end pose) while the foot of a support pole, far below, stays put.
+      const along = ahead(j, v);
+      if (best - along * along > REACH * REACH) continue;
+      const lo = along >= 0 ? j : j - 1;
+      if (lo < 0 || lo >= n - 1) carry(j, v, a);
+      else {
+        const a0 = ahead(lo, v), a1 = ahead(lo + 1, v);
+        carry(lo, v, a).lerp(carry(lo + 1, v, b), Math.min(1, Math.max(0, a0 / ((a0 - a1) || 1))));
+      }
+      a.applyMatrix4(inv);
+      pos.setXYZ(k, a.x, a.y, a.z);
+    }
+    pos.needsUpdate = true;
+    o.geometry.computeVertexNormals();
+    o.geometry.computeBoundingBox();
+    o.geometry.computeBoundingSphere();
+  });
+}
 
 // Edge length of a collision chunk, world units. Measured U-curve on Spiral Works (101 marbles,
 // ms per physics step): 24 -> 66, 48 -> 52, 64 -> 39, 80 -> 47, 160 -> 104. Too small and the
@@ -263,6 +391,17 @@ export const newProjection = () => ({ s: 0, index: -1, lateral: 0, height: 0 });
  * @param {number} [opts.paddleSpeed] rad/s for Obs-Paddle props
  * @param {Array<[number, number, number]>} [opts.brakeBands] [s0, s1, maxSpeed] in world
  *   arclength: rumble strips that cap speed ahead of a narrow mouth (game.js _applyBrakes)
+ * @param {string|null} [opts.colliderUrl] a second GLB whose every mesh is a static collider,
+ *   for a course with no baked shell (downward faces culled — nothing can reach them)
+ * @param {Array<{name, from, to, collide}>|null} [opts.ringLanes] sample ranges to synthesize
+ *   lanes over from PATH.RINGS when `collision` is null — see ringShell
+ * @param {RegExp|null} [opts.hideNodes] model nodes not to draw (a course's own demo marbles)
+ * @param {object} [opts.grid] start-grid overrides: colSpacing, rowGap, wallClear (world units)
+ * @param {RegExp|null} [opts.colliderNodes] which meshes of the collider model to use
+ * @param {number} [opts.driveAccel] u/s² push along the course for marbles on the track, for a
+ *   course whose grade is too gentle to race on (game.js _applyDrive); 0 = none
+ * @param {RegExp|null} [opts.conformNodes] model nodes to re-pose onto the ring shell, for a path
+ *   that carries DRAWN — see conformToShell
  */
 export function createGlbCourse({
   modelUrl,
@@ -273,7 +412,15 @@ export function createGlbCourse({
   finishS = null,
   paddleSpeed = 1.5,
   brakeBands = [],
+  colliderUrl = null,
+  ringLanes = null,
+  hideNodes = null,
+  grid = {},
+  colliderNodes = null,
+  driveAccel = 0,
+  conformNodes = null,
 }) {
+  if (!COL && ringLanes) ({ PATH, COL } = ringShell(PATH, ringLanes));
   const { SCALE, COUNT, ARCLENGTH, POINTS, DIRS, UPS, RIGHTS, HALF_WIDTHS, CUM } = PATH;
   const COL_VERTS = COL.VERTICES;
 
@@ -315,6 +462,9 @@ export function createGlbCourse({
   // The course is fixed content: unlike the old seeded generator there is nothing to re-roll
   // between races, so the GLB is parsed once per page load and the built track is reused.
   let _modelPromise = null;
+  // The collider model's scene, kept here rather than in the course scene's userData: Object3D
+  // clone() deep-copies userData through JSON, which a scene graph cannot survive.
+  let _colliderScene = null;
 
   /**
    * Fetch + parse the course model. Safe to call repeatedly; the parse happens once.
@@ -322,7 +472,14 @@ export function createGlbCourse({
    */
   function loadModel() {
     if (!_modelPromise) {
-      _modelPromise = new GLTFLoader().loadAsync(modelUrl).then((gltf) => gltf.scene);
+      _modelPromise = Promise.all([
+        gltfLoader().loadAsync(modelUrl),
+        colliderUrl ? gltfLoader().loadAsync(colliderUrl) : null,
+      ]).then(([gltf, col]) => {
+        _colliderScene = col ? col.scene : null;
+        if (conformNodes) conformToShell(gltf.scene, PATH, conformNodes);
+        return gltf.scene;
+      });
     }
     return _modelPromise;
   }
@@ -534,7 +691,7 @@ export function createGlbCourse({
       const ring = (r) => (reversed ? n - 1 - r : r);
 
       const lane = {
-        name: sg.name, open: /Catch/.test(sg.name), n,
+        name: sg.name, open: /Catch/.test(sg.name), kerb: sg.kerb !== false, n,
         A: new Float32Array(n * 3), B: new Float32Array(n * 3), C: new Float32Array(n * 3), D: new Float32Array(n * 3),
         P: new Float32Array(n * 3), R: new Float32Array(n * 3), U: new Float32Array(n * 3),
         HW: new Float32Array(n), REACH: new Float32Array(n), S: new Float32Array(n), s0: 0, s1: 0,
@@ -650,8 +807,8 @@ export function createGlbCourse({
   const FED_DIST = 25;           // back kerb at a landing zone's start (see fedFromAir)   // rings left unlidded where a lane is fed from the air (~130 units)
   const landing = [];   // rings an end cap's guide wall starts back from the junction (~24 units)
   const CONTAIN_MARGIN = 5;
-  // xyz triangle soups (walls, lids, junction floors), rail polylines, per-lane coverage
-  const CONTAIN = { walls: [], lids: [], floors: [], rails: [], stats: [] };
+  // xyz triangle soups (walls, lids, junction floors), per-lane coverage
+  const CONTAIN = { walls: [], lids: [], floors: [], stats: [] };
   {
     // Clearance above each ring, from every shell vertex of the OTHER lanes (and of this lane more
     // than a few rings away) that sits over this ring's floor footprint.
@@ -734,7 +891,9 @@ export function createGlbCourse({
       // bounce up and backwards, and Spiral Works lost them rolling back out of Lower A's open
       // start into the funnel throat behind it. KERB_H is low enough that anything arriving from
       // above clears it.
-      if (fedFromAir[li]) {
+      // A lane may opt out (Playground Run's slide): marbles land out of the drop well on BOTH sides
+      // of its first ring, and the kerb parked the ones that landed behind it.
+      if (fedFromAir[li] && L.kerb) {
         const k0 = vv3(L.B, 0), k1 = vv3(L.C, 0), ku = vv3(L.U, 0).multiplyScalar(KERB_H);
         pushTri(CONTAIN.walls, k0, k1, k1.clone().add(ku)); pushTri(CONTAIN.walls, k0, k1.clone().add(ku), k0.clone().add(ku));
       }
@@ -748,15 +907,12 @@ export function createGlbCourse({
       landing.length = 0;
       const lidded = topL.filter(Boolean).length;
       CONTAIN.stats.push({ lane: L.name, index: li, rings: L.n, lidded, caps: 0, fedFromAir: fedFromAir[li], unlidded: topL.map((t, i) => (t ? -1 : i)).filter((i) => i >= 0) });
-      let rail = null;
       for (let r = 0; r < L.n - 1; r++) {
         const a0 = topL[r], a1 = topL[r + 1], d0 = topR[r], d1 = topR[r + 1];
-        if (!a0 || !a1 || !d0 || !d1) { rail = null; continue; }
+        if (!a0 || !a1 || !d0 || !d1) continue;
         pushTri(CONTAIN.walls, baseL[r], baseL[r + 1], a1); pushTri(CONTAIN.walls, baseL[r], a1, a0);
         pushTri(CONTAIN.walls, baseR[r], d1, baseR[r + 1]); pushTri(CONTAIN.walls, baseR[r], d0, d1);
         pushTri(CONTAIN.lids, a0, a1, d1); pushTri(CONTAIN.lids, a0, d1, d0);
-        if (!rail) { rail = [[a0], [d0]]; CONTAIN.rails.push(rail[0], rail[1]); }
-        rail[0].push(a1); rail[1].push(d1);
       }
     });
 
@@ -1089,6 +1245,7 @@ export function createGlbCourse({
     const kickerNodes = [];
     scene.traverse((o) => {
       if (!o.isMesh) return;
+      if (hideNodes && hideNodes.test(o.name)) { o.visible = false; return; }
       o.castShadow = true;
       o.receiveShadow = true;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -1173,6 +1330,30 @@ export function createGlbCourse({
       }
     }
 
+    // A collider model (the parts of a course with no baked shell: a well, a slide, a tray) collides
+    // as authored. It is a closed, outward-facing solid, so faces pointing well downward (the
+    // underside) are unreachable and dropped.
+    if (_colliderScene) {
+      const cs = _colliderScene.clone(true);
+      cs.scale.setScalar(SCALE);
+      cs.updateMatrixWorld(true);
+      cs.traverse((o) => {
+        if (!o.isMesh || (colliderNodes && !colliderNodes.test(o.name))) return;
+        const { wx, wy, wz, indices } = worldTriangles(o);
+        const reachable = (a, b, c) => {
+          const e1x = wx[b] - wx[a], e1y = wy[b] - wy[a], e1z = wz[b] - wz[a];
+          const e2x = wx[c] - wx[a], e2y = wy[c] - wy[a], e2z = wz[c] - wz[a];
+          const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+          return ny > -0.6 * Math.hypot(nx, ny, nz);
+        };
+        for (const shape of chunkedTrimeshes(wx, wy, wz, indices, reachable)) addSurface(shape);
+        for (let t = 0; t < indices.length; t += 3) {
+          const a = indices[t], b = indices[t + 1], c = indices[t + 2];
+          if (reachable(a, b, c)) shellSoup.push(wx[a], wy[a], wz[a], wx[b], wy[b], wz[b], wx[c], wy[c], wz[c]);
+        }
+      });
+    }
+
     // A funnel is not a swept channel, so the baker has no ring structure to loft a shell from and
     // it collides against its rendered geometry. Its reachable surface is the inside of the cone,
     // whose normals all point upward, so a single normal test culls the underside exactly.
@@ -1233,14 +1414,10 @@ export function createGlbCourse({
     };
     // Walls only: the lid stays an invisible collider. A glass ceiling over every channel read as
     // a haze over the whole course (user call, 2026-09-30).
+    // No rail along the lid edges either: the bright line floating over the track read as clutter
+    // (user call, 2026-09-30).
     glass(CONTAIN.walls, 0.1);
     if (rimWalls.length) glass(rimWalls, 0.1);
-    {
-      // A bright rail along each lid edge: the glass itself is nearly invisible by design, the
-      // rail is what tells the eye "there is a wall up to here".
-      const railMat = new THREE.LineBasicMaterial({ color: 0xa5f3fc, transparent: true, opacity: 0.45 });
-      for (const pts of CONTAIN.rails) group.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), railMat));
-    }
 
     // ── brake bands (2026-09-30) ──
     // Amber rumble strips before the narrow lane mouths: marbles were reaching them at the 85 u/s
@@ -1351,21 +1528,22 @@ export function createGlbCourse({
     // Laid out across the start straight in rows, widest first: the field has to fit the AUTHORED
     // channel, so the column count is derived from the real half-width at each row's own
     // arclength rather than from a fixed chute width.
-    const COL_SPACING = 3.4;                       // > one marble diameter plus margin
+    const COL_SPACING = grid.colSpacing ?? 3.4;    // > one marble diameter plus margin
     // Rows were 8 units apart, which packed the whole 101-marble field into 88 units of a start
     // straight that is nearly 1000 long. Spiral Works' channel narrows from 40 units wide at the
     // gate to 24 within the first 130, and a pack that dense arriving at that taper jams: the tail
     // was measured sitting motionless for tens of seconds, and freed itself the instant the
     // marbles around it were removed. Spreading the grid out costs nothing and lets the field
     // feed through.
-    const ROW_GAP = 14;                            // world units of arclength between rows
+    const ROW_GAP = grid.rowGap ?? 14;             // world units of arclength between rows
+    const WALL_CLEAR = grid.wallClear ?? 6;
     const startPositions = [];
     {
       const p = new THREE.Vector3(), right = new THREE.Vector3(), up = new THREE.Vector3();
       let slot = 0, row = 0;
       while (slot < marbleCount) {
         const s = 6 + row * ROW_GAP;
-        const usable = Math.max(6, halfWidthAt(s) * 2 - 6);   // clear of both walls
+        const usable = Math.max(6, halfWidthAt(s) * 2 - WALL_CLEAR);   // clear of both walls
         const cols = Math.max(1, Math.min(18, Math.floor(usable / COL_SPACING)));
         const span = Math.min(usable, (cols - 1) * COL_SPACING);
         centerAt(s, p); rightAt(s, right); upAt(s, up);
@@ -1467,6 +1645,8 @@ export function createGlbCourse({
       ...(BRAKE_BANDS.length ? { brakeAt } : {}),
       // Where the checkpoint arches stand (maps.js) and sector times split (game.js).
       checkpoints: CHECKPOINTS,
+      // OPTIONAL: a steady push along the course (game.js _applyDrive).
+      ...(driveAccel ? { driveAccel } : {}),
       // Per-lane containment coverage, for the map certification test's diagnostics.
       containment: CONTAIN.stats,
       laneNames: LANES.map((l) => l.name),

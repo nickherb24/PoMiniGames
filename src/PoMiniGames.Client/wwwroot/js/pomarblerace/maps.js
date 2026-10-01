@@ -1,7 +1,8 @@
 // maps.js — the marble-race map registry, and the single track interface the game speaks to.
 //
 // Slots 1-9. Slot 1 is the original procedural chute, slot 2 is the authored marble_track.glb
-// course, slot 3 is marble_track_2.glb, and 4-9 are free for further GLB courses. TO ADD A MAP,
+// course, slot 3 is marble_track_2.glb, 4 is Canyon Run (procedural), 5 is the imported
+// playground.glb scene, and 6-9 are free for further GLB courses. TO ADD A MAP,
 // see ADDING A GLB MAP below — it is a handful of lines here plus one bake, with nothing to
 // change in game.js.
 //
@@ -49,6 +50,7 @@ import * as SPIRAL_WORKS_PATH from './track-path.js';
 import * as SPIRAL_WORKS_COL from './track-collision.js';
 import * as GRAND_SPIRAL_PATH from './track2-path.js';
 import * as GRAND_SPIRAL_COL from './track2-collision.js';
+import * as PLAYGROUND_PATH from './track-playground-path.js';
 
 // ── authored courses ────────────────────────────────────────────────────────────────────────
 // One createGlbCourse() per GLB. The factory closes over that course's baked centerline and
@@ -78,6 +80,42 @@ const grandSpiral = createGlbCourse({
   collision: GRAND_SPIRAL_COL,
   // Track-Bowl2 is this course's funnel — same deal as Spiral Works' Track-Bowl.
   bowlMeshName: 'Track-Bowl2',
+});
+
+// Playground Run (2026-09-30): an imported scene — a marble gutter winding three laps down around a
+// real-scale play structure, through a drop well, down the slide and into a tray. Authored in metres
+// for four 10 cm marbles; at SCALE 40 our radius-1 marble is a 5 cm one, so the 28 cm gutter holds
+// the field about five abreast. The export is a plain trimesh with no ring layout, so its centerline
+// and cross-sections were baked from the export's own reference race (track-playground-path.js).
+// The gutter collides against a shell synthesized from those cross-sections (see ringShell in
+// track-glb.js), fitted to descend everywhere; the well, slide, tray and ground collide as authored,
+// with the slide walled by a containment-only lane.
+//
+// DRIVE. The authored grade is 1.46° after the launch — the export's Rapier race rolls it nearly
+// losslessly, but cannon-es contacts bleed that much pull away and a lone marble settled at ~15 u/s
+// with the pack slower still. Raising gravity did not help (the losses scale with it). A steady
+// 16 u/s² along the course for marbles on the track brings a lone marble home in ~70 s.
+const playground = createGlbCourse({
+  modelUrl: 'models/playground.glb',
+  colliderUrl: 'models/playground_colliders.glb',
+  colliderNodes: /^COL_(DropWell|FinishTray|RightSlide|Ground)/,
+  path: PLAYGROUND_PATH,
+  collision: null,
+  ringLanes: [
+    // Into the well's side opening: the authored gutter's tail is not collided, so a shell stopping
+    // short of the well left a gap marbles rolled off into the fall.
+    { name: 'Track-Run', from: 0, to: PLAYGROUND_PATH.WELL_INDEX + 1, collide: true },
+    // The slide collides as authored (a bare surface with no sides), so this lane only walls it:
+    // marbles landing out of the drop well bounced off its open side. It stops short of the tray.
+    // No back kerb: marbles land on both sides of its first ring.
+    { name: 'Track-Slide', from: PLAYGROUND_PATH.SLIDE_INDEX, to: PLAYGROUND_PATH.FINISH_INDEX - 12, collide: false, kerb: false },
+  ],
+  hideNodes: /^SM_Marble_\d/,
+  // The gutter and the tops of its support poles are drawn where the shell is, not where the
+  // model has them (track-glb.js conformToShell).
+  conformNodes: /^SM_Marble(Track|Supports)/,
+  grid: { colSpacing: 2.6, rowGap: 5, wallClear: 3 },
+  driveAccel: 16,
 });
 
 /**
@@ -255,7 +293,7 @@ const MAPS = [
     id: 2,
     name: 'Spiral Works',
     made: 'Modelled by hand in Blender',
-    vertices: 70316,
+    vertices: 69422,
     blurb: 'A four-turn helix into split lanes, a funnel, two banked loops and a hazard fan.',
     // Factory floor under sodium lamps: warm key, rust-brown ground bounce, smoky brown haze.
     theme: {
@@ -269,7 +307,7 @@ const MAPS = [
     id: 3,
     name: 'Grand Spiral',
     made: 'Generated in Blender by a Python script',
-    vertices: 52430,
+    vertices: 51144,
     blurb: 'A wide weave: a risky split, washboard, a funnel, a free fall and boost pads to the line.',
     // Open daytime sky: pale blue haze pushed further out, bright neutral sun.
     theme: {
@@ -294,6 +332,20 @@ const MAPS = [
     load: () => Promise.resolve(null),
     build: (world, materials, marbleCount, _asset, seed) =>
       addCheckpointArches(adaptProceduralTrack(generateTrack(world, materials, seed >>> 0, marbleCount, CANYON_RUN))),
+  },
+  {
+    id: 5,
+    name: 'Playground Run',
+    made: 'Imported 3D scene — textured playground model',
+    vertices: 139445,
+    blurb: 'Three laps of gutter round a jungle gym, down the drop well and the big slide into the tray.',
+    // Afternoon park: warm sun, soft sky fill, light haze.
+    theme: {
+      bg: 0x9cc7e8, fogNear: 260, fogFar: 900,
+      ambient: [0xe6e0d4, 2.4], hemi: [0xcfe6ff, 0x6b5a3a, 1.8], key: [0xfff0d6, 3.8], exposure: 1.0,
+    },
+    load: () => playground.loadModel(),
+    build: (world, materials, marbleCount, asset) => addCheckpointArches(playground.buildTrack(world, materials, marbleCount, asset)),
   },
 ];
 

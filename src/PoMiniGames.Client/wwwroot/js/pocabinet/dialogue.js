@@ -9,8 +9,6 @@
 //   dialogue.show(handle, text, { durationMs });
 //   dialogue.unmount(handle);
 
-import { currentSettings } from './settings.js';
-
 const BUBBLE_FADE_MS = 220;
 const DEFAULT_VISIBLE_MS = 2400;
 
@@ -96,36 +94,6 @@ export function show(handle, text, durationMs) {
 export function hide(handle) {
     if (!handle) return;
     handle.hide();
-}
-
-// Each official's radio voice (2026-09-29): the browser's own speech synthesis — free,
-// offline, no audio assets — with a per-official pick among the installed English
-// voices plus pitch and rate, so four officials sound like four people even where a
-// device has only one voice. speechSynthesis plays straight to the output device, not
-// through audio.js's graph, so the master volume is applied per utterance here.
-const VOICE = Object.freeze({
-    'sean-s': { pick: 0, pitch: 1.15, rate: 1.18 },
-    'steve-b': { pick: 1, pitch: 0.8, rate: 0.95 },
-    'bill-b': { pick: 2, pitch: 0.7, rate: 1.02 },
-    'mike-p': { pick: 3, pitch: 1.0, rate: 0.9 },
-});
-
-/** Say `text` in `officialId`'s voice, unless muted or voices are off. Interrupts the last line. */
-export function speak(officialId, text) {
-    try {
-        const synth = window.speechSynthesis;
-        const s = currentSettings();
-        if (!synth || !text || s.muted || s.voices === false || !(s.masterVolume > 0)) return;
-        const v = VOICE[officialId] || VOICE['mike-p'];
-        const english = synth.getVoices().filter(x => /^en(-|_|$)/i.test(x.lang));
-        const u = new SpeechSynthesisUtterance(text);
-        if (english.length) u.voice = english[v.pick % english.length];
-        u.pitch = v.pitch;
-        u.rate = v.rate;
-        u.volume = Math.min(1, Math.max(0, s.masterVolume));
-        synth.cancel();
-        synth.speak(u);
-    } catch { /* voices are flavour */ }
 }
 
 export function officialName(officialId) {

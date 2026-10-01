@@ -19,36 +19,42 @@
                    Title=@TitleContent
                    Objective="A living island that runs without you — creatures born, hungry and ageing while you watch."
                    Controls=@HowToPlayContent
-                   Mode="@GameIntro.IntroMode.Demo"
+                   Mode="@(IsDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                   StartLabel="Watch"
                    OnStart="@(() => _introDismissed = true)" />
     }
     else
     {
-        <PoEcosystemViewer IsDemo="true" />
+        <PoEcosystemViewer IsDemo="@IsDemo" VisitCode="@Island" />
     }
 </GameShell>
 
 @code {
     [Parameter] public string? Mode { get; set; }
 
+    /// <summary>A shared island's code (<c>?island=CODE</c>): the viewer sails straight to it, read-only.</summary>
+    [SupplyParameterFromQuery(Name = "island")] public string? Island { get; set; }
+
     private string _playerName = "";
     private bool _introDismissed;
 
-    private bool IsDemo => true;
+    // /poecosystem and /poecosystem/1player are YOUR island: it is kept in this browser and
+    // offered back on the next visit. /poecosystem/demo is the kiosk — a fresh island every
+    // time, never saved. Until 2026-09-30 this was hardcoded to demo, so the resume prompt
+    // could not be reached and every visit autosaved a new island over the last one.
+    private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem · Demo</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem@(IsDemo ? " · Demo" : "")</span>;
 
     private RenderFragment HowToPlayContent => @<div>
-        @* 2026-09-11: word budget — the intro card is capped at 100 words. The
-           dashboard's full inventory (telemetry export, almanac, model picker)
-           is discoverable in situ; the card teaches movement + inspection only. *@
-        <p><strong>You are an invisible god floating over the island.</strong></p>
+        @* 2026-09-11: word budget — the intro card is capped at 100 words. Everything the
+           dashboard holds is discoverable in situ; the card teaches movement + inspection. *@
+        <p><strong>You are a naturalist drifting over the island. Nothing here needs you, and nothing you do changes it.</strong></p>
         <ul>
-            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly · <kbd>Space</kbd>/<kbd>Ctrl</kbd> rise and sink · <kbd>Shift</kbd> speed · <kbd>F</kbd> walk the ground</li>
-            <li><kbd>E</kbd> or click: inspect the creature under the crosshair — name, age, drives, last thought. <kbd>T</kbd> follows it.</li>
-            <li><kbd>Tab</kbd>: dashboard — population chart, world log, almanac, settings</li>
-            <li><kbd>0</kbd>–<kbd>3</kbd>: pause, 1×, 2×, 4× speed</li>
-            <li>Storms, rockslides and the volcano happen on their own</li>
+            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> fly · <kbd>Space</kbd>/<kbd>Ctrl</kbd> rise and sink · <kbd>Shift</kbd> hurry · <kbd>F</kbd> walk</li>
+            <li><kbd>E</kbd> or click: study the creature under the crosshair · <kbd>T</kbd> follows it · <kbd>/</kbd> finds one by name</li>
+            <li><kbd>L</kbd> lenses · <kbd>C</kbd> cinematic camera · <kbd>Tab</kbd> dashboard · <kbd>H</kbd> every key</li>
+            <li><kbd>0</kbd>–<kbd>3</kbd>: pause, 1×, 2×, 4×</li>
         </ul>
     </div>;
 

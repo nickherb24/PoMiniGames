@@ -65,6 +65,7 @@ uniform float uDusk;
 uniform float uTime;
 uniform float uAurora;     // 0..1 tonight's aurora
 uniform float uMeteors;    // 0..1 chance a meteor slot fires
+uniform float uRainbow;    // 0..1 a bow after rain
 varying vec3 vDir;
 ${NOISE}
 
@@ -138,6 +139,18 @@ void main() {
   float aboveHorizon = smoothstep(0.02, 0.2, up);
   col += vec3(0.9, 0.95, 1.0) * star * aboveHorizon * smoothstep(0.35, 0.9, uNight) * 0.9;
 
+  // Rainbow (2026-09-30): the primary bow, 42 degrees out from the antisolar point, red on
+  // the outside. Only above the horizon, so a high sun (bow centre far below it) shows none —
+  // which is why real ones belong to mornings and late afternoons.
+  if (uRainbow > 0.01 && up > 0.0) {
+    float ang = acos(clamp(dot(d, -normalize(uSunDir)), -1.0, 1.0));
+    float x = (ang - 0.733) / 0.03;
+    float band = exp(-x * x * 0.45);
+    float hue = clamp(0.5 - x * 0.27, 0.0, 1.0) * 0.76;
+    vec3 spectrum = clamp(abs(mod(hue * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+    col += spectrum * band * uRainbow * 0.3 * smoothstep(0.0, 0.14, up) * (1.0 - smoothstep(0.45, 0.72, uNight));
+  }
+
   float dark = smoothstep(0.3, 0.85, uNight);
   if (uAurora > 0.01 && dark > 0.0) col += aurora(d) * uAurora * dark * 0.9;
   if (uMeteors > 0.001 && dark > 0.0) col += meteor(d) * dark;
@@ -196,6 +209,7 @@ export function createSky(scene, { tier = 'high' } = {}) {
       uTime: { value: 0 },
       uAurora: { value: 0 },
       uMeteors: { value: 0 },
+      uRainbow: { value: 0 },
     },
     vertexShader: DOME_VERT,
     fragmentShader: DOME_FRAG,
@@ -248,6 +262,7 @@ export function createSky(scene, { tier = 'high' } = {}) {
   let overcast = 0;
   let overcastTarget = 0;
   const spectacle = { aurora: 0, meteors: 0 };
+  let rainbow = 0;
   const DAY_ZENITH = new THREE.Color(0x2f6fd0);
   const NIGHT_ZENITH = new THREE.Color(0x0b1326);
   const DUSK_ZENITH = new THREE.Color(0x4a3a7a);
@@ -269,6 +284,11 @@ export function createSky(scene, { tier = 'high' } = {}) {
       spectacle.meteors = Math.max(0, Math.min(1, meteorRate));
     },
     get overcast() { return overcast; },
+    /** Cloud coverage as the cloud shader has it (the cloud shadows sample the same field). */
+    get cover() { return 0.45 + overcast * 0.45; },
+    /** 0..1 rainbow strength (renderer.js: rain easing off over wet ground, in daylight). */
+    setRainbow(v) { rainbow = Math.max(0, Math.min(1, v)); },
+    get rainbow() { return domeMat.uniforms.uRainbow.value; },
     update(sky, player, time) {
       const u = domeMat.uniforms;
       overcast += (overcastTarget - overcast) * 0.02;
@@ -285,6 +305,7 @@ export function createSky(scene, { tier = 'high' } = {}) {
       const clear = 1 - overcast;
       u.uAurora.value += (spectacle.aurora * clear - u.uAurora.value) * 0.004;
       u.uMeteors.value = spectacle.meteors * clear;
+      u.uRainbow.value += (rainbow - u.uRainbow.value) * 0.02;
       if (clouds) {
         const c = clouds.mat.uniforms;
         c.uSunDir.value.copy(sky.sunDir);

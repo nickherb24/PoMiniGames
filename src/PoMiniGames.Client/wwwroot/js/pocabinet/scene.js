@@ -19,8 +19,14 @@
 //   • barrier walls with a striped face, exactly where physics.js stops a car
 //   • racing-line overlay coloured by corner speed (assist)
 //   • sky dome (sky.js) and trackside scenery (scenery.js)
+//   • Playground only: the imported playground.glb (see PLAYGROUND)
 //
-// World mapping: sim (x, y) → three (x / 10, 0, y / 10).
+// World mapping: sim (x, y) → three (x / 10, h, y / 10). h is 0 everywhere except on a
+// track that carries heights (track.z — the Playground run): there the road and its lines,
+// the cars and the camera all ride at the centerline's height (tilted by track.bank), the
+// part of the loop that is only a return link (track.drawn) is not built at all, tarmac is
+// only laid from track.roadFrom on (track.built; before it, an open chute), and there are
+// no barrier walls.
 //
 // Camera: third person only (2026-09-23). 'chase' (close), 'far' (high and
 // long) and 'tv' (trackside cameras handing off along the lap).
@@ -66,6 +72,40 @@ function hex(value, fallback) {
 
 const RENDER_SCALE = { low: 0.6, medium: 0.8, high: 1 };
 
+// Playground Marble Run: wwwroot/models/playground.glb (metres, +Y up) drawn at 50× around
+// the world origin, so 1 model metre = 50 scene units = 500 sim units — the scale the track's
+// knots in PoCabinetTrackGeometry were baked at, and the one at which the marble gutter's
+// 26 cm floor is as wide as the physics corridor (road + run-off). The track is the marble
+// run, without its walls (the user's call, 2026-09-30: the gutter's sides stood eight units
+// tall around a one-unit car and hid the rest of the scene). So the model's gutter is hidden
+// and, down to track.roadFrom, the scene lays an open chute in its place: the gutter's
+// floor, same width, same bank, on the same supports, with two edge lines. From there on
+// the gutter has ended at the drop well (marbles fall; cars get a ramp) and the scene builds
+// a road: the ramp, down the slide, into the finish tray — tarmac and run-off deck. No
+// barriers anywhere; the physics still stops a car at the edge. The well and the four
+// marbles are hidden too. Render-only (neither physics copy knows the model exists). Loaded
+// async after the track is built; if it fails the race runs on the chute over a plain lawn.
+const PLAYGROUND = {
+    url: 'models/playground.glb',
+    scale: 50,
+    hidden: /^SM_Marble(Track|DropWell|_\d)/,
+    chuteHex: '#2f86d6',
+    // Outline (model metres, x/z) of everything it puts on the ground — pad, posts, slide,
+    // marble-run supports and tray — kept free of grass blades.
+    footprint: [
+        6.9, 0.6, 7.49, 1.99, 7.22, 3.38, 6.52, 4.62, 5.26, 5.36, 3.58, 5.21, 2.3, 4.94, 1.32, 4.71,
+        0.5, 5, -0.5, 5.63, -1.49, 5.4, -2.43, 4.98, -3.41, 4.51, -4.32, 3.82, -5.27, 2.99, -6.05, 1.9,
+        -6.2, 0.6, -6.07, -0.71, -5.92, -2.06, -5.26, -3.25, -4.21, -4.11, -2.73, -4.24, -1.54, -4.32, -0.48, -4.34,
+        0.5, -4.1, 1.26, -3.22, 2.03, -3.09, 3.1, -3.3, 3.96, -2.86, 4.81, -2.28, 5.51, -1.48, 5.86, -0.47,
+    ],
+};
+const DRACO_PATH = 'https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/libs/draco/gltf/';
+
+/** Sim-unit ring of the model's footprint, or null on tracks without a model. */
+function keepOutFor(trackId) {
+    return trackId === 'playground' ? PLAYGROUND.footprint.map(v => v * PLAYGROUND.scale * WORLD_SCALE) : null;
+}
+
 class SceneHandle {
     constructor(renderer, scene, camera, hemi, sun, canvas) {
         this.renderer = renderer;
@@ -87,6 +127,7 @@ class SceneHandle {
         this.pmrem = new THREE.PMREMGenerator(renderer);
         this.scenery = null;
         this.grass = null;
+        this.ownedTextures = [];   // textures a loaded model brought (the rest are module-cached)
         this.post = null;
         this.quality = 'high';
         this.baseFov = camera.fov;
@@ -167,17 +208,22 @@ class SceneHandle {
         const heading = Number(p.heading) || 0;
         const mode = p.mode || 'chase';
         const fx = Math.cos(heading), fz = Math.sin(heading);
+        // Road height under the car and its slope (both 0 on a flat track): the camera sits
+        // back up the slope and looks down it, so a descent reads as one.
+        const h = Number(p.h) || 0;
+        const rise = Math.tan(Number(p.pitch) || 0);
         if (mode === 'chase' || mode === 'far') {
             const far = mode === 'far';
             const s01 = Math.min(1, Math.abs(Number(p.speed) || 0) / 140);
             const back = (far ? 13 : 7.4) + s01 * (far ? 2 : 1.6);
             const up = (far ? 5.2 : 2.35) + s01 * 0.25;
-            const target = this._v.set(x - fx * back, up, z - fz * back);
+            const target = this._v.set(x - fx * back, h - rise * back + up, z - fz * back);
             // Lagged follow so the car swings in frame through corners; time-based so
             // the lag is the same at 30 fps as at 144.
             const dt = Number(p.dt) || 0;
             const k = dt > 0 ? 1 - Math.exp(-dt * (far ? 5 : 8)) : 0.18;
-            const look = new THREE.Vector3(x + fx * (far ? 6 : 4.5), far ? 0.6 : 1.0, z + fz * (far ? 6 : 4.5));
+            const ahead = far ? 6 : 4.5;
+            const look = new THREE.Vector3(x + fx * ahead, h + rise * ahead + (far ? 0.6 : 1.0), z + fz * ahead);
             if (!this._chaseInit || p.snap) {
                 this._chase.copy(target);
                 this._chaseLook.copy(look);
@@ -186,7 +232,7 @@ class SceneHandle {
                 this._chase.lerp(target, k);
                 this._chaseLook.lerp(look, 1 - Math.exp(-(dt || 0.016) * 14));
             }
-            this._chase.y = Math.max(this._chase.y, 0.7);
+            this._chase.y = Math.max(this._chase.y, h + 0.7);
             this.camera.position.copy(this._chase);
             this.camera.lookAt(this._chaseLook);
             return;
@@ -199,12 +245,13 @@ class SceneHandle {
         const idx = Math.floor(((along % t.length) + t.length) % t.length / (t.length / 8) + 0.5) % 8;
         if (idx !== this._tvIndex || !this._tvPos) {
             this._tvIndex = idx;
-            const q = t.pointAt(idx * (t.length / 8) + 40);
+            const at = idx * (t.length / 8) + 40;
+            const q = t.pointAt(at);
             const side = t.halfWidth + RUN_OFF + 30;
-            this._tvPos = new THREE.Vector3((q.x - q.ty * side) / WORLD_SCALE, 7, (q.y + q.tx * side) / WORLD_SCALE);
+            this._tvPos = new THREE.Vector3((q.x - q.ty * side) / WORLD_SCALE, 7 + t.heightAt(at) / WORLD_SCALE, (q.y + q.tx * side) / WORLD_SCALE);
         }
         this.camera.position.copy(this._tvPos);
-        this.camera.lookAt(x, 0.6, z);
+        this.camera.lookAt(x, h + 0.6, z);
     }
 
     /**
@@ -241,10 +288,11 @@ class SceneHandle {
         const f = this.fx.focus;
         const cx = f ? f.x : this.camera.position.x;
         const cz = f ? f.z : this.camera.position.z;
+        const cy = (f && f.y) || 0;   // the road's height under the car in focus
         const texel = (SHADOW_EXTENT * 2) / this.sun.shadow.mapSize.x;
         const sx = Math.round(cx / texel) * texel, sz = Math.round(cz / texel) * texel;
-        this.sun.target.position.set(sx, 0, sz);
-        this.sun.position.set(sx + this.sunDir.x * 90, this.sunDir.y * 90, sz + this.sunDir.z * 90);
+        this.sun.target.position.set(sx, cy, sz);
+        this.sun.position.set(sx + this.sunDir.x * 90, cy + this.sunDir.y * 90, sz + this.sunDir.z * 90);
     }
 
     /** Sun position on screen for the glare/shafts, and how visible it is. */
@@ -395,7 +443,8 @@ class SceneHandle {
 
         const hw = this.track.halfWidth;
         const tar = asphalt();
-        this.roadMesh = new THREE.Mesh(ribbon(this.track, -hw, hw, 0.02, 45),
+        const built = (i) => this.track.built(i);
+        this.roadMesh = new THREE.Mesh(ribbon(this.track, -hw, hw, 0.02, 45, built),
             macro(new THREE.MeshStandardMaterial({
                 color: hex(atmosphere.roadHex, '#393b42'), roughness: 1, metalness: 0,
                 map: tar.map, normalMap: tar.normalMap, normalScale: new THREE.Vector2(0.8, 0.8), roughnessMap: tar.roughnessMap,
@@ -403,11 +452,42 @@ class SceneHandle {
             }), 30, 0.2));
         this.roadMesh.receiveShadow = true;
         group.add(this.roadMesh);
+        // A road in the air has no lawn beside it: deck the run-off out to where a car is stopped.
+        if (this.track.z) {
+            const deckMat = new THREE.MeshStandardMaterial({
+                color: hex(atmosphere.groundHex, '#2a3a24').multiplyScalar(0.8), roughness: 0.9, metalness: 0, side: THREE.DoubleSide,
+            });
+            for (const [a, b] of [[-hw - RUN_OFF, -hw], [hw, hw + RUN_OFF]]) {
+                const deck = new THREE.Mesh(ribbon(this.track, a, b, 0.02, 45, built), deckMat);
+                deck.receiveShadow = true;
+                deck.castShadow = true;
+                group.add(deck);
+            }
+            this.roadMesh.castShadow = true;
+        }
+        // Where the track stands in for a model's gutter (Playground): the gutter's floor
+        // without its walls, as wide as the tarmac and run-off together, the run-off a shade
+        // darker. Three strips that meet under the edge lines, not one: where the bank
+        // changes a strip twists, and a line laid on a wider strip dips through it.
+        if (this.track.roadFrom) {
+            const reach = hw + RUN_OFF + 8;   // a car stopped at the edge keeps its wheels on it
+            const onChute = (i) => this.track.drawn(i) && !built(i);
+            for (const [a, b, shade] of [[-reach, -hw, 0.72], [-hw, hw, 1], [hw, reach, 0.72]]) {
+                const chute = new THREE.Mesh(ribbon(this.track, a, b, 0.02, 45, onChute), new THREE.MeshStandardMaterial({
+                    color: hex(PLAYGROUND.chuteHex, '#2f86d6').multiplyScalar(shade), roughness: 0.55, metalness: 0, side: THREE.DoubleSide,
+                }));
+                chute.receiveShadow = true;
+                chute.castShadow = true;
+                group.add(chute);
+            }
+        }
 
         // Edge lines on the tarmac, then the barriers where physics puts the wall.
         const lineMat = new THREE.MeshStandardMaterial({
             color: 0xe8e8e8, roughness: 0.55, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
         });
+        // On the Playground's chute the lines are all that marks the tarmac: outside them is
+        // run-off, which drags like grass.
         for (const [a, b] of [[-hw, -hw + 2.2], [hw - 2.2, hw]]) {
             const line = new THREE.Mesh(ribbon(this.track, a, b, 0.03, 45), lineMat);
             line.receiveShadow = true;
@@ -415,11 +495,14 @@ class SceneHandle {
         }
         // physics.js stops a car's centre at hw + RUN_OFF - CAR_RADIUS/2; its flank is
         // half a car width further out, so that is where the barrier face belongs.
+        // The Playground run has none (the user's call, 2026-09-30): in its gutter the gutter's
+        // own sides are the wall, and on its ramp and slide the edge of the deck is. The
+        // physics still stops a car there.
         const wallLat = hw + RUN_OFF;
         const barrierMat = new THREE.MeshStandardMaterial({
             map: barrierTexture(atmosphere.accentHex), roughness: 0.6, metalness: 0.1, side: THREE.DoubleSide,
         });
-        for (const s of [-1, 1]) {
+        for (const s of this.track.z ? [] : [-1, 1]) {
             const wallMesh = new THREE.Mesh(barrier(this.track, s * wallLat, s, 0.7, 2.5), barrierMat);
             wallMesh.castShadow = true;
             wallMesh.receiveShadow = true;
@@ -459,6 +542,56 @@ class SceneHandle {
         this.trackGroup = group;
         this.buildGrass();
         this.setWeather(false);
+        if (this.track.id === 'playground') this.loadPlayground(group);
+    }
+
+    /** Fetch and place playground.glb into `group`; non-fatal, and dropped if the track changed meanwhile. */
+    async loadPlayground(group) {
+        let draco = null;
+        try {
+            const [{ GLTFLoader }, { DRACOLoader }] = await Promise.all([
+                import('three/addons/loaders/GLTFLoader.js'),
+                import('three/addons/loaders/DRACOLoader.js'),
+            ]);
+            draco = new DRACOLoader().setDecoderPath(DRACO_PATH);
+            const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(PLAYGROUND.url);
+            const model = gltf.scene;
+            const textures = new Set();
+            model.traverse(o => {
+                if (!o.isMesh) return;
+                for (const m of [o.material].flat()) {
+                    for (const v of Object.values(m)) if (v && v.isTexture) textures.add(v);
+                }
+                if (PLAYGROUND.hidden.test(o.name)) {
+                    o.visible = false;
+                } else if (o.name.startsWith('SM_Ground')) {
+                    // The pad has ~0.36 m of relief and dips up to 0.13 m below y = 0, where the
+                    // scene's own lawn would cut holes in it: lift the dips to just above the lawn
+                    // (mounds keep their shape) and let it take shadows without casting them.
+                    const pos = o.geometry.attributes.position;
+                    for (let i = 0; i < pos.count; i++) if (pos.getY(i) < 0.006) pos.setY(i, 0.006);
+                    pos.needsUpdate = true;
+                    o.geometry.computeBoundingSphere();
+                    o.receiveShadow = true;
+                } else {
+                    o.castShadow = true;
+                    o.receiveShadow = true;
+                }
+            });
+            if (this.disposed || this.trackGroup !== group) {
+                disposeObject(model);
+                for (const t of textures) t.dispose();
+                return;
+            }
+            model.name = 'pocabinet-playground';
+            model.scale.setScalar(PLAYGROUND.scale);
+            group.add(model);
+            this.ownedTextures.push(...textures);
+        } catch (e) {
+            console.warn('pocabinet/scene: playground model skipped', e);
+        } finally {
+            draco?.dispose();
+        }
     }
 
     buildGrass() {
@@ -470,7 +603,7 @@ class SceneHandle {
         const blades = GRASS_BLADES[this.quality] || 0;
         if (!this.track || !blades || this.track.id === 'pressbriefing') return;
         try {
-            this.grass = new Grass(this.track, hex(this.baseAtmosphere?.groundHex, '#2a3a24'), blades);
+            this.grass = new Grass(this.track, hex(this.baseAtmosphere?.groundHex, '#2a3a24'), blades, keepOutFor(this.track.id));
             this.scene.add(this.grass.mesh);
         } catch (e) {
             this.grass = null;
@@ -487,10 +620,9 @@ class SceneHandle {
         if (!this.trackGroup) return;
         this.scene.remove(this.trackGroup);
         this.scenery?.dispose();
-        this.trackGroup.traverse(o => {
-            if (o.geometry) o.geometry.dispose();
-            if (o.material) o.material.dispose();
-        });
+        disposeObject(this.trackGroup);
+        for (const t of this.ownedTextures) t.dispose();
+        this.ownedTextures = [];
         this.trackGroup = null;
         this.racingLine = null;
         this.roadMesh = null;
@@ -530,23 +662,46 @@ class SceneHandle {
 //  Geometry builders. Lateral offsets are sim units (+ = right of travel).
 // ──────────────────────────────────────────────────────────────────────────
 
+/** Free every geometry and material under `root` (textures are the caller's). */
+function disposeObject(root) {
+    root.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        for (const m of [o.material].flat()) m?.dispose();
+    });
+}
+
 function scaleUv(geom, su, sv) {
     const uv = geom.attributes.uv;
     for (let i = 0; i < uv.count; i++) uv.setXY(i, uv.getX(i) * su, uv.getY(i) * sv);
     uv.needsUpdate = true;
 }
 
-/** A flat strip between two lateral offsets; uv = (lateral, distance) / tile (sim units). */
-function ribbon(track, fromLat, toLat, height, tile) {
+/** World height of the road at centerline sample `k` (0 on a flat track). */
+function roadHeight(track, k) {
+    return track.z ? track.z[k] / WORLD_SCALE : 0;
+}
+
+/** Height the road's bank adds `lat` sim units off the centerline at sample `k` (world units). */
+function bankHeight(track, k, lat) {
+    return track.bank ? track.bank[k] * lat / WORLD_SCALE : 0;
+}
+
+/**
+ * A strip between two lateral offsets, following the road's height and bank;
+ * uv = (lateral, distance) / tile (sim units). `pick(i)` chooses the segments to lay
+ * (default: everything but the return link).
+ */
+function ribbon(track, fromLat, toLat, height, tile, pick = (i) => track.drawn(i)) {
     const positions = [], uvs = [];
     const n = track.count;
     for (let i = 0; i <= n; i++) {
         const k = i % n;
         const nx = -track.ty[k], ny = track.tx[k];
         const x = track.x[k], y = track.y[k];
+        const h = height + roadHeight(track, k);
         positions.push(
-            (x + nx * fromLat) / WORLD_SCALE, height, (y + ny * fromLat) / WORLD_SCALE,
-            (x + nx * toLat) / WORLD_SCALE, height, (y + ny * toLat) / WORLD_SCALE,
+            (x + nx * fromLat) / WORLD_SCALE, h + bankHeight(track, k, fromLat), (y + ny * fromLat) / WORLD_SCALE,
+            (x + nx * toLat) / WORLD_SCALE, h + bankHeight(track, k, toLat), (y + ny * toLat) / WORLD_SCALE,
         );
         const v = (i === n ? track.length : track.cum[k]) / tile;
         uvs.push(fromLat / tile, v, toLat / tile, v);
@@ -556,6 +711,7 @@ function ribbon(track, fromLat, toLat, height, tile) {
     geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
     const indices = [];
     for (let i = 0; i < n; i++) {
+        if (!pick(i)) continue;
         const a0 = i * 2, a1 = i * 2 + 1, b0 = (i + 1) * 2, b1 = (i + 1) * 2 + 1;
         indices.push(a0, a1, b0, a1, b1, b0);
     }
@@ -623,10 +779,11 @@ function barrierTexture(accentHex) {
     return tex;
 }
 
-/** Chequered strip across the road at distance 0 (the lap line). */
+/** Chequered strip across the road where a lap ends: distance 0 on a circuit, the finish of a point-to-point run. */
 function startLine(track) {
     const group = new THREE.Group();
-    const p = track.pointAt(0);
+    const p = track.pointAt(track.lapLength);
+    const y = 0.035 + track.heightAt(track.lapLength) / WORLD_SCALE;
     const cols = 12, rows = 2, hw = track.halfWidth;
     const cell = (hw * 2) / cols;
     const geom = new THREE.PlaneGeometry(cell / WORLD_SCALE, cell / WORLD_SCALE);
@@ -640,7 +797,7 @@ function startLine(track) {
             const m = new THREE.Mesh(geom, (r + c) % 2 === 0 ? white : black);
             m.position.set(
                 (p.x + -p.ty * lat + p.tx * fwd) / WORLD_SCALE,
-                0.035,
+                y,
                 (p.y + p.tx * lat + p.ty * fwd) / WORLD_SCALE);
             m.rotation.y = -Math.atan2(p.ty, p.tx);
             m.receiveShadow = true;
@@ -662,7 +819,7 @@ function racingLineMesh(track) {
     const c = new THREE.Color();
     for (let i = 0; i <= track.count; i++) {
         const k = i % track.count;
-        positions.push(track.x[k] / WORLD_SCALE, 0.065, track.y[k] / WORLD_SCALE);
+        positions.push(track.x[k] / WORLD_SCALE, 0.065 + roadHeight(track, k), track.y[k] / WORLD_SCALE);
         let kappa = 0;
         for (let j = 0; j < 8; j++) kappa = Math.max(kappa, track.curvatureAt((k + j) % track.count));
         const vMax = Math.sqrt(GRIP_ACCEL * 0.9 / Math.max(kappa, 1e-5));
@@ -674,7 +831,10 @@ function racingLineMesh(track) {
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geom.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-    return new THREE.Line(geom, new THREE.LineBasicMaterial({ vertexColors: true }));
+    const pairs = [];
+    for (let i = 0; i < track.count; i++) if (track.drawn(i)) pairs.push(i, i + 1);
+    geom.setIndex(pairs);
+    return new THREE.LineSegments(geom, new THREE.LineBasicMaterial({ vertexColors: true }));
 }
 
 // ──────────────────────────────────────────────────────────────────────────
@@ -728,7 +888,7 @@ export async function mount(canvas, world) {
     }
     handle.setTrack(world);
     const start = handle.track.pointAt(-40);
-    handle.setView({ x: start.x, y: start.y, heading: Math.atan2(start.ty, start.tx), mode: 'chase', snap: true });
+    handle.setView({ x: start.x, y: start.y, h: handle.track.heightAt(-40) / WORLD_SCALE, heading: Math.atan2(start.ty, start.tx), mode: 'chase', snap: true });
     handle.resize();
     handle.startLoop();
     return handle;

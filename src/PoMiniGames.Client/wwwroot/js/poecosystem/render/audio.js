@@ -70,6 +70,8 @@ export function createAudio() {
   let enabled = true;
   let lastChirpAt = 0;
   let lastImpactAt = 0;
+  let underFilter = null;
+  let under = false;
   const listener = { x: 0, y: 0, z: 0 };
 
   const smooth = (v) => v * v * (3 - 2 * v);   // smoothstep for gain crossfades
@@ -110,7 +112,12 @@ export function createAudio() {
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -8; limiter.knee.value = 6; limiter.ratio.value = 6;
     limiter.attack.value = 0.004; limiter.release.value = 0.18;
-    master.connect(limiter).connect(ctx.destination);
+    // Underwater (2026-09-30): one low-pass on the whole mix, wide open above the surface.
+    // Sitting between the master and the limiter, it muffles the score as well — which is
+    // what a head under water hears.
+    underFilter = ctx.createBiquadFilter();
+    underFilter.type = 'lowpass'; underFilter.frequency.value = under ? 520 : 20000; underFilter.Q.value = 0.5;
+    master.connect(underFilter).connect(limiter).connect(ctx.destination);
 
     const convolver = ctx.createConvolver();
     convolver.buffer = makeImpulse(2.4, 2.6);
@@ -545,10 +552,95 @@ export function createAudio() {
     }
   }
 
+  /** The camera went under the waterline (true) or came back up. */
+  function setUnderwater(on) {
+    if (!!on === under) return;
+    under = !!on;
+    if (!ctx || !underFilter) return;
+    underFilter.frequency.setTargetAtTime(under ? 520 : 20000, ctx.currentTime, under ? 0.08 : 0.2);
+  }
+
+  /** One plain enveloped note into `dest` — the building block of the two voices below. */
+  function note(dest, when, freq, seconds, level, type = 'sine') {
+    const osc = ctx.createOscillator();
+    osc.type = type; osc.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0, when);
+    g.gain.linearRampToValueAtTime(level, when + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, when + seconds);
+    osc.connect(g).connect(dest);
+    osc.start(when); osc.stop(when + seconds + 0.05);
+  }
+
+  /**
+   * A watched creature has died: a soft bell from where it fell — two inharmonic partials,
+   * the way a small bell rings — late by the sound's travel time like everything else.
+   */
+  function knell(at) {
+    if (!ctx || !enabled || !at) return;
+    try {
+      const placed = place(at.x, at.y, at.z, { wet: 0.7, ref: 16, rolloff: 0.9 });
+      if (!placed) return;
+      const when = arrival(placed);
+      note(placed.node, when, 392, 3.2, 0.2);
+      note(placed.node, when, 392 * 2.76, 1.6, 0.07);
+    } catch { /* best effort */ }
+  }
+
+  /** A birth in a watched family: three quick rising notes. */
+  function chime(at) {
+    if (!ctx || !enabled || !at) return;
+    try {
+      const placed = place(at.x, at.y, at.z, { wet: 0.5, ref: 12, rolloff: 1 });
+      if (!placed) return;
+      const when = arrival(placed);
+      [523.25, 659.25, 783.99].forEach((f, i) => note(placed.node, when + i * 0.09, f, 0.7, 0.11, 'triangle'));
+    } catch { /* best effort */ }
+  }
+
+  // Sonification (2026-09-30): a population row as a chord, a run of rows as a melody.
+  // One voice per species, each in its own octave and timbre (the same four the leitmotif
+  // uses), and the pitch is how many of them there were — on a pentatonic scale, so any
+  // year of any island is consonant with the one before it.
+  const PENTA = [0, 2, 4, 7, 9];
+  const SONIFY = [
+    { base: 523.25, type: 'triangle' },   // rabbits: high pluck
+    { base: 261.63, type: 'sine' },       // deer: flute
+    { base: 130.81, type: 'sawtooth' },   // wolves: low reed
+    { base: 196.0, type: 'square' },      // humans: mallet
+  ];
+  /**
+   * @param {number[][]} rows each [rabbits, deer, wolves, humans]
+   * @param {number} peak the count that maps to the top of the range
+   * @returns {number} seconds the phrase lasts (0 when audio is off)
+   */
+  function sonify(rows, peak = 100) {
+    ensure();
+    if (!ctx || !enabled || !Array.isArray(rows) || rows.length === 0) return 0;
+    try {
+      const step = rows.length === 1 ? 0 : Math.max(0.07, Math.min(0.22, 6 / rows.length));
+      const hold = rows.length === 1 ? 0.5 : step * 1.6;
+      const top = Math.max(1, peak);
+      const t0 = ctx.currentTime + 0.03;
+      rows.slice(0, 240).forEach((row, i) => {
+        for (let s = 0; s < 4; s++) {
+          const n = row[s] | 0;
+          if (n <= 0) continue;                       // an extinct species is a silence
+          const k = Math.min(9, Math.floor((n / top) * 10));
+          const semis = PENTA[k % 5] + 12 * Math.floor(k / 5);
+          const v = SONIFY[s];
+          note(master, t0 + i * step, v.base * Math.pow(2, semis / 12), hold, v.type === 'sine' || v.type === 'triangle' ? 0.07 : 0.03, v.type);
+        }
+      });
+      return rows.length === 1 ? hold : rows.length * step + hold;
+    } catch { return 0; }
+  }
+
   return {
     ensure,
     setDay,
     setWeather,
+    setUnderwater, knell, chime, sonify,
     stinger,
     impact,
     tribalDrum,

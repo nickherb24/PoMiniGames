@@ -1045,35 +1045,24 @@
    HowToPlay parameter. Controls text still reaches players through
    <GameIntro Controls="…"> and its .gps-intro-controls styling. */
 
-/* ── §GFX-1 PoRacer WebGL composite layer ────────────────────────────────
-   poracerGl.js inserts this canvas as a sibling of the 2D race canvas and
-   sets the 2D canvas to opacity 0. The 2D canvas keeps drawing — it is the
-   texture source for the shader — it just stops being what the player sees.
-
-   Positioned by the same rules as the canvas it shadows, so it tracks the
-   layout without either element knowing about the other. */
-/* The wrapper has no styling of its own, so without this the absolutely
-   positioned GL canvas would escape to whatever ancestor happens to be
-   positioned — or to the viewport.
-
-   2026-08-07 browser audit #1: `position: relative` alone was NOT layout-neutral,
-   contrary to the note that used to sit here. It made the wrapper the containing
-   block for `.racer-canvas` / `.racer-gl`, but the wrapper's own children are all
-   absolutely positioned, so it had nothing to derive a height from and collapsed
-   to 0. `height: 100%` on the canvas then resolved against 0 and the whole race
-   rendered into a zero-height canvas — HUD live, track invisible. Pin the wrapper
-   to `.racer-root` so it is both the containing block AND full size. */
-.racer-canvas-wrap {
-  position: absolute;
-  inset: 0;
+/* ── PoRacer results reveal ──────────────────────────────────────────────
+   js/poracer/index.js `reveal` puts `racer-vt` on <html> for the length of one View
+   Transition: the zoomed-out circuit falls back and dims while the results dialog rises
+   in over it. Global because ::view-transition-* hang off the root, out of reach of a
+   component's scoped stylesheet. (This block used to style the WebGL post-pass canvas,
+   `.racer-gl`; that pass could not run after 2026-09-17 and was deleted 2026-09-30.) */
+html.racer-vt::view-transition-old(root) {
+  animation: racer-vt-out 0.32s ease-in both;
 }
 
-.racer-gl {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-  display: block;
-  border-radius: inherit;
+html.racer-vt::view-transition-new(root) {
+  animation: racer-vt-in 0.46s cubic-bezier(0.2, 0.9, 0.3, 1.15) both;
+}
+
+@keyframes racer-vt-out {
+  to { opacity: 0; transform: scale(0.97); }
+}
+
+@keyframes racer-vt-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
 }

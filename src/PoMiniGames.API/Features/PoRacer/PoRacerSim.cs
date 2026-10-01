@@ -16,9 +16,29 @@ internal sealed class PoRacerSim
     private const double StopAfterMs = 180_000; // Allows three real laps on the longer tracks; still bounds abandoned races.
     // Once the winner crosses the line (finishes lap 3), the pack gets this much
     // longer to finish; then the race ends and stragglers are DNF'd. Keeps the
-    // race from idling to the safety cap after it's effectively decided.
-    private const double FinishGraceMs = 5_000;
+    // race from idling to the safety cap after it's effectively decided. It was 5 s while
+    // the bots lapped ten seconds slower than anyone who could steer; with the solo tiers a
+    // driver who is a second or two a lap off the winner must still get to finish.
+    private const double FinishGraceMs = 15_000;
     private double _leaderFinishMs = -1;
+    /// <summary>
+    /// The share of top speed a bot sheds for the sharpest bend. At 0.58 a bot laps the oval in
+    /// about 27 s where a driver who keeps the throttle in manages 17: the cars can take every
+    /// corner here far faster than the bots dare. That gap, more than top speed, is what the
+    /// solo tiers move (PoRacerRaceRegistry.Join); demo and online bots keep this default.
+    /// </summary>
+    public const double DefaultBotCaution = 0.58;
+    private readonly double _botCaution;
+
+    // What moves a car's top speed (2026-10-01). Until then nothing did: a boost only pushed
+    // harder toward the same ceiling, a tow was two bots' private acceleration bonus, and
+    // Damage was a number the renderer scuffed the paint with.
+    private const double BoostTopSpeed = 1.10;     // boost pad or drift payout
+    private const double DraftTopSpeed = 1.04;     // sitting in another car's tow
+    private const double DamageSpeedCost = 0.10;   // share of top speed lost at Damage = 1
+
+    private static double TopSpeed(SimCar c) =>
+        c.MaxSpeed * (1 - DamageSpeedCost * c.Damage) * (c.BoostTimer > 0 ? BoostTopSpeed : 1) * (c.Drafting ? DraftTopSpeed : 1);
 
     public PoRacerStaticWorld Static { get; }
 
@@ -34,9 +54,23 @@ internal sealed class PoRacerSim
 
     private readonly Stopwatch _wallClock = Stopwatch.StartNew();
     private long _startElapsedMs;
+    // Pause (solo only): the race clock is "now - start", so a pause freezes "now" and resuming
+    // slides the start forward by the time spent paused. Every lap and finish time is measured
+    // on that clock, so none of them can see the gap.
+    private long _pausedAtMs = -1;
 
-    public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null, int countdownSeconds = 0)
+    private long NowMs => _pausedAtMs >= 0 ? _pausedAtMs : _wallClock.ElapsedMilliseconds;
+    private double RaceSeconds => (NowMs - _startElapsedMs) / 1000.0;
+    public bool Paused => _pausedAtMs >= 0;
+    public string TrackId => _track.Id;
+
+    /// <param name="bots">False for a time trial: only the human cars take the grid. Ignored with no humans.</param>
+    /// <param name="botPace">Scales every bot's top speed and acceleration (the solo difficulty tier).</param>
+    /// <param name="botCaution">How much speed a bot gives up for a bend, 0-1. See <see cref="DefaultBotCaution"/>.</param>
+    public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null, int countdownSeconds = 0,
+        bool bots = true, double botPace = 1.0, double botCaution = DefaultBotCaution)
     {
+        _botCaution = botCaution;
         var track = PoRacerTrackRegistry.GetTrack(trackId);
         _track = track;
         _trackWidth = track.TrackWidth;
@@ -126,7 +160,7 @@ internal sealed class PoRacerSim
             slots.Add((string.IsNullOrEmpty(p.UserId) ? p.ConnectionId : p.UserId, p.DisplayName, true));
         }
         int humanCount = slots.Count;
-        for (int i = humanCount; i < 8; i++)
+        for (int i = humanCount; i < 8 && (bots || humanCount == 0); i++)
         {
             var p = PoRacerAiDriver.GetPersonality(i);
             slots.Add(($"bot-{i}", p.Name, false));
@@ -135,7 +169,10 @@ internal sealed class PoRacerSim
         for (int i = 0; i < slots.Count && i < 8; i++)
         {
             var s = slots[i];
-            var prof = profiles[i];
+            // Every human gets the same car. The profile used to be picked by grid slot, so the
+            // second driver in an online race had 15 more top speed and acceleration than the
+            // first, on a board that ranks best laps.
+            var prof = profiles[s.isPlayer ? 0 : i];
             var personality = s.isPlayer ? null : PoRacerAiDriver.GetPersonality(i);
             int row = i / 2;
             int col = i % 2;
@@ -154,10 +191,11 @@ internal sealed class PoRacerSim
                 Personality = personality,
                 Color = carColor,
                 ColorDark = Darken(carColor),
+                Livery = PoRacerCatalog.Liveries[i % PoRacerCatalog.Liveries.Count],
                 Pos = pos,
                 Heading = Math.Atan2(ty, tx),
-                MaxSpeed = personality?.MaxSpeed ?? prof.maxSpeed,
-                Acceleration = personality?.Acceleration ?? prof.accel,
+                MaxSpeed = personality is null ? prof.maxSpeed : personality.MaxSpeed * botPace,
+                Acceleration = personality is null ? prof.accel : personality.Acceleration * botPace,
                 Handling = personality?.Handling ?? prof.handling,
                 CorneringSkill = personality?.CorneringSkill ?? prof.skill,
                 Lap = 1,
@@ -172,14 +210,65 @@ internal sealed class PoRacerSim
         _startElapsedMs = _wallClock.ElapsedMilliseconds + Math.Max(0, countdownSeconds) * 1000L;
         foreach (var car in _cars) { Project(car); UpdateRaceProgress(car); }
         Rank();
+        Static.Roster = BuildRoster();
     }
 
     public int? CarIdForOwner(string ownerId) => _byOwnerId.TryGetValue(ownerId, out var car) ? car.Id : null;
 
+    /// <summary>
+    /// The human seats, as (owner id, car id): who a finished race's laps belong to. A seat the
+    /// stand-in bot drove for even one tick is left out, so a lap a bot set can never be
+    /// submitted to the board under the absent driver's name.
+    /// </summary>
+    public IEnumerable<(string OwnerId, int CarId)> Humans =>
+        _byOwnerId.Where(p => !p.Value.BotDriven).Select(p => (p.Key, p.Value.Id));
+
+    /// <summary>
+    /// Hand a human's car to the bot driver, or back. A shared race does this for a seat nobody
+    /// is connected to: until 2026-10-01 a driver who closed the tab left a parked car on the
+    /// racing line for everyone else, for the rest of the race.
+    /// </summary>
+    public void SetAutopilot(string ownerId, bool on)
+    {
+        if (_byOwnerId.TryGetValue(ownerId, out var car)) car.Autopilot = on;
+    }
+
+    private List<PoRacerCarInfo> BuildRoster() => _cars
+        .Select(c => new PoRacerCarInfo(c.Id, c.Name, c.Color, c.ColorDark, c.Livery, c.IsPlayer, c.Personality?.Trait ?? ""))
+        .ToList();
+
+    /// <summary>
+    /// Paint a human's car. The values come off the wire, so anything that is not a #rrggbb colour
+    /// or a known livery is ignored. Returns true when the roster changed and must be re-sent.
+    /// </summary>
+    public bool SetPaint(string ownerId, string? colorHex, string? livery)
+    {
+        if (!_byOwnerId.TryGetValue(ownerId, out var car)) return false;
+        var color = colorHex is { Length: 7 } hex && hex[0] == '#' && hex.Skip(1).All(Uri.IsHexDigit) ? hex.ToLowerInvariant() : car.Color;
+        var style = livery is not null && PoRacerCatalog.Liveries.Contains(livery) ? livery : car.Livery;
+        if (color == car.Color && style == car.Livery) return false;
+        car.Color = color;
+        car.ColorDark = Darken(color);
+        car.Livery = style;
+        Static.Roster = BuildRoster();
+        return true;
+    }
+
+    public void SetPaused(bool paused)
+    {
+        if (paused == Paused) return;
+        if (paused) _pausedAtMs = _wallClock.ElapsedMilliseconds;
+        else
+        {
+            _startElapsedMs += _wallClock.ElapsedMilliseconds - _pausedAtMs;
+            _pausedAtMs = -1;
+        }
+    }
+
     public void Tick(double dt, IReadOnlyDictionary<string, PoRacerInput> inputs)
     {
         // Inputs may be held through the countdown, but no car moves before GO.
-        if (_wallClock.ElapsedMilliseconds < _startElapsedMs) return;
+        if (Paused || NowMs < _startElapsedMs) return;
         // Update surface friction and boost pads for every car
         foreach (var c in _cars)
         {
@@ -190,8 +279,18 @@ internal sealed class PoRacerSim
         foreach (var (cid, car) in _byOwnerId)
         {
             if (car.Lap > TotalLaps) continue;
+            if (car.Autopilot)
+            {
+                car.BotDriven = true;
+                UpdateAi(car, dt);
+                continue;
+            }
             inputs.TryGetValue(cid, out var inp);
-            ApplyControl(car, dt, inp?.Up ?? false, inp?.Down ?? false, inp?.Left ?? false, inp?.Right ?? false, inp?.Space ?? false);
+            // A non-zero analog axis (gamepad) wins over its key. Clamped here: this is the wire.
+            double steer = Axis(inp?.Steer, -1) is var sx && sx != 0 ? sx : (inp?.Right == true ? 1 : 0) - (inp?.Left == true ? 1 : 0);
+            double throttle = Axis(inp?.Throttle, 0) is var tv && tv > 0 ? tv : inp?.Up == true ? 1 : 0;
+            double brake = Axis(inp?.Brake, 0) is var bv && bv > 0 ? bv : inp?.Down == true ? 1 : 0;
+            ApplyControl(car, dt, throttle, brake, steer, inp?.Space ?? false);
         }
         // AI.
         foreach (var c in _cars)
@@ -214,7 +313,8 @@ internal sealed class PoRacerSim
         ResolveCarCollisions();
         // Hard safety bound: collision impulses on a jam of stopped cars could
         // otherwise integrate into absurd runaway speeds (the finish-line pile-up).
-        foreach (var c in _cars) c.Speed = Math.Clamp(c.Speed, -c.MaxSpeed, c.MaxSpeed);
+        // (A boosted car in a tow legitimately runs about 15% over MaxSpeed, hence the headroom.)
+        foreach (var c in _cars) c.Speed = Math.Clamp(c.Speed, -c.MaxSpeed, c.MaxSpeed * 1.2);
         // Project onto centerline.
         foreach (var c in _cars) Project(c);
         // Wall collisions.
@@ -228,7 +328,7 @@ internal sealed class PoRacerSim
         // When the grace expires (or the safety cap hits) declare any car
         // still running as DNF, so the race ends when the 3rd lap is won rather
         // than idling on until the cap.
-        var elapsed = _wallClock.ElapsedMilliseconds - _startElapsedMs;
+        var elapsed = NowMs - _startElapsedMs;
         if (_leaderFinishMs < 0 && _cars.Any(c => c.Lap > TotalLaps))
         {
             _leaderFinishMs = elapsed;
@@ -286,37 +386,70 @@ internal sealed class PoRacerSim
         }
         c.Surface = detectedSurface;
         c.EffectiveGrip = grip;
+
+        // 3. Slipstream: tucked in behind another car. Every human gets it; among the bots only
+        // the two drafting personalities do, as before, so the solo tiers keep their pace.
+        c.Drafting = (c.IsPlayer || c.Personality?.PrefersDrafting == true)
+            && _cars.Any(o => o.Id != c.Id && o.Lap <= TotalLaps && PoRacerAiDriver.IsDrafting(c.Pos, c.Heading, o.Pos));
+        if (c.Drafting) c.AccelerationModifier = Math.Max(c.AccelerationModifier, 1.15);
     }
 
-    private void ApplyControl(SimCar c, double dt, bool accel, bool brake, bool left, bool right, bool handbrake)
+    private static double Axis(double? value, double min) =>
+        value is { } v && double.IsFinite(v) ? Math.Clamp(v, min, 1) : 0;
+
+    /// <param name="throttle">0…1.</param><param name="braking">0…1.</param><param name="steerInput">-1 (left) … 1 (right).</param>
+    private void ApplyControl(SimCar c, double dt, double throttle, double braking, double steerInput, bool handbrake)
     {
-        double steerInput = (right ? 1 : 0) - (left ? 1 : 0);
+        bool accel = throttle > 0, brake = braking > 0;
         double steerRate = 3.0 * c.Handling * c.EffectiveGrip;
         double maxSteer = 0.55;
         c.Steer += (steerInput - c.Steer / maxSteer) * steerRate * dt;
         c.Steer = Math.Clamp(c.Steer, -maxSteer, maxSteer);
         if (steerInput == 0) c.Steer *= Math.Max(0, 1 - 2.0 * dt);
 
-        double engine = 0;
-        if (accel) engine += c.Acceleration * c.AccelerationModifier;
-        if (brake)
-        {
-            if (c.Speed > 1) engine -= c.Acceleration * 1.6;
-            else engine -= c.Acceleration * 0.6;
-        }
+        double before = c.Speed;
+        double engine = c.Acceleration * c.AccelerationModifier * throttle;
+        engine -= c.Acceleration * (c.Speed > 1 ? 1.6 : 0.6) * braking;
         c.Speed += engine * dt;
         double drag = 0.6 + Math.Abs(c.Speed) * 0.004;
         c.Speed -= Math.Sign(c.Speed) * drag * dt;
         if (Math.Abs(c.Speed) < 0.5 && !accel && !brake) c.Speed = 0;
-        if (handbrake) c.Speed *= Math.Max(0, 1 - 3.0 * dt);
-        c.Speed = Math.Clamp(c.Speed, -c.MaxSpeed * 0.4, c.MaxSpeed);
+
+        // The handbrake with the wheel turned, at speed, on tarmac, is a drift: the car rotates
+        // half again as fast and scrubs about a third of what a straight-line pull does. Until
+        // 2026-10-01 "Drift" was only that pull plus MORE understeer, so the one control named
+        // after cornering made every corner worse. Holding a drift charges it; letting go pays
+        // the charge out as a short boost, so it is a way round a tight bend, not a free one
+        // down a straight (the scrub costs about what the payout returns).
+        bool onSand = c.Surface == "sand";
+        bool drift = handbrake && !onSand && Math.Abs(c.Steer) > 0.15 && c.Speed > c.MaxSpeed * 0.3;
+        if (handbrake) c.Speed *= Math.Max(0, 1 - (drift ? 1.1 : 3.0) * dt);
+        if (drift) c.DriftCharge = Math.Min(1, c.DriftCharge + dt);
+        else if (c.DriftCharge > 0)
+        {
+            if (handbrake) c.DriftCharge = Math.Max(0, c.DriftCharge - dt);   // straightened up, still on the brake
+            else
+            {
+                if (c.DriftCharge >= 0.3)
+                {
+                    c.BoostTimer = Math.Max(c.BoostTimer, 0.35 + 0.65 * c.DriftCharge);
+                    c.BoostGlow = 1;
+                }
+                c.DriftCharge = 0;
+            }
+        }
+
+        // Top speed moves with boost, tow and damage. Over it (the boost just ran out) the car
+        // bleeds back down instead of snapping; under it this is the plain clamp it always was.
+        double top = TopSpeed(c);
+        if (c.Speed > top) c.Speed = Math.Max(top, Math.Min(c.Speed, before) - 150 * dt);
+        c.Speed = Math.Max(c.Speed, -c.MaxSpeed * 0.4);
 
         double speedFactor = Math.Min(1, Math.Abs(c.Speed) / 80);
-        double turnRate = (c.Speed / 60.0) * c.Steer * (1.0 - 0.3 * speedFactor);
+        double turnRate = (c.Speed / 60.0) * c.Steer * (1.0 - 0.3 * speedFactor) * (drift ? 1.5 : 1.0);
         double desiredHeading = c.Heading + turnRate * dt;
-        bool onSand = c.Surface == "sand";
-        bool drifting = handbrake || onSand || (Math.Abs(c.Steer) > 0.35 && Math.Abs(c.Speed) > c.MaxSpeed * 0.45);
-        if (drifting)
+        bool sliding = !drift && (handbrake || onSand || (Math.Abs(c.Steer) > 0.35 && Math.Abs(c.Speed) > c.MaxSpeed * 0.45));
+        if (sliding)
         {
             double slideStrength = handbrake ? 0.7 : (onSand ? 0.55 : 0.4);
             c.Heading = desiredHeading * (1 - slideStrength) + c.Heading * slideStrength;
@@ -325,7 +458,8 @@ internal sealed class PoRacerSim
         else
         {
             c.Heading = desiredHeading;
-            c.SkidIntensity *= Math.Max(0, 1 - 3 * dt);
+            if (drift) c.SkidIntensity = Math.Min(1, c.SkidIntensity + dt * 4);
+            else c.SkidIntensity *= Math.Max(0, 1 - 3 * dt);
         }
 
         c.Pos = new Vec2(c.Pos.X + Math.Cos(c.Heading) * c.Speed * dt, c.Pos.Y + Math.Sin(c.Heading) * c.Speed * dt);
@@ -389,23 +523,7 @@ internal sealed class PoRacerSim
                               target.Y + nrm.Y * (pers.LateralOffsetRatio * _trackWidth * 0.35));
         }
 
-        // Slipstream drafting for AI
-        if (c.Personality?.PrefersDrafting == true)
-        {
-            bool isDrafting = false;
-            foreach (var other in _cars)
-            {
-                if (other.Id != c.Id && other.Lap <= TotalLaps && PoRacerAiDriver.IsDrafting(c.Pos, c.Heading, other.Pos))
-                {
-                    isDrafting = true;
-                    break;
-                }
-            }
-            if (isDrafting)
-            {
-                c.AccelerationModifier = Math.Max(c.AccelerationModifier, 1.15);
-            }
-        }
+        // (The tow is worked out for every car in UpdateSurfaceAndBoost.)
 
         double desired = Math.Atan2(target.Y - c.Pos.Y, target.X - c.Pos.X);
         double diff = ShortAngleDiff(desired, c.Heading);
@@ -417,8 +535,11 @@ internal sealed class PoRacerSim
         double bend = UpcomingBend(c.LastCheckpoint, scan);
         double curviness = Math.Clamp(bend / 0.85, 0, 1);
         double aggression = c.Personality?.Aggression ?? 0.5;
-        double cornerSpeed = c.MaxSpeed * (1.0 - 0.58 * curviness) * (0.90 + 0.12 * c.CorneringSkill + 0.08 * aggression);
-        cornerSpeed = Math.Clamp(cornerSpeed, c.MaxSpeed * 0.36, c.MaxSpeed);
+        // Scaled from the car's top speed of the moment, not its nominal one: on a boost pad a
+        // bot is well over MaxSpeed, and measured against that it would brake for the boost.
+        double top = TopSpeed(c);
+        double cornerSpeed = top * (1.0 - _botCaution * curviness) * (0.90 + 0.12 * c.CorneringSkill + 0.08 * aggression);
+        cornerSpeed = Math.Clamp(cornerSpeed, c.MaxSpeed * 0.36, top);
 
         const double deadband = 0.05;
         bool accel, brake = false, handbrake = false;
@@ -446,7 +567,7 @@ internal sealed class PoRacerSim
             brake = true; accel = false;
         }
 
-        ApplyControl(c, dt, accel, brake, left, right, handbrake);
+        ApplyControl(c, dt, accel ? 1 : 0, brake ? 1 : 0, (right ? 1 : 0) - (left ? 1 : 0), handbrake);
 
         // Small stochastic imperfection so the field isn't robotic; less for skilled bots.
         if (Random.Shared.NextDouble() < 0.015 * (1.15 - c.CorneringSkill))
@@ -495,8 +616,16 @@ internal sealed class PoRacerSim
                     var impulse = -rel * 0.6;
                     a.Speed += impulse * 0.4;
                     b.Speed -= impulse * 0.4;
-                    a.Damage = Math.Min(1, a.Damage + 0.03);
-                    b.Damage = Math.Min(1, b.Damage + 0.03);
+                    // Damage is by how hard, not by how long. It was +0.03 for every tick two
+                    // cars overlapped, so a grid that bumped off the line was fully dented by
+                    // the first corner; now that it costs speed, only a real closing speed counts.
+                    var closing = Math.Abs(rel);
+                    if (closing > 30)
+                    {
+                        var dent = Math.Min(0.06, closing / 2500);
+                        a.Damage = Math.Min(1, a.Damage + dent);
+                        b.Damage = Math.Min(1, b.Damage + dent);
+                    }
                 }
             }
         }
@@ -544,9 +673,15 @@ internal sealed class PoRacerSim
         var vyNew = vTangentNew * ty + vNormalNew * ny;
         c.Speed = Math.Sqrt(vxNew * vxNew + vyNew * vyNew);
         c.Heading = Math.Atan2(vyNew, vxNew);
-        c.Heading += sign * 0.2;
+        // Glance off: turn the nose 0.2 rad toward the track, whichever way the car is travelling
+        // (the sign of heading x inward-normal says which way that is). Until 2026-09-30 this was
+        // `+= sign * 0.2`, which is right for a car driving the wrong way round and turns one
+        // driving the right way INTO the barrier: a single brush became a hit on every tick, the
+        // speed collapsed, the car ground along the wall and Damage ran to 1 in a quarter second.
+        c.Heading += 0.2 * Math.Sign(Math.Sin(c.Heading) * nx - Math.Cos(c.Heading) * ny);
         c.SkidIntensity = 1.0;
-        c.Damage = Math.Min(1, c.Damage + 0.08);
+        // By the speed into the barrier: a 5 degree brush at full speed is about 0.02, head-on is 0.12.
+        if (Math.Abs(vInto) > 20) c.Damage = Math.Min(1, c.Damage + Math.Min(0.12, Math.Abs(vInto) / 1500));
     }
 
     private void UpdateRaceProgress(SimCar c)
@@ -570,7 +705,7 @@ internal sealed class PoRacerSim
                 // Fastest-lap timing: a lap just closed — measure it against the
                 // race clock and keep the best. LapStartElapsed rebases to now so
                 // the next lap times independently. This is the metric 1P scores on.
-                var nowSec = (_wallClock.ElapsedMilliseconds - _startElapsedMs) / 1000.0;
+                var nowSec = RaceSeconds;
                 var lapTime = nowSec - c.LapStartElapsed;
                 c.LastLapTime = lapTime;
                 if (lapTime > 0 && (c.BestLapTime < 0 || lapTime < c.BestLapTime))
@@ -608,7 +743,7 @@ internal sealed class PoRacerSim
         //   * every car (player + AI) has crossed the line.
         // We deliberately check ALL cars (not just players) so a bot-only race
         // doesn't immediately finish via the vacuous-All-of-empty-set trap.
-        var elapsed = _wallClock.ElapsedMilliseconds - _startElapsedMs;
+        var elapsed = NowMs - _startElapsedMs;
         if (elapsed > StopAfterMs) return true;
         // Winner crossed + grace elapsed → the race is decided.
         if (_leaderFinishMs >= 0 && elapsed - _leaderFinishMs > FinishGraceMs) return true;
@@ -632,41 +767,44 @@ internal sealed class PoRacerSim
 
     public PoRacerRaceSnapshot Snapshot(string code)
     {
+        var elapsed = RaceSeconds;
+        // Positions are rounded for the wire: twenty frames a second of seventeen-digit doubles is
+        // most of the payload, and a tenth of a unit is a twentieth of a pixel at the usual zoom.
+        // Lap times and the track fraction keep more, because they are compared and steered by.
         var cars = _cars.Select(c => new PoRacerCarState
         {
             Id = c.Id,
-            Name = c.Name,
-            Color = c.Color,
-            ColorDark = c.ColorDark,
-            X = c.Pos.X,
-            Y = c.Pos.Y,
-            Heading = c.Heading,
-            Speed = c.Speed,
+            X = Math.Round(c.Pos.X, 1),
+            Y = Math.Round(c.Pos.Y, 1),
+            Heading = Math.Round(c.Heading, 3),
+            Speed = Math.Round(c.Speed, 1),
             Lap = c.Lap,
             // DNF uses infinity internally; JSON/SignalR requires a finite wire value.
             FinishTime = double.IsFinite(c.FinishTime) ? c.FinishTime : -1,
             BestLapSeconds = c.BestLapTime,
-            CurrentLapSeconds = c.Lap > TotalLaps ? c.LastLapTime : Math.Max(0, (_wallClock.ElapsedMilliseconds - _startElapsedMs) / 1000.0 - c.LapStartElapsed),
+            CurrentLapSeconds = c.Lap > TotalLaps ? c.LastLapTime : Math.Round(Math.Max(0, elapsed - c.LapStartElapsed), 3),
             LastLapSeconds = c.LastLapTime,
-            LapProgress = (c.ProjIdx + c.ProjT) / _centerline.Count,
-            IsPlayer = c.IsPlayer,
+            LapProgress = Math.Round((c.ProjIdx + c.ProjT) / _centerline.Count, 5),
             Finished = c.Lap > TotalLaps,
             Position = c.Position,
-            SkidIntensity = c.SkidIntensity,
-            BoostGlow = c.BoostGlow,
-            BoostTimer = c.BoostTimer,
+            SkidIntensity = Math.Round(c.SkidIntensity, 2),
+            BoostGlow = Math.Round(c.BoostGlow, 2),
+            BoostTimer = Math.Round(c.BoostTimer, 2),
             Surface = c.Surface,
-            Damage = c.Damage,
+            Damage = Math.Round(c.Damage, 2),
+            Drafting = c.Drafting,
+            Drift = Math.Round(c.DriftCharge, 2),
         }).ToList();
-        var elapsed = (_wallClock.ElapsedMilliseconds - _startElapsedMs) / 1000.0;
         return new PoRacerRaceSnapshot
         {
             GameCode = code,
             ServerTimeMs = _wallClock.ElapsedMilliseconds,
             Cars = cars,
-            ElapsedRaceTime = Math.Max(0, elapsed),
+            ElapsedRaceTime = Math.Round(Math.Max(0, elapsed), 3),
             Started = elapsed >= 0,
             CountdownSeconds = (int)Math.Max(0, Math.Ceiling(-elapsed)),
+            CountdownMs = (int)Math.Max(0, -elapsed * 1000),
+            Paused = Paused,
             Finished = AllFinishedOrStopped(),
         };
     }
@@ -751,6 +889,7 @@ internal sealed class PoRacerSim
         public string Name = "";
         public string Color = "#ffffff";
         public string ColorDark = "#222";
+        public string Livery = "stripe";
         public Vec2 Pos;
         public double Heading;
         public double Speed;
@@ -781,6 +920,10 @@ internal sealed class PoRacerSim
         public double AccelerationModifier = 1.0;
         public PoRacerAiPersonality? Personality;
         public double Damage;
+        public bool Drafting;       // in another car's tow this tick
+        public double DriftCharge;  // 0..1, seconds of drift held; paid out as a boost on release
+        public bool Autopilot;      // a human seat the stand-in bot is driving right now
+        public bool BotDriven;      // ...or ever did: this car's laps do not go on the board
         public double StuckTimer;   // seconds without track progress — drives the AI unstick maneuver
         public double ProgressMark; // last DistanceAlongTrack the car meaningfully advanced past
     }

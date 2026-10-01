@@ -14,4 +14,8 @@ namespace PoMiniGamesClient.Games.PoCabinet;
     UseStringEnumConverter = true)]
 [JsonSerializable(typeof(PoCabinetCareerDto))]
 [JsonSerializable(typeof(PoCabinetUiSettings))]
+// Never serialized through this context: the page hands the static world to JS interop, which
+// reflects. PoMiniGames.Shared is trimmable, so a property only JS reads (CenterZ, FinishIndex,
+// HiddenFrom/To) would lose its getter in a Release publish; naming the type here roots them.
+[JsonSerializable(typeof(PoCabinetStaticWorld))]
 internal sealed partial class PoCabinetJsonContext : JsonSerializerContext;

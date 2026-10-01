@@ -34,14 +34,19 @@ export function nearestHut(settlement, x, z) {
  * A free grass tile for a new hut: within hutSiteRadius of the first hut, or (for the
  * first hut) on grass within firstHutWaterRadius of water. Candidates are gathered in
  * index order and one is drawn from the behaviour stream. NONE when nothing fits.
+ * `closed` (terrain/ground.js) keeps huts off cliffs and out from under other buildings;
+ * `water` is the world's shore field, which only the first hut reads.
  */
-export function chooseHutSite(settlement, terrain, tileState, rng) {
+export function chooseHutSite(settlement, terrain, tileState, rng, closed = null, water = null) {
   const { size, type } = terrain;
   const candidates = [];
   if (settlement.huts.length === 0) {
     const r = BEHAVIOR.firstHutWaterRadius;
     for (let i = 0; i < type.length && candidates.length < 4000; i++) {
-      if (type[i] !== TILE.GRASS || tileState[i] !== TILE_STATE.NORMAL) continue;
+      if (type[i] !== TILE.GRASS || tileState[i] !== TILE_STATE.NORMAL || closed?.[i]) continue;
+      // With the shore field: within r tiles' WALK of somewhere to drink. A lake behind a
+      // cliff is water on the map and a death sentence for a village (90 s to dehydrate).
+      if (water) { if (water[i] >= 0 && water[i] <= r) candidates.push(i); continue; }
       const x = tileX(i, size); const z = tileZ(i, size);
       let nearWater = false;
       for (let dz = -r; dz <= r && !nearWater; dz++) for (let dx = -r; dx <= r; dx++) {
@@ -59,7 +64,7 @@ export function chooseHutSite(settlement, terrain, tileState, rng) {
         const x = ox + dx; const z = oz + dz;
         if (x < 1 || z < 1 || x >= size - 1 || z >= size - 1) continue;
         const i = z * size + x;
-        if (type[i] !== TILE.GRASS || tileState[i] !== TILE_STATE.NORMAL) continue;
+        if (type[i] !== TILE.GRASS || tileState[i] !== TILE_STATE.NORMAL || closed?.[i]) continue;
         // Leave a one-tile gap around existing huts so the village stays walkable.
         let crowded = false;
         for (const h of settlement.huts) if (Math.abs(h.x - 0.5 - x) <= 1 && Math.abs(h.z - 0.5 - z) <= 1) { crowded = true; break; }
@@ -73,9 +78,9 @@ export function chooseHutSite(settlement, terrain, tileState, rng) {
 export function giveLogs(settlement, i, n) { settlement.carried[i] = Math.min(255, settlement.carried[i] + n); }
 
 /** Spend FLORA.logsPerTree carried logs on a new hut. */
-export function buildHut(e, i, settlement, terrain, tileState, rng, log, tick) {
+export function buildHut(e, i, settlement, terrain, tileState, rng, log, tick, closed = null) {
   if (settlement.carried[i] < FLORA.logsPerTree) return false;
-  const site = chooseHutSite(settlement, terrain, tileState, rng);
+  const site = chooseHutSite(settlement, terrain, tileState, rng, closed);
   if (site === NONE) return false;
   const hut = addHut(settlement, terrain, tileState, site);
   settlement.carried[i] -= FLORA.logsPerTree;

@@ -13,7 +13,7 @@ import * as THREE from 'three';
 
 // Per-track look. Directions are world space (y up). The DirectionalLight in
 // scene.js follows `sun`, clamped high enough to keep the road lit.
-// All three are daytime (2026-09-29): Capitol was a low-sun dusk and Press Briefing
+// All are daytime (2026-09-29): Capitol was a low-sun dusk and Press Briefing
 // a starless night with searchlights, and both made the race hard to read.
 const PRESETS = {
     capitol: {
@@ -27,6 +27,10 @@ const PRESETS = {
     pressbriefing: {
         zenith: '#4a86cf', sun: [0.3, 0.7, 0.55], sunColor: '#fff4dc', sunSize: 1.2,
         clouds: 0.32, cloudColor: '#ffffff',
+    },
+    playground: {
+        zenith: '#3f86d6', sun: [-0.4, 0.74, 0.5], sunColor: '#fff3d8', sunSize: 1.3,
+        clouds: 0.34, cloudColor: '#ffffff',
     },
 };
 

@@ -28,7 +28,11 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
 
     public PoEcosystemInteropService(IJSRuntime js) => _js = js;
 
-    public event Action<int, int, bool, string>? Ready;          // seed, tick, resumed, physics kind
+    public event Action<int, int, bool, string, int>? Ready;     // seed, tick, resumed, physics kind, visited year (-1 = the present)
+    /// <summary>The finder's answer (living creatures, at most a dozen).</summary>
+    public event Action<IReadOnlyList<EcoFound>>? Found;
+    /// <summary>The time machine's decades changed, or the world moved between past and present.</summary>
+    public event Action<EcoKeyframes>? KeyframesReceived;
     public event Action<EcoStats>? StatsReceived;
     public event Action<IReadOnlyList<EcoEvent>>? EventsReceived;
     public event Action<IReadOnlyList<EcoThought>>? ThoughtsReceived;   // island-wide thought feed
@@ -65,7 +69,9 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
         catch (JSDisconnectedException) { return new EcoSaveInfo(false, 0, 0, 0, 0, null); }
     }
 
-    public async ValueTask<bool> StartAsync(string containerId, string? minimapId, string? seed, bool resume, bool llmEnabled, string? modelId, bool lowEnd, bool demo = false)
+    /// <param name="ephemeral">Nothing this boot does is saved: a demo, or a visit to a shared island.
+    /// The island this browser already holds is left as it was.</param>
+    public async ValueTask<bool> StartAsync(string containerId, string? minimapId, string? seed, bool resume, bool llmEnabled, string? modelId, bool lowEnd, bool demo = false, bool ephemeral = false)
     {
         if (!await LoadEngineAsync()) return false;
         _self ??= DotNetObjectReference.Create(this);
@@ -78,6 +84,7 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
             ["lowEnd"] = lowEnd,
             ["minimapId"] = minimapId,
             ["demo"] = demo,
+            ["ephemeral"] = ephemeral,
         };
         _started = await _js.InvokeAsync<bool>("PoEcosystem.start", containerId, _self, options);
         return _started;
@@ -93,6 +100,8 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public ValueTask ExportTelemetryAsync() => SafeInvokeAsync("PoEcosystem.exportTelemetry");
     public ValueTask SetSoundAsync(bool on) => SafeInvokeAsync("PoEcosystem.setSound", on);
     public ValueTask RequestLockAsync() => SafeInvokeAsync("PoEcosystem.requestLock");
+    /// <summary>Back to free-look after the finder — only if the pointer was locked when it opened.</summary>
+    public ValueTask RestoreLockAsync() => SafeInvokeAsync("PoEcosystem.restoreLock");
     public ValueTask ToggleFlyAsync() => SafeInvokeAsync("PoEcosystem.toggleFly");
     public ValueTask SetCameraPoseAsync(double x, double y, double z, double pitch, double yaw) =>
         SafeInvokeAsync("PoEcosystem.setPose", new { x, y, z, pitch, yaw });
@@ -104,9 +113,58 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     public ValueTask RenameAsync(int handle, string name) => SafeInvokeAsync("PoEcosystem.rename", handle, name);
     public ValueTask WatchAsync(int handle, bool on) => SafeInvokeAsync("PoEcosystem.watch", handle, on);
 
-    // ── evolution tint · director · pop-out ──────────────────────────────
-    /// <summary>Colour every creature by one trait index (0–4), or -1 for species colours.</summary>
-    public ValueTask SetTintAsync(int traitIndex) => SafeInvokeAsync("PoEcosystem.setTint", traitIndex);
+    // ── lenses · director · pop-out ──────────────────────────────────────
+    /// <summary>Colour every creature through a lens (<see cref="EcoLens"/>): a trait 0–4, hunger, health, thermal, kin, or -1 for species colours.</summary>
+    public ValueTask SetLensAsync(int lens) => SafeInvokeAsync("PoEcosystem.setTint", lens);
+
+    // ── finder · map layers · ticker · ambient · time machine (2026-09-30) ──
+    /// <summary>Ask the sim for living creatures matching <paramref name="text"/>; answered on <see cref="Found"/>.</summary>
+    public ValueTask FindAsync(string text, string sort) => SafeInvokeAsync("PoEcosystem.find", text, sort);
+    /// <summary>The minimap's data layer (<see cref="EcoMapLayer"/> ids).</summary>
+    public ValueTask SetLayerAsync(string layer) => SafeInvokeAsync("PoEcosystem.setLayer", layer);
+    /// <summary>A quiet line under the status chip — the island's news that is not worth a toast.</summary>
+    public ValueTask TickerAsync(string text) => SafeInvokeAsync("PoEcosystem.ticker", text);
+    /// <summary>Ambient mode: the director films, the HUD goes away, the screen stays awake.</summary>
+    public ValueTask SetAmbientAsync(bool on) => SafeInvokeAsync("PoEcosystem.setAmbient", on);
+    /// <summary>Open a kept decade of this island, read-only. The present is saved first.</summary>
+    public ValueTask OpenKeyframeAsync(int year) => SafeInvokeAsync("PoEcosystem.openKeyframe", year);
+    /// <summary>Leave a visit (a past decade, or a shared island) for the island saved in this browser.</summary>
+    public ValueTask ReturnHomeAsync() => SafeInvokeAsync("PoEcosystem.returnHome");
+    /// <summary>Play population rows ([rabbits, deer, wolves, humans] each) as chords.</summary>
+    public ValueTask SonifyAsync(int[][] rows, int peak) =>
+        SafeInvokeAsync("PoEcosystem.sonify", JsonSerializer.Serialize(rows, EcoJsonContext.Default.Int32ArrayArray), peak);
+    /// <summary>Print the field journal (the engine builds the page in a throwaway frame).</summary>
+    public ValueTask PrintJournalAsync(EcoJournalPrint journal) =>
+        SafeInvokeAsync("PoEcosystem.printJournal", JsonSerializer.Serialize(journal, EcoJsonContext.Default.EcoJournalPrint));
+
+    /// <summary>A map of the island a seed makes, as a data URL ("" when it cannot be drawn).</summary>
+    public async ValueTask<string> IslandThumbAsync(int seed)
+    {
+        try { return await LoadEngineAsync() ? await _js.InvokeAsync<string>("PoEcosystem.islandThumb", seed) ?? "" : ""; }
+        catch (JSException) { return ""; }
+        catch (JSDisconnectedException) { return ""; }
+    }
+
+    /// <summary>The per-year rows inside a gzip'd snapshot, without booting it (the gallery's compare view).</summary>
+    public async ValueTask<EcoIslandPeek?> PeekHistoryAsync(byte[] bytes)
+    {
+        try
+        {
+            if (!await LoadEngineAsync()) return null;
+            var json = await _js.InvokeAsync<string?>("PoEcosystem.peekHistory", bytes);
+            return string.IsNullOrWhiteSpace(json) ? null : Deserialize(json, EcoJsonContext.Default.EcoIslandPeek);
+        }
+        catch (JSException) { return null; }
+        catch (JSDisconnectedException) { return null; }
+    }
+
+    /// <summary>Share a link through the platform's share sheet, else copy it: "shared", "copied" or "failed".</summary>
+    public async ValueTask<string> ShareLinkAsync(string title, string text, string url)
+    {
+        try { return await LoadEngineAsync() ? await _js.InvokeAsync<string>("PoEcosystem.share", title, text, url) ?? "failed" : "failed"; }
+        catch (JSException) { return "failed"; }
+        catch (JSDisconnectedException) { return "failed"; }
+    }
     public ValueTask SetDirectorAsync(bool on) => SafeInvokeAsync("PoEcosystem.setDirector", on);
     public ValueTask TogglePipAsync() => SafeInvokeAsync("PoEcosystem.togglePip");
     /// <summary>Open or close the Island Reel drawer (engine-owned DOM: clips, photos).</summary>
@@ -191,18 +249,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
         catch (JSDisconnectedException) { return true; }
     }
 
-    // ── HUD prefs (raw localStorage; the engine's createPrefs namespace is engine-owned) ──
-    /// <summary>Has this browser ever entered pointer lock? Fail-open: a broken storage
-    /// means the hint may re-show, never that it stays hidden forever.</summary>
-    public async ValueTask<bool> LockHintSeenAsync()
-    {
-        try { return await _js.InvokeAsync<string?>("localStorage.getItem", "poeco:lockHintSeen") == "1"; }
-        catch (JSException) { return true; }
-        catch (JSDisconnectedException) { return true; }
-    }
-
-    public ValueTask MarkLockHintSeenAsync() => SafeInvokeAsync("localStorage.setItem", "poeco:lockHintSeen", "1");
-
     public async ValueTask<bool> WebGpuAvailableAsync()
     {
         try { return await _js.InvokeAsync<bool>("PoEcosystem.webGpuAvailable"); }
@@ -222,7 +268,17 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     }
 
     // ── callbacks from the engine ────────────────────────────────────────
-    [JSInvokable] public void OnReady(int seed, int tick, bool resumed, string physics) => Ready?.Invoke(seed, tick, resumed, physics);
+    [JSInvokable] public void OnReady(int seed, int tick, bool resumed, string physics, int past) => Ready?.Invoke(seed, tick, resumed, physics, past);
+
+    [JSInvokable]
+    public void OnFound(string json) => Found?.Invoke(Deserialize(json, EcoJsonContext.Default.EcoFoundArray) ?? []);
+
+    [JSInvokable]
+    public void OnKeyframes(string json)
+    {
+        var frames = Deserialize(json, EcoJsonContext.Default.EcoKeyframes);
+        if (frames is not null) KeyframesReceived?.Invoke(frames);
+    }
 
     [JSInvokable]
     public void OnStats(string json)

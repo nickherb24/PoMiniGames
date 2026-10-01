@@ -27,6 +27,40 @@ export const materialSnow = { value: 0 };     // 0..1 snow coverage factor
 // the sky colour a wet surface reflects. Set once per frame by the renderer, like the clock.
 export const materialWet = { value: 0 };
 export const materialSky = { value: new THREE.Color(0x8ec5ff) };
+// The naturalist lenses (2026-09-30): how far a creature's instance colour replaces its lit
+// colour. 0 = an ordinary tinted Lambert; 1 = the flat lens colour, readable in the dark.
+// Only materials hooked with `lens: true` (the creatures) listen to it.
+export const materialLens = { value: 0 };
+
+// Cloud shadows (2026-09-30). The deck sky.js draws is a noise field anchored to the world,
+// so the same field, sampled where the sun's ray through a surface point meets the deck,
+// says whether that point is in shade. The renderer sets these four once per frame from the
+// sky it has just updated; the terrain binds the same objects (terrainMesh.js).
+export const materialCloud = {
+  uCloudTime: { value: 0 },
+  uCloudCover: { value: 0.45 },
+  uCloudShade: { value: 0 },                       // 0 = none (night, low tier, closed deck)
+  uCloudSun: { value: new THREE.Vector3(0, 1, 0) },
+};
+/**
+ * GLSL for the shade test. `noise` is the name of a vec2 → float value-noise function the
+ * shader already has (every hooked shader carries the same hash, so the field matches the
+ * clouds overhead). 96.0 is sky.js CLOUD_Y; the scale and drift are its CLOUD_FRAG's.
+ */
+export const cloudShadowGlsl = (noise) => `
+uniform float uCloudTime;
+uniform float uCloudCover;
+uniform float uCloudShade;
+uniform vec3 uCloudSun;
+float cloudLight(vec3 world) {
+  if (uCloudShade <= 0.001) return 1.0;
+  vec2 at = world.xz + uCloudSun.xz * ((96.0 - world.y) / max(uCloudSun.y, 0.25));
+  vec2 p = at * 0.006 + vec2(uCloudTime * 0.0045, uCloudTime * 0.0018);
+  float n = ${noise}(p) * 0.55 + ${noise}(p * 2.3 + 7.1) * 0.3 + ${noise}(p * 5.1 - 3.3) * 0.15;
+  float edge = mix(0.72, 0.42, uCloudCover);
+  return 1.0 - smoothstep(edge - 0.04, edge + 0.26, n) * uCloudShade;
+}
+`;
 
 const NOISE = `
 float mHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -41,13 +75,16 @@ float mNoise(vec2 p) {
 /**
  * Hook a Lambert material. Returns the same material for chaining.
  * @param {THREE.MeshLambertMaterial} material
- * @param {{ rim?: number, rimColor?: number, mottle?: number, mottleScale?: number, sway?: number, swayHeight?: number }} o
+ * @param {{ rim?: number, rimColor?: number, mottle?: number, mottleScale?: number, sway?: number, swayHeight?: number, lens?: boolean }} o
  *   rim: strength (0 = off) · mottle: amplitude 0..1 · mottleScale: world units per cycle ·
- *   sway: metres of displacement at the top · swayHeight: local height over which sway ramps
+ *   sway: metres of displacement at the top · swayHeight: local height over which sway ramps ·
+ *   lens: follow materialLens (the creatures' data-view colours)
  */
-export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mottle = 0.18, mottleScale = 1.6, sway = 0, swayHeight = 3 } = {}) {
+export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mottle = 0.18, mottleScale = 1.6, sway = 0, swayHeight = 3, lens = false } = {}) {
   const rimCol = new THREE.Color(rimColor);
   material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, materialCloud);
+    shader.uniforms.uLensGlow = lens ? materialLens : { value: 0 };
     shader.uniforms.uMatTime = materialClock;
     shader.uniforms.uMatDetail = materialDetail;
     shader.uniforms.uSeason = materialSeason;
@@ -107,11 +144,14 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
         uniform float uSnow;
         uniform float uWet;
         uniform vec3 uSkyTint;
+        uniform float uLensGlow;
         varying vec3 vMatWorld;
         ${NOISE}
+        ${cloudShadowGlsl('mNoise')}
       `)
       .replace('#include <color_fragment>', `
         #include <color_fragment>
+        if (uMatDetail > 0.5) diffuseColor.rgb *= cloudLight(vMatWorld);
         if (uMatDetail > 0.5 && uMottle > 0.0) {
           // Two octaves in world space; the vertical term keeps the pattern from streaking
           // down a trunk or a leg.
@@ -149,10 +189,15 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
           // eye it has been raining before it sees a single drop.
           outgoingLight += uSkyTint * rimF * uWet * 0.35;
         }
+        // A lens draws the creature in its data colour (the instance colour, which three
+        // exposes as vColor whenever an instanced mesh carries one), lit or not.
+        #ifdef USE_COLOR
+          if (uLensGlow > 0.001) outgoingLight = mix(outgoingLight, vColor.rgb, uLensGlow);
+        #endif
         #include <opaque_fragment>
       `);
   };
   // A hooked material must not share a program with an unhooked one of the same type.
-  material.customProgramCacheKey = () => `poeco-enh-${rim}-${mottle}-${mottleScale}-${sway}-${swayHeight}`;
+  material.customProgramCacheKey = () => `poeco-enh-${rim}-${mottle}-${mottleScale}-${sway}-${swayHeight}-${lens ? 1 : 0}`;
   return material;
 }

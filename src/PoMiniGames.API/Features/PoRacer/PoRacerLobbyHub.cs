@@ -26,6 +26,13 @@ public sealed class PoRacerLobbyHub : LobbyHub<PoRacerLobbyPlayer, PoRacerLobbyS
         return Lobby.Open(Context.ConnectionId, identity.DisplayName, identity.IsGuest, identity.UserId);
     }
 
+    /// <summary>The host's track pick. Anyone else's is ignored: the race runs the host's seat.</summary>
+    public async Task PickTrack(string trackId)
+    {
+        if (Lobby.HostConnectionId == Context.ConnectionId && Lobby.PickTrack(Context.ConnectionId, trackId))
+            await BroadcastStateAsync();
+    }
+
     protected override Task OnStartingAsync()
     {
         _races.StartMultiplayer();

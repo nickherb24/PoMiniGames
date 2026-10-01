@@ -492,6 +492,20 @@ public class ApiService
         }
     }
 
+    /// <summary>Today's daily-meet board (the server's UTC day).</summary>
+    public async Task<PoSportsHighScore[]?> GetPoSportsDailyHighScoresAsync(int count = 10)
+    {
+        try
+        {
+            return await _http.GetFromJsonAsync(
+                $"/api/posports/highscores/daily?count={count}", ApiJsonContext.Default.PoSportsHighScoreArray);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<ScoreSubmitResult<PoSportsHighScore>> SubmitPoSportsHighScoreAsync(PoSportsHighScore entry)
     {
         try

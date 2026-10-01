@@ -28,7 +28,6 @@ export class TrackRenderer {
     this.night = !!opts.night;
     this.cameraX = -APRON_METERS; // meters at the left screen edge
     this.dpr = 1;
-    this.zoom = 1;                 // photo-finish push-in, eased by the game
     this.shake = 0;                // px of shake left, decays in drawScene
     this._onResize = () => this.resize();
     window.addEventListener('resize', this._onResize);
@@ -172,25 +171,21 @@ export class TrackRenderer {
    * @param {'sprint'|'hurdles'} leg
    * @param {number} laneCount
    * @param {{legLength?: number, hurdles?: number[], knocked?: Array<Map<number, number>>,
-   *          tape?: {broken: boolean, age: number}, waveX?: number, focusX?: number,
+   *          tape?: {broken: boolean, age: number}, waveX?: number,
    *          pit?: {from: number, to: number}}} [extra]
    *   knocked[lane] maps hurdle index → seconds since it was clipped (it topples);
-   *   waveX is the screen x the crowd is rising around; focusX is where a zoom pushes in.
+   *   waveX is the screen x the crowd is rising around.
    */
   drawScene(leg, laneCount, extra = {}) {
     const { ctx } = this;
     const w = this.viewW; const h = this.viewH;
 
-    // Zoom about the action and shake, as one transform over the whole scene.
+    // Shake, as one transform over the whole scene.
     this.shake *= 0.86;
     if (this.shake < 0.3) this.shake = 0;
-    const z = this.zoom;
-    const fx = extra.focusX ?? w * 0.5;
-    const fy = h * 0.6;
     const sx = this.shake ? (Math.random() - 0.5) * this.shake : 0;
     const sy = this.shake ? (Math.random() - 0.5) * this.shake : 0;
-    ctx.setTransform(this.dpr * z, 0, 0, this.dpr * z,
-      this.dpr * (fx * (1 - z) + sx), this.dpr * (fy * (1 - z) + sy));
+    ctx.setTransform(this.dpr, 0, 0, this.dpr, this.dpr * sx, this.dpr * sy);
 
     if (!this._sky) this.buildBackdrop();
     if (this._sky) ctx.drawImage(this._sky, 0, 0, w, h * 0.22);
@@ -401,7 +396,7 @@ export class TrackRenderer {
     ctx.restore();
   }
 
-  /** Reset to screen space (after drawScene's zoom/shake transform) for overlays. */
+  /** Reset to screen space (after drawScene's shake transform) for overlays. */
   screenSpace() {
     this.ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
   }

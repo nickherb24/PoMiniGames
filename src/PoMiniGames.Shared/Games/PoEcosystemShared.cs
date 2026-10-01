@@ -185,23 +185,6 @@ public sealed record EcoTreatyReply(
     int PeaceYears,
     bool Mock);
 
-/// <summary>Player natural language god decree to intervene in the island.</summary>
-public sealed record EcoDecreeRequest(
-    int Seed,
-    int Year,
-    string DecreeText,
-    IReadOnlyList<TribeStateDto>? Tribes = null);
-
-/// <summary>Parsed divine decree translated into bounded simulation actions.</summary>
-public sealed record EcoDecreeReply(
-    string Intent,
-    string ActionType,
-    int TargetTribeId,
-    string TargetEntity,
-    int Quantity,
-    string DivineMessage,
-    bool Mock);
-
 /// <summary>Request for generating a historical oral legend upon reaching a milestone.</summary>
 public sealed record EcoMilestoneLoreRequest(
     int Seed,
@@ -237,8 +220,6 @@ public sealed record EcoCultureProfile(
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoThoughtBatchReply))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoTreatyRequest))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoTreatyReply))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(EcoDecreeRequest))]
-[System.Text.Json.Serialization.JsonSerializable(typeof(EcoDecreeReply))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoMilestoneLoreRequest))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoMilestoneLoreReply))]
 [System.Text.Json.Serialization.JsonSerializable(typeof(EcoCultureProfile))]

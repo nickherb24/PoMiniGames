@@ -83,8 +83,8 @@ public class PoCabinetRouteUiTests
         else
         {
             var trackButtons = await page.Locator(".pocabinet-track").CountAsync();
-            trackButtons.Should().Be(3,
-                "the track selector must render Capitol + Mar-a-Lago + Press Briefing");
+            trackButtons.Should().Be(4,
+                "the track selector must render Capitol + Mar-a-Lago + Press Briefing + Playground");
         }
     }
 }

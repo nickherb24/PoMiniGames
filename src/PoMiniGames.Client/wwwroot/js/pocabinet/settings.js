@@ -20,7 +20,6 @@ const DEFAULT_SETTINGS = Object.freeze({
     masterVolume: 0.7,     // 0..1 Web Audio master gain
     muted: false,
     music: true,           // adaptive race score (music.js)
-    voices: true,          // officials' radio lines read aloud (dialogue.js speak)
     hudScale: 1,           // HUD font scale, 0.85 / 1 / 1.15
     reducedMotion: false,  // confetti off, rain particles thinned
     colorSafe: false,      // Okabe-Ito palette on the minimap markers
@@ -50,7 +49,6 @@ function sanitize(raw) {
     s.hudScale = clamp(src.hudScale, 0.8, 1.3, s.hudScale);
     s.muted = !!src.muted;
     s.music = src.music !== false;
-    s.voices = src.voices !== false;
     s.reducedMotion = !!src.reducedMotion;
     s.colorSafe = !!src.colorSafe;
     if (['auto', 'clear', 'rain'].includes(src.weather)) s.weather = src.weather;

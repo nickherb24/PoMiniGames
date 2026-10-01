@@ -1,0 +1,208 @@
+@using PoMiniGames.Shared.Games.PoEcosystem
+@* Worlds (2026-09-30): everything about WHICH island is on screen, in one place. It was
+   split across two tabs — the seed, New world and Today's island sat in Settings while the
+   cloud slots and the gallery sat in Cloud.
+
+   Three cloud slots per signed-in identity; a world is a gzip'd snapshot the engine packs
+   itself. The gallery lists islands their owners made public — visiting one boots it
+   read-only, so it can never autosave over yours. Every island is drawn from its seed
+   (index.js islandThumb): the map is a property of the seed, so nothing is uploaded. A
+   shared island gets a link (?island=CODE) that sails straight to it. *@
+<div class="poeco-worlds">
+    <section class="poeco-worlds-col">
+        <h3>This island</h3>
+        <div class="poeco-world-now">
+            <img class="poeco-thumb" src="@ThumbOf(CurrentSeed)" alt="" width="72" height="72" />
+            <div class="poeco-slot-meta">
+                <strong>Year @(Stats?.Year ?? 0) · @(Stats?.Alive ?? 0) alive</strong>
+                <span class="poeco-note">seed @CurrentSeed@(Visiting ? " · a visit, not saved" : " · kept in this browser")</span>
+            </div>
+            @if (Visiting)
+            {
+                <button type="button" class="poeco-btn poeco-btn--sm poeco-btn--primary" @onclick="OnReturn">Back to my island</button>
+            }
+        </div>
+        <label class="poeco-field">
+            <span>Seed for a new world</span>
+            <input type="text" value="@Seed" @oninput="e => SeedChanged.InvokeAsync(e.Value?.ToString() ?? string.Empty)" />
+        </label>
+        <div class="poeco-world-actions">
+            <button type="button" class="poeco-btn poeco-btn--primary" @onclick="() => OnNewWorld.InvokeAsync(Seed)">New world</button>
+            <button type="button" class="poeco-btn" @onclick="OnTodaysIsland"
+                    title="Everyone who opens today's island watches the same world unfold (seed @DailySeed). The island is deterministic: the same seed tells the same story.">Today's island</button>
+        </div>
+
+        <div class="poeco-cloud-head">
+            <h3>Cloud slots</h3>
+            <button type="button" class="poeco-pill" disabled="@Busy" @onclick="OnRefresh">↻ Refresh</button>
+        </div>
+        @if (!SignedIn)
+        {
+            <p class="poeco-note">Sign in to keep up to three islands in the cloud and carry them between devices.</p>
+        }
+        else
+        {
+            <ul class="poeco-slots">
+                @foreach (var slot in EcoWorldSlots.All)
+                {
+                    var w = Worlds.FirstOrDefault(x => x.Slot == slot);
+                    <li class="poeco-slot @(w is null ? "poeco-slot--empty" : "")">
+                        @if (w is not null)
+                        {
+                            <img class="poeco-thumb poeco-thumb--sm" src="@ThumbOf(w.Seed)" alt="" width="44" height="44" />
+                        }
+                        <div class="poeco-slot-meta">
+                            <strong>Slot @slot@(w is null ? "" : $" · {w.Name}")</strong>
+                            @if (w is null)
+                            {
+                                <span class="poeco-note">empty</span>
+                            }
+                            else
+                            {
+                                <span class="poeco-note" title="@Counts(w.Counts)">seed @w.Seed · @(w.SizeBytes / 1024) KB · @Ago(w.SavedAt)@(w.ShareCode is null ? "" : " · shared")</span>
+                            }
+                        </div>
+                        <div class="poeco-slot-actions">
+                            <button type="button" class="poeco-pill poeco-pill--on" disabled="@(Busy || Stats is null || Visiting)" title="Save the running island here" @onclick="() => OnSave.InvokeAsync(slot)">Save</button>
+                            @if (w is not null)
+                            {
+                                <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnLoad.InvokeAsync(slot)">Load</button>
+                                <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnShare.InvokeAsync((slot, w.ShareCode is null))">@(w.ShareCode is null ? "Share" : "Unshare")</button>
+                                @if (w.ShareCode is { } code)
+                                {
+                                    <button type="button" class="poeco-pill" title="Share or copy a link that opens this island" @onclick="() => OnLink.InvokeAsync((code, w.Name))">🔗 Link</button>
+                                }
+                                <button type="button" class="poeco-pill" disabled="@Busy" @onclick="() => OnDelete.InvokeAsync(slot)">Delete</button>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+        @if (!string.IsNullOrWhiteSpace(Message))
+        {
+            <p class="poeco-note" role="status">@Message</p>
+        }
+    </section>
+
+    <section class="poeco-worlds-col">
+        <div class="poeco-cloud-head">
+            <h3>Gallery</h3>
+            @if (Gallery.Length > 1)
+            {
+                <div class="poeco-gallery-tools">
+                    <input type="search" class="poeco-finder-input" placeholder="Filter…" aria-label="Filter the gallery by name or owner" value="@_filter" @oninput="e => _filter = e.Value?.ToString() ?? string.Empty" />
+                    <select value="@_sort" @onchange="e => _sort = e.Value?.ToString() ?? string.Empty" aria-label="Sort the gallery">
+                        <option value="new">Newest</option>
+                        <option value="old">Oldest island</option>
+                        <option value="alive">Most alive</option>
+                    </select>
+                </div>
+            }
+        </div>
+        @if (Gallery.Length == 0)
+        {
+            <p class="poeco-note">No shared islands yet. Share one of yours and it appears here for everyone.</p>
+        }
+        else
+        {
+            <ul class="poeco-gallery">
+                @foreach (var g in Shown)
+                {
+                    <li>
+                        <img class="poeco-thumb poeco-thumb--sm" src="@ThumbOf(g.Seed)" alt="" width="44" height="44" />
+                        <div class="poeco-slot-meta">
+                            <strong>@g.Name</strong>
+                            <span class="poeco-note" title="@Counts(g.Counts)">by @g.OwnerName · year @g.Year · @((g.Counts ?? []).Sum()) alive · @Ago(g.SavedAt)</span>
+                        </div>
+                        <div class="poeco-slot-actions">
+                            <button type="button" class="poeco-pill" disabled="@Busy" title="Fly over this island without saving over yours" @onclick="() => OnVisit.InvokeAsync(g.Code)">Visit</button>
+                            <button type="button" class="poeco-pill @(Compare?.Code == g.Code ? "poeco-pill--on" : "")" disabled="@Busy" title="Chart this island's history against the one on screen" @onclick="() => OnCompare.InvokeAsync(g)">Compare</button>
+                            <button type="button" class="poeco-pill" title="Share or copy a link that opens this island" @onclick="() => OnLink.InvokeAsync((g.Code, g.Name))">🔗</button>
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+        @if (Compare is { } cmp)
+        {
+            <IslandCompare Mine="@MyYears" Theirs="@cmp.Years" TheirName="@cmp.Name" />
+        }
+    </section>
+</div>
+
+@code {
+    [Parameter] public EcoStats? Stats { get; set; }
+    [Parameter] public EcoWorldMeta[] Worlds { get; set; } = [];
+    [Parameter] public EcoSharedWorld[] Gallery { get; set; } = [];
+    [Parameter] public bool SignedIn { get; set; }
+    [Parameter] public bool Busy { get; set; }
+    [Parameter] public bool Visiting { get; set; }
+    [Parameter] public string? Message { get; set; }
+    [Parameter] public int CurrentSeed { get; set; }
+    [Parameter] public string Seed { get; set; } = "";
+    [Parameter] public string DailySeed { get; set; } = "";
+    /// <summary>Seed → map data URL (the viewer fills it lazily; "" until one is drawn).</summary>
+    [Parameter] public IReadOnlyDictionary<int, string> Thumbs { get; set; } = new Dictionary<int, string>();
+    /// <summary>This island's per-year rows, for the compare chart.</summary>
+    [Parameter] public int[][] MyYears { get; set; } = [];
+    /// <summary>The shared island being compared, once its history has been read.</summary>
+    [Parameter] public (string Code, string Name, int[][] Years)? Compare { get; set; }
+    [Parameter] public EventCallback<string> SeedChanged { get; set; }
+    [Parameter] public EventCallback<string?> OnNewWorld { get; set; }
+    [Parameter] public EventCallback OnTodaysIsland { get; set; }
+    [Parameter] public EventCallback OnReturn { get; set; }
+    [Parameter] public EventCallback OnRefresh { get; set; }
+    [Parameter] public EventCallback<string> OnSave { get; set; }
+    [Parameter] public EventCallback<string> OnLoad { get; set; }
+    [Parameter] public EventCallback<string> OnDelete { get; set; }
+    [Parameter] public EventCallback<(string Slot, bool Public)> OnShare { get; set; }
+    [Parameter] public EventCallback<string> OnVisit { get; set; }
+    [Parameter] public EventCallback<EcoSharedWorld> OnCompare { get; set; }
+    [Parameter] public EventCallback<(string Code, string Name)> OnLink { get; set; }
+    /// <summary>Seeds whose maps are wanted (raised after a render that showed a seed with no map yet).</summary>
+    [Parameter] public EventCallback<int[]> OnNeedThumbs { get; set; }
+
+    private string _filter = "";
+    private string _sort = "new";
+
+    private IEnumerable<EcoSharedWorld> Shown
+    {
+        get
+        {
+            var rows = Gallery.Where(g => _filter.Trim().Length == 0
+                || g.Name.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase)
+                || g.OwnerName.Contains(_filter.Trim(), StringComparison.OrdinalIgnoreCase));
+            return _sort switch
+            {
+                "old" => rows.OrderByDescending(g => g.Year),
+                "alive" => rows.OrderByDescending(g => (g.Counts ?? []).Sum()),
+                _ => rows.OrderByDescending(g => g.SavedAt),
+            };
+        }
+    }
+
+    // A 1×1 transparent GIF until the seed's map has been drawn, so the row does not jump.
+    private const string Blank = "data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+    private string ThumbOf(int seed) => Thumbs.TryGetValue(seed, out var url) && url.Length > 0 ? url : Blank;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var wanted = Worlds.Select(w => w.Seed).Concat(Gallery.Select(g => g.Seed)).Append(CurrentSeed)
+            .Where(s => !Thumbs.ContainsKey(s)).Distinct().ToArray();
+        if (wanted.Length > 0) await OnNeedThumbs.InvokeAsync(wanted);
+    }
+
+    private static string Counts(int[]? counts) =>
+        counts is not { Length: EcoSpeciesInfo.Count } c ? "an empty island"
+        : string.Join(", ", Enumerable.Range(0, EcoSpeciesInfo.Count).Select(s => $"{c[s]} {EcoSpeciesInfo.PluralOf(s).ToLowerInvariant()}"));
+
+    private static string Ago(DateTimeOffset at)
+    {
+        var span = DateTimeOffset.UtcNow - at;
+        return span.TotalMinutes < 1 ? "moments ago"
+            : span.TotalHours < 1 ? $"{(int)span.TotalMinutes} min ago"
+            : span.TotalDays < 1 ? $"{(int)span.TotalHours} h ago"
+            : $"{(int)span.TotalDays} d ago";
+    }
+}

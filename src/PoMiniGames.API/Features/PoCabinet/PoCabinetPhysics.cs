@@ -45,6 +45,10 @@ public class PoCabinetCarBody
     public bool Sliding { get; set; }
     /// <summary>Speed lost into the barrier on the last step (0 = no hit) — drives rumble.</summary>
     public double WallImpact { get; set; }
+    /// <summary>Sideways speed a contact left behind, units/s (+ = to the car's right). The tyres scrub it off.</summary>
+    public double Slip { get; set; }
+    /// <summary>Yaw rate a contact left behind, rad/s. Bleeds off the same way.</summary>
+    public double Spin { get; set; }
 }
 
 /// <summary>
@@ -53,9 +57,16 @@ public class PoCabinetCarBody
 /// removes the outward velocity component.
 ///
 /// <para>
+/// Contacts (2026-09-30) are between car-shaped hulls, not circles: a capsule 39 long and 17
+/// wide, the body the client draws. A hit is an impulse along the contact normal (equal masses,
+/// a little restitution) applied where the hulls touch, so it shoves a car sideways
+/// (<see cref="PoCabinetCarBody.Slip"/>) and turns it (<see cref="PoCabinetCarBody.Spin"/>) as
+/// well as changing its speed; <see cref="Step"/> then bleeds both off through the tyres.
+/// </para>
+/// <para>
 /// <b>Mirror contract:</b> <c>wwwroot/js/pocabinet/physics.js</c> ports <see cref="Step"/>,
-/// <see cref="ResolveContacts"/> and <see cref="GridSlot"/> line for line, with the same
-/// constants. Solo races run the JS copy; multiplayer runs this one on the server while the
+/// <see cref="ResolveContacts"/>, <see cref="GridBack"/> and <see cref="GridSlot"/> line for
+/// line, with the same constants. Solo races run the JS copy; multiplayer runs this one on the server while the
 /// browser runs the JS copy to predict its own car and replays unacknowledged inputs on top of
 /// each snapshot. If the two diverge, every correction becomes a visible snap.
 /// </para>
@@ -88,6 +99,22 @@ public static class PoCabinetPhysics
     public const double WallFriction = 0.85;
     /// <summary>Most negative speed a contact may leave a car with.</summary>
     public const double ContactSpeedFloor = ReverseMax * 1.5;
+    /// <summary>Hull: a spine of ±<see cref="HullHalf"/> along the heading, <see cref="HullRadius"/> thick (39 x 17 overall).</summary>
+    public const double HullHalf = 11;
+    public const double HullRadius = 8.5;
+    public const double ContactRestitution = 0.2;
+    /// <summary>Yaw inertia over mass: the square of a 39 x 17 body's radius of gyration.</summary>
+    public const double YawInertia = 150;
+    public const double SlipDecel = 120;
+    public const double SpinDecel = 5;
+    public const double MaxSlip = 60;
+    public const double MaxSpin = 2.5;
+    public const double SlipSliding = 8;
+    /// <summary>Cars further apart than this along the road never touch: where the Playground run
+    /// crosses over itself they are on different levels.</summary>
+    public const double SameRoad = 120;
+    public const double GridColumn = 22;
+    public const double GridRow = 50;
 
     /// <summary>Barrier distance from the centerline for a track (car centre can't pass it).</summary>
     public static double WallLateral(PoCabinetTrack track) => track.HalfWidth + RunOff - CarRadius * 0.5;
@@ -144,9 +171,15 @@ public static class PoCabinetPhysics
             v2 = v2 > 0 ? Math.Max(0, v2 - ScrubDecel * dt) : Math.Min(0, v2 + ScrubDecel * dt);
         }
 
-        double heading = car.Heading + omega * dt;
-        double x = car.X + Math.Cos(heading) * v2 * dt;
-        double y = car.Y + Math.Sin(heading) * v2 * dt;
+        // What a contact left behind: the tyres scrub the sideways slide and the spin off.
+        double slipGrip = SlipDecel * grip * surfaceGrip * dt;
+        double slip = car.Slip > 0 ? Math.Max(0, car.Slip - slipGrip) : Math.Min(0, car.Slip + slipGrip);
+        double spin = car.Spin > 0 ? Math.Max(0, car.Spin - SpinDecel * dt) : Math.Min(0, car.Spin + SpinDecel * dt);
+        if (Math.Abs(slip) > SlipSliding) car.Sliding = true;
+
+        double heading = car.Heading + (omega + spin) * dt;
+        double x = car.X + (PoCabinetTrack.Cos(heading) * v2 - PoCabinetTrack.Sin(heading) * slip) * dt;
+        double y = car.Y + (PoCabinetTrack.Sin(heading) * v2 + PoCabinetTrack.Cos(heading) * slip) * dt;
 
         // ── Track: grass and barrier ────────────────────────────────────
         var proj = track.Project(x, y, car.SegHint);
@@ -160,7 +193,7 @@ public static class PoCabinetPhysics
             x -= nx * excess;
             y -= ny * excess;
 
-            double vx = Math.Cos(heading) * v2, vy = Math.Sin(heading) * v2;
+            double vx = PoCabinetTrack.Cos(heading) * v2 - PoCabinetTrack.Sin(heading) * slip, vy = PoCabinetTrack.Sin(heading) * v2 + PoCabinetTrack.Cos(heading) * slip;
             double vn = vx * nx + vy * ny;
             if (vn > 0)
             {
@@ -168,8 +201,9 @@ public static class PoCabinetPhysics
                 vx = tx * WallFriction - nx * vn * WallRestitution;
                 vy = ty * WallFriction - ny * vn * WallRestitution;
                 double speed = Math.Sqrt(vx * vx + vy * vy);
-                if (speed > 1) heading = v2 >= 0 ? Math.Atan2(vy, vx) : Math.Atan2(-vy, -vx);
+                if (speed > 1) heading = v2 >= 0 ? PoCabinetTrack.Atan2(vy, vx) : PoCabinetTrack.Atan2(-vy, -vx);
                 v2 = v2 >= 0 ? speed : -speed;
+                slip = 0; // the car leaves the barrier pointing the way it is going
                 car.WallImpact = vn;
             }
             proj = track.Project(x, y, proj.Index);
@@ -179,6 +213,8 @@ public static class PoCabinetPhysics
         car.Y = y;
         car.Heading = PoCabinetTrack.WrapAngle(heading);
         car.Speed = v2;
+        car.Slip = slip;
+        car.Spin = spin;
         car.SegHint = proj.Index;
         car.Lateral = proj.Lateral;
         car.OnGrass = Math.Abs(proj.Lateral) > track.HalfWidth;
@@ -197,64 +233,167 @@ public static class PoCabinetPhysics
     }
 
     /// <summary>
-    /// Pairwise car contacts: separate overlapping cars and hand closing speed from the car
-    /// behind to the car in front. Order-dependent by design (index order), identically in JS.
+    /// Where two hulls touch: false when they are apart, else the unit normal (a → b), the
+    /// overlap depth and the contact point. Mirrors physics.js <c>hullContact</c> (slack 0).
     /// </summary>
-    public static void ResolveContacts(IReadOnlyList<PoCabinetCarBody> cars)
+    private static bool HullContact(PoCabinetCarBody a, PoCabinetCarBody b,
+        out double nx, out double ny, out double depth, out double cx, out double cy)
     {
-        double min = CarRadius * 2;
-        for (int i = 0; i < cars.Count; i++)
+        nx = ny = depth = cx = cy = 0;
+        double reach = (HullHalf + HullRadius) * 2;
+        double dx = b.X - a.X, dy = b.Y - a.Y;
+        if (dx > reach || dx < -reach || dy > reach || dy < -reach) return false;
+        double ahx = PoCabinetTrack.Cos(a.Heading), ahy = PoCabinetTrack.Sin(a.Heading);
+        double bhx = PoCabinetTrack.Cos(b.Heading), bhy = PoCabinetTrack.Sin(b.Heading);
+        // Closest points of the two spines: a + s·ha and b + t·hb, s and t in ±HullHalf.
+        double dot = ahx * bhx + ahy * bhy;
+        double da = -(ahx * dx + ahy * dy), db = -(bhx * dx + bhy * dy);
+        double denom = 1 - dot * dot;
+        // Within ~10° of parallel the sides meet along their overlap, not at one end: take its
+        // middle, or every side-by-side rub would turn both cars.
+        double s = denom > 0.03 ? (dot * db - da) / denom : -da * 0.5;
+        s = Math.Min(HullHalf, Math.Max(-HullHalf, s));
+        double t = dot * s + db;
+        if (t < -HullHalf)
         {
-            for (int j = i + 1; j < cars.Count; j++)
+            t = -HullHalf;
+            s = Math.Min(HullHalf, Math.Max(-HullHalf, t * dot - da));
+        }
+        else if (t > HullHalf)
+        {
+            t = HullHalf;
+            s = Math.Min(HullHalf, Math.Max(-HullHalf, t * dot - da));
+        }
+        double px = a.X + ahx * s, py = a.Y + ahy * s;
+        double qx = b.X + bhx * t, qy = b.Y + bhy * t;
+        double ex = qx - px, ey = qy - py;
+        double d = Math.Sqrt(ex * ex + ey * ey);
+        if (d <= 1e-6 || d >= HullRadius * 2) return false;
+        nx = ex / d;
+        ny = ey / d;
+        depth = HullRadius * 2 - d;
+        cx = (px + qx) * 0.5;
+        cy = (py + qy) * 0.5;
+        return true;
+    }
+
+    /// <summary>
+    /// Pairwise hull contacts in index order: separate the two cars, then one impulse along the
+    /// normal at the contact point, shared between each car's speed, sideways slip and spin.
+    /// Order-dependent by design (index order), identically in JS.
+    /// </summary>
+    // ponytail: O(n²) pair scan, 4,950 pairs a tick at 100 cars (the lap verifier pays it per
+    // replayed tick). Sort by Along and sweep if a field ever gets bigger than that. An array,
+    // not IReadOnlyList: through the interface the scan cost twelve seconds a replay.
+    public static void ResolveContacts(PoCabinetTrack track, PoCabinetCarBody[] cars)
+    {
+        double half = track.Length * 0.5;
+        for (int i = 0; i < cars.Length; i++)
+        {
+            var a = cars[i];
+            if (track.Parked(a.Distance)) continue;
+            for (int j = i + 1; j < cars.Length; j++)
             {
-                var a = cars[i];
                 var b = cars[j];
-                double dx = b.X - a.X, dy = b.Y - a.Y;
-                double d = Math.Sqrt(dx * dx + dy * dy);
-                if (d <= 1e-6 || d >= min) continue;
-                double nx = dx / d, ny = dy / d;
-                double push = (min - d) * 0.5;
+                double gap = b.Along - a.Along;
+                if (gap > half) gap -= track.Length;
+                else if (gap < -half) gap += track.Length;
+                if (gap > SameRoad || gap < -SameRoad || track.Parked(b.Distance)) continue;
+                if (!HullContact(a, b, out double nx, out double ny, out double depth, out double cx, out double cy)) continue;
+                double rax = cx - a.X, ray = cy - a.Y;
+                double rbx = cx - b.X, rby = cy - b.Y;
+                double push = depth * 0.5;
                 a.X -= nx * push;
                 a.Y -= ny * push;
                 b.X += nx * push;
                 b.Y += ny * push;
 
-                double ahx = Math.Cos(a.Heading), ahy = Math.Sin(a.Heading);
-                double bhx = Math.Cos(b.Heading), bhy = Math.Sin(b.Heading);
-                double va = a.Speed * (ahx * nx + ahy * ny);
-                double vb = b.Speed * (bhx * nx + bhy * ny);
-                double closing = va - vb;
+                double ahx = PoCabinetTrack.Cos(a.Heading), ahy = PoCabinetTrack.Sin(a.Heading);
+                double bhx = PoCabinetTrack.Cos(b.Heading), bhy = PoCabinetTrack.Sin(b.Heading);
+                // Each hull's velocity at the contact point: forward speed, slip to its right, spin.
+                double vax = ahx * a.Speed - ahy * a.Slip - a.Spin * ray, vay = ahy * a.Speed + ahx * a.Slip + a.Spin * rax;
+                double vbx = bhx * b.Speed - bhy * b.Slip - b.Spin * rby, vby = bhy * b.Speed + bhx * b.Slip + b.Spin * rbx;
+                double closing = (vax - vbx) * nx + (vay - vby) * ny;
                 if (closing <= 0) continue;
-                a.Speed -= closing * 0.6 * (ahx * nx + ahy * ny);
-                b.Speed += closing * 0.3 * (bhx * nx + bhy * ny);
+                double armA = rax * ny - ray * nx, armB = rbx * ny - rby * nx;
+                double impulse = (1 + ContactRestitution) * closing / (2 + (armA * armA + armB * armB) / YawInertia);
+                a.Speed -= impulse * (nx * ahx + ny * ahy);
+                a.Slip -= impulse * (ny * ahx - nx * ahy);
+                a.Spin -= impulse * armA / YawInertia;
+                b.Speed += impulse * (nx * bhx + ny * bhy);
+                b.Slip += impulse * (ny * bhx - nx * bhy);
+                b.Spin += impulse * armB / YawInertia;
                 // Bounded so a shove can't launch a car past what its own engine could do:
                 // unbounded, a car rammed while facing backwards reached -49 u/s and the two
                 // cars locked together for the rest of the race.
-                a.Speed = Math.Clamp(a.Speed, -ContactSpeedFloor, MaxSpeed * 1.08);
-                b.Speed = Math.Clamp(b.Speed, -ContactSpeedFloor, MaxSpeed * 1.08);
+                a.Speed = Math.Min(MaxSpeed * 1.08, Math.Max(-ContactSpeedFloor, a.Speed));
+                b.Speed = Math.Min(MaxSpeed * 1.08, Math.Max(-ContactSpeedFloor, b.Speed));
+                a.Slip = Math.Min(MaxSlip, Math.Max(-MaxSlip, a.Slip));
+                b.Slip = Math.Min(MaxSlip, Math.Max(-MaxSlip, b.Slip));
+                a.Spin = Math.Min(MaxSpin, Math.Max(-MaxSpin, a.Spin));
+                b.Spin = Math.Min(MaxSpin, Math.Max(-MaxSpin, b.Spin));
             }
         }
     }
 
+    /// <summary>Columns of the starting grid: as many as the tarmac takes, at least two.</summary>
+    public static int GridColumns(PoCabinetTrack track) =>
+        Math.Max(2, (int)Math.Floor(track.HalfWidth * 1.6 / GridColumn) + 1);
+
     /// <summary>
-    /// Starting-grid slot <paramref name="slot"/>: two columns, pole just behind the line, so
-    /// every car's race distance starts negative and lap 1 ends at one track length.
+    /// Distance behind the line of grid row <paramref name="row"/>. Rows are
+    /// <see cref="GridRow"/> apart, but none stands on a bend tighter than one and a half road
+    /// widths: there the slots of neighbouring rows fan into each other, so the row moves back
+    /// to where the road has straightened.
+    /// </summary>
+    public static double GridBack(PoCabinetTrack track, int row)
+    {
+        double limit = 1 / (track.HalfWidth * 1.5);
+        double back = 18;
+        for (int r = 0; back < track.Length;)
+        {
+            double at = track.Length - back;
+            if (track.MaxCurvature(at - 25, at + 25) > limit)
+            {
+                back += 8;
+                continue;
+            }
+            if (r == row) break;
+            r++;
+            back += GridRow;
+        }
+        return back;
+    }
+
+    /// <summary>
+    /// Starting-grid slot <paramref name="slot"/>: rows across the tarmac, pole just behind the
+    /// line, so every car's race distance starts negative and lap 1 ends at one lap length.
     /// </summary>
     public static void GridSlot(PoCabinetTrack track, PoCabinetCarBody car, int slot)
     {
-        int row = slot / 2;
-        double back = 18 + row * 42;
-        double lateral = (slot % 2 == 0 ? -1 : 1) * track.HalfWidth * 0.38;
+        int cols = GridColumns(track);
+        double back = GridBack(track, slot / cols);
+        double lateral = (slot % cols - (cols - 1) / 2.0) * GridColumn;
         var p = track.PointAt(track.Length - back);
         car.X = p.X + -p.Ty * lateral;
         car.Y = p.Y + p.Tx * lateral;
-        car.Heading = Math.Atan2(p.Ty, p.Tx);
+        car.Heading = PoCabinetTrack.Atan2(p.Ty, p.Tx);
         car.Speed = 0;
-        var proj = track.Project(car.X, car.Y, -1);
+        car.Slip = 0;
+        car.Spin = 0;
+        // Hinted with where the slot is: a long grid runs back over other parts of a course
+        // that crosses itself, and a blind nearest-point search can land on the wrong level.
+        var proj = track.Project(car.X, car.Y, track.IndexAt(track.Length - back));
         car.SegHint = proj.Index;
         car.Along = proj.Along;
         car.Lateral = proj.Lateral;
         car.OnGrass = false;
-        car.Distance = proj.Along > track.Length * 0.5 ? proj.Along - track.Length : proj.Along;
+        // Race distance starts negative: the slot's own distance behind the line, corrected by
+        // where the car projects (a bend moves an outer slot a little along the road). Not
+        // "along minus a lap": a front-row slot on a tight last bend can project past the line.
+        double off = proj.Along - (track.Length - back);
+        if (off > track.Length * 0.5) off -= track.Length;
+        else if (off < -track.Length * 0.5) off += track.Length;
+        car.Distance = off - back;
     }
 }

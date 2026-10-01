@@ -5,6 +5,7 @@ using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
 using PoMiniGames.Domain.Primitives;
+using PoRacerCatalog = PoMiniGames.Shared.Games.PoRacerCatalog;
 
 namespace PoMiniGames.Features.Leaderboard;
 
@@ -82,10 +83,13 @@ public static class UnifiedLeaderboardEndpoints
         // A failed board returns its title with placeholder rows, matching the "no scores
         // yet" rendering the client already uses for empty boards.
         var winRateTasks = WinRateGames.Select(g => SafeBuildWinRateAsync(storage, g.Key, g.Title, limit));
+        // One Racer board per track: a lap on the oval and a lap on the figure-8 are different
+        // measures, and until 2026-10-01 only the Grand Prix partition was read at all, so every
+        // Neon Skyline and Desert Dustway lap was stored and then shown nowhere.
+        var racerTasks = PoRacerCatalog.Tracks.Select(t => SafeBuildPoRacerAsync(storage, limit, t.Id));
         var boardTasks = new[]
         {
             SafeBuildMarbleAsync(storage, limit),
-            SafeBuildPoRacerAsync(storage, limit),
             SafeBuildPoSportsAsync(storage, limit),
             SafeBuildPoBrawlAsync(storage, limit),
             // 2026-08-11: dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
@@ -98,7 +102,7 @@ public static class UnifiedLeaderboardEndpoints
             SafeBuildOnlineMmrAsync(storage, limit),
         };
 
-        var result = (await Task.WhenAll(winRateTasks.Concat(boardTasks))).ToList();
+        var result = (await Task.WhenAll(winRateTasks.Concat(racerTasks).Concat(boardTasks))).ToList();
 
         // Boards with at least one REAL entry float to the top (every board is now
         // padded to `limit` with XXX placeholders, so raw count no longer ranks).
@@ -120,10 +124,10 @@ public static class UnifiedLeaderboardEndpoints
         try { return await BuildMarbleAsync(storage, limit); }
         catch { return EmptyBoard("Marble Race"); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildPoRacerAsync(IStorageService storage, int limit)
+    private static async Task<GameLeaderboardDto> SafeBuildPoRacerAsync(IStorageService storage, int limit, string trackId)
     {
-        try { return await BuildPoRacerAsync(storage, limit); }
-        catch { return EmptyBoard("Racer"); }
+        try { return await BuildPoRacerAsync(storage, limit, trackId); }
+        catch { return EmptyBoard(PoRacerTitle(trackId)); }
     }
     private static async Task<GameLeaderboardDto> SafeBuildPoSportsAsync(IStorageService storage, int limit)
     {
@@ -178,13 +182,21 @@ public static class UnifiedLeaderboardEndpoints
         // client and this server disagree on whether the "Po" prefix belongs in an
         // identifier. That knowledge now lives in GameKey's alias table, so adding a
         // game means adding one arm rather than remembering both of its names.
+        // "poracer-{track}" is a board key, not a game: ahead of the GameKey allowlist, which
+        // only knows games. Bare "poracer" stays the Grand Prix board it has always been.
+        if (key.StartsWith(PoRacerBoardPrefix, StringComparison.Ordinal))
+        {
+            var track = PoRacerCatalog.Tracks.FirstOrDefault(t => t.Id == key[PoRacerBoardPrefix.Length..]);
+            return track is null ? null : await BuildPoRacerAsync(storage, limit, track.Id);
+        }
+
         var canonical = Domain.Primitives.GameKey.TryParse(key);
         if (canonical is not { } id) return null;
 
         return id.Value switch
         {
             "pomarblerace" => await BuildMarbleAsync(storage, limit),
-            "poracer" => await BuildPoRacerAsync(storage, limit),
+            "poracer" => await BuildPoRacerAsync(storage, limit, PoRacerCatalog.DefaultTrackId),
             "posports" => await BuildPoSportsAsync(storage, limit),
             "pobrawl" => await BuildPoBrawlAsync(storage, limit),
             // By-id only, not in BuildAllAsync — see BuildPoBrawlKoAsync's remarks. This is
@@ -303,10 +315,22 @@ public static class UnifiedLeaderboardEndpoints
         return new GameLeaderboardDto("pomarblerace", "Marble Race", "Score", HigherIsBetter: true, entries);
     }
 
-    /// <summary>Best lap per player (lower is better) from the PoRacer score table.</summary>
-    private static async Task<GameLeaderboardDto> BuildPoRacerAsync(IStorageService storage, int limit)
+    private const string PoRacerBoardPrefix = "poracer-";
+
+    /// <summary>
+    /// The board key for a Racer track. Grand Prix keeps bare "poracer" (its rows have always
+    /// been read under it, and the client's rank memory is keyed on it); the others append the
+    /// track id. The client's page passes the same key as GameShell's GameKey.
+    /// </summary>
+    private static string PoRacerBoardKey(string trackId) =>
+        trackId == PoRacerCatalog.DefaultTrackId ? "poracer" : PoRacerBoardPrefix + trackId;
+
+    private static string PoRacerTitle(string trackId) => $"Racer · {PoRacerCatalog.GetTrack(trackId).Name}";
+
+    /// <summary>Best lap per player (lower is better) on one track, from the PoRacer score table.</summary>
+    private static async Task<GameLeaderboardDto> BuildPoRacerAsync(IStorageService storage, int limit, string trackId)
     {
-        var scores = await storage.GetPoRacerHighScoresAsync(50);
+        var scores = await storage.GetPoRacerHighScoresAsync(50, trackId);
         var entries = scores
             .Where(s => s.TotalTimeSeconds > 0)
             .GroupBy(s => s.PlayerName)
@@ -315,10 +339,11 @@ public static class UnifiedLeaderboardEndpoints
             .Take(limit)
             .Select((x, i) => new LeaderboardEntryDto(
                 i + 1, x.Name, x.Best,
-                x.Best.ToString("0.0", CultureInfo.InvariantCulture) + "s"))
+                // Thousandths: laps are timed to the millisecond and tenths tied half the board.
+                x.Best.ToString("0.000", CultureInfo.InvariantCulture) + "s"))
             .ToList();
         PadWithPlaceholders(entries, limit, "—");
-        return new GameLeaderboardDto("poracer", "Racer", "Best lap", HigherIsBetter: false, entries);
+        return new GameLeaderboardDto(PoRacerBoardKey(trackId), PoRacerTitle(trackId), "Best lap", HigherIsBetter: false, entries);
     }
 
     private static async Task<GameLeaderboardDto> BuildPoSportsAsync(IStorageService storage, int limit)

@@ -13,7 +13,9 @@
 //   ranged: true                               → counts as a "ranged_threat" for Jev's candidates.
 //
 // `kit` is supplied by sim.js (steering helpers, cast, fire), which keeps this module free of an
-// import cycle and trivially node-runnable.
+// import cycle and trivially node-runnable. kit.towards is the only steering that finds its way
+// round walls, and kit.sight says whether a wall stands between two units: anything thrown asks
+// it first, or the unit spends the match shooting stone.
 
 const SPIT_WINDUP_S = 0.15;
 const MEND_WINDUP_S = 0.12;
@@ -25,6 +27,8 @@ export const HANDLERS = {
         ranged: true,
         run(w, u, a, t, kit) {
             if (!t || t.team === u.team) return kit.hold();
+            // A wall in the line would eat the glob: come round it first.
+            if (!kit.sight(w, u, t)) return kit.towards(u, t, 1);
             const range = a.def.rangeMeters;
             const d = kit.edge(u, t);
             if (kit.ready(a) && d <= range) {
@@ -52,6 +56,7 @@ export const HANDLERS = {
         ranged: true,
         run(w, u, a, t, kit) {
             if (!t || t.team === u.team) return kit.hold();
+            if (!kit.sight(w, u, t)) return kit.towards(u, t, 1);
             const range = a.def.rangeMeters;
             const d = kit.edge(u, t);
             if (kit.ready(a) && d <= range) {
@@ -83,6 +88,7 @@ export const HANDLERS = {
                 return buddy && kit.edge(u, buddy) > 2 ? kit.towards(u, buddy, 0.8) : kit.hold();
             }
             u.intent.target = ally.idx;
+            if (!kit.sight(w, u, ally)) return kit.towards(u, ally, 1);
             const d = kit.edge(u, ally);
             if (kit.ready(a) && d <= a.def.rangeMeters) {
                 kit.cast(w, u, a, ally.idx, MEND_WINDUP_S);

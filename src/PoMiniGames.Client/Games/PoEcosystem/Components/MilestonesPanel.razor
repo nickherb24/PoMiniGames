@@ -1,15 +1,15 @@
 @* Field notes (feature #4): what this browser has witnessed across every island it watched.
    Observation only — nothing here can be earned by acting on the world. *@
 <div class="poeco-milestones">
-    <p class="poeco-note">@Unlocked.Count of @EcoMilestones.All.Length field notes. Each is earned by witnessing it — the island is never steered.</p>
-    <ul class="poeco-milestone-grid">
+    <ul class="poeco-milestone-grid" aria-label="Field notes: each is earned by witnessing it">
         @foreach (var m in EcoMilestones.All)
         {
             var got = Unlocked.TryGetValue(m.Id, out var when);
-            <li class="poeco-milestone @(got ? "poeco-milestone--got" : "")" title="@m.What">
+            @* The description is the tooltip (and the accessible name): 22 two-line cards were
+               most of the tab. *@
+            <li class="poeco-milestone @(got ? "poeco-milestone--got" : "")" title="@(got ? $"{m.What} ({when})" : m.What)" aria-label="@m.Title: @m.What @(got ? "(witnessed)" : "(not yet)")">
                 <span class="poeco-milestone-icon" aria-hidden="true">@(got ? m.Icon : "·")</span>
                 <span class="poeco-milestone-title">@m.Title</span>
-                <span class="poeco-milestone-what">@(got ? $"{m.What} ({when})" : m.What)</span>
             </li>
         }
     </ul>

@@ -810,6 +810,17 @@
     color: var(--color-text-muted);
 }
 
+/* The 100-car solo field lists the top ten and the places round the player. */
+.pocabinet-standings__gap {
+    list-style: none;
+    letter-spacing: 0.3em;
+}
+
+.pocabinet-standings__me {
+    color: var(--color-text-primary);
+    font-weight: 700;
+}
+
 .pocabinet-laps {
     margin: 0.75rem 0;
 }

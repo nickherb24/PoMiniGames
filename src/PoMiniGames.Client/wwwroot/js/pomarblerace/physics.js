@@ -96,7 +96,14 @@ export function createWorld() {
   return { world, materials: { marble, surface, obstacle, rumble, bump, spinner, ice } };
 }
 
+/**
+ * @returns {number} seconds the physics actually advanced. NOT always `dt`: cannon-es stops
+ *   sub-stepping as soon as one step has cost more wall time than FIXED_DT and throws the rest of
+ *   the accumulated time away, so a frame that asked for three steps can get one.
+ */
 export function stepWorld(world, dt) {
+  const before = world.stepnumber;
   // clamp dt so a stall/tab-switch can't explode the integrator
   world.step(FIXED_DT, Math.min(dt, 0.05), MAX_SUBSTEPS);
+  return (world.stepnumber - before) * FIXED_DT;
 }

@@ -24,7 +24,9 @@ export const DEFAULT_BINDINGS = Object.freeze({
 });
 export const BINDABLE = Object.freeze(Object.keys(DEFAULT_BINDINGS));
 const ONE_SHOT = Object.freeze(['fly', 'inspect', 'follow', 'director', 'pip']);
-const FIXED = new Set(['Tab', 'Escape', 'Digit0', 'Digit1', 'Digit2', 'Digit3']);
+// 2026-09-30: three more fixed keys, all the HUD's own — `/` (and Ctrl/Cmd+K) opens the
+// finder, L steps through the lenses, H holds the key legend up.
+const FIXED = new Set(['Tab', 'Escape', 'Digit0', 'Digit1', 'Digit2', 'Digit3', 'Slash', 'KeyL', 'KeyH']);
 
 /** Defaults with the player's overrides laid over them (unknown actions and fixed keys ignored). */
 export function mergeBindings(overrides) {
@@ -110,8 +112,14 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {}, bi
     const c = code(e);
     if (c === 'Tab') { e.preventDefault(); onAction('dashboard'); return; }
     if (c === 'Escape') { onAction('escape'); return; }
+    // The finder's key is swallowed so the `/` that opened it is not typed into it.
+    if (c === 'Slash' || (c === 'KeyK' && (e.ctrlKey || e.metaKey))) { e.preventDefault(); onAction('find'); return; }
     if (keys.has(c)) return;
     keys.add(c);
+    // Ctrl is "sink" by default, so only these two letters check for a held modifier.
+    const plain = !e.ctrlKey && !e.metaKey && !e.altKey;
+    if (c === 'KeyL' && plain) onAction('lens');
+    if (c === 'KeyH' && plain) onAction('keys', true);
     const action = codeToAction.get(c);
     if (action === 'rise') { e.preventDefault(); intent.jump = true; }
     if (action && ONE_SHOT.includes(action)) onAction(action);
@@ -119,7 +127,10 @@ export function createInput(canvas, { onAction = () => {}, onLook = () => {}, bi
     if (c in SPEED_KEYS) onAction('speed', SPEED_KEYS[c]);
     refresh();
   };
-  const onKeyUp = (e) => { keys.delete(code(e)); if (codeToAction.get(code(e)) === 'rise') intent.jump = false; refresh(); };
+  const onKeyUp = (e) => {
+    if (code(e) === 'KeyH' && keys.has('KeyH')) onAction('keys', false);
+    keys.delete(code(e)); if (codeToAction.get(code(e)) === 'rise') intent.jump = false; refresh();
+  };
   const onBlur = () => { keys.clear(); drag.active = false; drag.moved = false; refresh(); };
 
   // Both mouse paths land here. While locked the browser hands us movementX/Y directly;

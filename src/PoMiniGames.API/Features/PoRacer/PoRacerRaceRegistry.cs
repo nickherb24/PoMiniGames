@@ -3,7 +3,10 @@ using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoRacer;
 
-/// <summary>Owns races, broadcast subscriptions, connection bindings and expiry.</summary>
+/// <summary>A human's result in a race this server ran: the only lap a score submit may store.</summary>
+public sealed record PoRacerVerifiedLap(string TrackId, double BestLapSeconds, int Position, DateTimeOffset FinishedAtUtc);
+
+/// <summary>Owns races, broadcast subscriptions, connection bindings, expiry and the laps it timed.</summary>
 public sealed class PoRacerRaceRegistry : IAsyncDisposable
 {
     private readonly Dictionary<string, PoRacerRaceService> _races = new(StringComparer.OrdinalIgnoreCase);
@@ -23,32 +26,86 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
         _expiry = ExpireAsync();
     }
 
-    public PoRacerRaceService StartMultiplayer() => GetOrCreate(_lobby.CreateRaceCode(), _lobby.Players.DistinctBy(p => p.UserId).ToArray(), null);
+    /// <summary>The lobby's race, on the track the host's seat picked.</summary>
+    public PoRacerRaceService StartMultiplayer()
+    {
+        var players = _lobby.Players;
+        var track = players.FirstOrDefault(p => p.ConnectionId == _lobby.HostConnectionId)?.TrackId;
+        return GetOrCreate(_lobby.CreateRaceCode(), players.DistinctBy(p => p.UserId).ToArray(), track);
+    }
 
-    public PoRacerRaceService Join(string code, bool asPlayer, PoRacerLobbyPlayer player, string? trackId)
+    public PoRacerRaceService Join(string code, bool asPlayer, PoRacerLobbyPlayer player, string? trackId, PoRacerJoinOptions? options = null)
     {
         if (code.StartsWith("multi-", StringComparison.Ordinal))
             return GetByCode(code) ?? throw new HubException("The race has ended. Return to the lobby.");
         if (!asPlayer) return GetOrCreate("DEMO", [], trackId);
         if (!code.StartsWith("solo-", StringComparison.Ordinal) || code.Length > 48)
             throw new HubException("Invalid race code.");
-        return GetOrCreate(code, [player], trackId);
+        // Solo only: a time trial is the same race with no bots, and the tier sets how fast the
+        // bots are and, mostly, how much they lift for corners. Measured over an all-bot race on
+        // the oval: easy laps in about 27 s (the bots as they always were, and what demo and
+        // online races still use), medium in 21, hard in about 16. Hard was (1.07, 0.28) for 17 s
+        // until 2026-10-01; the pads and the drift payout took a second off a clean human lap
+        // (now 14-15 s) and impact damage put a little on the bots', so it lifts less to stay a race.
+        var (pace, caution) = options?.Difficulty switch
+        {
+            "easy" => (1.0, PoRacerSim.DefaultBotCaution),
+            "hard" => (1.07, 0.20),
+            _ => (1.03, 0.42),
+        };
+        return GetOrCreate(code, [player], trackId, bots: options?.Mode != "trial", pace, caution);
     }
 
-    private PoRacerRaceService GetOrCreate(string code, IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId)
+    private PoRacerRaceService GetOrCreate(string code, IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId,
+        bool bots = true, double botPace = 1.0, double botCaution = PoRacerSim.DefaultBotCaution)
     {
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_shutdown.IsCancellationRequested, this);
             if (_races.TryGetValue(code, out var existing)) return existing;
             if (_races.Count >= 64) throw new HubException("The race grid is busy. Try again shortly.");
-            var race = new PoRacerRaceService(code, players, _logs.CreateLogger<PoRacerRaceService>(), trackId);
+            var race = new PoRacerRaceService(code, players, _logs.CreateLogger<PoRacerRaceService>(), trackId, bots, botPace, botCaution);
             race.SnapshotReady += snapshot => BroadcastAsync(code, "raceSnapshot", snapshot);
-            race.Finished += result => BroadcastAsync(code, "raceFinished", result);
+            race.Finished += result =>
+            {
+                Remember(race);
+                return BroadcastAsync(code, "raceFinished", result);
+            };
             _races.Add(code, race);
             race.Start();
             return race;
         }
+    }
+
+    // ── Server-timed laps ────────────────────────────────────────────────
+    // The sim runs here, so the lap a score submit is allowed to store is the one this process
+    // timed, not the one the browser reports. A race is disposed 30 s after it ends; its humans'
+    // laps are kept for an hour so a parked score (PendingScoreStore) can still be backed when the
+    // connection returns. In memory, like the races themselves: a recycle forgets them and the
+    // parked score is then refused, which is the honest answer.
+    private static readonly TimeSpan VerifiedFor = TimeSpan.FromHours(1);
+    private readonly Dictionary<(string UserId, string Code), PoRacerVerifiedLap> _verified = [];
+
+    private void Remember(PoRacerRaceService race)
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var (userId, entry) in race.HumanResults())
+            if (entry.BestLapSeconds > 0)
+                Remember(userId, race.GameCode, new(race.TrackId, entry.BestLapSeconds, entry.Position, now));
+    }
+
+    /// <summary>Back a lap for an identity and race code. Public for the storage tests, which cannot run three laps.</summary>
+    public void Remember(string userId, string code, PoRacerVerifiedLap lap)
+    {
+        lock (_gate) _verified[(userId, code.ToLowerInvariant())] = lap;
+    }
+
+    /// <summary>The lap this server timed for that identity in that race, if it is still remembered.</summary>
+    public PoRacerVerifiedLap? VerifiedLap(string userId, string? code)
+    {
+        lock (_gate)
+            return _verified.TryGetValue((userId, (code ?? "").ToLowerInvariant()), out var lap)
+                && DateTimeOffset.UtcNow - lap.FinishedAtUtc <= VerifiedFor ? lap : null;
     }
 
     private async Task BroadcastAsync<T>(string code, string method, T message)
@@ -107,6 +164,9 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
                             _connections.Remove(connection);
                         if (race.GameCode == _lobby.GameCode) _lobby.End();
                     }
+                    var cutoff = DateTimeOffset.UtcNow - VerifiedFor;
+                    foreach (var stale in _verified.Where(v => v.Value.FinishedAtUtc < cutoff).Select(v => v.Key).ToArray())
+                        _verified.Remove(stale);
                 }
                 foreach (var race in expired) await race.DisposeAsync();
             }

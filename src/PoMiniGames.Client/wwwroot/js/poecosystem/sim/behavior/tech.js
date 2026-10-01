@@ -8,8 +8,9 @@
 //   FIRE       a CAMPFIRE tile by the first hut. Wolves treat it as a threat inside
 //              TECH.campfireScareRadius (world.perceive); humans within campfireWarmRadius
 //              regain health at night (world.step).
-//   PALISADE   a ring of FENCE tiles round the village with gates. Solid for every species
-//              but humans (behavior/steering.js), so the herds' predators mostly stay out.
+//   PALISADE   a ring of FENCE tiles round the village with gates. Solid for every species,
+//              the tribe included (behavior/steering.js): everyone goes by the gates, so
+//              the herds' predators mostly stay out.
 //   FARMING    FIELD tiles carrying cultivated bushes that ripen fieldRipenMultiplier×
 //              faster (flora/bushes.js `fast`).
 //   WATCHTOWER a TOWER tile (solid, like a hut). Humans see further and throw further
@@ -59,7 +60,7 @@ function freeTilesNear(world, radius, { keepClear = 1 } = {}) {
       const x = ox + dx; const z = oz + dz;
       if (x < 1 || z < 1 || x >= size - 1 || z >= size - 1) continue;
       const i = z * size + x;
-      if (type[i] !== TILE.GRASS || tileState[i] !== TILE_STATE.NORMAL) continue;
+      if (type[i] !== TILE.GRASS || tileState[i] !== TILE_STATE.NORMAL || world.ground?.closed[i]) continue;
       if (trees.byTile[i] >= 0 || bushes.byTile[i] >= 0) continue;
       let crowded = false;
       for (const h of settlement.huts) if (Math.abs(h.x - 0.5 - x) <= keepClear && Math.abs(h.z - 0.5 - z) <= keepClear) { crowded = true; break; }

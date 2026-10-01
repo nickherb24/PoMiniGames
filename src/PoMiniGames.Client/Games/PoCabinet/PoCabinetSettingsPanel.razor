@@ -26,11 +26,6 @@
         <input id="pocabinet-music" type="checkbox" checked="@Value.Music" @onchange="OnMusicChanged" />
     </div>
 
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-voices">Officials' voices</label>
-        <input id="pocabinet-voices" type="checkbox" checked="@Value.Voices" @onchange="OnVoicesChanged" />
-    </div>
-
     @if (Compact)
     {
         <details class="pocabinet-settings__more">
@@ -143,9 +138,6 @@
 
     private Task OnMusicChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.Music = e.Value is bool b && b);
-
-    private Task OnVoicesChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.Voices = e.Value is bool b && b);
 
     private Task OnHudScaleChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.HudScale = ParseDouble(e.Value?.ToString(), s.HudScale));

@@ -53,6 +53,15 @@ const PRESETS = {
   // the drops are always where the camera is rather than spread thin over the island.
   rain: { pool: 'soft', life: [0.9, 1.3], size: [0.05, 0.08], speed: [14, 19], spread: 0.08, drag: 0.05, gravity: -9.0, growth: 0, alpha: 0.42, colors: [0xb8c8d8, 0x9fb4c8, 0xd0dce8] },
   snow: { pool: 'soft', life: [5.0, 8.0], size: [0.08, 0.16], speed: [0.8, 1.6], spread: 0.6, drag: 0.6, gravity: -0.7, growth: 0, alpha: 0.85, colors: [0xffffff, 0xeef4ff, 0xdfe8f5] },
+  // GFX pass 3 (2026-09-30). The seasons shed: blossom in spring, leaves in autumn, both
+  // let go from canopy height near the camera and drift down on a little drag.
+  petal: { pool: 'soft', life: [5.0, 9.0], size: [0.08, 0.15], speed: [0.3, 0.9], spread: 1.4, drag: 0.8, gravity: -0.34, growth: 0, alpha: 0.88, colors: [0xffd1e8, 0xfff0f6, 0xf9a8d4, 0xffffff] },
+  leaf: { pool: 'soft', life: [4.0, 7.0], size: [0.11, 0.2], speed: [0.4, 1.2], spread: 1.3, drag: 0.7, gravity: -0.6, growth: 0, alpha: 0.9, colors: [0xd97706, 0xb45309, 0xf59e0b, 0x9a3412] },
+  // Under the waterline: air on its way up.
+  bubble: { pool: 'soft', life: [1.6, 3.2], size: [0.05, 0.13], speed: [0.2, 0.6], spread: 0.8, drag: 0.6, gravity: 1.3, growth: 0.3, alpha: 0.5, colors: [0xdff6ff, 0xb5e8f7, 0xffffff] },
+  // A watched creature's last breath rises; a birth in its family opens as a ring.
+  wisp: { pool: 'glow', life: [3.4, 5.4], size: [0.16, 0.34], speed: [0.5, 1.1], spread: 0.25, drag: 0.25, gravity: 0.5, growth: 0.6, alpha: 0.9, sparkle: 1, colors: [0xe0f2fe, 0xc7d2fe, 0xfef3c7] },
+  mote: { pool: 'glow', life: [1.3, 2.1], size: [0.1, 0.18], speed: [2.3, 2.9], spread: 0.04, drag: 1.3, gravity: 0.06, growth: 0, alpha: 0.9, colors: [0xfde68a, 0xbbf7d0, 0xffffff] },
 };
 
 const VERT = `
@@ -287,6 +296,14 @@ export function createParticles(scene, { tier = 'high' } = {}) {
         api.emit(kind, x, y + t * height, z, {
           ...o, count: 1, radius: (o.radius ?? 1) * (0.4 + t * 1.6), scale: (o.scale ?? 1) * (1 + t * 0.8),
         });
+      }
+    },
+
+    /** A flat ring that opens outward from a point: `count` particles, one per bearing. */
+    ring(kind, x, y, z, count = 24) {
+      for (let k = 0; k < count; k++) {
+        const a = (k / count) * Math.PI * 2;
+        api.emit(kind, x, y, z, { count: 1, dir: [Math.cos(a), 0.06, Math.sin(a)], spread: 0.03 });
       }
     },
 

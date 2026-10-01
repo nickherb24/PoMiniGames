@@ -42,6 +42,7 @@ import * as THREE from 'three';
 import { TILE, TILE_STATE, tileX, tileZ } from '../sim/terrain/tiles.js';
 import { createWater } from './water.js';
 import { trailUniforms } from './trails.js';
+import { cloudShadowGlsl, materialCloud } from './materials.js';
 
 const MAX_TRIBES = 4;
 
@@ -61,6 +62,14 @@ const STATE_COLOUR = {
 // steady and hot; everything else is 0 and costs the shader a multiply.
 const STATE_GLOW = { [TILE_STATE.FIRE]: 1.0, [TILE_STATE.LAVA]: 0.85, [TILE_STATE.CAMPFIRE]: 0.45 };
 const DRY = new THREE.Color(0x8a7f4a);   // grass at zero biomass
+// How far under the surface the middle of a lake's bed is DRAWN. The sim flattens a lake
+// to exactly sea level (island.js), which is the water plane's own height: every wave
+// trough dipped under the bed and showed it, and the rest of the lake was a zero-depth
+// shoreline (full foam, full caustics) — a white sheet with a ragged blue edge. Two
+// limits: deeper than the wave sum in water.js (0.36), and no steeper than the rock blend
+// below starts at (a 1 m rim tile dropping 0.8 is just under it), or the bank turns grey.
+// Render-only: terrain.height and heightAt still say sea level.
+const LAKE_BED = -0.8;
 
 const COMMON_VERT = `
 #include <common>
@@ -98,11 +107,23 @@ float tNoise(vec2 p) {
   return mix(mix(tHash(i), tHash(i + vec2(1.0, 0.0)), u.x),
              mix(tHash(i + vec2(0.0, 1.0)), tHash(i + vec2(1.0, 1.0)), u.x), u.y);
 }
+${cloudShadowGlsl('tNoise')}
 `;
 
 export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
   const { size, height } = terrain;
   const cs = size + 1;
+  const drawn = Float32Array.from(height);
+  // Lake tiles touching each corner, 0..4. Non-zero is the lake mask water.js bakes; only a
+  // corner with lake on all four sides is sunk. The rim stays where the sim put it, because
+  // it is shared with land tiles, and creatures, trees and huts stand at the sim's height.
+  const lake = new Uint8Array(cs * cs);
+  for (let t = 0; t < size * size; t++) {
+    if (terrain.type[t] !== TILE.LAKE) continue;
+    const o = tileZ(t, size) * cs + tileX(t, size);
+    lake[o]++; lake[o + 1]++; lake[o + cs]++; lake[o + cs + 1]++;
+  }
+  for (let k = 0; k < drawn.length; k++) if (lake[k] === 4) drawn[k] = Math.min(drawn[k], LAKE_BED);
   const geometry = new THREE.PlaneGeometry(size, size, size, size);
   geometry.rotateX(-Math.PI / 2);
   const pos = geometry.attributes.position;
@@ -112,7 +133,7 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
       const v = j * cs + i;
       pos.setX(v, i);
       pos.setZ(v, j);
-      pos.setY(v, height[j * cs + i]);
+      pos.setY(v, drawn[v]);
     }
   }
   pos.needsUpdate = true;
@@ -147,7 +168,7 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
     uTribeCol: { value: Array.from({ length: MAX_TRIBES }, () => new THREE.Color(0xffffff)) },
   };
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
+    Object.assign(shader.uniforms, uniforms, materialCloud);
 
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', COMMON_VERT)
@@ -192,6 +213,11 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
           float beach = smoothstep(-0.2, 0.4, vWorldPos.y) * (1.0 - smoothstep(1.2, 2.4, vWorldPos.y)) * (1.0 - steep);
           float ripple = sin((vWorldPos.x * 0.9 + vWorldPos.z * 0.35 + tNoise(vWorldPos.xz * 0.5) * 2.0) * 6.0) * 0.5 + 0.5;
           diffuseColor.rgb *= 1.0 - beach * ripple * 0.09;
+
+          // Cloud shadows (2026-09-30): the deck overhead, projected down the sun's ray, so
+          // the patches sliding over the hills are the clouds you can see above them. Lava
+          // and fire are their own light and stay bright.
+          diffuseColor.rgb *= mix(cloudLight(vWorldPos), 1.0, step(0.01, vGlow));
         }
 
         // ── GFX pass 2: paths, tracks, wet ground, lowland snow ──
@@ -252,7 +278,9 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
           float edge = abs(distance(vWorldPos.xz, uTribe[k].xy) - uTribe[k].z);
           float line = exp(-edge * edge * 1.4);
           float pulse = 0.75 + 0.25 * sin(uTerrainTime * 0.9 + float(k) * 2.1 + vWorldPos.x * 0.05);
-          totalEmissiveRadiance += uTribeCol[k] * line * pulse * (0.05 + uNight * 0.55) * (1.0 - tSteep * 0.5);
+          // 0.3 after dark, not the 0.55 it had: seen along the ground through the night
+          // bloom, a border at 0.55 washed a third of the frame out (2026-09-30).
+          totalEmissiveRadiance += uTribeCol[k] * line * pulse * (0.05 + uNight * 0.3) * (1.0 - tSteep * 0.5);
         }
       `)
       // Puddles and wet sheen are reflections, so they go after the lighting sum.
@@ -284,7 +312,7 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
   mesh.receiveShadow = true;
   mesh.name = 'island';
 
-  const water = createWater(terrain, { tier });
+  const water = createWater({ size, height: drawn, lake }, { tier });
 
   const colour = new THREE.Color();
 

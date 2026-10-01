@@ -1,0 +1,44 @@
+@* Watch alerts (2026-09-30): the viewer's own rules — "tell me when wolves fall below 5".
+   A rule reads the counts the page already receives; it watches and never acts. Kept in
+   this browser across islands; fires once when it starts to hold and re-arms when it stops. *@
+<div class="poeco-alerts">
+    @if (Book.Rules.Count > 0)
+    {
+        <ul class="poeco-watch-list">
+            @foreach (var rule in Book.Rules)
+            {
+                <li>
+                    <span class="poeco-alert-rule @(Stats is not null && rule.Holds(Stats) ? "poeco-alert-rule--on" : "")">@rule.Describe()</span>
+                    <button type="button" class="poeco-icon-btn" aria-label="Remove the alert: @rule.Describe()" title="Remove" @onclick="() => Remove(rule)">✕</button>
+                </li>
+            }
+        </ul>
+    }
+    <form class="poeco-alert-form" @onsubmit="Add">
+        <select @bind="_species" aria-label="Which creatures">
+            <option value="-1">All creatures</option>
+            @for (var s = 0; s < EcoSpeciesInfo.Count; s++)
+            {
+                <option value="@s">@EcoSpeciesInfo.PluralOf(s)</option>
+            }
+        </select>
+        <select @bind="_op" aria-label="Below or above">
+            <option value="below">fall below</option>
+            <option value="above">rise above</option>
+        </select>
+        <input type="number" min="0" max="400" @bind="_value" aria-label="How many" />
+        <button type="submit" class="poeco-pill poeco-pill--on" disabled="@(Book.Rules.Count >= EcoAlertBook.MaxRules)">Alert me</button>
+    </form>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EcoAlertBook Book { get; set; } = default!;
+    [Parameter] public EcoStats? Stats { get; set; }
+
+    private int _species = 2;
+    private string _op = "below";
+    private int _value = 5;
+
+    private void Add() => Book.Add(new EcoAlertRule(_species, _op == "below", Math.Clamp(_value, 0, 400)));
+    private void Remove(EcoAlertRule rule) => Book.Remove(rule);
+}

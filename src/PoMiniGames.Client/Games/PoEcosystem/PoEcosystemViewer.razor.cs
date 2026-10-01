@@ -35,7 +35,11 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private const string TourDoneKey = "poeco:tourDone";
     private const int TicksPerYear = 600;   // YEAR_SECONDS / TICK_SECONDS in sim/core/config.js
 
+    /// <summary>The kiosk: a fresh island every time, never saved (the page's /demo route).</summary>
     [Parameter] public bool IsDemo { get; set; }
+
+    /// <summary>A shared island's code from <c>?island=CODE</c>: boot straight into a visit of it.</summary>
+    [Parameter] public string? VisitCode { get; set; }
 
     [Inject] private PoEcosystemInteropService Interop { get; set; } = default!;
     [Inject] private PoEcosystemApiClient Api { get; set; } = default!;
@@ -43,15 +47,18 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     [Inject] private ToastService Toasts { get; set; } = default!;
     [Inject] private AuthStateService Auth { get; set; } = default!;
     [Inject] private UiFeedbackService Feedback { get; set; } = default!;
+    [Inject] private NavigationManager Navigation { get; set; } = default!;
 
+    // Shown while H is held, or pinned from the ⋯ menu. It used to appear by itself for the
+    // first ten seconds of every visit, on top of the intro card and the tour.
     private static readonly (string Key, string What)[] KeyLegend =
     [
-        ("WASD", "move"), ("Shift", "run"), ("Space/Ctrl", "rise/sink"), ("F", "float/walk"), ("E", "inspect"), ("C", "cinematic"), ("Tab", "dashboard"),
+        ("WASD", "move"), ("Shift", "hurry"), ("Space/Ctrl", "rise/sink"), ("F", "float/walk"), ("E", "inspect"), ("T", "follow"),
+        ("/", "find"), ("L", "lens"), ("C", "cinematic"), ("P", "pop out"), ("0–3", "speed"), ("Tab", "dashboard"),
     ];
 
     private readonly List<EcoEvent> _log = new(LogCapacity);
     private readonly List<EcoThought> _thoughts = [];
-    private readonly List<EcoChronicle> _chronicles = [];
     private EcoStats? _stats;
     private EcoDetail? _detail;
     private EcoLineage? _lineage;
@@ -67,9 +74,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private bool _booted;
     private bool _dashboardOpen;
     private bool _lineageOpen;
-    private bool _pointerLocked;
     private bool _narrow;
-    private bool _showKeys = true;
+    private bool _showKeys;
     private bool _webGpu;
     private bool _sound = true;
     private bool _directorOn;
@@ -80,14 +86,37 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private bool _cloudThoughts;
     private bool _visiting;                 // a gallery world: read-only, never autosaved locally
     private int _cloudThoughtsSpent;
-    private int _tint = -1;
     private int _selected = -1;
     private int _lastStanding = -1;
     private int _chronicledToYear;          // the last year a saga covered (or was offered for)
     private int _chronicleOfferYear = -1;   // a decade rolled over and no saga was written yet
     private HashSet<int> _watched = [];
-    private bool _lockHintSeen;                     // the drag/free-look hint shows once per browser
     private List<EcoCultureProfile> _cultures = [];
+
+    // ── 2026-09-30: finder, lenses, map layers, ambient, time machine, wagers, alerts ──
+    private HudBar? _hudBar;
+    private int _lens = EcoLens.None;
+    private string _layer = "none";
+    private bool _ambient;
+    private bool _finderOpen;
+    private IReadOnlyList<EcoFound> _found = [];
+    private int _seed;                              // the running world's seed, as the sim has it
+    private int _past = -1;                         // the decade being visited; -1 in the present
+    private IReadOnlyList<EcoKeyframe> _keyframes = [];
+    private string _dashTab = "island";
+    private readonly Dictionary<int, string> _thumbs = [];
+    private (string Code, string Name, int[][] Years)? _compare;
+    private readonly EcoWagerBook _wagers = new();
+    private readonly EcoAlertBook _alerts = new();
+
+    /// <summary>A visit — a shared island or a past decade: it runs, and nothing is written into it or saved.</summary>
+    private bool ReadOnly => _visiting || _past >= 0;
+
+    /// <summary>The island's journal (the sim keeps it; the snapshot carries it), oldest first.</summary>
+    private IReadOnlyList<EcoSaga> Sagas => _history?.Sagas ?? [];
+
+    private (string Id, string Label, string What) LayerInfo =>
+        EcoMapLayer.All.FirstOrDefault(l => l.Id == _layer) is { Id: not null } l ? l : EcoMapLayer.All[0];
 
     // ── 2026-09-23: timeline, field notes, council/herald, tour, viewing settings ──
     private EcoHistory? _history;
@@ -126,6 +155,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.CloudThoughtRequested += OnCloudThoughtAsync;
         Interop.CloudThoughtBatchRequested += OnCloudThoughtBatchAsync;
         Interop.HistoryReceived += OnHistory;
+        Interop.Found += OnFound;
+        Interop.KeyframesReceived += OnKeyframes;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -136,18 +167,22 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
         // Three independent interop round-trips (a WebGPU adapter request, the model list,
         // and an IndexedDB probe) — run them together rather than one after another.
-        // Demo mode always starts a fresh island, so it skips the resume probe.
+        // A demo always starts a fresh island and a share link goes straight to the visit,
+        // so neither asks whether there is an island to resume.
+        var visiting = !string.IsNullOrWhiteSpace(VisitCode);
         var webGpu = Interop.WebGpuAvailableAsync().AsTask();
         var models = Interop.ModelsAsync().AsTask();
-        var lockHint = Interop.LockHintSeenAsync().AsTask();
-        var probe = IsDemo ? Task.FromResult(new EcoSaveInfo(false, 0, 0, 0, 0, null)) : Interop.ProbeSaveAsync().AsTask();
-        await Task.WhenAll(webGpu, models, lockHint, probe);
+        var probe = IsDemo || visiting ? Task.FromResult(new EcoSaveInfo(false, 0, 0, 0, 0, null)) : Interop.ProbeSaveAsync().AsTask();
+        await Task.WhenAll(webGpu, models, probe);
         _webGpu = webGpu.Result;
         _models = models.Result;
-        _lockHintSeen = lockHint.Result;
         var save = probe.Result;
         if (save.Exists) _resumePrompt = save;
-        else await BootAsync(resume: false);
+        else
+        {
+            await BootAsync(resume: false);
+            if (visiting) await VisitAsync(VisitCode!.Trim());
+        }
         await InvokeAsync(StateHasChanged);
     }
 
@@ -164,37 +199,53 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             llmEnabled: _webGpu && !IsDemo,
             modelId: null,
             lowEnd: _narrow,
-            demo: IsDemo);
+            demo: IsDemo,
+            // Neither a demo nor the island booted only to be replaced by a visit is saved:
+            // the island this browser already holds stays exactly as it was left.
+            ephemeral: IsDemo || !string.IsNullOrWhiteSpace(VisitCode));
         if (!ok) _error = "The island engine could not start. Your browser may not support WebGL2.";
         _sound = await Interop.SoundEnabledAsync();
         _viewSettings = await Interop.SettingsAsync();
-        _ = HideKeysLaterAsync();
         StartTourIfNew();
         await InvokeAsync(StateHasChanged);
     }
 
-    private async Task HideKeysLaterAsync()
-    {
-        await Task.Delay(10_000);
-        _showKeys = false;
-        await InvokeAsync(StateHasChanged);
-    }
-
     // ── engine callbacks ─────────────────────────────────────────────────
-    private void OnReady(int seed, int tick, bool resumed, string physics)
+    private void OnReady(int seed, int tick, bool resumed, string physics, int past)
     {
         _seedInput = seed.ToString();
+        _seed = seed;
+        _past = past;
+        if (_returning) { _returning = false; _visiting = false; }
         _banner = null;
         _lastStanding = -1;
         _lineage = null;
         _lineageOpen = false;
-        _chronicles.Clear();
         _chronicledToYear = 0;
         _chronicleOfferYear = -1;
         _history = null;
         _legends.Clear();
+        _found = [];
+        _compare = null;
+        _selected = -1;
+        _detail = null;
         _milestones.ResetWorld();
+        _alerts.ResetWorld();
+        _wagers.Open(seed);
         _ = LoadCultureAsync();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void OnFound(IReadOnlyList<EcoFound> results)
+    {
+        _found = results;
+        if (_finderOpen) InvokeAsync(StateHasChanged);
+    }
+
+    private void OnKeyframes(EcoKeyframes frames)
+    {
+        _keyframes = frames.Frames;
+        _past = frames.Past;
         InvokeAsync(StateHasChanged);
     }
 
@@ -215,27 +266,70 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         // Every ten years the chronicler is offered a decade. Offered, not written: a saga is
         // a model call, and the player decides whether this decade deserves one.
         var decade = stats.Year / ChronicleEveryYears * ChronicleEveryYears;
-        if (decade > 0 && decade > _chronicledToYear && _chronicleOfferYear != decade)
+        if (decade > 0 && decade > _chronicledToYear && _chronicleOfferYear != decade && !ReadOnly)
         {
             _chronicleOfferYear = decade;
-            Toasts.Show($"Year {decade}: a decade has passed. Open the dashboard to write its chronicle.");
+            Ticker($"📖 Year {decade}: a decade has passed — its chronicle can be written (Tribes).");
         }
         AnnounceNotes(_milestones.Observe(stats));
+
+        // The viewer's own alerts are the one kind of island news that is still a toast:
+        // they asked to be told.
+        foreach (var rule in _alerts.Observe(stats))
+        {
+            Toasts.Show($"🔔 {rule.Describe()}", ToastType.Warning);
+            _ = Feedback.CrystalPingAsync().AsTask();
+        }
+        RenderStats();
+    }
+
+    // "Stats land twice a second" is only true at 1×: the sim sends them every ten TICKS, so
+    // at 4× they arrive eight times a second, and each one used to re-render the HUD and —
+    // when it was open — every panel of the dashboard. The newest stats are always kept;
+    // the render is what is rationed.
+    private const int StatsRenderMs = 400;
+    private DateTime _statsRenderedAt = DateTime.MinValue;
+
+    private void RenderStats()
+    {
+        var now = DateTime.UtcNow;
+        if ((now - _statsRenderedAt).TotalMilliseconds < StatsRenderMs) return;
+        _statsRenderedAt = now;
         InvokeAsync(StateHasChanged);
     }
 
     private void OnHistory(EcoHistory history)
     {
         _history = history;
+        // The journal and the legends live in the island, so a resumed, cloud-loaded or
+        // visited world arrives with them: the last chronicled year and the legend list are
+        // rebuilt from it rather than starting empty.
+        if (history.Sagas is { Length: > 0 } sagas) _chronicledToYear = Math.Max(_chronicledToYear, sagas.Max(s => s.ToYear));
+        if (_legends.Count == 0)
+        {
+            foreach (var l in history.Landmarks.Where(l => l.Kind == "legend").OrderByDescending(l => l.Tick).Take(20))
+            {
+                var cut = l.Text.IndexOf(" — ", StringComparison.Ordinal);
+                _legends.Add(cut > 0 ? (l.Year, l.Text[..cut], l.Text[(cut + 3)..]) : (l.Year, "Legend", l.Text));
+            }
+        }
+        if (!ReadOnly) foreach (var line in _wagers.Settle(history.Years)) Ticker($"🎲 {line}");
         if (_dashboardOpen) InvokeAsync(StateHasChanged);
     }
 
-    /// <summary>A field note was witnessed: a toast and a soft chime, never more.</summary>
+    /// <summary>
+    /// The island's own news — a field note, a legend, a decade turning, a pact — as a quiet
+    /// line under the status chip (render/chronicle.js). These were toasts until 2026-09-30,
+    /// stacked in the corner on top of the chronicle card for the same moment.
+    /// </summary>
+    private void Ticker(string text) => _ = Interop.TickerAsync(text).AsTask();
+
+    /// <summary>A field note was witnessed: a line on the ticker and a soft chime, never more.</summary>
     private void AnnounceNotes(List<EcoMilestones.Milestone> notes)
     {
         foreach (var m in notes)
         {
-            Toasts.Show($"{m.Icon} Field note: {m.Title} — {m.What}", ToastType.Success);
+            Ticker($"{m.Icon} Field note: {m.Title} — {m.What}");
             _ = Feedback.CrystalPingAsync().AsTask();
         }
     }
@@ -246,14 +340,15 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         if (_log.Count > LogCapacity) _log.RemoveRange(0, _log.Count - LogCapacity);
         foreach (var ev in events)
         {
-            // The watch-list: a bookmarked creature dying or breeding is worth a toast; the
-            // tribe climbing a tier is worth one for everybody.
+            // The watch-list is what the viewer asked to hear about: a bookmarked creature
+            // dying or breeding is a toast. A new age, an outbreak, a variety, an extinction
+            // already get a chronicle card (render/chronicle.js) and are in the log and on
+            // the timeline; toasting them as well said everything twice.
             if (ev.Kind == "death" && ev.Creature is { } dead && _watched.Contains(dead)) Toasts.Show(ev.Text, ToastType.Warning);
             else if (ev.Kind == "birth" && ((ev.Mother is { } m && _watched.Contains(m)) || (ev.Father is { } f && _watched.Contains(f)))) Toasts.Show(ev.Text, ToastType.Success);
-            else if (ev.Kind == "tech") { Toasts.Show(ev.Text, ToastType.Success); _ = RecordLegendAsync(ev); }
-            else if (ev.Kind == "outbreak" || ev.Kind == "variety" || ev.Kind == "extinction") Toasts.Show(ev.Text, ToastType.Info);
+            else if (ev.Kind == "tech") _ = RecordLegendAsync(ev);
             else if (ev.Kind == "diplomacy" && ev.Action is "war" or "peace") _ = ConveneCouncilAsync(ev);
-            else if (ev.Kind == "treaty") Toasts.Show(ev.Text, ToastType.Info);
+            else if (ev.Kind == "treaty") Ticker($"📜 {ev.Text}");
         }
         AnnounceNotes(_milestones.Observe(events));
         InvokeAsync(StateHasChanged);
@@ -267,7 +362,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     /// </summary>
     private async Task ConveneCouncilAsync(EcoEvent ev)
     {
-        if (!Auth.IsAuthenticated || _visiting || _treatiesAsked >= TreatiesPerSession) return;
+        if (!Auth.IsAuthenticated || ReadOnly || _treatiesAsked >= TreatiesPerSession) return;
         if (DateTimeOffset.UtcNow - _lastTreatyAt < TreatySpacing) return;
         if (ev.TribeA is not { } a || ev.TribeB is not { } b || _stats?.Tribes is not { } tribes) return;
         var ta = tribes.FirstOrDefault(t => t.Id == a);
@@ -284,7 +379,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     /// <summary>The tribe climbed a tier: the Herald names the moment, and it joins the timeline.</summary>
     private async Task RecordLegendAsync(EcoEvent ev)
     {
-        if (!Auth.IsAuthenticated || _visiting || _legendsAsked >= LegendsPerSession || _stats is null) return;
+        if (!Auth.IsAuthenticated || ReadOnly || _legendsAsked >= LegendsPerSession || _stats is null) return;
         _legendsAsked++;
         var tribe = ev.Text.Contains(" advanced to ", StringComparison.Ordinal) ? ev.Text[..ev.Text.IndexOf(" advanced to ", StringComparison.Ordinal)] : _stats.Tech?.Tribe ?? "The tribe";
         var milestone = ev.Level is { } level ? TechName(level) : "Advancement";
@@ -293,7 +388,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         _legends.Insert(0, (_stats.Year, lore.Epithet, lore.OralLegend));
         if (_legends.Count > 20) _legends.RemoveAt(_legends.Count - 1);
         await Interop.NoteAsync("legend", $"{lore.Epithet} — {lore.OralLegend}", ev.Tile ?? -1);
-        Toasts.Show($"📜 {lore.Epithet}", ToastType.Info);
+        Ticker($"📜 {lore.Epithet}");
         await InvokeAsync(StateHasChanged);
     }
 
@@ -305,21 +400,26 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     {
         _thoughts.AddRange(thoughts);
         if (_thoughts.Count > ThoughtCapacity) _thoughts.RemoveRange(0, _thoughts.Count - ThoughtCapacity);
-        InvokeAsync(StateHasChanged);
+        // The feed is only on screen inside the dashboard.
+        if (_dashboardOpen) RenderStats();
     }
 
     private void OnDetail(EcoDetail? detail)
     {
+        var appeared = (_detail is null) != (detail is null);
         _detail = detail;
         if (detail is not null) TourSignal("inspect");
-        InvokeAsync(StateHasChanged);
+        // The inspector is hidden behind the dashboard and during a director shot, and the
+        // detail of a followed creature arrives up to sixteen times a second at 4×: with the
+        // dashboard open, each of those re-rendered every panel in it for a popover nobody
+        // could see.
+        if (appeared || (!_dashboardOpen && !_directorOn)) InvokeAsync(StateHasChanged);
     }
 
     private void OnLineage(int handle, EcoLineage? tree)
     {
         _lineage = tree;
-        _lineageOpen = tree is not null;
-        if (tree is null) Toasts.Show("Nothing is known about that creature's family.");
+        if (tree is null) { _lineageOpen = false; Toasts.Show("Nothing is known about that creature's family."); }
         InvokeAsync(StateHasChanged);
     }
 
@@ -338,8 +438,12 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     {
         _selected = handle;
         if (handle < 0) _detail = null;
+        // The family section follows the inspection: a new creature, its own tree.
+        else if (_lineageOpen) _ = Interop.RequestLineageAsync(handle);
         InvokeAsync(StateHasChanged);
     }
+
+    private static bool IsTrue(string? value) => string.Equals(value, "true", StringComparison.OrdinalIgnoreCase);
 
     private void OnAction(string action, string? value)
     {
@@ -347,25 +451,25 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         {
             case "dashboard":
                 _dashboardOpen = !_dashboardOpen;
+                _finderOpen = false;
                 if (_dashboardOpen) TourSignal("dashboard");
                 break;
             case "escape":
-                if (_lineageOpen) _lineageOpen = false;
+                // One thing per press, innermost first.
+                if ((DateTime.UtcNow - _dashboardClosedAt).TotalMilliseconds < 300) return;
+                if (_hudBar?.CloseMenu() == true) return;
+                if (_finderOpen) _finderOpen = false;
                 else if (_dashboardOpen) _dashboardOpen = false;
+                else if (_lineageOpen) _lineageOpen = false;
                 else _detail = null;
                 break;
+            case "find": _finderOpen = !_dashboardOpen; break;
+            case "lens": _ = CycleLensAsync(); return;
+            case "keys": _showKeys = IsTrue(value); break;
+            case "ambient": _ambient = IsTrue(value); break;
             case "tour": if (value is not null) TourSignal(value); break;
             case "contextLost": Toasts.Show("The graphics driver reset — restoring the view…", ToastType.Warning); break;
             case "contextRestored": Toasts.Show("View restored.", ToastType.Success); break;
-            case "pointerLock":
-                _pointerLocked = value == "True" || value == "true";
-                // The lock hint retires itself after the very first successful lock.
-                if (_pointerLocked && !_lockHintSeen)
-                {
-                    _lockHintSeen = true;
-                    _ = Interop.MarkLockHintSeenAsync();
-                }
-                break;
             default: return;
         }
         InvokeAsync(StateHasChanged);
@@ -394,6 +498,14 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             Toasts.Show("The simulation stopped unexpectedly and was resumed from its last autosave.", ToastType.Warning);
             return;
         }
+        // The time machine failing (a decade no longer kept, no island to return to) is a
+        // message, not a broken engine: the world on screen is still running.
+        if (where == "keyframe")
+        {
+            _returning = false;
+            Toasts.Show(message, ToastType.Warning);
+            return;
+        }
         _error = $"{where}: {message}";
         InvokeAsync(StateHasChanged);
     }
@@ -413,10 +525,57 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private Task TogglePipAsync() => Interop.TogglePipAsync().AsTask();
     private Task ToggleReelAsync() => Interop.ToggleReelAsync().AsTask();
 
-    private Task SetTintAsync(int traitIndex)
+    private Task ToggleAmbientAsync() => Interop.SetAmbientAsync(!_ambient).AsTask();
+    private void ToggleKeys() => _showKeys = !_showKeys;
+
+    // ── lenses · map layers · finder ─────────────────────────────────────
+    private Task SetLensAsync(int lens)
     {
-        _tint = traitIndex;
-        return Interop.SetTintAsync(traitIndex).AsTask();
+        _lens = lens;
+        return Interop.SetLensAsync(lens).AsTask();
+    }
+
+    /// <summary>L steps through every lens and back to species colours.</summary>
+    private async Task CycleLensAsync()
+    {
+        var at = Array.FindIndex(EcoLens.All, l => l.Id == _lens);
+        await SetLensAsync(EcoLens.All[(at + 1) % EcoLens.All.Length].Id);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task CycleLayerAsync()
+    {
+        var at = Array.FindIndex(EcoMapLayer.All, l => l.Id == _layer);
+        _layer = EcoMapLayer.All[(at + 1) % EcoMapLayer.All.Length].Id;
+        return Interop.SetLayerAsync(_layer).AsTask();
+    }
+
+    private void OpenFinder() => _finderOpen = true;
+
+    private void CloseFinder()
+    {
+        _finderOpen = false;
+        _ = Interop.RestoreLockAsync();
+    }
+
+    private Task FindAsync((string Text, string Sort) query) => Interop.FindAsync(query.Text, query.Sort).AsTask();
+
+    /// <summary>A finder result: inspect it, put the camera on it and stay with it.</summary>
+    private async Task PickFoundAsync(EcoFound found)
+    {
+        _finderOpen = false;
+        _selected = found.Handle;
+        await Interop.SelectAsync(found.Handle);
+        await Interop.FlyToAsync(found.X, found.Z);
+        await Interop.FollowAsync(found.Handle);
+        await Interop.RestoreLockAsync();
+    }
+
+    private async Task PickTribeAsync(int tribeId)
+    {
+        _finderOpen = false;
+        await FocusTribeByIdAsync(tribeId);
+        await Interop.RestoreLockAsync();
     }
 
     private Task ToggleWatchAsync()
@@ -433,18 +592,21 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         return Interop.RenameAsync(_detail.Handle, name.Trim()).AsTask();
     }
 
-    private Task OpenLineageAsync(int handle) => Interop.RequestLineageAsync(handle).AsTask();
+    /// <summary>The inspector's Family button: open the section (and ask for the tree), or close it.</summary>
+    private Task ToggleFamilyAsync()
+    {
+        _lineageOpen = !_lineageOpen;
+        return _lineageOpen && _detail is not null ? Interop.RequestLineageAsync(_detail.Handle).AsTask() : Task.CompletedTask;
+    }
 
-    private void CloseLineage() => _lineageOpen = false;
-
-    /// <summary>A click on a relative or a watched creature inspects it and, when it is alive, walks the tree there.</summary>
+    /// <summary>A click on a relative or a watched creature inspects it and, with the family open, walks the tree there.</summary>
     private async Task SelectKinAsync(int handle)
     {
         if (handle < 0) return;
         _selected = handle;
         _dashboardOpen = false;
         await Interop.SelectAsync(handle);
-        await Interop.RequestLineageAsync(handle);
+        if (_lineageOpen) await Interop.RequestLineageAsync(handle);
     }
 
     /// <summary>A thought-feed click selects the thinker and leaves the dashboard so the
@@ -506,27 +668,32 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         return Interop.FlyToAsync(tile % size + 0.5, tile / size + 0.5).AsTask();
     }
 
+    /// <summary>A clan picked from the dashboard: the overlay goes away so the camp can be seen.</summary>
+    private Task FocusTribeFromDashboardAsync(int tribeId)
+    {
+        _dashboardOpen = false;
+        return FocusTribeByIdAsync(tribeId);
+    }
+
+    // Esc in the dashboard reaches two listeners: the overlay's own (which closes it) and the
+    // engine's window listener (the "escape" action). The second would go on to close the
+    // family section or drop the inspected creature on the same key press.
+    private DateTime _dashboardClosedAt = DateTime.MinValue;
+
     private async Task ToggleDashboard()
     {
         _dashboardOpen = !_dashboardOpen;
         if (_dashboardOpen)
         {
+            _finderOpen = false;
             TourSignal("dashboard");
             await Feedback.GlassResonateAsync();
-            _ = RefreshCloudAsync(quiet: true);
         }
         else
         {
+            _dashboardClosedAt = DateTime.UtcNow;
             await Feedback.FluidRippleAsync();
             _ = Interop.RequestLockAsync();
-        }
-    }
-
-    private async Task TriggerShockwaveAsync()
-    {
-        if (_directorOn || !_pointerLocked)
-        {
-            await Feedback.CueAsync("poecosystem", "shockwave");
         }
     }
 
@@ -631,9 +798,22 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         if (_cloudBusy) return;
         _cloudBusy = true;
         var meta = await Api.ShareWorldAsync(slot, isPublic);
-        _cloudMessage = meta is null ? "Sharing failed." : isPublic ? $"Shared — code {meta.ShareCode}." : "No longer public.";
+        _cloudMessage = meta is null ? "Sharing failed." : isPublic ? "Shared: it is in the gallery, and 🔗 Link gives a link straight to it." : "No longer public.";
         if (meta is not null) { _worlds = await Api.ListWorldsAsync(); _gallery = await Api.GalleryAsync(); }
         _cloudBusy = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// A link that opens a shared island (<c>/poecosystem?island=CODE</c>), through the
+    /// platform's share sheet where there is one and the clipboard where there is not.
+    /// </summary>
+    private async Task ShareLinkAsync(string code, string name)
+    {
+        var url = Navigation.ToAbsoluteUri($"poecosystem?island={Uri.EscapeDataString(code)}").ToString();
+        var result = await Interop.ShareLinkAsync($"PoEcosystem · {name}", "A living island — watch it without changing it.", url);
+        _cloudMessage = result switch { "shared" => null, "copied" => "Link copied.", _ => $"Copy this link: {url}" };
+        if (result == "copied") Toasts.Show("Link copied.", ToastType.Success);
         await InvokeAsync(StateHasChanged);
     }
 
@@ -645,7 +825,12 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         _cloudMessage = "Sailing over…";
         await InvokeAsync(StateHasChanged);
         var bytes = await Api.GalleryBytesAsync(code);
-        if (bytes is null) _cloudMessage = "That island is no longer shared.";
+        if (bytes is null)
+        {
+            _cloudMessage = "That island is no longer shared.";
+            // A share link that has gone stale: say so where it will be seen (the dashboard is shut).
+            if (!_dashboardOpen) Toasts.Show("That island is no longer shared.", ToastType.Warning);
+        }
         else
         {
             _log.Clear();
@@ -653,16 +838,65 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
             _visiting = true;
             await Interop.ImportSnapshotAsync(bytes, ephemeral: true);
             _cloudMessage = null;
-            Toasts.Show("You are visiting a shared island. It will not be saved over yours.");
         }
         _cloudBusy = false;
         await InvokeAsync(StateHasChanged);
     }
 
+    /// <summary>
+    /// Read a shared island's per-year history out of its snapshot (without booting it) and
+    /// put it on a chart against the island on screen. A second click on the same row closes it.
+    /// </summary>
+    private async Task CompareAsync(EcoSharedWorld island)
+    {
+        if (_compare?.Code == island.Code) { _compare = null; return; }
+        if (_cloudBusy) return;
+        _cloudBusy = true;
+        await InvokeAsync(StateHasChanged);
+        var bytes = await Api.GalleryBytesAsync(island.Code);
+        var peek = bytes is null ? null : await Interop.PeekHistoryAsync(bytes);
+        _compare = peek is null ? null : (island.Code, island.Name, peek.Years);
+        _cloudMessage = peek is null ? "That island's history could not be read." : null;
+        _cloudBusy = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>Draw the maps the Worlds tab asked for, one per frame so the tab stays responsive.</summary>
+    private async Task LoadThumbsAsync(int[] seeds)
+    {
+        var wanted = seeds.Where(s => _thumbs.TryAdd(s, "")).ToArray();   // claimed now: a re-render must not ask twice
+        foreach (var seed in wanted)
+        {
+            _thumbs[seed] = await Interop.IslandThumbAsync(seed);
+            await InvokeAsync(StateHasChanged);
+            await Task.Yield();
+        }
+    }
+
+    // ── the time machine · leaving a visit ───────────────────────────────
+    private Task OpenKeyframeAsync(int year)
+    {
+        if (year == _past) return Task.CompletedTask;
+        _log.Clear();
+        _dashboardOpen = false;
+        return Interop.OpenKeyframeAsync(year).AsTask();
+    }
+
+    /// <summary>Leave a past decade or a shared island for the island this browser holds.</summary>
+    private Task ReturnHomeAsync()
+    {
+        _log.Clear();
+        _dashboardOpen = false;
+        _returning = true;      // the visit ends when the island answers (OnReady), not before
+        return Interop.ReturnHomeAsync().AsTask();
+    }
+
+    private bool _returning;
+
     // ── chronicle ────────────────────────────────────────────────────────
     private async Task WriteChronicleAsync()
     {
-        if (_stats is null || _chronicleBusy) return;
+        if (_stats is null || _chronicleBusy || ReadOnly) return;
         _chronicleBusy = true;
         await InvokeAsync(StateHasChanged);
         var toYear = _stats.Year;
@@ -684,13 +918,38 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         else
         {
             if (_milestones.Grant("chronicle") is { } note) AnnounceNotes([note]);
-            _chronicles.Insert(0, saga);
-            if (_chronicles.Count > 12) _chronicles.RemoveAt(_chronicles.Count - 1);
+            // The saga goes INTO the island (the sim's journal, which the snapshot carries) and
+            // comes back on the history message — so it survives Resume and a cloud save. It
+            // used to live in a list on this component and was gone on the next load.
+            await Interop.NoteAsync("saga", System.Text.Json.JsonSerializer.Serialize(
+                new EcoSaga(fromYear, toYear, saga.Title, saga.Saga, saga.Epigraph), EcoJsonContext.Default.EcoSaga));
             _chronicledToYear = toYear;
             _chronicleOfferYear = -1;
         }
         _chronicleBusy = false;
         await InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>
+    /// The field journal as a printable page: the sagas, the legends, the timeline and the
+    /// field notes. The engine builds it in a throwaway frame and calls the browser's print
+    /// dialog — "Save as PDF" is the export.
+    /// </summary>
+    private Task PrintJournalAsync()
+    {
+        var stats = _stats;
+        var counts = stats?.Counts is { Length: EcoSpeciesInfo.Count } c
+            ? string.Join(" · ", Enumerable.Range(0, EcoSpeciesInfo.Count).Select(s => $"{c[s]} {EcoSpeciesInfo.PluralOf(s).ToLowerInvariant()}"))
+            : "";
+        var journal = new EcoJournalPrint(
+            Title: $"Field journal — the {stats?.Tech?.Tribe ?? "island"} island",
+            Subtitle: $"Seed {_seed} · year {stats?.Year ?? 0} · printed {DateTime.Now:d MMMM yyyy}",
+            Counts: counts,
+            Sagas: Sagas.Select(s => new EcoJournalEntry($"{s.Title} (years {s.FromYear}–{s.ToYear})", s.Saga, s.Epigraph)).ToArray(),
+            Legends: _legends.OrderBy(l => l.Year).Select(l => new EcoJournalEntry($"Year {l.Year} — {l.Epithet}", Text: l.Legend)).ToArray(),
+            Landmarks: (_history?.Landmarks ?? []).Where(l => l.Kind != "legend").Select(l => $"Year {l.Year}: {l.Text}").ToArray(),
+            Notes: EcoMilestones.All.Where(m => _milestones.Unlocked.ContainsKey(m.Id)).Select(m => $"{m.Title} — {m.What}").ToArray());
+        return Interop.PrintJournalAsync(journal).AsTask();
     }
 
     private int YearOf(EcoEvent ev) => _stats is null || _stats.Tick <= 0 ? 0 : (int)((long)ev.Tick * _stats.Year / Math.Max(1, _stats.Tick));
@@ -731,12 +990,16 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     // ── dashboard tabs · today's island ──────────────────────────────────
     private async Task OnDashboardTabAsync(string tab)
     {
+        _dashTab = tab;    // the overlay is rebuilt each time it opens; this is what it reopens on
         if (tab == "island" && !_cardsRequested)
         {
             _cardsRequested = true;
             _cards = await Interop.SpeciesInfoAsync();
             await InvokeAsync(StateHasChanged);
         }
+        // The cloud is asked when its tab is opened, not on every Tab press as it was.
+        else if (tab == "worlds") await RefreshCloudAsync(quiet: true);
+        else if (tab == "tribe") await LoadThumbsAsync([_seed]);
     }
 
     private Task TodaysIslandAsync()
@@ -912,6 +1175,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
         Interop.CloudThoughtRequested -= OnCloudThoughtAsync;
         Interop.CloudThoughtBatchRequested -= OnCloudThoughtBatchAsync;
         Interop.HistoryReceived -= OnHistory;
+        Interop.Found -= OnFound;
+        Interop.KeyframesReceived -= OnKeyframes;
         await Interop.DisposeAsync();
     }
 }

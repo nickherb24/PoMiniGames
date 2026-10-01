@@ -6,8 +6,8 @@ export const TILE = Object.freeze({
 
 // Transient per-tile state layered over the type (fire, lava, stumps, huts, boulders).
 // CAMPFIRE / FENCE / FIELD / TOWER are the tribe's works (behavior/tech.js): a campfire is
-// warm and wolf-scaring but not lethal, a fence blocks every species except humans, a
-// field is a fast-ripening berry plot, a tower is a solid structure like a hut.
+// warm and wolf-scaring but not lethal, a fence blocks every species (its gates are open
+// tiles), a field is a fast-ripening berry plot, a tower is a solid structure like a hut.
 export const TILE_STATE = Object.freeze({
   NORMAL: 0, FIRE: 1, BURNT: 2, LAVA: 3, COOLED: 4, STUMP: 5, HUT: 6, BOULDER: 7,
   CAMPFIRE: 8, FENCE: 9, FIELD: 10, TOWER: 11,

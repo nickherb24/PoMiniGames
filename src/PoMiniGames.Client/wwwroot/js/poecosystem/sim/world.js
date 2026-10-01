@@ -12,7 +12,8 @@ import { createStreams } from './core/prng.js';
 import { createSpatialHash } from './core/spatial.js';
 import { generateIsland } from './terrain/island.js';
 import { bfsDistanceField, descendStep, shoreTiles } from './terrain/pathing.js';
-import { TILE, TILE_STATE, isFlammable, isSolidState, isWalkable, tileIndex, tileX, tileZ } from './terrain/tiles.js';
+import { NEIGHBOURS8, TILE, TILE_STATE, isFlammable, isSolidState, isWalkable, tileIndex, tileX, tileZ } from './terrain/tiles.js';
+import { FOOTPRINT, createGround } from './terrain/ground.js';
 import { createGrass, dryUpGrass, grazeAt, stepGrass } from './flora/grass.js';
 import { createBushes, dryUpBushes, isRipe, stepBushes, stripBush } from './flora/bushes.js';
 import { TREE_STATE, browseTree, burnTree, chopTree, createTrees, dryUpTrees, stepTrees } from './flora/trees.js';
@@ -24,7 +25,7 @@ import { canMate, chooseSex, inheritTraits, litterSize } from './creatures/genet
 import { createNamer } from './creatures/names.js';
 import { createLineage } from './creatures/lineage.js';
 import { MEMORY_KIND, forget, recall, remember } from './behavior/memory.js';
-import { fleeFrom, moveCreature, seekTo, stop, wander } from './behavior/steering.js';
+import { canStand, fleeFrom, lipOf, moveCreature, refuge, seekTo, stop, wander } from './behavior/steering.js';
 import { GOAL, GOAL_NAMES, chooseGoal } from './behavior/utility.js';
 import { herdCohesion, isAlerted, isOrphan, packLeader, raiseAlarm, scatterDirection, shareKill } from './behavior/social.js';
 import { addHut, buildHut, chooseHutSite, createSettlement, giveLogs, isNight, nearestHut, needsHut } from './behavior/humans.js';
@@ -47,6 +48,22 @@ import { isSick, stepDisease } from './creatures/disease.js';
 export { nullPhysics };   // re-exported: createWorld's default physics lives beside it
 
 const GESTATION_TICKS = SPECIES.map(sp => Math.round(sp.gestationSeconds / TICK_SECONDS));
+// The (2r+1)² tile offsets of a food scan, nearest first; equal distances stay in row
+// order (dz, then dx), which is the tile the old full scan settled on.
+const SCAN_ORDERS = new Map();
+function scanOrder(r) {
+  let o = SCAN_ORDERS.get(r);
+  if (!o) {
+    const cells = [];
+    for (let dz = -r; dz <= r; dz++) for (let dx = -r; dx <= r; dx++) cells.push([Math.hypot(dx, dz), dz, dx]);
+    cells.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+    o = { d: Float64Array.from(cells, c => c[0]), dz: Int8Array.from(cells, c => c[1]), dx: Int8Array.from(cells, c => c[2]) };
+    SCAN_ORDERS.set(r, o);
+  }
+  return o;
+}
+const HEAT_CELL = 4;        // metres per heat-grid cell (50 × 50 over the 200 m island)
+const JOURNAL_MAX = 12;
 
 /**
  * Build a world. `terrain` may be supplied when the caller has already generated the
@@ -76,11 +93,40 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   // (or later a boulder / lava) on a shore tile never becomes a route creatures can't
   // take; it is rebuilt whenever such a tile changes (rare: huts, rockslides, eruptions).
   const shore = shoreTiles(terrain);
+  // Water is drunk from any shore tile a creature is standing on, routed or not: the free
+  // corner of a shore tile a hut mostly covers is still at the water's edge.
+  const isShore = new Uint8Array(size * size);
+  for (const t of shore) isShore[t] = 1;
+  // Where a body may stand (terrain/ground.js): cliffs, and the footprint of everything
+  // solid. Derived from the state below, never saved. The invariant the snapshot round-trip
+  // rests on is that it is fresh at the end of every step — a restored world rebuilds it
+  // from state — so it is refreshed with the shore field (huts, boulders, lava) and once
+  // more after the once-a-second block, the only other place a solid thing appears.
+  const ground = createGround(terrain);
+  const refreshGround = () => ground.rebuild({ tileState, trees, bushes, settlement, buildings: tribeStore.construction.buildings });
+  refreshGround();
   // A fence counts as solid here too: the field is species-agnostic, and the palisade has
-  // gates, so the village stays connected to water for its builders as well.
-  const passableTile = (i) => isWalkable(terrain.type[i]) && !isSolidState(tileState[i]) && tileState[i] !== TILE_STATE.FENCE;
+  // gates, so the village stays connected to water for its builders as well. A closed tile
+  // (cliff, cut-off pocket, under a building) is never routed through, so a lake is drunk
+  // from where its bank is gentle and a walled-in one is not a water source at all.
+  const passableTile = (i) => isWalkable(terrain.type[i]) && !isSolidState(tileState[i]) && tileState[i] !== TILE_STATE.FENCE && !ground.closed[i];
   let shoreField = bfsDistanceField(terrain, shore, passableTile);
-  const rebuildShoreField = () => { shoreField = bfsDistanceField(terrain, shore, passableTile); };
+  const rebuildShoreField = () => { refreshGround(); shoreField = bfsDistanceField(terrain, shore, passableTile); };
+  // The tile to take the shore field from: the creature's own, or — on the free edge of a
+  // tile the field does not enter (the corner of one a hut mostly covers) — the routed
+  // tile touching it that is nearest water. NONE when there is none.
+  const routedTile = (t) => {
+    if (shoreField[t] >= 0) return t;
+    const x = tileX(t, size); const z = tileZ(t, size);
+    let best = NONE;
+    for (const [dx, dz] of NEIGHBOURS8) {
+      const nx = x + dx; const nz = z + dz;
+      if (nx < 0 || nz < 0 || nx >= size || nz >= size) continue;
+      const j = nz * size + nx;
+      if (shoreField[j] >= 0 && (best === NONE || shoreField[j] < shoreField[best])) best = j;
+    }
+    return best;
+  };
   const phys = physics ?? nullPhysics();
   const carcasses = [];
   let nextCarcassId = 1;
@@ -153,6 +199,15 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const landmarks = createEventLog(HISTORY.landmarksMax);
   const yearHistory = [];
   let lastYearSampled = -1;
+  // ── 2026-09-30 additions: all three are bookkeeping no rule reads and no RNG touches ──
+  // Heat: where things happened, on a coarse grid (HEAT_CELL metres a cell) — deaths, kills
+  // by a predator, and creature-seconds spent sick. The minimap's data layers draw these.
+  const heatSide = Math.ceil(size / HEAT_CELL);
+  const heat = { deaths: new Uint16Array(heatSide * heatSide), kills: new Uint16Array(heatSide * heatSide), sick: new Uint16Array(heatSide * heatSide) };
+  const heatCell = (x, z) => Math.min(heatSide - 1, Math.max(0, (z / HEAT_CELL) | 0)) * heatSide + Math.min(heatSide - 1, Math.max(0, (x / HEAT_CELL) | 0));
+  const warm = (grid, c) => { if (grid[c] < 65535) grid[c]++; };
+  // The journal: the sagas the page had written for this island, so they travel with a save.
+  const journal = [];
   // Every module logs through log.push (the tribe store, lightning, tech…), so the one
   // place to catch a landmark without touching each of them is the push itself. Weather
   // only counts when it is news — a storm or a drought.
@@ -186,6 +241,11 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       name: namer.next(speciesId),
     });
     if (i < 0) return -1;
+    // Never born inside a trunk or on a cliff's lip: the nearest standing room instead.
+    if (!canStand(terrain, tileState, ground, x, z, lipOf(speciesId))) {
+      const at = refuge(terrain, tileState, ground, x, z, lipOf(speciesId));
+      if (at) { x = at.x; z = at.z; e.x[i] = x; e.z[i] = z; }
+    }
     e.y[i] = terrain.heightAt(x, z);
     e.yaw[i] = streams.genetics.range(0, Math.PI * 2);
     if (speciesId === SPECIES_ID.HUMAN) { const h = nearestHut(settlement, x, z); e.homeTile[i] = h ? h.tile : NONE; }
@@ -314,6 +374,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       traits: Array.from(e.traits.subarray(i * TRAITS.length, (i + 1) * TRAITS.length)),
     });
     if (ki !== NONE) ledger.kill(e.species[ki], sp.id);
+    const cell = heatCell(e.x[i], e.z[i]);
+    warm(heat.deaths, cell);
+    if (ki !== NONE) warm(heat.kills, cell);
     lineage.died(e.handle(i), clock.tick, cause);
     carcasses.push({ id: nextCarcassId++, x: e.x[i], z: e.z[i], species: sp.id, food: sp.foodValue * WORLD.carcassFoodFraction, expires: clock.tick + Math.round(WORLD.carcassSeconds / TICK_SECONDS) });
     phys.onDeath({ x: e.x[i], y: e.y[i], z: e.z[i], yaw: e.yaw[i], species: sp.id, scale: e.scale[i], handle: e.handle(i) }, cause, streams.cosmetic);
@@ -328,12 +391,14 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   // ── initial world ────────────────────────────────────────────────────
   {
     for (let k = 0; k < POPULATION.huts; k++) {
-      const site = chooseHutSite(settlement, terrain, tileState, streams.terrain);
+      const site = chooseHutSite(settlement, terrain, tileState, streams.terrain, ground.closed, shoreField);
       if (site !== NONE) addHut(settlement, terrain, tileState, site);
     }
     rebuildShoreField();
+    // Nobody starts on a cliff, in a cut-off pocket or under a hut.
     const grassTiles = []; const wildTiles = [];
     for (let i = 0; i < terrain.type.length; i++) {
+      if (ground.closed[i]) continue;
       if (terrain.type[i] === TILE.GRASS && tileState[i] === TILE_STATE.NORMAL) grassTiles.push(i);
       else if (terrain.type[i] === TILE.FOREST || terrain.type[i] === TILE.HILL) wildTiles.push(i);
     }
@@ -355,7 +420,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       const x = tileX(den, size) + dx; const z = tileZ(den, size) + dz;
       if (x < 1 || z < 1 || x >= size - 1 || z >= size - 1) continue;
       const t = z * size + x;
-      if (isWalkable(terrain.type[t]) && tileState[t] === TILE_STATE.NORMAL) pack.push(t);
+      if (isWalkable(terrain.type[t]) && tileState[t] === TILE_STATE.NORMAL && !ground.closed[t]) pack.push(t);
     }
     place(SPECIES_ID.WOLF, POPULATION.wolves, pack.length ? pack : denPool);
     const village = [];
@@ -365,7 +430,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         const x = tileX(o.tile, size) + dx; const z = tileZ(o.tile, size) + dz;
         if (x < 1 || z < 1 || x >= size - 1 || z >= size - 1) continue;
         const t = z * size + x;
-        if (isWalkable(terrain.type[t]) && tileState[t] === TILE_STATE.NORMAL) village.push(t);
+        if (isWalkable(terrain.type[t]) && tileState[t] === TILE_STATE.NORMAL && !ground.closed[t]) village.push(t);
       }
     }
     place(SPECIES_ID.HUMAN, POPULATION.humans, village.length ? village : grassTiles);
@@ -404,9 +469,11 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       const sj = e.species[j];
       const fleeAt = flees[sj];
       if (fleeAt !== undefined && d <= fleeAt && d < ctx.threatDist) { ctx.threatDist = d; ctx.threatX = e.x[j]; ctx.threatZ = e.z[j]; }
-      if (prey.includes(sj) && d < ctx.preyDist) { ctx.preyDist = d; ctx.preyIdx = j; }
-      if (sj === sp.id && e.sex[j] !== e.sex[i] && d < ctx.mateDist && !juvenile && canMate(e, i, j, tick)) { ctx.mateDist = d; ctx.mateIdx = j; }
-      if ((j === mother || j === father) && d < ctx.parentDist) { ctx.parentDist = d; ctx.parentIdx = j; }
+      // Anything a creature walks TO has to be at the end of a walkable line (ground.clearLine):
+      // prey, a mate or a parent across a lake or below a cliff is not one it can reach.
+      if (prey.includes(sj) && d < ctx.preyDist && ground.clearLine(x, z, e.x[j], e.z[j])) { ctx.preyDist = d; ctx.preyIdx = j; }
+      if (sj === sp.id && e.sex[j] !== e.sex[i] && d < ctx.mateDist && !juvenile && canMate(e, i, j, tick) && ground.clearLine(x, z, e.x[j], e.z[j])) { ctx.mateDist = d; ctx.mateIdx = j; }
+      if ((j === mother || j === father) && d < ctx.parentDist && ground.clearLine(x, z, e.x[j], e.z[j])) { ctx.parentDist = d; ctx.parentIdx = j; }
     });
     // Carnivores remember where they last saw prey, so a hungry wolf with nothing in
     // sight roams back toward the herds instead of random-walking the beach.
@@ -427,33 +494,42 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
 
     // Food: grass, trees, and ripe bushes in a square around the creature (herbivores + humans for berries).
     if (sp.eats.grass || sp.eats.berries || sp.eats.trees) {
-      const tx = tileX(t, size); const tz = tileZ(t, size); const r = sp.foodScanTiles || WORLD.foodScanTiles;
-      for (let dz = -r; dz <= r; dz++) {
-        for (let dx = -r; dx <= r; dx++) {
-          const xx = tx + dx; const zz = tz + dz;
-          if (xx < 0 || zz < 0 || xx >= size || zz >= size) continue;
-          const tt = zz * size + xx;
-          if (!isWalkable(terrain.type[tt]) || tileState[tt] === TILE_STATE.FIRE || tileState[tt] === TILE_STATE.LAVA) continue;
-          const d = Math.hypot(dx, dz);
-          if (sp.eats.grass && grass.biomass[tt] >= WORLD.foodBiomassMin && d < ctx.foodDist) { ctx.foodDist = d; ctx.foodKind = 'grass'; ctx.foodTile = tt; }
-          if (sp.eats.berries) {
-            const b = bushes.byTile[tt];
-            if (b >= 0 && isRipe(bushes, b) && d < ctx.foodDist) { ctx.foodDist = d; ctx.foodKind = 'bush'; ctx.foodTile = tt; ctx.foodIdx = b; }
-          }
-          if (sp.eats.trees) {
-            const tr = trees.byTile[tt];
-            if (tr >= 0 && trees.state[tr] === TREE_STATE.STANDING && trees.foliage && trees.foliage[tr] >= 0.1 && d < ctx.foodDist) {
-              ctx.foodDist = d; ctx.foodKind = 'tree'; ctx.foodTile = tt; ctx.foodIdx = tr;
-            }
+      const tx = tileX(t, size); const tz = tileZ(t, size);
+      // Nearest first, so the first tile that passes is the answer and the scan stops there
+      // (scanOrder keeps the old tie-break). Grass is eaten standing on its tile, so a
+      // closed (ground.js), fenced or built-on tile grows none that counts; a bush or a
+      // tree is eaten from beside it, so the walk stops a metre short. Either way the walk
+      // there has to be clear, or a grazer starves pressed against the foot of a cliff
+      // with food in sight above it.
+      const order = scanOrder(sp.foodScanTiles || WORLD.foodScanTiles);
+      for (let k = 0; k < order.d.length; k++) {
+        const xx = tx + order.dx[k]; const zz = tz + order.dz[k];
+        if (xx < 0 || zz < 0 || xx >= size || zz >= size) continue;
+        const tt = zz * size + xx;
+        const st = tileState[tt];
+        if (!isWalkable(terrain.type[tt]) || st === TILE_STATE.FIRE || st === TILE_STATE.LAVA) continue;
+        if (sp.eats.grass && grass.biomass[tt] >= WORLD.foodBiomassMin && !ground.closed[tt] && st !== TILE_STATE.FENCE && !isSolidState(st)
+          && ground.clearLine(x, z, xx + 0.5, zz + 0.5)) { ctx.foodDist = order.d[k]; ctx.foodKind = 'grass'; ctx.foodTile = tt; break; }
+        if (sp.eats.berries) {
+          const b = bushes.byTile[tt];
+          if (b >= 0 && isRipe(bushes, b) && ground.clearLine(x, z, xx + 0.5, zz + 0.5, 1)) { ctx.foodDist = order.d[k]; ctx.foodKind = 'bush'; ctx.foodTile = tt; ctx.foodIdx = b; break; }
+        }
+        if (sp.eats.trees) {
+          const tr = trees.byTile[tt];
+          if (tr >= 0 && trees.state[tr] === TREE_STATE.STANDING && trees.foliage && trees.foliage[tr] >= 0.1 && ground.clearLine(x, z, xx + 0.5, zz + 0.5, 1)) {
+            ctx.foodDist = order.d[k]; ctx.foodKind = 'tree'; ctx.foodTile = tt; ctx.foodIdx = tr; break;
           }
         }
       }
       if (ctx.foodDist === Infinity) {
         const mem = recall(e, i, MEMORY_KIND.FOOD, tick);
         if (mem !== NONE) {
-          if (sp.eats.grass && grass.biomass[mem] >= WORLD.foodBiomassMin) { const [cx, cz] = centre(mem); ctx.foodDist = dist(i, cx, cz); ctx.foodKind = 'grass'; ctx.foodTile = mem; }
-          else if (sp.eats.trees && trees.byTile[mem] >= 0 && trees.state[trees.byTile[mem]] === TREE_STATE.STANDING && trees.foliage && trees.foliage[trees.byTile[mem]] >= 0.1) {
-            const [cx, cz] = centre(mem); ctx.foodDist = dist(i, cx, cz); ctx.foodKind = 'tree'; ctx.foodTile = mem; ctx.foodIdx = trees.byTile[mem];
+          // A remembered meal is walked to in a straight line like any other: one that is
+          // now across water or a cliff is forgotten rather than pined for.
+          const [cx, cz] = centre(mem);
+          if (sp.eats.grass && grass.biomass[mem] >= WORLD.foodBiomassMin && !ground.closed[mem] && ground.clearLine(x, z, cx, cz)) { ctx.foodDist = dist(i, cx, cz); ctx.foodKind = 'grass'; ctx.foodTile = mem; }
+          else if (sp.eats.trees && trees.byTile[mem] >= 0 && trees.state[trees.byTile[mem]] === TREE_STATE.STANDING && trees.foliage && trees.foliage[trees.byTile[mem]] >= 0.1 && ground.clearLine(x, z, cx, cz, 1)) {
+            ctx.foodDist = dist(i, cx, cz); ctx.foodKind = 'tree'; ctx.foodTile = mem; ctx.foodIdx = trees.byTile[mem];
           }
           else forget(e, i, MEMORY_KIND.FOOD);
         }
@@ -463,11 +539,12 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       for (let k = 0; k < carcasses.length; k++) {
         const c = carcasses[k];
         const d = dist(i, c.x, c.z);
-        if (d <= sp.perception && d < ctx.carcassDist) { ctx.carcassDist = d; ctx.carcassId = c.id; }
+        if (d <= sp.perception && d < ctx.carcassDist && ground.clearLine(x, z, c.x, c.z, 1)) { ctx.carcassDist = d; ctx.carcassId = c.id; }
       }
     }
-    const wf = shoreField[t];
-    if (wf >= 0) ctx.waterDist = wf;
+    const wt = routedTile(t);
+    if (isShore[t]) ctx.waterDist = 0;
+    else if (wt !== NONE) ctx.waterDist = shoreField[wt] + (wt === t ? 0 : 1);
     else {
       const mem = recall(e, i, MEMORY_KIND.WATER, tick);
       if (mem !== NONE) { const [cx, cz] = centre(mem); ctx.waterDist = dist(i, cx, cz); }
@@ -486,7 +563,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
           const k = trees.byTile[zz * size + xx];
           if (k < 0 || trees.state[k] !== TREE_STATE.STANDING) continue;
           const d = Math.hypot(dx, dz);
-          if (d < ctx.treeDist) { ctx.treeDist = d; ctx.treeIdx = k; }
+          if (d < ctx.treeDist && ground.clearLine(x, z, xx + 0.5, zz + 0.5, 1)) { ctx.treeDist = d; ctx.treeIdx = k; }
         }
       }
     }
@@ -506,7 +583,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
           const mem = recall(e, i, MEMORY_KIND.FOOD, tick);
           if (mem !== NONE) {
             const [cx, cz] = centre(mem);
-            if (dist(i, cx, cz) < 4) forget(e, i, MEMORY_KIND.FOOD);
+            if (dist(i, cx, cz) < 4 || !ground.clearLine(e.x[i], e.z[i], cx, cz, 1)) forget(e, i, MEMORY_KIND.FOOD);
             else { seekTo(e, i, cx, cz, sp.walkSpeed); return; }
           }
           e.yaw[i] += (streams.behavior.next() - 0.5) * 0.15;
@@ -589,12 +666,15 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       }
       case GOAL.DRINK: {
         const t = tileOf(i);
-        if (shoreField[t] === 0) {
+        if (isShore[t]) {
           drink(e, i, WORLD.drinkRate * dt);
           remember(e, i, MEMORY_KIND.WATER, t, tick);
           stop(e, i);
         } else if (shoreField[t] > 0) {
           const [cx, cz] = centre(descendStep(terrain, shoreField, t));
+          seekTo(e, i, cx, cz, sp.walkSpeed);
+        } else if (routedTile(t) !== NONE) {
+          const [cx, cz] = centre(routedTile(t));
           seekTo(e, i, cx, cz, sp.walkSpeed);
         } else {
           const mem = recall(e, i, MEMORY_KIND.WATER, tick);
@@ -661,7 +741,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       }
       case GOAL.RETURN_HOME: {
         const h = nearestHut(settlement, e.x[i], e.z[i]);
-        if (!h || dist(i, h.x, h.z) <= WORLD.interactDistance) { stop(e, i); return; }
+        // Home is the hut's wall, not its centre: nobody can stand inside its footprint.
+        if (!h || dist(i, h.x, h.z) <= FOOTPRINT.hut + WORLD.interactDistance) { stop(e, i); return; }
         seekTo(e, i, h.x, h.z, sp.walkSpeed);
         return;
       }
@@ -688,7 +769,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         if (!o) { stop(e, i); return; }
         if (dist(i, o.x, o.z) <= BEHAVIOR.hutSiteRadius) {
           stop(e, i);
-          if (buildHut(e, i, settlement, terrain, tileState, streams.behavior, log, tick)) { almanac.hutsBuilt++; rebuildShoreField(); }
+          if (buildHut(e, i, settlement, terrain, tileState, streams.behavior, log, tick, ground.closed)) { almanac.hutsBuilt++; rebuildShoreField(); }
           dirty[i] = 1;
         } else seekTo(e, i, o.x, o.z, sp.walkSpeed);
         return;
@@ -715,7 +796,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       }
       const a = streams.genetics.range(0, Math.PI * 2);
       let x = e.x[mother] + Math.cos(a) * WORLD.birthOffset; let z = e.z[mother] + Math.sin(a) * WORLD.birthOffset;
-      if (!isWalkable(terrain.type[tileIndex(x, z, size)])) { x = e.x[mother]; z = e.z[mother]; }
+      if (!isWalkable(terrain.type[tileIndex(x, z, size)]) || ground.closed[tileIndex(x, z, size)]) { x = e.x[mother]; z = e.z[mother]; }
       const traits = inheritTraits(e, mother, father, streams.genetics);
       const i = spawn(sp.id, x, z, { traits, mother: motherHandle, father: fatherHandle });
       if (i < 0) break;
@@ -767,7 +848,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       }
       const px0 = e.x[i]; const pz0 = e.z[i];
       act(i, e.goal[i], plans[i], dt);
-      moveCreature(e, i, terrain, tileState, dt);
+      moveCreature(e, i, terrain, tileState, dt, ground);
       e.dist[i] += Math.hypot(e.x[i] - px0, e.z[i] - pz0);   // lifetime metres (telemetry)
     }
 
@@ -837,6 +918,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         if (t >= 0) strikeLightning(world, t, streams.weather);
       }
       sick = stepDisease(world, counts);
+      if (sick[0] + sick[1] + sick[2] + sick[3] > 0) e.forEachAlive((i) => { if (isSick(e, i, tick)) warm(heat.sick, heatCell(e.x[i], e.z[i])); });
 
       // One coarse row per year for the timeline: [year, rabbits, deer, wolves, humans, tech, H'×1000].
       const year = clock.year();
@@ -852,6 +934,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
         if (tribeStore.stepConstruction) tribeStore.stepConstruction(terrain, tileState, streams.behavior, log, tick);
         if (tribeStore.stepCaravans) tribeStore.stepCaravans(log, tick);
       }
+      // A tier's works, a planted field, a tribe's new building: the footprints follow,
+      // and the shore field with them when a building closed a tile it routed through.
+      if (refreshGround()) rebuildShoreField();
     }
   }
 
@@ -889,12 +974,59 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       maxGeneration: lineage.maxGeneration,
       biodiversity: biodiversity(),
       landmarkCount: landmarks.count, landmarkLastId: landmarks.recent(1)[0]?.id ?? 0, yearCount: yearHistory.length,
+      sagaCount: journal.length,
     };
   }
 
-  /** The timeline's data: every landmark and the per-year rows (sent only when they change). */
+  /** The timeline's data: every landmark, the per-year rows and the journal (sent only when they change). */
   function history() {
-    return { landmarks: landmarks.all(), years: yearHistory.map(r => r.slice()) };
+    return { landmarks: landmarks.all(), years: yearHistory.map(r => r.slice()), sagas: journal.map(s => ({ ...s })) };
+  }
+
+  /** The per-creature STATE word of the render frame (sim/frame.js): sick, watched. */
+  function frameState(i) {
+    return (isSick(e, i, clock.tick) ? 1 : 0) | (watched.has(e.handle(i)) ? 2 : 0);
+  }
+
+  /**
+   * The finder: living creatures whose name or species contains `text`, ordered by `sort`
+   * ('oldest' | 'weakest' | 'hungriest' | 'young' | 'sick' | 'watched'; anything else is by name).
+   */
+  function find({ text = '', sort = '', limit = 12 } = {}) {
+    const needle = String(text ?? '').trim().toLowerCase().slice(0, 40);
+    const rows = [];
+    e.forEachAlive((i) => {
+      const sp = SPECIES[e.species[i]];
+      if (needle && !nameOf(i).toLowerCase().includes(needle) && !sp.name.toLowerCase().includes(needle) && !sp.plural.toLowerCase().includes(needle)) return;
+      if (sort === 'sick' && !isSick(e, i, clock.tick)) return;
+      if (sort === 'watched' && !watched.has(e.handle(i))) return;
+      rows.push(i);
+    });
+    const key = {
+      oldest: (i) => -e.age[i], weakest: (i) => e.health[i], hungriest: (i) => -e.hunger[i], young: (i) => -e.offspring[i],
+    }[sort];
+    if (key) rows.sort((a, b) => key(a) - key(b)); else rows.sort((a, b) => nameOf(a).localeCompare(nameOf(b)));
+    return rows.slice(0, Math.max(1, Math.min(40, limit | 0))).map((i) => ({
+      handle: e.handle(i), name: nameOf(i), species: e.species[i], ageYears: e.age[i], health: e.health[i], hunger: e.hunger[i],
+      young: e.offspring[i], sick: isSick(e, i, clock.tick), watched: watched.has(e.handle(i)), x: e.x[i], z: e.z[i],
+    }));
+  }
+
+  /** A creature's LIVING relatives, for the kin threads: [{ handle, rel }] — 0 elder, 1 young, 2 sibling. */
+  function kinOf(handle) {
+    const t = lineage.tree(handle);
+    if (!t) return [];
+    const out = []; const seen = new Set([handle]);
+    const add = (h, rel) => { if (h === NONE || h === undefined || seen.has(h) || e.resolve(h) === NONE) return; seen.add(h); out.push({ handle: h, rel }); };
+    for (const r of [t.mother, t.father, ...t.grandparents]) if (r) add(r.h, 0);
+    for (const r of t.children) add(r.h, 1);
+    for (const p of [t.self.mother, t.self.father]) if (p !== NONE) for (const h of lineage.childrenOf(p)) add(h, 2);
+    return out.slice(0, 48);
+  }
+
+  /** Copies of the heat grids (the minimap's data layers). */
+  function heatmap() {
+    return { side: heatSide, cell: HEAT_CELL, deaths: heat.deaths.slice(), kills: heat.kills.slice(), sick: heat.sick.slice() };
   }
 
   /** The watch-list as the HUD shows it: living entries first, then the fallen. */
@@ -1033,6 +1165,8 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       weather: getWeatherState(weather),
       varieties: varieties.map(v => ({ ...v, traits: v.traits.slice() })), varietyBase: varietyBase.map(b => (b ? b.slice() : null)),
       landmarks: landmarks.getState(), yearHistory: yearHistory.map(r => r.slice()), lastYearSampled,
+      heat: { deaths: heat.deaths.slice(), kills: heat.kills.slice(), sick: heat.sick.slice() },
+      journal: journal.map(s => ({ ...s })),
       lava: world.lava ? { front: world.lava.front.slice(), tiles: world.lava.tiles.slice(), endTick: world.lava.endTick, nextCreep: world.lava.nextCreep } : null,
     };
   }
@@ -1060,6 +1194,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     if (s.landmarks) landmarks.setState(s.landmarks);
     yearHistory.length = 0; for (const r of s.yearHistory ?? []) yearHistory.push(r.slice());
     lastYearSampled = Number.isInteger(s.lastYearSampled) ? s.lastYearSampled : -1;
+    // Heat and the journal are additive (2026-09-30): an older save restores with both empty.
+    for (const k of ['deaths', 'kills', 'sick']) { heat[k].fill(0); if (s.heat?.[k]?.length === heat[k].length) heat[k].set(s.heat[k]); }
+    journal.length = 0; for (const j of s.journal ?? []) journal.push({ ...j });
     popHistory.length = 0; for (const r of s.popHistory) popHistory.push(r.slice());
     tileState.set(s.tileState); fear.set(s.fear);
     grass.biomass.set(s.grass.biomass); grass.cursor = s.grass.cursor | 0;
@@ -1089,6 +1226,10 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     e.high = s.entities.high; e.count = s.entities.count; e.setFreeList(s.entities.free);
     for (let i = 0; i < e.cap; i++) { e.names[i] = s.entities.names[i] ?? ''; e.lastThought[i] = s.entities.lastThought[i] ?? ''; }
     for (let i = 0; i < e.cap; i++) { const p = plans[i]; for (const k of Object.keys(p)) delete p[k]; if (s.plans[i]) Object.assign(p, s.plans[i]); }
+    // "Nothing perceived" is Infinity, which JSON writes as null: a cloud save (codec.js)
+    // came back with every such distance null, null compares as 0, and the restored world
+    // left its twin within five ticks. IndexedDB (structured clone) never lost them.
+    for (let i = 0; i < e.cap; i++) for (const k of PLAN_KEYS) if (k.endsWith('Dist') && plans[i][k] === null) plans[i][k] = Infinity;
     dirty.set(s.dirty);
     carcasses.length = 0; for (const c of s.carcasses) carcasses.push({ ...c });
     corridors.length = 0; for (const r of s.corridors) corridors.push({ ...r, corridor: r.corridor.slice() });
@@ -1106,7 +1247,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   }
 
   const world = {
-    seed, terrain, tileState, fear, grass, bushes, trees, settlement, entities: e, clock, log, bus, spatial, namer, streams,
+    seed, terrain, tileState, fear, grass, bushes, trees, settlement, ground, entities: e, clock, log, bus, spatial, namer, streams,
     get shoreField() { return shoreField; }, carcasses, physics: phys, popHistory,
     scheduler, corridors, boulders, fires, burnt, ignite, rebuildShoreField, lava: null,
     thoughtFeed, telemetry: ledger, lineage, tribe,
@@ -1172,10 +1313,24 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     step, stats, detail, debug, applyCommand, kill, spawn, getState, setState,
     lineageOf, rename, setWatched, tribeStore,
     weather, history, biodiversity,
+    frameState, find, kinOf, heatmap,
     /** A council's answer to a diplomatic moment (the /treaty endpoint), applied by the tribe store. */
     applyTreaty: (t) => (tribeStore?.applyTreaty ? tribeStore.applyTreaty(t, log, clock.tick) : false),
-    /** A line of lore the page earned from the server (milestone legends): logged, and so kept on the timeline. */
+    /**
+     * A line of lore the page earned from the server (milestone legends): logged, and so kept
+     * on the timeline. A 'saga' is a decade chronicle — JSON { fromYear, toYear, title, saga,
+     * epigraph } — kept in the journal, which the snapshot carries.
+     */
     note(kind, text, tile = NONE) {
+      if (kind === 'saga') {
+        let s; try { s = JSON.parse(text); } catch { return false; }
+        const clip = (v, n) => String(v ?? '').trim().slice(0, n);
+        const saga = clip(s?.saga, 1600);
+        if (!saga) return false;
+        journal.push({ fromYear: s.fromYear | 0, toYear: s.toYear | 0, title: clip(s.title, 100), saga, epigraph: clip(s.epigraph, 200) });
+        if (journal.length > JOURNAL_MAX) journal.shift();
+        return true;
+      }
       if (kind !== 'legend' || typeof text !== 'string' || !text.trim()) return false;
       log.push({ tick: clock.tick, kind, tile, text: text.trim().slice(0, 300) });
       return true;

@@ -3,16 +3,28 @@
     @if (Result is not null)
     {
         var mine = Result.Standings.FirstOrDefault(s => s.CarId == PlayerId);
-        <p class="result-headline">@(mine?.Finished == true ? $"Finished {mine.Position} of {Result.Standings.Count}" : "Race complete")</p>
-        <p>Best lap <strong>@PoRacerFormatting.Time(mine?.BestLapSeconds ?? 0)</strong></p>
+        var lap = mine?.BestLapSeconds ?? -1;
+        var medal = Track?.Medal(lap);
+        @* The headline says how the race went; the lap itself is in your row of the table, so it
+           is not repeated here. A medal and a personal best are the two things the row cannot say. *@
+        <p class="result-headline">
+            @(IsTrial ? "Time trial" : mine?.Finished == true ? $"P{mine.Position} of {Result.Standings.Count}" : mine is null ? "Race complete" : "Did not finish")
+            @if (medal is not null) { <span class="result-medal result-medal--@medal">@PoRacerFormatting.MedalLabel(medal)</span> }
+            @if (lap > 0 && (PreviousBest <= 0 || lap < PreviousBest))
+            {
+                <span class="result-pb">@(PreviousBest > 0 ? $"Personal best, {PoRacerFormatting.Delta(lap - PreviousBest)} s" : "First lap on the board")</span>
+            }
+        </p>
         <table>
             <caption>Final standings</caption>
             <thead><tr><th scope="col">Pos.</th><th scope="col">Driver</th><th scope="col">Race time</th><th scope="col">Best lap</th></tr></thead>
             <tbody>
                 @foreach (var entry in Result.Standings)
                 {
+                    var trait = Roster.FirstOrDefault(r => r.Id == entry.CarId)?.Trait;
                     <tr class="@(entry.CarId == PlayerId ? "local-driver" : "")">
-                        <td>@entry.Position</td><td>@entry.Name</td>
+                        <td>@entry.Position</td>
+                        <td>@entry.Name @if (!string.IsNullOrEmpty(trait)) { <small>@trait</small> }</td>
                         <td>@(entry.Finished ? PoRacerFormatting.Time(entry.TotalTimeSeconds) : "DNF")</td>
                         <td>@PoRacerFormatting.Time(entry.BestLapSeconds)</td>
                     </tr>
@@ -20,22 +32,60 @@
             </tbody>
         </table>
     }
-    <p role="status">
-        @(SubmitStatus switch
+    <p class="result-foot">
+        @if (StatusText is { } status)
         {
-            "Saving" => "Saving best lap…",
-            "Saved" => "Best lap saved to the leaderboard.",
-            "Queued" => "Best lap saved on this device. Sync will retry when the server is available.",
-            "Rejected" => "This lap could not be accepted.",
-            _ => ""
-        })
+            <span class="result-chip result-chip--@(SubmitStatus!.ToLowerInvariant())" role="status">@status</span>
+        }
+        @if (SubmitStatus == "Rejected") { <button type="button" @onclick="Retry">Retry save</button> }
+        @if (ShareText is not null)
+        {
+            <button type="button" class="result-share" @onclick="ShareAsync">@(_shared switch { "copied" => "Copied", "shared" => "Shared", _ => "Share" })</button>
+        }
+        <a href="/leaderboards">View leaderboard</a>
     </p>
-    @if (SubmitStatus == "Rejected") { <button type="button" @onclick="Retry">Retry save</button> }
-    <a href="/leaderboards">View leaderboard</a>
 </div>
 @code {
+    [Inject] private IJSRuntime JS { get; set; } = null!;
+    private string? _shared;
+
+    /// <summary>One line worth sending to someone: the place (or the trial), the track and the lap. Null when there is no lap to show off.</summary>
+    private string? ShareText
+    {
+        get
+        {
+            var mine = Result?.Standings.FirstOrDefault(s => s.CarId == PlayerId);
+            if (mine is null || mine.BestLapSeconds <= 0) return null;
+            var how = IsTrial ? "Time trial" : mine.Finished ? $"P{mine.Position} of {Result!.Standings.Count}" : "Raced";
+            var medal = PoRacerFormatting.MedalLabel(Track?.Medal(mine.BestLapSeconds));
+            return $"{how} on {Track?.Name ?? "PoMiniGames Racer"}, best lap {PoRacerFormatting.Time(mine.BestLapSeconds)}{(medal.Length > 0 ? " " + medal : "")}. Beat it:";
+        }
+    }
+
+    // The system share sheet where the browser has one, the clipboard otherwise (js/poracer/index.js).
+    private async Task ShareAsync()
+    {
+        if (ShareText is not { } text) return;
+        try { _shared = await JS.InvokeAsync<string>("PoRacer.share", text); }
+        catch (JSException) { _shared = "failed"; }
+    }
+
     [Parameter] public PoRacerFinalResult? Result { get; set; }
+    [Parameter] public IReadOnlyList<PoRacerCarInfo> Roster { get; set; } = [];
     [Parameter] public int? PlayerId { get; set; }
+    [Parameter] public PoRacerTrackInfo? Track { get; set; }
+    /// <summary>The best lap this browser held for the track before this race; 0 when there was none.</summary>
+    [Parameter] public double PreviousBest { get; set; }
+    [Parameter] public bool IsTrial { get; set; }
     [Parameter] public string? SubmitStatus { get; set; }
     [Parameter] public EventCallback Retry { get; set; }
+
+    private string? StatusText => SubmitStatus switch
+    {
+        "Saving" => "Saving best lap…",
+        "Saved" => "Best lap saved to the leaderboard.",
+        "Queued" => "Best lap saved on this device. Sync will retry when the server is available.",
+        "Rejected" => "This lap could not be accepted.",
+        _ => null
+    };
 }

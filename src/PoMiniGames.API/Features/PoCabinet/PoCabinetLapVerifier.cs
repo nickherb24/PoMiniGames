@@ -7,13 +7,15 @@ namespace PoMiniGames.Features.PoCabinet;
 /// Server-side proof for a solo best lap (2026-09-29). The browser runs solo races itself, so a
 /// bare "my best lap was 31.2 s" is just a number anyone can POST. Instead the page sends the
 /// player's controls for every race tick and this class re-runs the whole race — the player
-/// plus the four officials, contacts included — through <see cref="PoCabinetPhysics"/> and
+/// plus all 99 rivals, contacts included — through <see cref="PoCabinetPhysics"/> and
 /// <see cref="PoCabinetAiDriver"/>. The lap time that gets stored is the one computed here.
 ///
 /// <para>
 /// <b>Mirror contract:</b> <see cref="Replay"/> is <c>race.js</c> <c>buildSoloCars</c> +
-/// <c>soloTick</c> + <c>lapBookkeeping</c>: same grid (player id 0 in slot 2, officials in
-/// roster order in slots 0, 1, 3, 4), same car order for contacts, same clock arithmetic
+/// <c>soloTick</c> + <c>lapBookkeeping</c>: same grid (player id 0 in
+/// <see cref="PoCabinetCatalog.SoloPlayerSlot"/>, the rivals of
+/// <see cref="PoCabinetPersonality.SoloField"/> in order round it), same car order for
+/// contacts, same clock arithmetic
 /// (<c>clock += TICK</c>, <c>tickStart = max(0, elapsed − TICK)</c>). The page quantizes the
 /// player's controls to thousandths <i>before</i> stepping them, so the recorded integers are
 /// exactly what the browser simulated. JS and .NET trig can still differ in the last ulp, so
@@ -32,7 +34,6 @@ public static class PoCabinetLapVerifier
     public const int BytesPerTick = 6;
     /// <summary>race.js: solo rain grip (<c>currentEnvironment().raining ? 0.85 : 1</c>).</summary>
     public const double WetGrip = 0.85;
-    private const int PlayerSlot = 2;
     private const double Countdown = 3;
 
     /// <summary>
@@ -69,20 +70,21 @@ public static class PoCabinetLapVerifier
         var track = PoCabinetTrack.Get(trackId);
         double grip = wet ? WetGrip : 1;
         double tick = PoCabinetPhysics.TickSeconds;
-        int totalLaps = PoCabinetCatalog.TotalLaps;
+        int totalLaps = track.Laps;
 
         var cars = new List<Car>();
         var player = new Car { IsPlayer = true };
-        PoCabinetPhysics.GridSlot(track, player, PlayerSlot);
+        PoCabinetPhysics.GridSlot(track, player, PoCabinetCatalog.SoloPlayerSlot);
         cars.Add(player);
-        int slot = 0;
-        foreach (var o in PoCabinetPersonality.Roster)
+        var field = PoCabinetPersonality.SoloField;
+        for (int i = 0; i < field.Count; i++)
         {
-            if (slot == PlayerSlot) slot++;
+            var o = field[i];
             var car = new Car { Persona = o.Personality, MaxSpeed = o.MaxSpeed, CorneringSkill = o.CorneringSkill };
-            PoCabinetPhysics.GridSlot(track, car, slot++);
+            PoCabinetPhysics.GridSlot(track, car, i < PoCabinetCatalog.SoloPlayerSlot ? i : i + 1);
             cars.Add(car);
         }
+        PoCabinetCarBody[] bodies = [.. cars];
 
         double clock = 0;
         int used = 0;
@@ -100,18 +102,18 @@ public static class PoCabinetLapVerifier
                 car.PrevDistance = car.Distance;
                 var c = car.IsPlayer
                     ? controls
-                    : PoCabinetAiDriver.Decide(track, car, car.Persona!, car.Finished ? car.MaxSpeed * 0.6 : car.MaxSpeed,
-                        car.CorneringSkill, cars, grip);
+                    : PoCabinetAiDriver.Decide(track, car, car.Persona!, car.Finished ? car.MaxSpeed * track.CoolDownAt(car.Distance) : car.MaxSpeed,
+                        car.CorneringSkill, bodies, grip);
                 PoCabinetPhysics.Step(track, car, c, stepDt, grip);
             }
-            PoCabinetPhysics.ResolveContacts(cars);
+            PoCabinetPhysics.ResolveContacts(track, bodies);
 
             foreach (var car in cars)
             {
                 if (car.Finished) continue;
-                while (car.Distance >= (car.LapsDone + 1) * track.Length)
+                while (car.Distance >= (car.LapsDone + 1) * track.LapLength)
                 {
-                    double boundary = (car.LapsDone + 1) * track.Length;
+                    double boundary = (car.LapsDone + 1) * track.LapLength;
                     double span = car.Distance - car.PrevDistance;
                     double frac = span > 1e-9 ? Math.Min(1, Math.Max(0, (boundary - car.PrevDistance) / span)) : 1;
                     double crossedAt = tickStart + frac * stepDt;

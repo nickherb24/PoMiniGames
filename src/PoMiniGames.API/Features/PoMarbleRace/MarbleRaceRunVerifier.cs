@@ -25,13 +25,15 @@ public static class MarbleRaceRunVerifier
 
     // Finish-line arclength per map slot: maps.js finishS for Spiral Works, the baked ARCLENGTH ×
     // SCALE minus the 16-unit backoff for Grand Spiral, 0.995 × LENGTH for the procedural maps
-    // (Neon Chute 1800, Canyon Run 2200). Move a finish line and this moves with it.
+    // (Neon Chute 1800, Canyon Run 2200), and Playground Run's baked ARCLENGTH × SCALE minus the same
+    // backoff. Move a finish line and this moves with it.
     private static readonly Dictionary<int, double> FinishDistance = new()
     {
         [1] = 1791,
         [2] = 2230,
         [3] = 3881,
         [4] = 2189,
+        [5] = 2169,
     };
 
     // ponytail: a speed bound, not a replay — marbles.js MAX_SPEED (85) doubled, because a marble

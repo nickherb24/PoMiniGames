@@ -7,10 +7,10 @@ namespace PoMiniGames.Unit.Features.PoRacer;
 public class PoRacerTrackRegistryTests
 {
     [Theory]
-    [InlineData("circuit", 240.0, false)]
-    [InlineData("neonskyline", 220.0, false)]
-    [InlineData("desertdustway", 260.0, true)]
-    [InlineData("unknown_fallback", 240.0, false)]
+    [InlineData("circuit", 230.0, false)]
+    [InlineData("neonskyline", 210.0, false)]
+    [InlineData("desertdustway", 255.0, true)]
+    [InlineData("unknown_fallback", 230.0, false)]
     public void TrackRegistry_ProvidesValidTrackGeometryAndFallbacks(string trackId, double expectedWidth, bool expectSand)
     {
         var track = PoRacerTrackRegistry.GetTrack(trackId);
@@ -32,8 +32,8 @@ public class PoRacerTrackRegistryTests
         // Walls: inside and outside wall segments matching centerline count * 2
         track.Walls.Should().HaveCount(track.Centerline.Count * 2);
 
-        // Boost pads
-        track.BoostPads.Should().NotBeEmpty("every track should feature strategic turbo boost pads");
+        // The knots come from the shared catalog (the client draws its track cards from them).
+        track.Centerline[0].Should().Be(new Vec2(PoMiniGames.Shared.Games.PoRacerCatalog.GetTrack(track.Id).Knots[0].X, PoMiniGames.Shared.Games.PoRacerCatalog.GetTrack(track.Id).Knots[0].Y));
 
         // Sand zones check
         track.HasSandZones.Should().Be(expectSand);

@@ -1,0 +1,57 @@
+@* The naturalist's wager (2026-09-30). Three guesses about what the island will do by
+   itself, made before its second year is out and settled by its own history. A bet changes
+   nothing on the island — it is observation with a stake in it. *@
+<div class="poeco-wager">
+    <p class="poeco-wager-record" title="This browser's record across every island it has bet on">
+        <strong>@Book.Record.Points pts</strong> · @Book.Record.Right of @Book.Record.Settled right
+    </p>
+    @foreach (var q in EcoWagers.All)
+    {
+        var picked = Book.Slip.Picks.TryGetValue(q.Id, out var pick);
+        var outcome = EcoWagers.Outcome(q, Years);
+        <fieldset class="poeco-wager-q" disabled="@(!Open || outcome is not null)">
+            <legend>@q.Text <span class="poeco-note">+@q.Points</span></legend>
+            <div class="poeco-wager-options">
+                @for (var k = 0; k < q.Options.Length; k++)
+                {
+                    var option = k;
+                    var state = outcome == option ? "poeco-wager--right" : picked && pick == option && outcome is not null ? "poeco-wager--wrong" : "";
+                    <button type="button" class="poeco-pill @(picked && pick == option ? "poeco-pill--on" : "") @state"
+                            aria-pressed="@(picked && pick == option ? "true" : "false")" @onclick="() => PickAsync(q.Id, option)">@q.Options[option]</button>
+                }
+            </div>
+            @if (outcome is { } o)
+            {
+                <p class="poeco-note">@(picked ? (pick == o ? "You called it." : "Not this time.") : "No bet placed.") It was <strong>@q.Options[o]</strong>.</p>
+            }
+            else if (!Open && picked)
+            {
+                <p class="poeco-note">Your bet stands — settled at year @q.SettlesAtYear.</p>
+            }
+        </fieldset>
+    }
+    @* One line for the whole slip, not one under every question. *@
+    <p class="poeco-note">
+        @(!Enabled ? "Wagers are for your own island, from its first year — not for a visit or a decade already lived."
+            : Open ? $"Bets close at year {EcoWagers.ClosesAtYear}."
+            : $"Betting closed at year {EcoWagers.ClosesAtYear}. A new world opens a new slip.")
+    </p>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public EcoWagerBook Book { get; set; } = default!;
+    [Parameter] public int[][] Years { get; set; } = [];
+    [Parameter] public int Year { get; set; }
+    /// <summary>False on a visited island or a past decade: there the future is already written.</summary>
+    [Parameter] public bool Enabled { get; set; } = true;
+    [Parameter] public EventCallback OnChanged { get; set; }
+
+    private bool Open => Enabled && Year < EcoWagers.ClosesAtYear;
+
+    private Task PickAsync(string id, int option)
+    {
+        if (!Open) return Task.CompletedTask;
+        Book.Pick(id, option);
+        return OnChanged.InvokeAsync();
+    }
+}

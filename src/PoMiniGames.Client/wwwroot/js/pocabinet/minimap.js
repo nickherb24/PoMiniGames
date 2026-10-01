@@ -32,6 +32,8 @@ class MinimapHandle {
         this.ctx2d = canvas.getContext('2d');
         this.colorSafe = !!(opts && opts.colorSafe);
         this.accent = (opts && opts.accent) || '#d4af37';
+        // Point-to-point: the centerline handed in is start → finish, not a loop.
+        this.open = !!(opts && opts.open);
         this.disposed = false;
 
         // Bounds in server units.
@@ -98,15 +100,15 @@ class MinimapHandle {
             if (i === 0) ctx2d.moveTo(c.x, c.y);
             else ctx2d.lineTo(c.x, c.y);
         }
-        ctx2d.closePath();
+        if (!this.open) ctx2d.closePath();
     }
 
-    /** Walk the closed polyline and return the point at fraction f (0..1) of total length. */
+    /** Walk the polyline (closed, unless open) and return the point at fraction f (0..1) of total length. */
     pointAtFraction(centerline, f) {
         const pts = centerline.map(pointOf);
         let total = 0;
         const segLens = [];
-        for (let i = 0; i < pts.length; i++) {
+        for (let i = 0; i < pts.length - (this.open ? 1 : 0); i++) {
             const a = pts[i], b = pts[(i + 1) % pts.length];
             const len = Math.hypot(b.x - a.x, b.y - a.y);
             segLens.push(len);
@@ -114,7 +116,7 @@ class MinimapHandle {
         }
         let target = Math.min(1, Math.max(0, f)) * total;
         for (let i = 0; i < pts.length; i++) {
-            if (target <= segLens[i]) {
+            if (i < segLens.length && target <= segLens[i]) {
                 const a = pts[i], b = pts[(i + 1) % pts.length];
                 const t = segLens[i] > 0 ? target / segLens[i] : 0;
                 return { x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t };
@@ -148,7 +150,8 @@ class MinimapHandle {
             ctx2d.beginPath();
             ctx2d.globalAlpha = car.finished ? 0.45 : 1;
             ctx2d.fillStyle = this.markerColor(car, i);
-            ctx2d.arc(x, y, (car.isPlayer ? 4.6 : 3.4) * dpr, 0, Math.PI * 2);
+            // A 100-car field gets smaller rival dots, or the pack is one blob.
+            ctx2d.arc(x, y, (car.isPlayer ? 4.6 : rows.length > 20 ? 2.2 : 3.4) * dpr, 0, Math.PI * 2);
             ctx2d.fill();
             if (car.isPlayer) {
                 ctx2d.lineWidth = 1.6 * dpr;
@@ -178,8 +181,12 @@ export function mountMinimap(canvas, worldOrCenterline, opts) {
     let centerline = worldOrCenterline;
     if (worldOrCenterline && Array.isArray(worldOrCenterline.centerXY)) {
         const xy = worldOrCenterline.centerXY;
+        // A point-to-point track shows the run itself, not the return link behind it.
+        const finish = Number(worldOrCenterline.finishIndex) || 0;
+        const end = finish > 0 ? Math.min(xy.length, (finish + 1) * 2) : xy.length;
         centerline = [];
-        for (let i = 0; i + 1 < xy.length; i += 2) centerline.push([xy[i], xy[i + 1]]);
+        for (let i = 0; i + 1 < end; i += 2) centerline.push([xy[i], xy[i + 1]]);
+        if (finish > 0) opts = { ...(opts || {}), open: true };
     }
     if (!Array.isArray(centerline) || centerline.length < 3) {
         throw new Error('pocabinet/minimap: centerline is required');

@@ -23,7 +23,7 @@
 // Low tier: not built at all.
 import * as THREE from 'three';
 import { TILE, TILE_STATE } from '../sim/terrain/tiles.js';
-import { materialClock, materialSeason, materialSnow } from './materials.js';
+import { cloudShadowGlsl, materialClock, materialCloud, materialSeason, materialSnow } from './materials.js';
 import { trailUniforms } from './trails.js';
 
 const TIER = {
@@ -96,6 +96,15 @@ float grassHeightAt(vec2 p) {
   float h11 = texelFetch(uHeight, i + ivec2(1, 1), 0).r;
   return mix(mix(h00, h10, f.x), mix(h01, h11, f.x), f.y);
 }
+// The clouds' shade, per blade: the same field the terrain under it samples (materials.js).
+float gHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+float gNoise(vec2 p) {
+  vec2 i = floor(p); vec2 f = fract(p);
+  vec2 u = f * f * (3.0 - 2.0 * f);
+  return mix(mix(gHash(i), gHash(i + vec2(1.0, 0.0)), u.x),
+             mix(gHash(i + vec2(0.0, 1.0)), gHash(i + vec2(1.0, 1.0)), u.x), u.y);
+}
+${cloudShadowGlsl('gNoise')}
 `;
 
 const VERT_BODY = `
@@ -129,7 +138,7 @@ const VERT_BODY = `
                           wp.y + across.y * position.x * width + bend.y);
   vec3 tint = mix(uDry, uGreen, clamp(biomass * 1.2, 0.0, 1.0)) * (0.82 + rnd * 0.36);
   if (uGrassSeason > 1.5 && uGrassSeason < 2.5) tint *= vec3(1.22, 0.86, 0.5);
-  vGrassCol = tint * mix(0.5, 1.18, t);
+  vGrassCol = tint * mix(0.5, 1.18, t) * cloudLight(transformed);
   vBladeT = t;
   vViewUp = normalize((viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);
 `;
@@ -171,7 +180,7 @@ export function createGrass(scene, terrain, { tier = 'high' } = {}) {
 
   const material = new THREE.MeshLambertMaterial({ side: THREE.DoubleSide });
   material.onBeforeCompile = (shader) => {
-    Object.assign(shader.uniforms, uniforms);
+    Object.assign(shader.uniforms, uniforms, materialCloud);
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', VERT_HEAD)
       // Up-facing normal: the blade is lit like the ground it stands on.

@@ -35,6 +35,8 @@ public sealed class PoCabinetTrack
     private readonly double[] _tx;
     private readonly double[] _ty;
     private readonly double[] _curv;
+    private readonly bool _pointToPoint;
+    private readonly double _parkAt;
 
     private PoCabinetTrack(PoCabinetTrackDefinition def)
     {
@@ -66,6 +68,17 @@ public sealed class PoCabinetTrack
         }
         Length = _cum[Count];
 
+        // Point-to-point (the Playground run): the lap ends at the finish knot instead of back
+        // at the line, and a finished car rolls on into the run-out and parks half way down
+        // it instead of taking a cool-down lap, because past the run-out there is only the
+        // return link. Mirrored in track.js.
+        Laps = def.Laps;
+        _pointToPoint = def.FinishKnot > 0;
+        LapLength = _pointToPoint ? _cum[def.FinishKnot * def.StepsPerSegment] : Length;
+        _parkAt = _pointToPoint
+            ? (_cum[def.FinishKnot * def.StepsPerSegment] + _cum[def.HiddenFromKnot * def.StepsPerSegment]) / 2
+            : 0;
+
         // Curvature at each point: heading change across it over the mean adjacent segment
         // length, then a 3-point average — the raw spline samples are noisy enough that the AI
         // would otherwise brake for kinks that are not corners.
@@ -73,7 +86,7 @@ public sealed class PoCabinetTrack
         for (int i = 0; i < Count; i++)
         {
             int p = (i - 1 + Count) % Count;
-            double d = WrapAngle(Math.Atan2(_ty[i], _tx[i]) - Math.Atan2(_ty[p], _tx[p]));
+            double d = WrapAngle(Atan2(_ty[i], _tx[i]) - Atan2(_ty[p], _tx[p]));
             double span = Math.Max(1e-6, (_segLen[p] + _segLen[i]) * 0.5);
             raw[i] = Math.Abs(d) / span;
         }
@@ -94,6 +107,25 @@ public sealed class PoCabinetTrack
     public double HalfWidth { get; }
     public double Length { get; }
     public int Count { get; }
+
+    /// <summary>Race distance of one lap: <see cref="Length"/> on a circuit, the distance from
+    /// the line to the finish on a point-to-point track.</summary>
+    public double LapLength { get; }
+
+    /// <summary>Laps in a race here.</summary>
+    public int Laps { get; }
+
+    /// <summary>Share of its top speed a finished car at race distance <paramref name="distance"/>
+    /// holds: 0.6 on a circuit; on a point-to-point track 0.6 into the run-out, then 0 (park).</summary>
+    public double CoolDownAt(double distance) => Parked(distance) ? 0 : 0.6;
+
+    /// <summary>
+    /// True once a car has rolled to the parking point of a point-to-point track's run-out
+    /// (never on a circuit). A parked car is out of the race for good: it no longer collides
+    /// and the AI no longer sees it, or the first two dozen finishers of a 100-car field would
+    /// fill the run-out and everyone behind would queue back over the finish line.
+    /// </summary>
+    public bool Parked(double distance) => _pointToPoint && distance >= _parkAt;
 
     /// <summary>
     /// Project a point onto the centerline. With a valid <paramref name="hint"/> (the segment
@@ -180,6 +212,59 @@ public sealed class PoCabinetTrack
     {
         double d = distance % Length;
         return d < 0 ? d + Length : d;
+    }
+
+    // ── Trig the sim can rely on ────────────────────────────────────────────
+    // Sin, Cos and Atan2 built from + − × ÷, floor and sqrt only, which IEEE 754 pins to the
+    // last bit, so this process and every browser get the SAME double. Math.Sin and friends
+    // are not pinned (Chrome and node differed by one ulp sixteen ticks into a race), and a
+    // 100-car field is chaotic enough to turn one ulp into a different race by the first
+    // corner — which PoCabinetLapVerifier would then time as a crash. Everything that feeds
+    // the simulation uses these. Mirrored operation for operation in track.js.
+
+    private const double HalfPi = Math.PI / 2;
+
+    /// <summary>sin(a + quarter·π/2): reduce to within π/4 of a multiple of π/2, then the Taylor series.</summary>
+    private static double SinShifted(double a, int quarter)
+    {
+        double k = Math.Floor(a / HalfPi + 0.5);
+        double r = a - k * HalfPi;
+        double r2 = r * r;
+        double q = (((k + quarter) % 4) + 4) % 4;
+        if (q == 0 || q == 2)
+        {
+            double s = r * (1 - r2 / 6 * (1 - r2 / 20 * (1 - r2 / 42 * (1 - r2 / 72 * (1 - r2 / 110 * (1 - r2 / 156 * (1 - r2 / 210)))))));
+            return q == 0 ? s : -s;
+        }
+        double c = 1 - r2 / 2 * (1 - r2 / 12 * (1 - r2 / 30 * (1 - r2 / 56 * (1 - r2 / 90 * (1 - r2 / 132 * (1 - r2 / 182 * (1 - r2 / 240)))))));
+        return q == 1 ? c : -c;
+    }
+
+    public static double Sin(double a) => SinShifted(a, 0);
+
+    public static double Cos(double a) => SinShifted(a, 1);
+
+    /// <summary>atan z for |z| ≤ 1: halve the angle three times, then the series.</summary>
+    private static double AtanUnit(double z)
+    {
+        double t = z / (1 + Math.Sqrt(1 + z * z));
+        t = t / (1 + Math.Sqrt(1 + t * t));
+        t = t / (1 + Math.Sqrt(1 + t * t));
+        double t2 = t * t;
+        return 8 * t * (1 - t2 * (1.0 / 3 - t2 * (1.0 / 5 - t2 * (1.0 / 7 - t2 * (1.0 / 9 - t2 * (1.0 / 11 - t2 * (1.0 / 13 - t2 / 15)))))));
+    }
+
+    public static double Atan2(double y, double x)
+    {
+        double ax = Math.Abs(x), ay = Math.Abs(y);
+        if (ax >= ay)
+        {
+            if (ax == 0) return 0;
+            double a = AtanUnit(y / x);
+            return x > 0 ? a : y >= 0 ? a + Math.PI : a - Math.PI;
+        }
+        double b = AtanUnit(x / y);
+        return y > 0 ? HalfPi - b : -HalfPi - b;
     }
 
     /// <summary>Signed angle normalised to (-π, π].</summary>

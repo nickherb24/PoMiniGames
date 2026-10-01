@@ -32,8 +32,17 @@ export function isChronicleEvent(ev) {
   return true;
 }
 
+// THE TICKER (2026-09-30). Everything smaller than a landmark — a field note, a legend the
+// Herald wrote, a decade turning, a pact — used to be a toast in the corner, on top of the
+// card above for the same moment. Those lines now queue here: one quiet line under the
+// status chip at a time, a few seconds each. Toasts are kept for what the viewer asked to
+// be told about (a watched creature, an alert of their own, something they just did).
+const TICK_MS = 4600;
+const TICK_GAP_MS = 350;
+const TICK_QUEUE = 6;
+
 export function createChronicle(host, { reducedMotion = () => false } = {}) {
-  if (!host || typeof document === 'undefined') return { show() {}, dispose() {} };
+  if (!host || typeof document === 'undefined') return { show() {}, ticker() {}, dispose() {} };
 
   const root = document.createElement('div');
   root.className = 'poeco-cine';
@@ -120,7 +129,34 @@ export function createChronicle(host, { reducedMotion = () => false } = {}) {
     vt.finished.then(done, done);
   }
 
+  // The ticker is a live region: the lines it carries were announced as toasts before.
+  const tick = document.createElement('p');
+  tick.className = 'poeco-ticker';
+  tick.setAttribute('role', 'status');
+  tick.hidden = true;
+  host.appendChild(tick);
+  const tickQueue = [];
+  let ticking = false;
+  function nextTick() {
+    const text = tickQueue.shift();
+    if (text === undefined) { ticking = false; tick.hidden = true; return; }
+    ticking = true;
+    tick.textContent = text;
+    tick.hidden = false;
+    tick.classList.remove('is-on');
+    void tick.offsetWidth;
+    tick.classList.add('is-on');
+    later(() => { tick.classList.remove('is-on'); later(nextTick, TICK_GAP_MS); }, TICK_MS);
+  }
+
   return {
+    /** A quiet line under the status chip. Oldest dropped when the queue is full. */
+    ticker(text) {
+      if (disposed || typeof text !== 'string' || !text.trim()) return;
+      if (tickQueue.length >= TICK_QUEUE) tickQueue.shift();
+      tickQueue.push(text.trim().slice(0, 180));
+      if (!ticking) nextTick();
+    },
     /** A landmark event; `year` is the island's current year. */
     show(ev, year) {
       if (disposed || !isChronicleEvent(ev)) return;
@@ -141,6 +177,7 @@ export function createChronicle(host, { reducedMotion = () => false } = {}) {
       for (const id of timers) clearTimeout(id);
       timers = [];
       root.remove();
+      tick.remove();
     },
   };
 }

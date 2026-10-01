@@ -29,6 +29,11 @@
 // The depth bake is why this takes a `terrain`: the shader needs to know how deep the
 // water is at a point, and the CPU already has that. Sampling a baked texture is one tap;
 // re-deriving it in the shader would mean shipping the heightfield to the GPU anyway.
+//
+// LAKES ARE PLAIN BLUE (user call, 2026-10-01). The bake's second channel marks inland
+// lakes, and on a lake nothing that whitens the surface is drawn: no foam, no caustics,
+// no sun glint, no sun-warmed reflection. Body colour, the sky's Fresnel reflection and
+// the fog are all a lake gets. The sea keeps every term.
 import * as THREE from 'three';
 
 const VERT = `
@@ -68,7 +73,7 @@ void main() {
 `;
 
 const FRAG = `
-uniform sampler2D uDepth;   // R = water depth 0..1 (1 = deepest), sampled at the terrain grid
+uniform sampler2D uDepth;   // R = water depth 0..1 (1 = deepest), G = inland lake, at the terrain grid
 uniform vec3 uShallow;
 uniform vec3 uDeep;
 uniform vec3 uSunDir;
@@ -98,7 +103,11 @@ void main() {
   // depth rather than letting the sampler wrap a shoreline round the horizon.
   float inside = smoothstep(0.0, 0.015, vDepthUv.x) * (1.0 - smoothstep(0.985, 1.0, vDepthUv.x))
                * smoothstep(0.0, 0.015, vDepthUv.y) * (1.0 - smoothstep(0.985, 1.0, vDepthUv.y));
-  float depth = mix(1.0, texture2D(uDepth, clamp(vDepthUv, 0.0, 1.0)).r, inside);
+  vec2 bake = texture2D(uDepth, clamp(vDepthUv, 0.0, 1.0)).rg;
+  float depth = mix(1.0, bake.r, inside);
+  // 0 on a lake, 1 on the sea. A step, not the filtered value: the mask fades across the
+  // one tile of land round the lake, and the lake's own rim has to be fully inside it.
+  float open = 1.0 - step(0.004, bake.g) * inside;
 
   vec3 view = normalize(cameraPosition - vWorld);
   vec3 n = normalize(vNormal);
@@ -132,7 +141,7 @@ void main() {
   // and vanish. Strongest where the bed is closest to the surface, and by day only.
   float c1 = noise(vWorld.xz * 2.4 + vec2(uTime * 0.31, uTime * 0.17));
   float c2 = noise(vWorld.xz * 2.1 - vec2(uTime * 0.23, -uTime * 0.29));
-  float caustic = pow(c1 * c2, 1.6) * (1.0 - smoothstep(0.0, 0.3, depth)) * inside;
+  float caustic = pow(c1 * c2, 1.6) * (1.0 - smoothstep(0.0, 0.3, depth)) * inside * open;
   body += uSunColor * caustic * 0.9 * (1.0 - uNight);
 
   vec3 col = mix(body, uSkyColor, fres * 0.85);
@@ -142,20 +151,20 @@ void main() {
   vec3 vh = normalize(vec3(view.x, 0.0, view.z) + 1e-5);
   vec3 sh = normalize(vec3(uSunDir.x, 0.0, uSunDir.z) + 1e-5);
   float sunward = pow(max(dot(-vh, sh), 0.0), 3.0);
-  col = mix(col, uSunColor, fres * sunward * 0.35);
+  col = mix(col, uSunColor, fres * sunward * 0.35 * open);
 
   // Blinn-Phong sun glint. Tightened at night so the moonlit sheen is a line rather than
   // a wash — the sun colour is already dimmed by lighting.js at that hour.
   vec3 halfway = normalize(uSunDir + view);
   float spec = pow(max(dot(n, halfway), 0.0), mix(90.0, 220.0, uNight));
-  col += uSunColor * spec * (1.0 - uNight * 0.55) * 1.6;
+  col += uSunColor * spec * (1.0 - uNight * 0.55) * 1.6 * open;
 
   // Foam: a band where the bed rises to meet the surface, cut up by drifting noise and
   // pushed by the wave crest so the line advances and retreats.
   float crest = smoothstep(0.02, 0.16, (1.0 - n.y) * 6.0);
   float shore = 1.0 - smoothstep(0.0, 0.085, depth);
   float grain = noise(vWorld.xz * 1.7 + vec2(uTime * 0.35, uTime * -0.22));
-  float foam = clamp(shore * (0.55 + grain * 0.75) + crest * shore * 0.9, 0.0, 1.0) * inside;
+  float foam = clamp(shore * (0.55 + grain * 0.75) + crest * shore * 0.9, 0.0, 1.0) * inside * open;
   col = mix(col, vec3(0.93, 0.97, 1.0), foam * 0.85);
 
   // Bioluminescence: dinoflagellates light where the water is disturbed — the breaking
@@ -179,16 +188,17 @@ void main() {
 `;
 
 /**
- * Bake the water depth at every terrain corner into an R8 texture. 0 where the bed is at
- * or above the surface, 1 at the heightmap's -3 m floor.
+ * Bake the water depth at every terrain corner into an RG8 texture. R: 0 where the bed is
+ * at or above the surface, 1 at the heightmap's -3 m floor. G: 255 on a lake's corners.
  */
 function bakeDepth(terrain) {
   const cs = terrain.size + 1;
-  const data = new Uint8Array(cs * cs);
+  const data = new Uint8Array(cs * cs * 2);
   for (let i = 0; i < cs * cs; i++) {
-    data[i] = Math.max(0, Math.min(255, Math.round((-terrain.height[i] / 3) * 255)));
+    data[i * 2] = Math.max(0, Math.min(255, Math.round((-terrain.height[i] / 3) * 255)));
+    data[i * 2 + 1] = terrain.lake[i] ? 255 : 0;
   }
-  const tex = new THREE.DataTexture(data, cs, cs, THREE.RedFormat, THREE.UnsignedByteType);
+  const tex = new THREE.DataTexture(data, cs, cs, THREE.RGFormat, THREE.UnsignedByteType);
   tex.minFilter = THREE.LinearFilter;
   tex.magFilter = THREE.LinearFilter;
   tex.wrapS = THREE.ClampToEdgeWrapping;
@@ -198,7 +208,9 @@ function bakeDepth(terrain) {
 }
 
 /**
- * @param {{size:number, height:Float32Array|Int16Array}} terrain the renderer's terrainApi
+ * @param {{size:number, height:Float32Array, lake:Uint8Array}} terrain corner
+ *   heights AS DRAWN and the lake corner mask, both from terrainMesh.js (not terrainApi:
+ *   the sim's lake bed is at sea level, the drawn one is not)
  * @param {{ tier?: string }} [opts] segment count follows the tier — the waves are vertex
  *   work, so this is the one dial that matters for cost.
  */
@@ -232,6 +244,7 @@ export function createWater(terrain, { tier = 'high' } = {}) {
     fragmentShader: FRAG,
     transparent: true,
     depthWrite: false,      // the surface must not occlude the bed it is meant to reveal
+    side: THREE.DoubleSide, // the camera can dive (2026-09-30): from below, the surface is a ceiling
   });
 
   const mesh = new THREE.Mesh(geometry, material);

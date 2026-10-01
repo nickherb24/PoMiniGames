@@ -54,10 +54,19 @@ public sealed class PoRacerLifecycleTests
         race.RemoveConnection("race-a");
         race.SetInput("race-a", new() { Up = true });
         race.SetInput("intruder", new() { Up = true });
+        // The same two seats in a shared ("multi-") race, where only user-a ever connects: the
+        // stand-in bot drives the seat nobody holds, and never the one somebody does.
+        await using var shared = new PoRacerRaceService("multi-a",
+            [new("lobby-a", "Same name", false, true, "user-a"), new("lobby-b", "Same name", true, true, "user-b")],
+            NullLogger<PoRacerRaceService>.Instance);
+        shared.BindPlayer("race-a", "user-a").Should().Be(0);
+        shared.Start();
         race.Start();
         await Task.Delay(3100); // The server holds every car during the starting countdown.
         await Task.Delay(120);
         race.Snapshot().Cars[0].Speed.Should().Be(0);
+        shared.Snapshot().Cars[0].Speed.Should().Be(0, "a connected driver who is not pressing anything is left alone");
+        shared.Snapshot().Cars[1].Speed.Should().BeGreaterThan(0, "a seat with no driver is taken by the stand-in bot");
         race.SetInput("reconnected-a", new() { Up = true });
         await Task.Delay(180);
         race.Snapshot().Cars[0].Speed.Should().BeGreaterThan(0);

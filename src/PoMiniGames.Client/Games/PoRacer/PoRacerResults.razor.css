@@ -1,8 +1,17 @@
 .race-results { color: inherit; width: 100%; }
-.result-headline { font-size: 24px; font-weight: 700; }
+.result-headline { margin: 0 0 4px; font-size: 24px; font-weight: 700; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 6px 12px; }
+.result-medal, .result-pb { font-size: 14px; font-weight: 700; padding: 3px 10px; border-radius: 999px; background: var(--accent-soft); color: var(--accent-ink); }
 table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-caption { text-align: left; padding: 12px 0; font-weight: 700; }
-th, td { text-align: left; padding: 8px; border-bottom: 1px solid #71859b55; }
+caption { text-align: left; padding: 8px 0; font-weight: 700; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--color-border); }
+td small { margin-left: 6px; font-size: 11px; font-weight: 400; color: var(--color-text-secondary); white-space: nowrap; }
 .local-driver { color: var(--color-text-primary); background: var(--accent-soft); font-weight: 700; border-inline-start: 3px solid var(--accent-ink); }
-a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; } button { min-height: 44px; margin-right: 12px; }
-@media (max-width: 480px) { th, td { padding: 6px 3px; font-size: 12px; } }
+.result-foot { margin: 10px 0 0; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 8px 14px; }
+.result-chip { font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--color-border); }
+.result-chip--saved { border-color: var(--accent-success); }
+.result-chip--rejected { border-color: var(--accent-warning); }
+/* A quiet button beside the save chip: the modal's own footer holds the two real actions. */
+.result-share { padding: 4px 16px; border-radius: 999px; border: 1px solid var(--accent-ink); background: none; color: var(--accent-ink); font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.result-share:hover { background: var(--accent-soft); }
+a { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; } button { min-height: 44px; }
+@media (max-width: 480px) { th, td { padding: 5px 3px; font-size: 12px; } }

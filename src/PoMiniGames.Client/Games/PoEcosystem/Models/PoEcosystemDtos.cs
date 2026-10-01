@@ -86,8 +86,76 @@ public sealed record EcoTreaty(int Tick, int TribeA, int TribeB, string Action, 
 /// <summary>One timeline marker: an event worth remembering, where it happened (tile, -1 if nowhere).</summary>
 public sealed record EcoLandmark(int Id, int Tick, int Year, string Kind, string Text, int Tile);
 
-/// <summary>The timeline's data: landmarks plus one row per year [year, rabbits, deer, wolves, humans, tech, H'×1000].</summary>
-public sealed record EcoHistory(EcoLandmark[] Landmarks, int[][] Years);
+/// <summary>
+/// The timeline's data: landmarks, one row per year [year, rabbits, deer, wolves, humans, tech, H'×1000],
+/// and the journal — the sagas written for this island, which the snapshot carries (2026-09-30).
+/// </summary>
+public sealed record EcoHistory(EcoLandmark[] Landmarks, int[][] Years, EcoSaga[]? Sagas = null);
+
+/// <summary>One decade chronicle as the island keeps it (sim/world.js journal).</summary>
+public sealed record EcoSaga(int FromYear, int ToYear, string Title, string Saga, string Epigraph);
+
+/// <summary>One finder result: a living creature and where it stands.</summary>
+public sealed record EcoFound(int Handle, string Name, int Species, double AgeYears, double Health, double Hunger, int Young, bool Sick, bool Watched, double X, double Z);
+
+/// <summary>One decade kept by the time machine (sim/persistence/idb.js keyframes).</summary>
+public sealed record EcoKeyframe(int Year, int Tick, int[]? Counts, long SavedAt);
+
+/// <summary>The keyframes of the running world, and the year being visited (-1 in the present).</summary>
+public sealed record EcoKeyframes(EcoKeyframe[] Frames, int Past);
+
+/// <summary>The per-year rows read out of a shared island's snapshot, for the gallery's compare view.</summary>
+public sealed record EcoIslandPeek(int Seed, int Year, int[][] Years);
+
+/// <summary>
+/// The naturalist lenses (render/creatureMeshes.js LENS): what every creature is coloured by.
+/// 0–4 are the five traits; the rest read the frame's hunger, health, speed and kinship.
+/// </summary>
+public static class EcoLens
+{
+    public const int None = -1;
+    public const int Hunger = 5;
+    public const int Health = 6;
+    public const int Thermal = 7;
+    public const int Kin = 8;
+
+    /// <summary>Every lens in the order the L key steps through them (traits first).</summary>
+    public static readonly (int Id, string Label, string Low, string High)[] All =
+    [
+        (None, "Species", "", ""),
+        (0, "Boldness", "timid", "bold"),
+        (1, "Sociability", "solitary", "gregarious"),
+        (2, "Curiosity", "wary", "curious"),
+        (3, "Greed", "frugal", "greedy"),
+        (4, "Diligence", "idle", "diligent"),
+        (Hunger, "Hunger", "fed", "starving"),
+        (Health, "Health", "dying", "healthy · purple = sick"),
+        (Thermal, "Thermal", "at rest", "running"),
+        (Kin, "Kinship", "strangers", "family of the creature on camera"),
+    ];
+
+    public static string LabelOf(int lens) => All.FirstOrDefault(l => l.Id == lens).Label ?? "Species";
+}
+
+/// <summary>What the printed field journal holds (index.js printJournal builds the page from it).</summary>
+public sealed record EcoJournalPrint(string Title, string Subtitle, string Counts, EcoJournalEntry[] Sagas, EcoJournalEntry[] Legends, string[] Landmarks, string[] Notes);
+
+/// <summary>One journal entry: a saga (Saga + Epigraph) or a legend (Text).</summary>
+public sealed record EcoJournalEntry(string Title, string? Saga = null, string? Epigraph = null, string? Text = null);
+
+/// <summary>The minimap's data layers (render/minimap.js MAP_LAYERS).</summary>
+public static class EcoMapLayer
+{
+    public static readonly (string Id, string Label, string What)[] All =
+    [
+        ("none", "Map", "The island as it is"),
+        ("deaths", "Deaths", "Where creatures have died"),
+        ("predation", "Predation", "Where a predator made the kill"),
+        ("sickness", "Sickness", "Where the sick have spent their time"),
+        ("grazing", "Grazing", "Where the grass is eaten down right now"),
+        ("traffic", "Traffic", "The routes feet have worn this session"),
+    ];
+}
 
 /// <summary>A field-guide card for the Almanac (host/naturalist.js: iNaturalist + Wikipedia).</summary>
 public sealed record EcoSpeciesCard(int Species, string CommonName, string ScientificName, string PhotoUrl, string Attribution, string License, string Url, int Observations, string Summary);
@@ -214,5 +282,10 @@ public sealed record EcoSaveInfo(bool Exists, int Seed, int Tick, int Year, long
 [JsonSerializable(typeof(EcoThoughtPromptItem[]))]
 [JsonSerializable(typeof(EcoThoughtBatchReply))]
 [JsonSerializable(typeof(EcoTreatyReply))]
+[JsonSerializable(typeof(EcoFound[]))]
+[JsonSerializable(typeof(EcoKeyframes))]
+[JsonSerializable(typeof(EcoIslandPeek))]
+[JsonSerializable(typeof(EcoJournalPrint))]
+[JsonSerializable(typeof(int[][]))]
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, PropertyNameCaseInsensitive = true)]
 internal sealed partial class EcoJsonContext : System.Text.Json.Serialization.JsonSerializerContext;

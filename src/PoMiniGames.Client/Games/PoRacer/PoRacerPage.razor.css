@@ -1,23 +1,89 @@
-.racer-root { position: relative; width: 100%; height: max(480px, calc(100dvh - 100px)); overflow: hidden; background: #09131e; color: #edf7ff; }
+/* The race is a dark surface in both colour schemes (it is a canvas with panels over it), so the
+   theme is pinned dark here for everything inside it: `color-scheme` settles every light-dark()
+   token, and the rest are the tokens app.css re-points under prefers-color-scheme: light, set
+   back to their :root values. Without this the Online tab's shared lobby panel was dark text,
+   a dark-green "connected" pill and a dark "Leave" on a dark card for anyone in light mode. */
+.racer-root { position: relative; width: 100%; height: max(480px, calc(100dvh - 100px)); overflow: hidden; background: var(--racer-bg); color: var(--racer-text);
+    color-scheme: dark;
+    --color-bg: #0f172a; --color-surface: #102033; --color-surface-hover: #334155; --color-border: #60839d66;
+    --color-text-primary: #e2e8f0; --color-text-secondary: #a8bacd; --color-accent: #818cf8; --color-accent-solid: #6366f1;
+    --accent-ink: #c7d2fe; --accent-success-ink: #6ee7b7; --accent-warning-ink: #fcd34d; --accent-danger-ink: #fca5a5; --accent-amber-ink: #fcd34d;
+    --accent-soft: rgba(129, 140, 248, 0.16);
+    /* The Racer palette, once. It is a per-game canvas palette (scheme-invariant, like the canvas
+       itself), and every PoRacer stylesheet reads it from here: until 2026-10-01 the same dozen
+       colours were retyped as raw hex across five files, in two or three spellings each. */
+    --racer-bg: #09131e; --racer-text: #edf7ff; --racer-ink: #fff; --racer-muted: #cadbe9; --racer-faint: #a8bacd;
+    --racer-panel: #102033f2; --racer-well: #07142099; --racer-line: #60839d66; --racer-control: #16304cdd;
+    --racer-accent: #79e0fc; --racer-accent-line: #91e4ff; --racer-accent-fill: #19405a; --racer-on-accent: #071723;
+    --racer-warn: #ffb38a; --racer-gold: #ffe9a6; --racer-alert: #592d12;
+    --racer-gantry: #05090fe6; --racer-veil: #050b14b3; --racer-scrim: linear-gradient(135deg, #0b182ee8, #102a39c9);
+    --racer-lamp: #ff2a2a; --racer-lamp-glow: #ff2a2ad0; --racer-lamp-core: #ffb0b0; --racer-lamp-off: #2a0b0b; --racer-lamp-go: #123016;
+    --racer-glass: #0b182eb8; --racer-edge: #9fd4f02e; }
 .racer-canvas { width: 100%; height: 100%; display: block; }
-.racer-start { position: absolute; inset: 0; display: grid; place-items: center; padding: 20px; overflow-y: auto; background: linear-gradient(135deg, #0b182ee8, #102a39c9); }
-.racer-card { width: min(850px, 100%); padding: clamp(18px, 3vw, 32px); background: #102033f2; border: 1px solid #60839d66; border-radius: 20px; box-shadow: 0 20px 60px #0006; }
-.racer-card h1 { margin: 0 0 8px; font-size: clamp(26px, 4vw, 38px); }
-.racer-card p { color: #cadbe9; }
-.racer-actions { display: flex; align-items: center; gap: 22px; flex-wrap: wrap; margin: 24px 0 12px; }
-.racer-primary, .racer-back { min-height: 44px; padding: 10px 20px; border: 1px solid #7bdefa; border-radius: 10px; font: inherit; font-weight: 700; cursor: pointer; }
-.racer-primary { background: #79e0fc; color: #071723; }
+.racer-start { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; overflow-y: auto; background: var(--racer-scrim); }
+.racer-card { width: min(860px, 100%); padding: clamp(14px, 2.2vw, 22px); background: var(--racer-panel); border: 1px solid var(--racer-line); border-radius: 18px; box-shadow: 0 20px 60px #0006; display: grid; gap: 14px; }
+.racer-card a { color: var(--racer-accent-line); text-underline-offset: 4px; }
+.racer-note { margin: 0; color: var(--racer-muted); font-size: 14px; }
+.racer-card .racer-error { margin: 0; color: var(--accent-danger-ink); }
+
+/* Mode switcher: each tab is an address (/poracer/1player, /multi, /demo), reached in-app. */
+.racer-modes { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--racer-well); width: fit-content; }
+.racer-modes button { min-height: 36px; padding: 6px 18px; border: 0; border-radius: 9px; background: none; color: var(--racer-muted); font: inherit; font-weight: 700; cursor: pointer; }
+.racer-modes button[aria-selected="true"] { background: var(--racer-accent); color: var(--racer-on-accent); }
+
+/* Chip groups (race type, pace, livery): radios that look like segmented buttons. ::deep because
+   the paint shop is a child component and uses the same class. */
+.racer-options { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.racer-card ::deep .racer-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.racer-chips-label { margin-right: 2px; font-size: 13px; color: var(--racer-faint); }
+.racer-card ::deep .racer-chips label { position: relative; min-height: 34px; padding: 4px 12px; display: grid; place-items: center; border: 1px solid var(--racer-line); border-radius: 999px; font-size: 14px; cursor: pointer; background: var(--racer-well); }
+.racer-card ::deep .racer-chips label:has(input:checked) { border-color: var(--racer-accent-line); background: var(--racer-accent-fill); color: var(--racer-text); }
+.racer-card ::deep .racer-chips label:focus-within { outline: 2px solid var(--racer-ink); outline-offset: 2px; }
+.racer-card ::deep .racer-chips input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+
+.racer-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.racer-primary, .racer-ghost { min-height: 44px; padding: 10px 20px; border: 1px solid var(--racer-accent); border-radius: 10px; font: inherit; font-weight: 700; cursor: pointer; }
+.racer-primary { background: var(--racer-accent); color: var(--racer-on-accent); }
 .racer-primary:disabled { opacity: .6; cursor: wait; }
-.racer-back { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); background: #102033e8; color: #edf7ff; }
-.racer-card a { color: #91e4ff; text-underline-offset: 4px; }
-.racer-card details { margin-top: 16px; border-top: 1px solid #60839d44; padding-top: 12px; }
-.racer-card summary { cursor: pointer; min-height: 36px; }
-.racer-card .racer-error { color: #ffb7b7; }
-.racer-connection { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); padding: 10px 16px; background: #592d12; border-radius: 8px; }
-:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+.racer-ghost { background: var(--racer-panel); color: var(--racer-text); }
+
+/* The lobby panel brings its own page padding and card; inside this card it is just a section. */
+.racer-card ::deep .sp-page { padding: 0; max-width: none; }
+.racer-card ::deep .sp-card.sp-card { background: none; border: 0; box-shadow: none; padding: 0; backdrop-filter: none; overflow: visible; }
+
+.racer-connection { position: absolute; top: 70px; left: 50%; transform: translateX(-50%); padding: 10px 16px; background: var(--racer-alert); border-radius: 8px; }
+:focus-visible { outline: 3px solid var(--racer-ink); outline-offset: 4px; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-.race-countdown { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; pointer-events: none; text-align: center; padding: 24px; }
-.race-countdown strong { font-size: clamp(70px, 14vw, 130px); line-height: 1; color: var(--color-accent-contrast); text-shadow: 0 3px 10px var(--color-bg); }
-.race-countdown span { padding: 10px 14px; border-radius: 10px; background: var(--color-surface); color: var(--color-text-primary); }
-@media (max-width: 600px) { .racer-back { left: 10px; transform: none; } }
-@media (max-width: 600px) { .racer-start { padding: 10px; align-items: start; } .racer-back { bottom: 100px; } .racer-actions { gap: 16px; } }
+
+/* Start gantry */
+/* Lamps above the grid, the controls line below it: neither sits on the cars. The numeral is
+   read out but not shown, because the lamps are the countdown; only "GO!" is drawn. */
+.race-countdown { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; gap: 14px; pointer-events: none; text-align: center; padding: 96px 24px 28px; }
+.race-gantry { display: flex; gap: 12px; padding: 12px 16px; border-radius: 14px; background: var(--racer-gantry); border: 1px solid #ffffff1f; box-shadow: 0 10px 30px #0008; }
+.race-gantry i { width: clamp(22px, 4.5vw, 38px); aspect-ratio: 1; border-radius: 50%; background: var(--racer-lamp-off); box-shadow: inset 0 0 0 2px #0008; transition: background .08s, box-shadow .08s; }
+.race-gantry i.on { background: var(--racer-lamp); box-shadow: 0 0 22px var(--racer-lamp-glow), inset 0 0 8px var(--racer-lamp-core); }
+.race-gantry.is-go i { background: var(--racer-lamp-go); }
+.race-countdown strong { font-size: clamp(44px, 9vw, 84px); line-height: 1; color: var(--color-accent-contrast); text-shadow: 0 3px 10px #000a; }
+.race-countdown ::deep .racer-controls, .racer-pause-card ::deep .racer-controls { margin: 0; padding: 8px 14px; border-radius: 10px; background: var(--color-surface); color: var(--color-text-primary); font-size: 14px; display: grid; gap: 2px; }
+.race-countdown ::deep .racer-controls { margin-top: auto; }
+.racer-root ::deep .racer-controls .for-touch { display: none; }
+.racer-root ::deep .racer-controls .for-pad, .racer-root ::deep .racer-controls .for-tips { color: var(--color-text-secondary); font-size: 12px; }
+
+/* Pause / race menu */
+.racer-pause { position: absolute; inset: 0; display: grid; place-items: center; padding: 16px; background: var(--racer-veil); backdrop-filter: blur(6px); }
+.racer-pause-card { width: min(420px, 100%); padding: 20px; display: grid; gap: 14px; border-radius: 16px; background: var(--racer-panel); border: 1px solid var(--racer-line); box-shadow: 0 20px 60px #0008; }
+.racer-pause-card h2 { margin: 0; font-size: 22px; }
+
+/* Finish: a chequered band sweeps across while the camera pulls back, then the results come in. */
+.race-flag { position: absolute; inset: 0; pointer-events: none;
+    background: repeating-conic-gradient(#f4f7fa 0 25%, #10151c 0 50%) 0 0 / 56px 56px;
+    mask-image: linear-gradient(105deg, #0000 0 38%, #000 46% 54%, #0000 62% 100%); mask-size: 320% 100%; mask-repeat: no-repeat;
+    animation: race-flag-sweep 1.5s cubic-bezier(.4, 0, .2, 1) both; opacity: .92; }
+@keyframes race-flag-sweep { from { mask-position: 110% 0; } to { mask-position: -10% 0; } }
+
+@media (pointer: coarse) {
+    .racer-root ::deep .racer-controls .for-keys, .racer-root ::deep .racer-controls .for-pad { display: none; }
+    .racer-root ::deep .racer-controls .for-touch { display: inline; }
+}
+@media (max-width: 600px) { .racer-start { padding: 8px; align-items: start; } .racer-actions { gap: 12px; } .race-countdown { padding: 214px 12px 104px; } }
+@media (prefers-reduced-motion: reduce) { .race-flag { display: none; } }

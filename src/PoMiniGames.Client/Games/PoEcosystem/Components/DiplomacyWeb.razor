@@ -4,10 +4,7 @@
 @inject UiFeedbackService Feedback
 
 <div class="poeco-diplomacy-web" role="region" aria-label="Interactive Diplomacy & Trade Network">
-    <div class="poeco-diplomacy-header">
-        <h4>🕊️ Living Geopolitics & Trade</h4>
-        <span class="poeco-diplomacy-subtitle">Real-time diplomatic chords & active caravans</span>
-    </div>
+    <h3 title="Each line is how two clans stand with each other; click one for the detail. The moving dots are caravans.">Diplomacy and trade</h3>
 
     <div class="poeco-diplomacy-canvas-wrap">
         <svg viewBox="0 0 400 320" class="poeco-diplomacy-svg" preserveAspectRatio="xMidYMid meet">
@@ -113,14 +110,18 @@
                     var tribe = Tribes[i];
                     var (x, y) = coords[i];
 
+                    @* The label is the clan's first word: "Amber Clan" at this size ran past the
+                       node on both sides, white on the panel's light ground. The full name and
+                       the numbers are the tooltip. *@
                     <g class="poeco-tribe-node" @onclick="() => OnFocusTribe.InvokeAsync(tribe.Id)" style="cursor: pointer;">
+                        <title>@tribe.Name — @tribe.Population people, @tribe.Warriors warriors. Click to fly there.</title>
                         <circle cx="@x" cy="@y" r="28" fill="#1b2838" stroke="@tribe.BannerColor" stroke-width="3" />
                         <circle cx="@x" cy="@y" r="24" fill="@tribe.BannerColor" fill-opacity="0.3" />
                         <text x="@x" y="@(y - 5)" fill="#fff" font-size="11" font-weight="bold" text-anchor="middle">
-                            @tribe.Name
+                            @tribe.Name.Split(' ')[0]
                         </text>
                         <text x="@x" y="@(y + 9)" fill="#ccc" font-size="9" text-anchor="middle">
-                            Pop: @tribe.Population (@tribe.Warriors ⚔️)
+                            @tribe.Population pop
                         </text>
                         <text x="@x" y="@(y + 20)" fill="@tribe.BannerColor" font-size="8" text-anchor="middle" font-weight="bold">
                             @tribe.Tech

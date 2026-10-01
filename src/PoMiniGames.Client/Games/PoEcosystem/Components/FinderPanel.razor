@@ -1,0 +1,118 @@
+@using PoMiniGames.Shared.Games.PoEcosystem
+@* The finder (2026-09-30): until this, the only creature you could reach was the one the
+   crosshair happened to land on. Type part of a name or a species, or pick a question —
+   the oldest, the weakest, the one with the most young — and the camera goes there.
+   The sim answers (world.find): the page never holds the creature list. Read-only, like
+   every other question the page asks. *@
+<aside class="poeco-finder" role="dialog" aria-label="Find a creature or a clan" @onkeydown="OnKey">
+    <div class="poeco-finder-head">
+        <input @ref="_input" type="search" class="poeco-finder-input" placeholder="Name or species…" autocomplete="off" spellcheck="false"
+               aria-label="Name or species" value="@_text" @oninput="OnInput" />
+        <button type="button" class="poeco-icon-btn" @onclick="OnClose" aria-label="Close the finder">✕</button>
+    </div>
+    <div class="poeco-finder-sorts" role="group" aria-label="Order by">
+        @foreach (var (id, label) in Sorts)
+        {
+            <button type="button" class="poeco-pill @(_sort == id ? "poeco-pill--on" : "")" aria-pressed="@(_sort == id ? "true" : "false")" @onclick="() => SetSort(id)">@label</button>
+        }
+    </div>
+
+    <ul class="poeco-finder-list">
+        @foreach (var t in MatchingTribes)
+        {
+            <li>
+                <button type="button" class="poeco-thought-item" @onclick="() => OnPickTribe.InvokeAsync(t.Id)">
+                    <i class="poeco-species-chip" style="background: @t.BannerColor" aria-hidden="true"></i>
+                    <span class="poeco-thought-name">@t.Name</span>
+                    <span class="poeco-thought-text">clan · @t.Population people · @t.Tech</span>
+                </button>
+            </li>
+        }
+        @foreach (var r in Results)
+        {
+            <li>
+                <button type="button" class="poeco-thought-item" @onclick="() => OnPick.InvokeAsync(r)">
+                    <i class="poeco-species-chip" style="background: @EcoSpeciesInfo.ColourOf(r.Species)" aria-hidden="true"></i>
+                    <span class="poeco-thought-name">@r.Name@(r.Watched ? " ★" : "")</span>
+                    <span class="poeco-thought-text">@Describe(r)</span>
+                </button>
+            </li>
+        }
+        @if (Results.Count == 0 && MatchingTribes.Count == 0)
+        {
+            <li class="poeco-note">@(_asked ? "Nobody alive matches." : "Searching…")</li>
+        }
+    </ul>
+    <p class="poeco-note"><kbd>Enter</kbd> goes to the first · <kbd>Esc</kbd> closes</p>
+</aside>
+
+@code {
+    private static readonly (string Id, string Label)[] Sorts =
+    [
+        ("", "A–Z"), ("oldest", "Oldest"), ("weakest", "Weakest"), ("hungriest", "Hungriest"), ("young", "Most young"), ("sick", "Sick"), ("watched", "Watched"),
+    ];
+
+    [Parameter] public IReadOnlyList<EcoFound> Results { get; set; } = [];
+    [Parameter] public IReadOnlyList<TribeStateDto>? Tribes { get; set; }
+    /// <summary>Raised when the query changes: (text, sort).</summary>
+    [Parameter] public EventCallback<(string Text, string Sort)> OnQuery { get; set; }
+    [Parameter] public EventCallback<EcoFound> OnPick { get; set; }
+    [Parameter] public EventCallback<int> OnPickTribe { get; set; }
+    [Parameter] public EventCallback OnClose { get; set; }
+
+    private ElementReference _input;
+    private string _text = "";
+    private string _sort = "oldest";
+    private bool _asked;
+
+    // Clans are matched here: there are three of them and the page already has their names.
+    private List<TribeStateDto> MatchingTribes => _text.Trim().Length == 0 || Tribes is null ? []
+        : Tribes.Where(t => t.Name.Contains(_text.Trim(), StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender) return;
+        try { await _input.FocusAsync(); } catch { /* the panel may already be gone */ }
+        await QueryAsync();
+    }
+
+    protected override void OnParametersSet() { if (Results.Count > 0) _asked = true; }
+
+    private Task OnInput(ChangeEventArgs e)
+    {
+        _text = e.Value?.ToString() ?? "";
+        // Typing a name is a search by name: the "oldest" default would bury the match.
+        if (_text.Length > 0 && _sort == "oldest") _sort = "";
+        return QueryAsync();
+    }
+
+    private Task SetSort(string id) { _sort = id; return QueryAsync(); }
+
+    private async Task QueryAsync()
+    {
+        await OnQuery.InvokeAsync((_text, _sort));
+        _asked = true;
+    }
+
+    private async Task OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Escape") await OnClose.InvokeAsync();
+        else if (e.Key == "Enter")
+        {
+            if (MatchingTribes.Count > 0) await OnPickTribe.InvokeAsync(MatchingTribes[0].Id);
+            else if (Results.Count > 0) await OnPick.InvokeAsync(Results[0]);
+        }
+    }
+
+    private string Describe(EcoFound r)
+    {
+        var what = $"{EcoSpeciesInfo.PluralOf(r.Species).ToLowerInvariant()} · {r.AgeYears:0.0} y";
+        return _sort switch
+        {
+            "weakest" => $"{what} · health {r.Health:P0}",
+            "hungriest" => $"{what} · hunger {r.Hunger:P0}",
+            "young" => $"{what} · {r.Young} young",
+            _ => r.Sick ? $"{what} · sick" : what,
+        };
+    }
+}

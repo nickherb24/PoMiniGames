@@ -1,92 +1,32 @@
 @using PoMiniGames.Shared.Games.PoEcosystem
-@using PoMiniGamesClient.Games.PoEcosystem.Models
+@using System.Globalization
+@* The clans on the island: each territory, its buildings and the caravans between them, over
+   the island's own map. Click a camp to fly there.
 
-<div class="poeco-minimap-card" role="region" aria-label="Tactical Territory & Density Minimap">
-    <div class="poeco-minimap-header">
-        <span class="poeco-minimap-title">🗺️ Tactical Cartography</span>
-        <span class="poeco-minimap-coords">@(_hoverCoord ?? "200 × 200 Island")</span>
-    </div>
-
-    <!-- Tactical Layer Toggles -->
-    <div class="poeco-minimap-layer-toggles" role="toolbar" aria-label="Minimap Layers">
-        <button type="button" class="poeco-pill poeco-pill--sm @(_showBorders ? "poeco-pill--on" : "")" @onclick="() => _showBorders = !_showBorders">
-            🛡️ Borders
-        </button>
-        <button type="button" class="poeco-pill poeco-pill--sm @(_showResources ? "poeco-pill--on" : "")" @onclick="() => _showResources = !_showResources">
-            🌲 Resources
-        </button>
-        <button type="button" class="poeco-pill poeco-pill--sm @(_showDanger ? "poeco-pill--on" : "")" @onclick="() => _showDanger = !_showDanger">
-            🐺 Danger
-        </button>
-        <button type="button" class="poeco-pill poeco-pill--sm @(_showCaravans ? "poeco-pill--on" : "")" @onclick="() => _showCaravans = !_showCaravans">
-            🐪 Caravans
-        </button>
-    </div>
-
+   2026-09-30: this is what was true in the old "Tactical Cartography" card. Its Resources and
+   Danger layers were six circles at fixed coordinates labelled Forest, Quarry, Wolf Pack and
+   Den — the same on every island — and the land was an ellipse; both are gone. The ground is
+   now the seed's real map (index.js islandThumb), and where things actually die, graze and
+   walk is the HUD minimap's data layers, which read the sim. *@
+<div class="poeco-minimap-card" role="region" aria-label="Clan territories">
     <div class="poeco-minimap-svg-container">
-        <svg viewBox="0 0 200 200" class="poeco-minimap-svg" aria-label="Island territory tactical map"
-             @onmousemove="HandleMouseMove"
-             @onmouseleave="() => _hoverCoord = null"
-             @onclick="HandleClick">
-            <defs>
-                <radialGradient id="dangerGradient" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stop-color="rgba(231, 76, 60, 0.45)" />
-                    <stop offset="100%" stop-color="rgba(231, 76, 60, 0.0)" />
-                </radialGradient>
-                <radialGradient id="resourceGradient" cx="50%" cy="50%" r="50%">
-                    <stop offset="0%" stop-color="rgba(46, 204, 113, 0.35)" />
-                    <stop offset="100%" stop-color="rgba(46, 204, 113, 0.0)" />
-                </radialGradient>
-            </defs>
-
-            <!-- Ocean background -->
-            <rect width="200" height="200" fill="rgba(10, 25, 47, 0.75)" rx="8" />
-
-            <!-- Island landmass approximation -->
-            <ellipse cx="100" cy="100" rx="82" ry="78" fill="rgba(34, 139, 34, 0.25)" stroke="rgba(46, 204, 113, 0.45)" stroke-width="1.5" />
-
-            <!-- Resource Density Heatmap Layer -->
-            @if (_showResources)
+        <svg viewBox="0 0 200 200" class="poeco-minimap-svg" role="img" aria-label="@Summary">
+            <rect width="200" height="200" fill="#0c4a6e" />
+            @if (!string.IsNullOrEmpty(Thumb))
             {
-                <g class="poeco-minimap-resources">
-                    <circle cx="65" cy="75" r="28" fill="url(#resourceGradient)" />
-                    <circle cx="135" cy="85" r="24" fill="url(#resourceGradient)" />
-                    <circle cx="100" cy="140" r="30" fill="url(#resourceGradient)" />
-                    <!text x="65" y="75" fill="rgba(46, 204, 113, 0.7)" font-size="7" text-anchor="middle">🌲 Forest</!text>
-                    <!text x="135" y="85" fill="rgba(46, 204, 113, 0.7)" font-size="7" text-anchor="middle">🪨 Quarry</!text>
-                    <!text x="100" y="140" fill="rgba(46, 204, 113, 0.7)" font-size="7" text-anchor="middle">🫐 Berries</!text>
-                </g>
+                <image href="@Thumb" x="0" y="0" width="200" height="200" preserveAspectRatio="none" opacity="0.8" style="image-rendering: pixelated" />
             }
 
-            <!-- Predator Danger Zones Layer -->
-            @if (_showDanger)
-            {
-                <g class="poeco-minimap-danger">
-                    <circle cx="145" cy="120" r="32" fill="url(#dangerGradient)" />
-                    <circle cx="55" cy="130" r="26" fill="url(#dangerGradient)" />
-                    <!text x="145" y="120" fill="rgba(231, 76, 60, 0.8)" font-size="7" text-anchor="middle">🐺 Wolf Pack</!text>
-                    <!text x="55" y="130" fill="rgba(231, 76, 60, 0.8)" font-size="7" text-anchor="middle">⚠️ Den</!text>
-                </g>
-            }
-
-            <!-- Tribal Territory Influence Zones Layer -->
-            @if (_showBorders && Tribes is not null)
+            @if (Tribes is not null)
             {
                 @foreach (var tribe in Tribes)
                 {
-                    <circle cx="@tribe.CenterX.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
-                            cy="@tribe.CenterZ.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
-                            r="@tribe.TerritoryRadius.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
-                            fill="@tribe.BannerColor"
-                            fill-opacity="0.22"
-                            stroke="@tribe.BannerColor"
-                            stroke-width="1.4"
-                            stroke-dasharray="4,2" />
+                    <circle cx="@N(tribe.CenterX)" cy="@N(tribe.CenterZ)" r="@N(tribe.TerritoryRadius)"
+                            fill="@tribe.BannerColor" fill-opacity="0.2" stroke="@tribe.BannerColor" stroke-width="1.4" stroke-dasharray="4,2" />
                 }
             }
 
-            <!-- Settlement Buildings -->
-            @if (_showBorders && Buildings is not null)
+            @if (Buildings is not null)
             {
                 @foreach (var b in Buildings)
                 {
@@ -97,61 +37,38 @@
                         BuildingKind.WarTotem => "#9b59b6",
                         _ => "#ecf0f1",
                     };
-                    <circle cx="@b.X.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
-                            cy="@b.Z.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
-                            r="2.2"
-                            fill="@fill"
-                            stroke="#111"
-                            stroke-width="0.6" />
+                    <circle cx="@N(b.X)" cy="@N(b.Z)" r="2.2" fill="@fill" stroke="#111" stroke-width="0.6" opacity="@(b.IsComplete ? "1" : "0.5")" />
                 }
             }
 
-            <!-- Trade Caravans Layer -->
-            @if (_showCaravans && Caravans is not null)
+            @if (Caravans is not null)
             {
                 @foreach (var c in Caravans)
                 {
-                    <g transform="translate(@c.X.ToString("F1", System.Globalization.CultureInfo.InvariantCulture), @c.Z.ToString("F1", System.Globalization.CultureInfo.InvariantCulture))">
-                        <circle r="3.5" fill="#f39c12" stroke="#fff" stroke-width="0.8" />
-                        <text x="0" y="8" fill="#f39c12" font-size="5" text-anchor="middle" font-weight="bold">
-                            @(c.CargoKind == "wood" ? "🪵" : (c.CargoKind == "stone" ? "🪨" : "🌾"))
-                        </text>
-                    </g>
+                    <circle cx="@N(c.X)" cy="@N(c.Z)" r="3" fill="#f39c12" stroke="#fff" stroke-width="0.8">
+                        <title>Caravan: @c.Amount @c.CargoKind</title>
+                    </circle>
                 }
             }
 
-            <!-- Tribal Settlement Center Anchors -->
             @if (Tribes is not null)
             {
                 @foreach (var tribe in Tribes)
                 {
-                    <g @onclick="() => OnFocusTribe.InvokeAsync(tribe.Id)" style="cursor: pointer;">
-                        <circle cx="@tribe.CenterX.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
-                                cy="@tribe.CenterZ.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
-                                r="5.0"
-                                fill="@tribe.BannerColor"
-                                stroke="#ffffff"
-                                stroke-width="1.8" />
-                        <text x="@tribe.CenterX.ToString("F1", System.Globalization.CultureInfo.InvariantCulture)"
-                              y="@((tribe.CenterZ - 7).ToString("F1", System.Globalization.CultureInfo.InvariantCulture))"
-                              fill="#ffffff"
-                              font-size="7.5"
-                              font-weight="bold"
-                              text-anchor="middle"
-                              filter="drop-shadow(0 1px 2px rgba(0,0,0,0.9))">
-                            @tribe.Name
-                        </text>
+                    <g class="poeco-territory-camp" @onclick="() => OnFocusTribe.InvokeAsync(tribe.Id)">
+                        <title>Fly to @tribe.Name</title>
+                        <circle cx="@N(tribe.CenterX)" cy="@N(tribe.CenterZ)" r="5" fill="@tribe.BannerColor" stroke="#ffffff" stroke-width="1.8" />
+                        @((MarkupString)$"<text x=\"{N(tribe.CenterX)}\" y=\"{N(tribe.CenterZ - 8)}\" class=\"poeco-territory-label\" text-anchor=\"middle\">{System.Net.WebUtility.HtmlEncode(tribe.Name)}</text>")
                     </g>
                 }
             }
         </svg>
     </div>
-
     <div class="poeco-minimap-legend">
-        <span class="poeco-minimap-key"><span class="poeco-key-dot" style="background:#ecf0f1;"></span>Hut</span>
-        <span class="poeco-minimap-key"><span class="poeco-key-dot" style="background:#f1c40f;"></span>Granary</span>
-        <span class="poeco-minimap-key"><span class="poeco-key-dot" style="background:#e74c3c;"></span>Tower</span>
-        <span class="poeco-minimap-key"><span class="poeco-key-dot" style="background:#f39c12;"></span>Caravan</span>
+        <span class="poeco-minimap-key"><span class="poeco-key-dot poeco-key-dot--hut"></span>Hut</span>
+        <span class="poeco-minimap-key"><span class="poeco-key-dot poeco-key-dot--granary"></span>Granary</span>
+        <span class="poeco-minimap-key"><span class="poeco-key-dot poeco-key-dot--tower"></span>Tower</span>
+        <span class="poeco-minimap-key"><span class="poeco-key-dot poeco-key-dot--caravan"></span>Caravan</span>
     </div>
 </div>
 
@@ -159,28 +76,13 @@
     [Parameter] public IReadOnlyList<TribeStateDto>? Tribes { get; set; }
     [Parameter] public IReadOnlyList<BuildingStateDto>? Buildings { get; set; }
     [Parameter] public IReadOnlyList<TradeCaravanDto>? Caravans { get; set; }
+    /// <summary>The island's map as a data URL (drawn from its seed).</summary>
+    [Parameter] public string? Thumb { get; set; }
     [Parameter] public EventCallback<int> OnFocusTribe { get; set; }
-    [Parameter] public EventCallback<(double X, double Z)> OnNavigate { get; set; }
 
-    private bool _showBorders = true;
-    private bool _showResources = true;
-    private bool _showDanger = true;
-    private bool _showCaravans = true;
-    private string? _hoverCoord;
+    private string Summary => Tribes is { Count: > 0 }
+        ? "Clan territories: " + string.Join(", ", Tribes.Select(t => $"{t.Name}, {t.Population} people"))
+        : "No clans have settled yet";
 
-    private void HandleMouseMove(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
-    {
-        // Estimate 0..200 coordinate inside the 200x200 minimap
-        _hoverCoord = $"Tactical Map: Click to Inspect";
-    }
-
-    private void HandleClick(Microsoft.AspNetCore.Components.Web.MouseEventArgs e)
-    {
-        // Allow clicking anywhere to navigate
-        if (Tribes is not null && Tribes.Count > 0)
-        {
-            // Focus closest tribe
-            OnFocusTribe.InvokeAsync(Tribes[0].Id);
-        }
-    }
+    private static string N(float v) => v.ToString("F1", CultureInfo.InvariantCulture);
 }

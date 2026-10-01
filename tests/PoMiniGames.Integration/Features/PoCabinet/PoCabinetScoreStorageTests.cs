@@ -61,8 +61,9 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
         var wirePlayer = $"pocabinet-int-{Guid.NewGuid():N}";
         // Laps are server-timed from their input logs (PoCabinetLapVerifier), so each submit
         // carries a real browser-recorded proof and the claim is only logged. The fixtures'
-        // own times drive the assertions: clean ≈ 23.32 s, messy ≈ 23.29 s (faster), wild ≈
-        // 40.88 s (slower), all on Capitol; maralago-clean ≈ 30.34 s.
+        // own times drive the assertions: clean ≈ 26.62 s, messy ≈ 24.79 s (faster), wild ≈
+        // 29.28 s (slower), all on Capitol; maralago-clean ≈ 29.54 s. (100-car races since
+        // 2026-09-30; the generator checks that ordering before it writes the file.)
         PoCabinetScoreDto Submit(string proofName, int position)
         {
             var proof = PoCabinetLapProofs.Get(proofName);

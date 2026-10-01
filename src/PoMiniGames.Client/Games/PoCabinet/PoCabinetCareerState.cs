@@ -71,15 +71,16 @@ public sealed class PoCabinetCareerState
         }
     }
 
-    /// <summary>Advance to the next stage if a top-3 finish is reported.</summary>
+    /// <summary>Advance to the next stage on a top-quarter finish in the 100-car field
+    /// (<see cref="PoCabinetCatalog.CampaignPassPlace"/>); a top-ten finish in the final race wins the trophy.</summary>
     public async Task RecordStageResultAsync(int stageIndex, int finishPosition, bool isFinalRace)
     {
-        if (finishPosition <= 3 && stageIndex == Current.CurrentStageIndex)
+        if (finishPosition <= PoCabinetCatalog.CampaignPassPlace && stageIndex == Current.CurrentStageIndex)
         {
             if (!Current.CompletedStages.Contains(stageIndex))
                 Current.CompletedStages = Current.CompletedStages.Append(stageIndex).ToList();
-            Current.CurrentStageIndex = Math.Min(stageIndex + 1, 2);
-            if (isFinalRace && finishPosition == 1)
+            Current.CurrentStageIndex = Math.Min(stageIndex + 1, 3);
+            if (isFinalRace && finishPosition <= PoCabinetCatalog.CampaignTrophyPlace)
             {
                 Current.TrophyUnlocked = true;
                 Current.GoldLiveryUnlocked = true;

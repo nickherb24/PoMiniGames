@@ -2,25 +2,15 @@
    per trait, plus the tint picker that colours creatures in the world by that trait so
    selection pressure is something you can see from the air, not only read here. *@
 <div class="poeco-evolution">
-    <label class="poeco-field poeco-field--row">
-        <span>Colour creatures by</span>
+    <label class="poeco-field poeco-field--row" title="The same lenses as the 👁 menu on the HUD (L steps through them)">
+        <span>Lens</span>
         <select value="@Tint" @onchange="e => OnTint.InvokeAsync(int.TryParse(e.Value?.ToString(), out var v) ? v : -1)">
-            <option value="-1">species</option>
-            @for (var k = 0; k < EcoSpeciesInfo.Traits.Length; k++)
+            @foreach (var (id, label, _, _) in EcoLens.All)
             {
-                <option value="@k">@EcoSpeciesInfo.Traits[k]</option>
+                <option value="@id">@label</option>
             }
         </select>
-        @if (Tint >= 0)
-        {
-            <span class="poeco-tint-scale" aria-hidden="true"><i></i> low → high</span>
-        }
     </label>
-
-    @if (Samples < 2)
-    {
-        <p class="poeco-note">Trait means are sampled every ten seconds; the drift shows after a few minutes.</p>
-    }
 
     <div class="poeco-evo-grid">
         @for (var t = 0; t < EcoSpeciesInfo.Traits.Length; t++)
@@ -42,7 +32,7 @@
             </figure>
         }
     </div>
-    <p class="poeco-note">Offspring inherit the mean of their parents plus a little noise (σ 0.08). A line that climbs is a trait the island is selecting for.</p>
+    <p class="poeco-note">@(Samples < 2 ? "Sampled every ten seconds; the drift shows after a few minutes." : "Offspring inherit the mean of their parents plus a little noise. A line that climbs is a trait the island is selecting for.")</p>
 </div>
 
 @code {

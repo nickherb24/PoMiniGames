@@ -33,10 +33,6 @@ internal static partial class EcosystemLog
         Message = "PoEcosystem: treaty negotiation failed; tribes maintain current status.")]
     public static partial void EcoTreatyFailed(this ILogger logger, Exception ex);
 
-    [LoggerMessage(EventId = 4608, Level = LogLevel.Warning,
-        Message = "PoEcosystem: divine decree interpretation failed; decree dispersed into wind.")]
-    public static partial void EcoDecreeFailed(this ILogger logger, Exception ex);
-
     [LoggerMessage(EventId = 4609, Level = LogLevel.Warning,
         Message = "PoEcosystem: milestone lore generation failed.")]
     public static partial void EcoLoreFailed(this ILogger logger, Exception ex);

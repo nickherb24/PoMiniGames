@@ -17,7 +17,7 @@ import { KERB_OUTER } from './kerbs.js';
 const WS = 10;
 const TILE = 44;
 
-function roadMask(track, margin) {
+function roadMask(track, margin, keepOut) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (let i = 0; i < track.count; i++) {
         minX = Math.min(minX, track.x[i]); maxX = Math.max(maxX, track.x[i]);
@@ -42,7 +42,15 @@ function roadMask(track, margin) {
         const px = (track.x[k] - minX) * sx, py = (track.y[k] - minY) * sy;
         if (i === 0) g.moveTo(px, py); else g.lineTo(px, py);
     }
-    g.stroke();
+    // A road with height (the Playground run) is up on the model, not on the lawn.
+    if (!track.z) g.stroke();
+    // No blades where a scene model already covers the ground (the Playground's pad).
+    if (keepOut) {
+        g.fillStyle = '#fff';
+        g.beginPath();
+        for (let i = 0; i < keepOut.length; i += 2) g.lineTo((keepOut[i] - minX) * sx, (keepOut[i + 1] - minY) * sy);
+        g.fill();
+    }
     const tex = new THREE.CanvasTexture(c);
     tex.flipY = false;
     tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
@@ -85,9 +93,10 @@ export class Grass {
      * @param track  runtime track
      * @param color  base colour (the ground's)
      * @param count  blades in the tile (quality tier)
+     * @param keepOut optional sim ring [x0, y0, …] kept bare, like the road
      */
-    constructor(track, color, count) {
-        const mask = roadMask(track, KERB_OUTER + 6);
+    constructor(track, color, count, keepOut) {
+        const mask = roadMask(track, KERB_OUTER + 6, keepOut);
         this.mask = mask.tex;
         this.center = new THREE.Vector3();
         this.material = new THREE.MeshStandardMaterial({

@@ -1,23 +1,57 @@
 @using PoMiniGames.Shared.Games
+@{
+    var me = Player;
+    var last = me?.LastLapSeconds ?? -1;
+    var best = me?.BestLapSeconds ?? -1;
+}
 <div class="race-hud">
-    <div class="race-metrics">
-        @if (IsDemo) { <strong>Spectating</strong> }
-        else
+    @* One strip in one corner. Speed and the two running clocks are empty here on purpose:
+       js/poracer/index.js writes them every frame, so Blazor must own no text node inside
+       .race-speed, .race-clock or .race-lap-now. *@
+    <div class="race-strip">
+        <div class="race-metrics">
+            @if (IsDemo) { <strong>Spectating</strong> }
+            else
+            {
+                @if (Cars.Count > 1)
+                {
+                    <span class="race-pos" @key="me?.Position">P<strong>@(me?.Position ?? 0)</strong><small>/@Cars.Count</small></span>
+                }
+                <span>Lap <strong>@Math.Min(me?.Lap ?? 1, TotalLaps)/@TotalLaps</strong></span>
+                <span><strong class="race-speed"></strong> km/h</span>
+            }
+            <span class="race-clock"></span>
+        </div>
+        @if (!IsDemo)
         {
-            <span>Position <strong>@(Player?.Position ?? 0) / @Cars.Count</strong></span>
-            <span>Lap <strong>@Math.Min(Player?.Lap ?? 1, TotalLaps) / @TotalLaps</strong></span>
-            <span><strong>@((int)Math.Abs((Player?.Speed ?? 0) * 1.2))</strong> km/h</span>
+            <div class="race-laps">
+                <span>Now <strong class="race-lap-now"></strong></span>
+                <span>Last <strong>@PoRacerFormatting.Time(last)</strong>@if (last > 0 && best > 0 && last > best) { <em>@PoRacerFormatting.Delta(last - best)</em> }</span>
+                <span>Best <strong>@PoRacerFormatting.Time(best)</strong></span>
+            </div>
+            @* Tow / boost / drift: rendered hidden, shown and filled by js/poracer/index.js every
+               frame. Blazor never writes `hidden` again after this, so a re-render cannot undo it. *@
+            <div class="race-chips" aria-hidden="true">
+                <span class="race-chip race-chip--tow" hidden>Tow</span>
+                <span class="race-chip race-chip--boost" hidden>Boost</span>
+                <span class="race-chip race-chip--drift" hidden>Drift</span>
+            </div>
         }
-        <span>@PoRacerFormatting.Time(ElapsedSeconds)</span>
+        @if (Cars.Count > 1)
+        {
+            <ol class="race-standings" aria-label="Race standings">
+                @foreach (var car in Rows())
+                {
+                    var name = Roster.FirstOrDefault(r => r.Id == car.Id)?.Name ?? "";
+                    <li class="@(car.Id == PlayerId ? "local-driver" : "")" title="@name">
+                        <span>@car.Position. @(car.Id == PlayerId ? "YOU" : name)</span><span>@(car.Finished ? "FIN" : $"L{car.Lap}")</span>
+                    </li>
+                }
+            </ol>
+        }
     </div>
-    <ol class="race-standings" aria-label="Race standings">
-        @foreach (var car in Cars.OrderBy(c => c.Position))
-        {
-            <li class="@(car.Id == PlayerId ? "local-driver" : "")" title="@car.Name">
-                <span>@car.Position. @(car.Id == PlayerId ? "YOU" : car.Name)</span><span>@(car.Finished ? "FIN" : $"L{car.Lap}")</span>
-            </li>
-        }
-    </ol>
+    <canvas id="racerMinimap" class="race-minimap" width="180" height="180" aria-hidden="true"></canvas>
+    <button type="button" class="race-pause" aria-label="Pause" title="Pause (Esc)" @onclick="OnPause">❚❚</button>
 </div>
 @if (!IsDemo)
 {
@@ -35,9 +69,27 @@
 }
 @code {
     [Parameter] public IReadOnlyList<PoRacerCarState> Cars { get; set; } = [];
+    [Parameter] public IReadOnlyList<PoRacerCarInfo> Roster { get; set; } = [];
     [Parameter] public int? PlayerId { get; set; }
     [Parameter] public int TotalLaps { get; set; }
-    [Parameter] public double ElapsedSeconds { get; set; }
     [Parameter] public bool IsDemo { get; set; }
+    [Parameter] public EventCallback OnPause { get; set; }
     private PoRacerCarState? Player => Cars.FirstOrDefault(c => c.Id == PlayerId);
+
+    /// <summary>
+    /// The four rows worth reading at speed: the leader, the car ahead, you, the car behind
+    /// (the top four when spectating). The full eight-row table covered the track on a desktop
+    /// and was hidden outright on a phone; this fits both.
+    /// </summary>
+    private IEnumerable<PoRacerCarState> Rows()
+    {
+        var mine = Player?.Position ?? 2;
+        var want = new SortedSet<int> { 1, mine - 1, mine, mine + 1 };
+        for (var reach = 2; want.Count(p => p >= 1 && p <= Cars.Count) < Math.Min(4, Cars.Count); reach++)
+        {
+            want.Add(mine + reach);
+            want.Add(mine - reach);
+        }
+        return Cars.Where(c => want.Contains(c.Position)).OrderBy(c => c.Position).Take(4);
+    }
 }

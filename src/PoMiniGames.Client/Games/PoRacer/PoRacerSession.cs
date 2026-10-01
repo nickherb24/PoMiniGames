@@ -14,6 +14,7 @@ public sealed class PoRacerSession : IAsyncDisposable
     private PoRacerInput _input = new();
     private string _code = "";
     private string _trackId = PoRacerCatalog.DefaultTrackId;
+    private PoRacerJoinOptions _options = new();
     private bool _asPlayer;
     private bool _ready;
 
@@ -23,6 +24,10 @@ public sealed class PoRacerSession : IAsyncDisposable
         _hub.On<PoRacerRaceSnapshot>("raceSnapshot", async snapshot =>
         {
             if (_ready && SnapshotReceived is { } handler) await handler(snapshot);
+        });
+        _hub.On<List<PoRacerCarInfo>>("raceRoster", async roster =>
+        {
+            if (_ready && RosterChanged is { } handler) await handler(roster);
         });
         _hub.On<PoRacerFinalResult>("raceFinished", async result =>
         {
@@ -47,14 +52,17 @@ public sealed class PoRacerSession : IAsyncDisposable
 
     public event Func<PoRacerRaceSnapshot, Task>? Joined;
     public event Func<PoRacerRaceSnapshot, Task>? SnapshotReceived;
+    /// <summary>Another driver's paint arrived after this client's join.</summary>
+    public event Func<IReadOnlyList<PoRacerCarInfo>, Task>? RosterChanged;
     public event Func<PoRacerFinalResult, Task>? Finished;
     public event Func<string?, Task>? StatusChanged;
 
-    public async Task ConnectAsync(string code, bool asPlayer, string trackId, CancellationToken cancellationToken)
+    public async Task ConnectAsync(string code, bool asPlayer, string trackId, PoRacerJoinOptions options, CancellationToken cancellationToken)
     {
         _code = code;
         _asPlayer = asPlayer;
         _trackId = trackId;
+        _options = options;
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, _lifetime.Token);
         await _hub.StartAsync(linked.Token);
         await JoinAsync(linked.Token);
@@ -62,7 +70,7 @@ public sealed class PoRacerSession : IAsyncDisposable
 
     private async Task JoinAsync(CancellationToken cancellationToken)
     {
-        var snapshot = await _hub.InvokeAsync<PoRacerRaceSnapshot>("JoinRace", _code, _asPlayer, _trackId, cancellationToken);
+        var snapshot = await _hub.InvokeAsync<PoRacerRaceSnapshot>("JoinRace", _code, _asPlayer, _trackId, _options, cancellationToken);
         if (Joined is { } joined) await joined(snapshot);
         _ready = true;
         if (snapshot.Result is { } result && Finished is { } finished) await finished(result);
@@ -86,6 +94,14 @@ public sealed class PoRacerSession : IAsyncDisposable
         {
             if (StatusChanged is { } handler) await handler("Input interrupted. Reconnecting…");
         }
+    }
+
+    /// <summary>Pause or resume the race clock. The server honours it for solo races only; best-effort.</summary>
+    public async Task SetPausedAsync(bool paused)
+    {
+        if (!_asPlayer || !_ready) return;
+        try { await _hub.InvokeAsync("SetPaused", paused, _lifetime.Token); }
+        catch (Exception ex) when (ex is OperationCanceledException or InvalidOperationException or HttpRequestException) { }
     }
 
     public async ValueTask DisposeAsync()

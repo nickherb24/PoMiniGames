@@ -26,29 +26,8 @@ public static class PoRacerTrackRegistry
 
     private static PoRacerTrackData BuildCircuit()
     {
-        // Classic stadium oval — two long straights joined by tight 180° banked hairpins.
-        // Distinct shape: symmetric pill/racetrack oval.
-        var rawKnots = new (double x, double y)[]
-        {
-            (0,     0),
-            (400,   0),
-            (800,   0),
-            (1200,  0),
-            (1500,  80),
-            (1650,  280),
-            (1650,  500),
-            (1500,  700),
-            (1200,  780),
-            (800,   780),
-            (400,   780),
-            (0,     780),
-            (-300,  700),
-            (-450,  500),
-            (-450,  280),
-            (-300,  80),
-        };
         const double trackWidth = 230.0;
-        var centerline = ResampleClosedSpline(rawKnots.Select(p => new Vec2(p.x, p.y)).ToList(), 10);
+        var centerline = ResampleClosedSpline(Knots("circuit"), 10);
         var walls = GenerateWalls(centerline, trackWidth);
 
         var surfaces = new List<PoRacerSurfaceZoneDefinition>
@@ -64,7 +43,8 @@ public static class PoRacerTrackRegistry
             TrackWidth = trackWidth,
             Centerline = centerline,
             Walls = walls,
-            BoostPads = [],
+            // One on each straight.
+            BoostPads = [PadAt(centerline, 0.10), PadAt(centerline, 0.60)],
             SurfaceZones = surfaces,
             EnvironmentTheme = "circuit"
         };
@@ -72,33 +52,8 @@ public static class PoRacerTrackRegistry
 
     private static PoRacerTrackData BuildNeonSkyline()
     {
-        // Figure-8 crossover layout — two loops crossing in the middle.
-        // Distinct shape: one large outer loop + one tight inner loop sharing a central crossing.
-        var rawKnots = new (double x, double y)[]
-        {
-            // Start on the bridge / crossing point
-            (800,   400),
-            // Top loop — wide, fast
-            (1000,  150),
-            (1400,  -50),
-            (1800,  100),
-            (1950,  400),
-            (1800,  700),
-            (1400,  850),
-            (1000,  700),
-            // Back through the crossing (inverted direction)
-            (800,   400),
-            // Bottom loop — tight, technical
-            (600,   600),
-            (300,   800),
-            (50,    650),
-            (-50,   400),
-            (50,    150),
-            (300,   0),
-            (600,   150),
-        };
         const double trackWidth = 210.0;
-        var centerline = ResampleClosedSpline(rawKnots.Select(p => new Vec2(p.x, p.y)).ToList(), 12);
+        var centerline = ResampleClosedSpline(Knots("neonskyline"), 12);
         var walls = GenerateWalls(centerline, trackWidth);
 
         var surfaces = new List<PoRacerSurfaceZoneDefinition>
@@ -114,7 +69,8 @@ public static class PoRacerTrackRegistry
             TrackWidth = trackWidth,
             Centerline = centerline,
             Walls = walls,
-            BoostPads = [],
+            // The fastest arc of each loop, well clear of the crossing.
+            BoostPads = [PadAt(centerline, 0.16), PadAt(centerline, 0.69)],
             SurfaceZones = surfaces,
             EnvironmentTheme = "neonskyline"
         };
@@ -122,33 +78,8 @@ public static class PoRacerTrackRegistry
 
     private static PoRacerTrackData BuildDesertDustway()
     {
-        // L-shaped circuit — one long back straight, tight 90° hairpin corners, like a real rally stage.
-        // Distinct shape: L / boot shape with sharp chicane section.
-        var rawKnots = new (double x, double y)[]
-        {
-            // Start / finish on the long front straight
-            (0,     0),
-            (700,   0),
-            (1400,  0),
-            // Fast right-hand sweeper into the back section
-            (1750,  200),
-            (1850,  500),
-            // Long back straight going left
-            (1750,  800),
-            (1200,  950),
-            (600,   950),
-            // Tight left hairpin at the far end
-            (100,   950),
-            (-150,  800),
-            // The chicane: two quick S-bends
-            (-300,  600),
-            (-100,  400),
-            (-300,  200),
-            // Returns to the pit straight
-            (-200,  50),
-        };
         const double trackWidth = 255.0;
-        var centerline = ResampleClosedSpline(rawKnots.Select(p => new Vec2(p.x, p.y)).ToList(), 14);
+        var centerline = ResampleClosedSpline(Knots("desertdustway"), 14);
         var walls = GenerateWalls(centerline, trackWidth);
 
         // Sand zones in the outer hairpin run-off areas
@@ -166,11 +97,28 @@ public static class PoRacerTrackRegistry
             TrackWidth = trackWidth,
             Centerline = centerline,
             Walls = walls,
-            BoostPads = [],
+            // The front straight and the long back straight.
+            BoostPads = [PadAt(centerline, 0.07), PadAt(centerline, 0.46)],
             SurfaceZones = surfaces,
             EnvironmentTheme = "desertdustway"
         };
     }
+
+    /// <summary>
+    /// A boost pad on the centerline at a fraction of the lap, pointing the way the track runs
+    /// there. Every track shipped with an empty pad list until 2026-10-01, while the start card
+    /// told drivers to aim for them.
+    /// </summary>
+    private static PoRacerBoostPadDefinition PadAt(IReadOnlyList<Vec2> line, double lapFraction)
+    {
+        int i = (int)(lapFraction * line.Count) % line.Count;
+        var a = line[i];
+        var b = line[(i + 1) % line.Count];
+        return new() { Position = a, Radius = 46, DirectionAngle = Math.Atan2(b.Y - a.Y, b.X - a.X) };
+    }
+
+    // Knots live in the shared catalog so the client draws its track cards from the same points.
+    private static List<Vec2> Knots(string id) => PoRacerCatalog.GetTrack(id).Knots.Select(p => new Vec2(p.X, p.Y)).ToList();
 
     private static List<Vec2> ResampleClosedSpline(IReadOnlyList<Vec2> knots, int stepsPerSegment)
     {

@@ -10,22 +10,23 @@ using PoMiniGames.Shared.Games.PoEcosystem;
 
 namespace PoMiniGames.Features.PoEcosystem;
 
-/// <summary>The island's model-backed capabilities: sagas, micro-thoughts, treaties, decrees, and lore.</summary>
+/// <summary>The island's model-backed capabilities: sagas, micro-thoughts, treaties and lore.</summary>
 public interface IEcosystemChronicleService
 {
     Task<EcoChronicle> WriteAsync(EcoChronicleRequest request, CancellationToken ct = default);
     Task<EcoThoughtReply> ThinkAsync(EcoThoughtRequest request, CancellationToken ct = default);
     Task<EcoThoughtBatchReply> ThinkBatchAsync(EcoThoughtBatchRequest request, CancellationToken ct = default);
     Task<EcoTreatyReply> NegotiateTreatyAsync(EcoTreatyRequest request, CancellationToken ct = default);
-    Task<EcoDecreeReply> InterpretDecreeAsync(EcoDecreeRequest request, CancellationToken ct = default);
     Task<EcoMilestoneLoreReply> GenerateMilestoneLoreAsync(EcoMilestoneLoreRequest request, CancellationToken ct = default);
     IReadOnlyList<EcoCultureProfile> GenerateTribeCultures(int seed);
     Task PrewarmChronicleAsync(EcoChronicleRequest request, CancellationToken ct = default);
 }
 
 /// <summary>
-/// Server-side narrator, diplomat, and deity interpreter for PoEcosystem.
-/// Handles decade sagas, batched creature thoughts, tribal chieftain treaties, and divine decrees.
+/// Server-side narrator and diplomat for PoEcosystem.
+/// Handles decade sagas, batched creature thoughts, tribal chieftain treaties and milestone lore.
+/// There is no decree interpreter: the island is observed, never steered, and the endpoint that
+/// turned a typed wish into a spawn or a storm went on 2026-09-30 with the console that called it.
 /// </summary>
 public sealed class EcosystemChronicleService : IEcosystemChronicleService
 {
@@ -59,13 +60,6 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         "formulate an inter-tribal pact or ultimatum. Reply with ONLY a JSON object matching the schema: " +
         "title (at most 8 words), narrative (at most 2 sentences), action (PeaceTreaty|DemandTribute|Armistice|WarDeclaration), " +
         "demandedResource (Wood|Stone|Food|None), resourceAmount (integer 0-100), peaceYears (integer 1-5). " + AiPrompt.FencingInstruction;
-
-    private const string DecreeSystemPrompt =
-        "You are the Island Deity translating player prayers, blessings, and curses into bounded island simulation mutations. " +
-        "Reply with ONLY a JSON object matching the schema: intent (short string), " +
-        "actionType (SpawnResource|SpawnCreatures|NudgeWeather|BlessTribe|SmiteTribe), " +
-        "targetTribeId (integer tribe ID or 0 for wild), targetEntity (Resource kind, Species, or Weather kind), " +
-        "quantity (integer 1-100), divineMessage (a short mythic proclamation from the skies). " + AiPrompt.FencingInstruction;
 
     private const string MilestoneLoreSystemPrompt =
         "You are the Island Herald commemorating a pivotal milestone in the island's civilization history. " +
@@ -270,38 +264,6 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         }
     }
 
-    // ── Divine Decree ────────────────────────────────────────────────────
-    public async Task<EcoDecreeReply> InterpretDecreeAsync(EcoDecreeRequest request, CancellationToken ct = default)
-    {
-        var text = (request.DecreeText ?? string.Empty).Trim();
-        var client = Client(AIFoundryOptions.Tasks.EcosystemDecree, out var deployment);
-        if (client is null) return MockDecree(request);
-        try
-        {
-            var tribesDesc = string.Join(", ", (request.Tribes ?? []).Select(t => $"ID {t.Id}: {t.Name}"));
-            var prompt = $"Player Command: \"{text}\"\nTribes on island: {tribesDesc}\nYear: {request.Year}";
-
-            var messages = new List<ChatMessage>
-            {
-                new(ChatRole.System, DecreeSystemPrompt),
-                new(ChatRole.User, AiPrompt.Fence(prompt, "DivineDecree", 1_000)),
-            };
-            var options = _options.GetOrBuild(
-                AIFoundryOptions.Tasks.EcosystemDecree, deployment, _clients.CapabilityOverrides,
-                DecreeSchema, "divine_decree", 300, "Divine decree simulation action.",
-                (d, ov) => AiDecisionChatOptions.ForStructuredJson(DecreeSchema, "divine_decree", 300, d ?? string.Empty, "Divine decree simulation action.", ov));
-
-            var response = await client.GetResponseAsync(messages, options, ct);
-            return ParseDecree(response.Text) ?? MockDecree(request);
-        }
-        catch (Exception ex)
-        {
-            _logger.EcoDecreeFailed(ex);
-            if (AiMockFallback.IsNonProduction(_environment)) return MockDecree(request);
-            throw;
-        }
-    }
-
     // ── Milestone Lore ───────────────────────────────────────────────────
     public async Task<EcoMilestoneLoreReply> GenerateMilestoneLoreAsync(EcoMilestoneLoreRequest request, CancellationToken ct = default)
     {
@@ -495,23 +457,6 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         }
         """).RootElement.Clone();
 
-    public static JsonElement DecreeSchema { get; } = JsonDocument.Parse(
-        """
-        {
-          "type": "object",
-          "properties": {
-            "intent": { "type": "string" },
-            "actionType": { "type": "string" },
-            "targetTribeId": { "type": "integer" },
-            "targetEntity": { "type": "string" },
-            "quantity": { "type": "integer" },
-            "divineMessage": { "type": "string" }
-          },
-          "required": ["intent", "actionType", "targetTribeId", "targetEntity", "quantity", "divineMessage"],
-          "additionalProperties": false
-        }
-        """).RootElement.Clone();
-
     public static JsonElement MilestoneLoreSchema { get; } = JsonDocument.Parse(
         """
         {
@@ -598,35 +543,6 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         catch (JsonException) { return null; }
     }
 
-    internal static EcoDecreeReply? ParseDecree(string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return null;
-        var start = text.IndexOf('{');
-        var end = text.LastIndexOf('}');
-        if (start < 0 || end <= start) return null;
-        try
-        {
-            using var doc = JsonDocument.Parse(text[start..(end + 1)]);
-            var root = doc.RootElement;
-            var intent = Clip(root.TryGetProperty("intent", out var i) ? i.GetString() : null, 60);
-            var actionType = Clip(root.TryGetProperty("actionType", out var at) ? at.GetString() : null, 40);
-            var targetId = root.TryGetProperty("targetTribeId", out var tid) ? tid.GetInt32() : 0;
-            var targetEntity = Clip(root.TryGetProperty("targetEntity", out var te) ? te.GetString() : null, 40);
-            var quantity = root.TryGetProperty("quantity", out var q) ? q.GetInt32() : 1;
-            var message = Clip(root.TryGetProperty("divineMessage", out var dm) ? dm.GetString() : null, 240);
-
-            return new EcoDecreeReply(
-                string.IsNullOrWhiteSpace(intent) ? "Divine Will" : intent,
-                string.IsNullOrWhiteSpace(actionType) ? "BlessTribe" : actionType,
-                Math.Max(0, targetId),
-                string.IsNullOrWhiteSpace(targetEntity) ? "Food" : targetEntity,
-                Math.Clamp(quantity, 1, 100),
-                string.IsNullOrWhiteSpace(message) ? "The heavens shift." : message,
-                Mock: false);
-        }
-        catch (JsonException) { return null; }
-    }
-
     internal static EcoMilestoneLoreReply? ParseLore(string? text)
     {
         if (string.IsNullOrWhiteSpace(text)) return null;
@@ -701,21 +617,6 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         var title = $"Pact of {a} and {b}";
         var narrative = $"The elders of {a} and {b} convene under the ancient totem to resolve: {request.Reason}. An armistice is sealed with gifts.";
         return new EcoTreatyReply(title, narrative, "PeaceTreaty", "Food", 30, 3, Mock: true);
-    }
-
-    internal static EcoDecreeReply MockDecree(EcoDecreeRequest request)
-    {
-        var text = (request.DecreeText ?? string.Empty).ToLowerInvariant();
-        if (text.Contains("wolf") || text.Contains("wolves"))
-            return new EcoDecreeReply("Wolf Summoning", "SpawnCreatures", 0, "Wolf", 3, "A pack of wolves emerges from the deep woods.", Mock: true);
-        if (text.Contains("rain") || text.Contains("storm"))
-            return new EcoDecreeReply("Rain Blessing", "NudgeWeather", 0, "Rain", 1, "Cool rain sweeps across the island shores.", Mock: true);
-        if (text.Contains("food") || text.Contains("berry") || text.Contains("harvest"))
-            return new EcoDecreeReply("Harvest Blessing", "SpawnResource", request.Tribes?.FirstOrDefault()?.Id ?? 1, "Food", 50, "Granaries overflow with sudden abundance.", Mock: true);
-        if (text.Contains("wood") || text.Contains("stone"))
-            return new EcoDecreeReply("Resource Bounty", "SpawnResource", request.Tribes?.FirstOrDefault()?.Id ?? 1, "Stone", 40, "Rich veins appear near the settlement.", Mock: true);
-
-        return new EcoDecreeReply("Divine Oversight", "BlessTribe", request.Tribes?.FirstOrDefault()?.Id ?? 1, "General", 25, "The skies glow with celestial favor.", Mock: true);
     }
 
     internal static EcoMilestoneLoreReply MockLore(EcoMilestoneLoreRequest request)
