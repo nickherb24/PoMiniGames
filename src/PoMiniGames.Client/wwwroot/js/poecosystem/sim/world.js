@@ -469,11 +469,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       const sj = e.species[j];
       const fleeAt = flees[sj];
       if (fleeAt !== undefined && d <= fleeAt && d < ctx.threatDist) { ctx.threatDist = d; ctx.threatX = e.x[j]; ctx.threatZ = e.z[j]; }
-      // Anything a creature walks TO has to be at the end of a walkable line (ground.clearLine):
-      // prey, a mate or a parent across a lake or below a cliff is not one it can reach.
-      if (prey.includes(sj) && d < ctx.preyDist && ground.clearLine(x, z, e.x[j], e.z[j])) { ctx.preyDist = d; ctx.preyIdx = j; }
-      if (sj === sp.id && e.sex[j] !== e.sex[i] && d < ctx.mateDist && !juvenile && canMate(e, i, j, tick) && ground.clearLine(x, z, e.x[j], e.z[j])) { ctx.mateDist = d; ctx.mateIdx = j; }
-      if ((j === mother || j === father) && d < ctx.parentDist && ground.clearLine(x, z, e.x[j], e.z[j])) { ctx.parentDist = d; ctx.parentIdx = j; }
+      if (prey.includes(sj) && d < ctx.preyDist) { ctx.preyDist = d; ctx.preyIdx = j; }
+      if (sj === sp.id && e.sex[j] !== e.sex[i] && d < ctx.mateDist && !juvenile && canMate(e, i, j, tick)) { ctx.mateDist = d; ctx.mateIdx = j; }
+      if ((j === mother || j === father) && d < ctx.parentDist) { ctx.parentDist = d; ctx.parentIdx = j; }
     });
     // Carnivores remember where they last saw prey, so a hungry wolf with nothing in
     // sight roams back toward the herds instead of random-walking the beach.
@@ -500,7 +498,9 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
       // closed (ground.js), fenced or built-on tile grows none that counts; a bush or a
       // tree is eaten from beside it, so the walk stops a metre short. Either way the walk
       // there has to be clear, or a grazer starves pressed against the foot of a cliff
-      // with food in sight above it.
+      // with food in sight above it. Only things that stay put are held to that (food,
+      // carcasses, trees to fell, remembered tiles). Asked of prey, mates and parents as
+      // well, the wolves died out in 11 of 32 twenty-year runs; without it in 7 (5 before).
       const order = scanOrder(sp.foodScanTiles || WORLD.foodScanTiles);
       for (let k = 0; k < order.d.length; k++) {
         const xx = tx + order.dx[k]; const zz = tz + order.dz[k];

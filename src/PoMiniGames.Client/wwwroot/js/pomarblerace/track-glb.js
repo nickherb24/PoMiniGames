@@ -108,9 +108,10 @@ function ringShell(PATH, lanes) {
  * model's own surface. Playground Run's shell is a smoothed fit (see ringShell): its floor sat up
  * to 2.7 units off the floor the model draws and up to 59° off its bank, so marbles rolled sunk to
  * the centre in the drawn floor on some stretches and floated over it on others. The shell is the
- * one the map is certified on — laying it on the drawn gutter instead (tried) pools the field in
- * the low corner of the authored 50° banks and adds half a minute to the race — so the DRAWING
- * moves: each vertex of `nodes` within a channel's reach of the gutter is carried by the 2D map
+ * one the map is certified on. Laying it on the drawn gutter instead was tried: the field pools
+ * single file in the low corner of the authored 35-52° banks (median finish 93 s -> 123 s, slowest
+ * 163 s against the 180 s timeout, four times the unstick nudges). So the DRAWING moves, and the
+ * race is the same race: each vertex of `nodes` within reach of the gutter is carried by the 2D map
  * that takes the drawn section (PATH.DRAWN) to the ring at its sample, blended between the two
  * samples it lies between. Floor centre lands on floor centre, floor line on floor line.
  *
