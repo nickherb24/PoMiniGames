@@ -1,0 +1,33 @@
+@* How a PoSports meet is played — the one copy. The race page's intro card and the
+   lobby both render this; the lobby used to carry its own with Q W A S E typed
+   out by hand, which is exactly how a rebind leaves a tutorial teaching dead keys.
+   The caller passes the labels of the keys that are actually bound. *@
+<div>
+    @if (!string.IsNullOrEmpty(Lead))
+    {
+        <p>@Lead</p>
+    }
+    <ul>
+        @foreach (var p in Players)
+        {
+            <li>
+                @p.Who
+                @foreach (var k in p.Sequence)
+                {
+                    <kbd>@k</kbd><text> </text>
+                }
+                in order to run · <kbd>@p.Jump</kbd> jumps
+            </li>
+        }
+        <li>A wrong key restarts your cycle; a key before the gun is a false start</li>
+        <li>Clip a hurdle and it costs +1.5s</li>
+    </ul>
+</div>
+
+@code {
+    /// <summary>One row of keys: who they belong to ("Your keys:", "Player 1:") and their labels.</summary>
+    public sealed record Keys(string Who, IReadOnlyList<string> Sequence, string Jump);
+
+    [Parameter] public string? Lead { get; set; }
+    [Parameter, EditorRequired] public IReadOnlyList<Keys> Players { get; set; } = [];
+}

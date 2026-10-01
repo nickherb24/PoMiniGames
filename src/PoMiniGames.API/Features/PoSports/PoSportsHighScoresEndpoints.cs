@@ -10,6 +10,11 @@ namespace PoMiniGames.Features.PoSports;
 /// Minimal API endpoints for PoSports meet times (lower combined time is better).
 /// Identity is stamped server-side from the auth cookie like PoRacer — the
 /// client-supplied UserId/IsGuest are never trusted.
+/// <para>
+/// The stored times are the server's (2026-09-30): a submit carries the run's key log and
+/// <see cref="PoSportsRunVerifier"/> replays it, so the posted times are only a claim that
+/// is compared and logged. A submit with no usable log gets 422, like PoCabinet's laps.
+/// </para>
 /// </summary>
 public static class PoSportsHighScoresEndpoints
 {
@@ -28,9 +33,16 @@ public static class PoSportsHighScoresEndpoints
             .WithSummary("Top PoSports meet times (sprint + hurdles combined, ascending)")
             .Produces<IEnumerable<PoSportsHighScore>>(StatusCodes.Status200OK);
 
+        sports.MapGet("/daily",
+            async (IStorageService storage, int count = 10) =>
+                Results.Ok(await storage.GetPoSportsHighScoresAsync(count, PoSportsRunVerifier.DayKey(DateTimeOffset.UtcNow))))
+            .WithName("GetPoSportsDailyHighScores")
+            .WithSummary("Today's daily-meet board (UTC day)")
+            .Produces<IEnumerable<PoSportsHighScore>>(StatusCodes.Status200OK);
+
         sports.MapPost("",
             async (PoSportsHighScore entry, HttpContext http, IStorageService storage,
-                   IScoreIntegrityGuard integrity) =>
+                   IScoreIntegrityGuard integrity, ILoggerFactory loggers) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerName))
                     return Results.BadRequest(new { error = "Player name is required" });
@@ -50,6 +62,24 @@ public static class PoSportsHighScoresEndpoints
 
                 if (!PoSportsConstants.Characters.Contains(entry.Character))
                     return Results.BadRequest(new { error = "Unknown character" });
+
+                // The times that count are the ones the server's own sim produces from the
+                // keys. Everything above still runs first so a malformed payload is a 400
+                // with its own message rather than a replay failure.
+                var run = PoSportsRunVerifier.Replay(entry.Inputs);
+                if (run is null)
+                {
+                    return Results.UnprocessableEntity(new { error = "The run could not be verified from its key log" });
+                }
+                if (Math.Abs(run.TotalSeconds - entry.TotalTimeSeconds) > 0.1)
+                {
+                    loggers.CreateLogger("PoSports.RunVerifier").LogWarning(
+                        "PoSports run claimed {Claimed:0.00}s but replays to {Replayed:0.00}s; storing the replay",
+                        entry.TotalTimeSeconds, run.TotalSeconds);
+                }
+                entry.SprintSeconds = Math.Round(run.SprintSeconds, 2);
+                entry.HurdlesSeconds = Math.Round(run.HurdlesSeconds, 2);
+                entry.TotalTimeSeconds = Math.Round(run.TotalSeconds, 2);
 
                 // The meet time IS the ranked value, so the guard's check is exact: a meet
                 // cannot have taken longer than the session that produced it has existed.
@@ -72,11 +102,18 @@ public static class PoSportsHighScoresEndpoints
                     identity.IsGuest ? "Guest" : "Player");
 
                 var saved = await storage.SavePoSportsHighScoreAsync(entry);
+                // The day's seeded meet is filed on that day's board as well. Best effort:
+                // the all-time row above is the one the client's retry queue is protecting.
+                if (entry.Daily)
+                {
+                    await storage.SavePoSportsHighScoreAsync(entry, PoSportsRunVerifier.DayKey(DateTimeOffset.UtcNow));
+                }
                 return Results.Created("/api/posports/highscores", saved);
             })
             .WithName("SavePoSportsHighScore")
             .WithSummary("Submit a PoSports meet result")
             .Produces<PoSportsHighScore>(StatusCodes.Status201Created)
+            .ProducesProblem(StatusCodes.Status422UnprocessableEntity)
             .RequireRateLimiting("highscores");
 
         return app;

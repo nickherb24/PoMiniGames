@@ -57,7 +57,7 @@ public class PoSportsUiTests
         // The engine creates its canvas inside the host div once the demo intro flash clears.
         try
         {
-            await page.Locator("#posports-container canvas").WaitForAsync(new LocatorWaitForOptions
+            await page.Locator("#posports-container canvas.ps-canvas").WaitForAsync(new LocatorWaitForOptions
             {
                 State = WaitForSelectorState.Attached,
                 Timeout = 60_000,
@@ -101,7 +101,7 @@ public class PoSportsUiTests
         // Intro card: the default character (Kim) is preselected — just press OK.
         await page.Locator(".gps-intro-btn--primary").First.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
 
-        await page.Locator("#posports-container canvas").WaitForAsync(new LocatorWaitForOptions
+        await page.Locator("#posports-container canvas.ps-canvas").WaitForAsync(new LocatorWaitForOptions
         {
             State = WaitForSelectorState.Attached,
             Timeout = 60_000,

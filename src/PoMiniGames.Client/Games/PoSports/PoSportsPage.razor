@@ -1,6 +1,7 @@
 @page "/posports"
 @page "/posports/{Mode}"
 @page "/posports/race/{Code}"
+@using System.Text.Json
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
@@ -17,16 +18,19 @@
 @inject AuthStateService AuthState
 @inject NavigationManager Nav
 @inject ToastService ToastService
+@inject ApiService Api
 
 <PageTitle>Sports · PoMiniGames</PageTitle>
 
+@* 2026-09-30: the page no longer ends on the shared GameOverModal. The meet's own
+   results card (below) carries the splits, the personal-best deltas and the three
+   things a player does next — again, change runner, leaderboard — without covering
+   the podium. GameOver therefore stays false and the shell's Stats/Summary slots,
+   which only the modal rendered, are not passed. *@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
-           Stats="@_statItems"
-           GameOver="@(_phase == "podium" && !_demo)"
-           GameKey="@(_mode == "1p" ? "posports" : null)"
-           GameSummary="@GameSummaryContent">
+           Announcement="@_announcement">
     @if (!_introDone)
     {
         @* 2026-09-11 UI sweep: the runner picker is a player choice; a demo
@@ -42,7 +46,8 @@
                    Options="@(_demo ? null : SelectContent)"
                    StartEnabled="@(_demo || _mode != "2p" || (_p1Locked && _p2Locked))"
                    StartHint="@(_mode == "2p" ? "Both players lock in to race" : null)"
-                   CaptureKeys="@(_mode == "2p")"
+                   CaptureKeys="@(_mode == "2p" || _rebind >= 0)"
+                   ForceShow="@_forceIntro"
                    OnKey="OnIntroKey"
                    OnStart="OnIntroStartAsync" />
     }
@@ -50,56 +55,144 @@
         @* The renderer appends its <canvas> here. Labelling the host (rather than
            the canvas, which this component never sees) presents the whole race
            view to a screen reader as one described image instead of an anonymous
-           "canvas" node — 2026-08-07 browser audit #6. Live commentary is the
-           .ps-a11y-status region below, not this label. *@
+           "canvas" node — 2026-08-07 browser audit #6. What happens in the race is
+           announced through the shell's live region (Announcement), not this label. *@
         <div id="posports-container" class="ps-canvas-host"
              role="img" aria-label="Track meet — the race renders here"></div>
 
         @if (_demo)
         {
-            <div class="ps-demo-badge">🎮 Demo — CPU family race</div>
-            @* Bug fix (2026-08-07): the race itself renders on a canvas and is
-               invisible to anyone relying on accessible text. Show the family
-               roster by name when no race leg is in flight so the kiosk reel
-               always has something readable on screen. *@
-            @if (_phase != "racing" && _phase != "interstitial" && _phase != "countdown")
-            {
-                <div class="ps-demo-a11y" aria-live="polite">
-                    <span class="ps-demo-a11y__title">Family runners</span>
-                    <ol class="ps-demo-a11y__list">
-                        @foreach (var c in Roster)
-                        {
-                            <li>@c.Emoji @c.Name — sprint + hurdles</li>
-                        }
-                    </ol>
-                </div>
-            }
+            @* One caption. The roster the canvas shows is still read out, but as
+               screen-reader text rather than a second block over the track. *@
+            <div class="ps-demo-badge">🎮 Demo — CPU family meet: sprint, then hurdles</div>
+            <p class="gps-sr-only">
+                Runners: @string.Join(", ", Roster.Select(c => c.Name)).
+            </p>
         }
 
-        @* Meet HUD: per-human sequence progress + leg clock, fed by game.js OnHud. *@
-        @if (_phase == "racing" || _phase == "interstitial" || _phase == "countdown")
+        @* Meet HUD: leg and clock, plus the gap to your own best run when one is being
+           raced. The keys are not here any more — they ride above the player's runner
+           on the canvas (or light up on the touch pad), where the eyes already are. *@
+        @if (ShowHud)
         {
             <div class="ps-hud" data-glass>
-                <div class="ps-hud-leg">@(_leg == "hurdles" ? "🚧 110m Hurdles" : "🏃 100m Sprint")</div>
-                <div class="ps-hud-clock">@_clock.ToString("0.0")s</div>
-                @foreach (var lane in _humanLanes)
+                <span class="ps-hud-leg">@(_leg == "hurdles" ? "🚧 110m Hurdles" : "🏃 100m Sprint")</span>
+                <span class="ps-hud-clock">@_clock.ToString("0.0")s</span>
+                @if (_ghostGap is double gap)
                 {
-                    <div class="ps-hud-player">
-                        <span class="ps-hud-name">@lane.Name</span>
-                        <span class="ps-seq" aria-label="Key sequence progress">
-                            @for (var k = 0; k < 4; k++)
-                            {
-                                var idx = k;
-                                <kbd class="ps-seq-key @(idx < lane.SeqProgress ? "ps-seq-key--hit" : "") @(idx == lane.SeqProgress ? "ps-seq-key--next" : "")">
-                                    @lane.Keys[idx]
-                                </kbd>
-                            }
-                            <kbd class="ps-seq-key ps-seq-key--jump">@lane.JumpKey</kbd>
-                        </span>
-                        <span class="ps-hud-meters">@lane.Position.ToString("0")m</span>
-                    </div>
+                    <span class="ps-hud-gap @(gap >= 0 ? "ps-hud-gap--ahead" : "ps-hud-gap--behind")">
+                        @(gap >= 0 ? "▲" : "▼") @Math.Abs(gap).ToString("0.0") m vs your best
+                    </span>
+                }
+                @if (_watch)
+                {
+                    <span class="ps-hud-gap">👀 Watching</span>
                 }
             </div>
+        }
+
+        @if (_phase == "podium" && !_demo && (_results.Count > 0 || _eventResult is not null))
+        {
+            <section class="ps-results" aria-label="Results">
+                @if (_eventResult is { } ev)
+                {
+                    <h2>@Medal(ev.Placing) @ev.Title — @FormatValue(ev.Value, ev.Unit)</h2>
+                    @if (ev.Record)
+                    {
+                        <p class="ps-good">🏆 New personal best@(ev.Prev > 0 ? $" (was {FormatValue(ev.Prev, ev.Unit)})" : "")</p>
+                    }
+                    else if (ev.Prev > 0)
+                    {
+                        <p class="ps-dim">Your best: @FormatValue(ev.Prev, ev.Unit)</p>
+                    }
+                    @if (ev.Attempts.Count > 0)
+                    {
+                        <p class="ps-dim">Attempts: @string.Join(" · ", ev.Attempts.Select(a => a < 0 ? "foul" : a.ToString("0.00")))</p>
+                    }
+                    <table class="ps-table">
+                        <tbody>
+                            @for (var i = 0; i < ev.Board.Count; i++)
+                            {
+                                var row = ev.Board[i];
+                                <tr class="@(row.Human ? "ps-me" : "")">
+                                    <td>@Medal(i + 1)</td>
+                                    <td>@row.Name</td>
+                                    <td class="ps-num">@FormatValue(row.Value, ev.Unit)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                }
+                else
+                {
+                    <h2>@ResultHeadline</h2>
+                    <table class="ps-table">
+                        <thead>
+                            <tr><th></th><th></th><th class="ps-num">Sprint</th><th class="ps-num">Hurdles</th><th class="ps-num">Total</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var r in _results.OrderBy(x => x.Placing))
+                            {
+                                <tr class="@(IsMine(r) ? "ps-me" : "")">
+                                    <td>@Medal(r.Placing)</td>
+                                    <td>@r.Name</td>
+                                    <td class="ps-num">@r.SprintSeconds.ToString("0.00")</td>
+                                    <td class="ps-num">@r.HurdlesSeconds.ToString("0.00")</td>
+                                    <td class="ps-num"><strong>@r.TotalSeconds.ToString("0.00")</strong></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                    @if (_mode == "1p" && Mine is { } me)
+                    {
+                        @if (_pb is { } pb)
+                        {
+                            <p class="ps-facts">
+                                <span class="@DeltaClass(pb.NewTotal)">Meet @Delta(me.TotalSeconds, pb.PrevTotal)</span>
+                                <span class="@DeltaClass(pb.NewSprint)">Sprint @Delta(me.SprintSeconds, pb.PrevSprint)</span>
+                                <span class="@DeltaClass(pb.NewHurdles)">Hurdles @Delta(me.HurdlesSeconds, pb.PrevHurdles)</span>
+                            </p>
+                        }
+                        <p class="ps-facts ps-dim">
+                            @if (me.ReactionMs >= 0)
+                            {
+                                <span>Reaction @me.ReactionMs.ToString("0") ms</span>
+                            }
+                            <span>Top speed @me.TopSpeed.ToString("0.0") m/s</span>
+                            <span>Hurdles clipped @me.Clipped</span>
+                        </p>
+                        @if (_dailyStreak > 0)
+                        {
+                            <p class="ps-facts">
+                                <span>📅 Daily streak: @_dailyStreak day@(_dailyStreak == 1 ? "" : "s")</span>
+                                @if (_dailyTop.Count > 0)
+                                {
+                                    <span class="ps-dim">Today: @string.Join(" · ", _dailyTop.Select(s => $"{s.PlayerName} {s.TotalTimeSeconds:0.00}"))</span>
+                                }
+                            </p>
+                        }
+                    }
+                }
+
+                <div class="ps-actions">
+                    @if (_mode == "online")
+                    {
+                        <button type="button" class="sp-btn-primary" @onclick="BackToLobby">Back to the lobby</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="sp-btn-primary" @onclick="AgainAsync">Again</button>
+                        <button type="button" class="sp-btn-secondary" @onclick="ChangeRunnerAsync">Change runner</button>
+                    }
+                    <a class="sp-btn-secondary" href="/leaderboards">Leaderboard</a>
+                </div>
+                @if (_mode == "1p" && _eventResult is null)
+                {
+                    <p class="ps-foot">
+                        Meets @_stats.TotalGames · Wins @_stats.TotalWins · Best @(_pbTotal > 0 ? _pbTotal.ToString("0.00") + "s" : "—")
+                    </p>
+                }
+            </section>
         }
     </div>
 </GameShell>
@@ -112,6 +205,8 @@
     [Parameter] public string? Code { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
+    /// <summary>Online: 1 joins the meet as a spectator (the lobby's Watch link).</summary>
+    [SupplyParameterFromQuery(Name = "watch")] public int WatchQuery { get; set; }
 
     /// <summary>Lane setup passed to PoSports.init — lower-case members to match the JS shape.</summary>
     private sealed record PlayerSetup(string character, string name, bool human, int? layout);
@@ -119,32 +214,63 @@
     /// <summary>The shared roster — declared once in PoShared, rendered by both PoSports pages.</summary>
     private static IReadOnlyList<PoSportsCharacter> Roster => PoSportsRoster.All;
 
-    private sealed class HudLane
-    {
-        public string Name = "";
-        public IReadOnlyList<string> Keys = PoSportsLayouts.For(1).Sequence;
-        public string JumpKey = PoSportsLayouts.For(1).Jump;
-        public int SeqProgress;
-        public double Position;
-    }
+    private sealed record Choice(string Id, string Label, string Hint);
+
+    /// <summary>What a solo player can run. "meet" and "daily" are the ranked two-leg meet; the rest are field events.</summary>
+    private static readonly Choice[] Events =
+    [
+        new("meet", "Meet", "100m sprint then 110m hurdles — ranked"),
+        new("daily", "Daily", "Today's seeded line-up, with its own board and a streak"),
+        new("longjump", "Long jump", "Run up, then jump as close to the board as you dare"),
+        new("javelin", "Javelin", "Run up, then throw at the line as the angle sweeps"),
+        new("relay", "Relay", "4 x 100m — pass the baton inside each zone"),
+    ];
+
+    private static readonly Choice[] Difficulties =
+    [
+        new("easy", "Easy", "Slower rivals"), new("medium", "Medium", "The standard field"), new("hard", "Hard", "Faster rivals, cleaner jumps"),
+    ];
+
+    /// <summary>Key presets as KeyboardEvent codes: four sequence keys, then jump.</summary>
+    private static readonly string[] ClassicKeys =
+        [.. PoSportsLayouts.For(1).Sequence.Select(k => "Key" + k), "Key" + PoSportsLayouts.For(1).Jump];
+    private static readonly string[] OneHandKeys = ["KeyJ", "KeyK", "KeyL", "Semicolon", "Space"];
+    private static readonly string[] SecondPlayerKeys =
+        [.. PoSportsLayouts.For(2).Sequence.Select(k => "Key" + k), "Key" + PoSportsLayouts.For(2).Jump];
 
     private string _playerName = "";
     private bool _demo;
+    private bool _watch;
     private string _mode = "1p";
     private bool _introDone;
+    private bool _forceIntro;
     private string _phase = "loading";   // loading | countdown | racing | interstitial | podium
     private string _leg = "sprint";
     private double _clock;
-    private List<HudLane> _humanLanes = [];
+    private double? _ghostGap;
+    private string? _announcement;
     /// <summary>Online: the lane index the server bound to this connection (-1 = spectator).</summary>
     private int _myLane = -1;
     /// <summary>Mirrors HUD_THROTTLE_MS in game.js — one HUD cadence for both modes.</summary>
     private const double HudRenderIntervalMs = 250;
     private DateTime _lastHudRender = DateTime.MinValue;
-    private List<StatItem> _statItems = [];
     private readonly GameStatsService _gameStats = new();
     private PlayerStats _stats = new();
     private DotNetObjectReference<PoSportsPage>? _ref;
+
+    // Solo options (intro card).
+    private string _event = "meet";
+    private string _difficulty = "medium";
+    private bool _useGhost = true;
+    private string[] _keys = [.. ClassicKeys];
+    /// <summary>Index into <see cref="_keys"/> waiting for a key press, or -1.</summary>
+    private int _rebind = -1;
+
+    // This browser's bests, read from the engine's records (js/posports/records.js).
+    private double _pbTotal;
+    private bool _hasGhost;
+    private int _dailyStreak;
+    private List<PoSportsHighScore> _dailyTop = [];
 
     // Character select state. 1P: click a portrait. 2P: two keyboard cursors —
     // P1 cycles with Q/W and locks with S; P2 cycles with I/O and locks with L
@@ -154,13 +280,30 @@
     private bool _p1Locked;
     private bool _p2Locked;
 
-    // Podium results (from JS OnMeetDone).
+    // Results (from JS OnMeetDone / OnEventDone, or the server's final snapshot online).
     private sealed record MeetResult(int Lane, string Name, string Character, bool Human,
-        double SprintSeconds, double HurdlesSeconds, double TotalSeconds, int Placing);
+        double SprintSeconds, double HurdlesSeconds, double TotalSeconds, int Placing,
+        double ReactionMs = -1, double TopSpeed = 0, int Clipped = 0, string? Inputs = null);
+    private sealed record PbInfo(double PrevSprint, double PrevHurdles, double PrevTotal,
+        bool NewSprint, bool NewHurdles, bool NewTotal);
+    private sealed record BoardRow(string Name, double Value, bool Human);
+    private sealed record EventResult(string Title, double Value, string Unit, int Placing,
+        bool Record, double Prev, List<double> Attempts, List<BoardRow> Board);
     private List<MeetResult> _results = [];
+    private PbInfo? _pb;
+    private EventResult? _eventResult;
     private bool _submittedThisMeet;
-    private bool _newRecord;
-    private double _bestTotal;
+
+    private bool IsFieldEvent => _mode == "1p" && _event is "longjump" or "javelin" or "relay";
+    private bool ShowHud => !IsFieldEvent && _phase is "racing" or "interstitial" or "countdown";
+    /// <summary>The viewer's own row: the solo human, or the server-bound lane online. Null in 2P — there are two of you.</summary>
+    private MeetResult? Mine => _mode switch
+    {
+        "online" => _results.FirstOrDefault(r => r.Lane == _myLane),
+        "1p" => _results.FirstOrDefault(r => r.Human),
+        _ => null,
+    };
+    private bool IsMine(MeetResult r) => _mode == "online" ? r.Lane == _myLane : r.Human;
 
     private GameIntro.IntroMode _introMode => _demo
         ? GameIntro.IntroMode.Demo
@@ -175,43 +318,44 @@
         // 2026-09-11 UI sweep: the demo told a spectator to type Q/W/A/S —
         // describe the meet instead of instructing someone who isn't racing.
         _ when _demo => "Four CPU runners, two legs: 100m sprint then 110m hurdles. Lowest combined time tops the board.",
-        _ => "A two-leg family track meet: 100m sprint, then 110m hurdles. Lowest combined time tops the board.",
+        _ => Array.Find(Events, e => e.Id == _event)?.Hint ?? "",
     };
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🏃</span> Sports</span>;
 
-    @* Key labels come from PoSportsLayouts so rebinding input.js can't leave the tutorial
-       teaching keys that no longer do anything.
+    /// <summary>The keys the solo/online player actually has bound, as their on-screen labels.</summary>
+    private PoSportsHowTo.Keys MyKeys(string who) =>
+        new(who, [.. _keys.Take(4).Select(KeyLabel)], KeyLabel(_keys[4]));
 
-       2026-08-10: this used to list PoSportsLayouts.All unconditionally, so the 1P and
-       online cards taught "Player 1: QWAS … Player 2: IOKL" to someone racing alone —
-       half the instructions were for a person who wasn't there, and the solo player had
-       to work out which row was theirs. Only 2P actually uses the second layout; 1P and
-       online both run on layout 1 (see InitEngine and InitOnlineAsync). *@
-    private RenderFragment HowToPlayContent => @<div>
-        <p>Type your four keys in order to sprint — a wrong key restarts the cycle!</p>
-        <ul>
-            @foreach (var l in (_mode == "2p" ? PoSportsLayouts.All : [PoSportsLayouts.For(1)]))
-            {
-                <li>
-                    @if (_mode == "2p")
-                    {
-                        <text>Player @l.Layout: </text>
-                    }
-                    else
-                    {
-                        <text>Your keys: </text>
-                    }
-                    @foreach (var k in l.Sequence)
-                    {
-                        <kbd>@k</kbd><text> </text>
-                    }
-                    sprint · <kbd>@l.Jump</kbd> jumps
-                </li>
-            }
-            <li>Clip a hurdle and it costs +1.5s</li>
-        </ul>
-    </div>;
+    @* One how-to for every surface (PoSportsHowTo). 1P and online show only the
+       player's own keys — the card used to teach "Player 2: IOKL" to someone racing
+       alone (2026-08-10) — and they are the keys actually bound, not the defaults. *@
+    private RenderFragment HowToPlayContent => IsFieldEvent ? FieldHowTo : MeetHowTo;
+
+    private IReadOnlyList<PoSportsHowTo.Keys> HowToKeys => _mode == "2p"
+        ? [new("Player 1:", PoSportsLayouts.For(1).Sequence, PoSportsLayouts.For(1).Jump),
+           new("Player 2:", PoSportsLayouts.For(2).Sequence, PoSportsLayouts.For(2).Jump)]
+        : [MyKeys("Type")];
+
+    private RenderFragment MeetHowTo => @<div><PoSportsHowTo Players="HowToKeys" /></div>;
+
+    private RenderFragment FieldHowTo => @<p>
+        Type @KeysInline() in order to build speed.
+        @switch (_event)
+        {
+            case "longjump":
+                <text>Press <kbd>@KeyLabel(_keys[4])</kbd> just before the board to jump. Three attempts; stepping past the board is a foul.</text>
+                break;
+            case "javelin":
+                <text>Press <kbd>@KeyLabel(_keys[4])</kbd> before the line to throw. The gauge above you is the angle — 45° flies furthest.</text>
+                break;
+            default:
+                <text>In every yellow zone press <kbd>@KeyLabel(_keys[4])</kbd> to pass the baton; miss the zone and it is fumbled.</text>
+                break;
+        }
+    </p>;
+
+    private string KeysInline() => string.Join(" ", _keys.Take(4).Select(KeyLabel));
 
     // 2026-09-11 UI sweep: demo previously rendered HowToPlayContent AND the
     // OnePlayerSelect picker — a spectator was offered a runner they cannot
@@ -240,51 +384,65 @@
     /// <summary>KeyboardEvent.code for a layout's Nth sequence key ("Q" → "KeyQ").</summary>
     private static string SelectCode(int layout, int index) => "Key" + PoSportsLayouts.For(layout).Sequence[index];
 
-    @* role="listbox" requires role="option" children (2026-08-08 audit #2). The
-       buttons carried the implicit `button` role, so the listbox announced as
-       empty and the picked runner was never conveyed. role="option" +
-       aria-selected on each card fixes both; the element stays a <button> so
-       click, Enter/Space and focus behaviour are unchanged. *@
-    private RenderFragment OnePlayerSelect => @<div class="ps-select-grid" role="listbox" aria-label="Choose your runner">
-        @for (var i = 0; i < Roster.Count; i++)
+    @* Solo setup: what to run, who runs it, against whom, on which keys. Everything
+       that used to be fixed (medium rivals, QWAS+E) is a choice here. *@
+    private RenderFragment OnePlayerSelect => @<div class="ps-setup">
+        <div class="ps-seg" role="group" aria-label="Event">
+            @foreach (var e in Events)
+            {
+                <button type="button" class="ps-seg-btn @(_event == e.Id ? "ps-seg-btn--on" : "")"
+                        title="@e.Hint" aria-pressed="@(_event == e.Id ? "true" : "false")"
+                        @onclick="() => _event = e.Id">@e.Label</button>
+            }
+        </div>
+        <PoSportsRunnerPicker Selected="@Roster[_p1Sel].Key" OnPick="PickSolo" />
+        <div class="ps-setup-row">
+            @if (_event != "daily")
+            {
+                <div class="ps-seg" role="group" aria-label="Rivals">
+                    @foreach (var d in Difficulties)
+                    {
+                        <button type="button" class="ps-seg-btn @(_difficulty == d.Id ? "ps-seg-btn--on" : "")"
+                                title="@d.Hint" aria-pressed="@(_difficulty == d.Id ? "true" : "false")"
+                                @onclick="() => _difficulty = d.Id">@d.Label</button>
+                    }
+                </div>
+            }
+            @if (_hasGhost && _event is "meet" or "daily")
+            {
+                <label class="ps-check" title="Race a faint replay of your best meet">
+                    <input type="checkbox" checked="@_useGhost" @onchange="e => _useGhost = e.Value is true" /> Race my best
+                </label>
+            }
+        </div>
+        <div class="ps-setup-row" aria-label="Key bindings">
+            <span class="ps-dim">Keys</span>
+            @for (var i = 0; i < _keys.Length; i++)
+            {
+                var slot = i;
+                <button type="button" class="ps-key @(_rebind == slot ? "ps-key--wait" : "") @(slot == 4 ? "ps-key--jump" : "")"
+                        title="@(slot == 4 ? "Jump key — click, then press a key" : $"Sequence key {slot + 1} — click, then press a key")"
+                        @onclick="() => _rebind = _rebind == slot ? -1 : slot">@(_rebind == slot ? "…" : KeyLabel(_keys[slot]))</button>
+            }
+            <button type="button" class="ps-seg-btn" title="Q W A S, jump on E" @onclick="() => SetKeysAsync(ClassicKeys)">Classic</button>
+            <button type="button" class="ps-seg-btn" title="J K L ; with one hand, jump on Space" @onclick="() => SetKeysAsync(OneHandKeys)">One hand</button>
+        </div>
+        @if (_pbTotal > 0)
         {
-            var idx = i;
-            <button type="button"
-                    role="option"
-                    aria-selected="@(idx == _p1Sel ? "true" : "false")"
-                    class="ps-select-card @(idx == _p1Sel ? "ps-select-card--picked" : "")"
-                    @onclick="() => { _p1Sel = idx; }">
-                <span class="ps-select-emoji">@Roster[idx].Emoji</span>
-                <span>@Roster[idx].Name</span>
-            </button>
+            <p class="ps-dim ps-setup-pb">Your best meet: @_pbTotal.ToString("0.00")s@(_dailyStreak > 0 ? $" · daily streak {_dailyStreak}" : "")</p>
         }
     </div>;
 
     @* 2026-08-10: the roster was inert <li> elements and the only way to pick or
        lock in was the keyboard, so a pointer user saw a disabled RACE button with
-       no reachable way to enable it — the card looked broken rather than gated.
-       This is the same pointer route PoBrawl's 2P select already carries, down to
-       the shared button.gps-intro-roster-item / .gps-intro-lock styling; the
-       keyboard path (OnIntroKey) is untouched and the two agree on when a meet
-       starts. *@
+       no reachable way to enable it. Both sides now use the shared picker; the
+       keyboard path (OnIntroKey) is untouched and the two agree on when a meet starts. *@
     private RenderFragment TwoPlayerSelect => @<div class="gps-intro-versus">
         <div>
             <div class="gps-intro-side-title">Player 1</div>
             <div class="gps-intro-side-keys">@SelectHint(1)</div>
-            <ul class="gps-intro-roster">
-                @for (var i = 0; i < Roster.Count; i++)
-                {
-                    var idx = i;
-                    <li>
-                        <button type="button"
-                                class="gps-intro-roster-item @(idx == _p1Sel ? "gps-intro-roster-item--cursor" : "") @(_p1Locked && idx == _p1Sel ? "gps-intro-roster-item--locked" : "")"
-                                aria-pressed="@(idx == _p1Sel)"
-                                @onclick="() => PickCharacter(1, idx)">
-                            @Roster[idx].Emoji @Roster[idx].Name
-                        </button>
-                    </li>
-                }
-            </ul>
+            <PoSportsRunnerPicker Selected="@Roster[_p1Sel].Key" Locked="_p1Locked" Label="Player 1 runner"
+                                  OnPick="k => PickCharacter(1, k)" />
             <button type="button" class="gps-intro-lock @(_p1Locked ? "gps-intro-lock--on" : "")"
                     @onclick="() => ToggleLock(1)">
                 @(_p1Locked ? "✓ Ready" : "Lock in")
@@ -294,20 +452,8 @@
         <div>
             <div class="gps-intro-side-title">Player 2</div>
             <div class="gps-intro-side-keys">@SelectHint(2)</div>
-            <ul class="gps-intro-roster">
-                @for (var i = 0; i < Roster.Count; i++)
-                {
-                    var idx = i;
-                    <li>
-                        <button type="button"
-                                class="gps-intro-roster-item @(idx == _p2Sel ? "gps-intro-roster-item--cursor" : "") @(_p2Locked && idx == _p2Sel ? "gps-intro-roster-item--locked" : "")"
-                                aria-pressed="@(idx == _p2Sel)"
-                                @onclick="() => PickCharacter(2, idx)">
-                            @Roster[idx].Emoji @Roster[idx].Name
-                        </button>
-                    </li>
-                }
-            </ul>
+            <PoSportsRunnerPicker Selected="@Roster[_p2Sel].Key" Locked="_p2Locked" Label="Player 2 runner"
+                                  OnPick="k => PickCharacter(2, k)" />
             <button type="button" class="gps-intro-lock @(_p2Locked ? "gps-intro-lock--on" : "")"
                     @onclick="() => ToggleLock(2)">
                 @(_p2Locked ? "✓ Ready" : "Lock in")
@@ -315,20 +461,45 @@
         </div>
     </div>;
 
-    private RenderFragment GameSummaryContent => @<div>
-        @foreach (var r in _results.OrderBy(x => x.Placing))
+    private string ResultHeadline => Mine is { } me
+        ? me.Placing == 1 ? "🥇 You won the meet" : $"{Medal(me.Placing)} You finished {Ordinal(me.Placing)}"
+        : _results.OrderBy(r => r.Placing).FirstOrDefault() is { } winner ? $"🥇 {winner.Name} wins" : "Results";
+
+    private static string Medal(int placing) => placing switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => $"{placing}." };
+    private static string Ordinal(int n) => n switch { 1 => "1st", 2 => "2nd", 3 => "3rd", _ => $"{n}th" };
+    private static string FormatValue(double v, string unit) => v <= 0 ? "no mark" : $"{v:0.00} {unit}";
+    private static string DeltaClass(bool record) => record ? "ps-good" : "ps-dim";
+
+    /// <summary>"12.31 (−0.20, best!)" against the previous best, or "12.31 (first)" with none.</summary>
+    private static string Delta(double now, double prev) => prev <= 0
+        ? $"{now:0.00} (first)"
+        : $"{now:0.00} ({(now - prev):+0.00;−0.00}{(now < prev ? ", best!" : "")})";
+
+    /// <summary>Mirror of keyLabel in js/posports/input.js — a KeyboardEvent code as a keycap label.</summary>
+    private static string KeyLabel(string code) => code switch
+    {
+        _ when code.StartsWith("Key", StringComparison.Ordinal) => code[3..],
+        _ when code.StartsWith("Digit", StringComparison.Ordinal) => code[5..],
+        "Space" => "␣", "Semicolon" => ";", "Comma" => ",", "Period" => ".", "Slash" => "/", "Quote" => "'",
+        "BracketLeft" => "[", "BracketRight" => "]", "Enter" => "↵", "ShiftLeft" or "ShiftRight" => "⇧",
+        "ArrowUp" => "↑", "ArrowDown" => "↓", "ArrowLeft" => "←", "ArrowRight" => "→",
+        _ => code.Length > 3 ? code[..3] : code,
+    };
+
+    /// <summary>
+    /// Both layouts, always: input.js keeps its layout table for the life of the page session,
+    /// so a meet that passed only layout 1 would inherit whatever the previous one bound.
+    /// The 2P meet runs on the defaults — its picker teaches those keys.
+    /// </summary>
+    private Dictionary<string, object> KeyMaps()
+    {
+        var p1 = _mode == "2p" ? ClassicKeys : _keys;
+        return new()
         {
-            <div>
-                @(r.Placing switch { 1 => "🥇", 2 => "🥈", 3 => "🥉", _ => $"{r.Placing}th" })
-                @r.Name — @r.TotalSeconds.ToString("0.00")s
-                <small>(@r.SprintSeconds.ToString("0.0") + @r.HurdlesSeconds.ToString("0.0"))</small>
-            </div>
-        }
-        @if (_newRecord)
-        {
-            <div>🏆 New personal best!</div>
-        }
-    </div>;
+            ["1"] = new { sequence = p1[..4], jump = p1[4] },
+            ["2"] = new { sequence = SecondPlayerKeys[..4], jump = SecondPlayerKeys[4] },
+        };
+    }
 
     protected override void OnInitialized()
     {
@@ -340,9 +511,9 @@
               : _demo ? "demo"
               : routeMode == GameMode.TwoPlayer ? "2p"
               : "1p";
+        _watch = _mode == "online" && WatchQuery == 1;
         _playerName = PlayerNameService.GetPlayerName();
         _stats = _gameStats.GetStats("posports", _playerName);
-        UpdateStats();
         if (_demo) Kiosk.SetCurrent("posports-demo");
         if (_mode == "online") _introDone = true; // characters were picked in the lobby
     }
@@ -351,11 +522,50 @@
     {
         if (!firstRender) return;
         _ref = DotNetObjectReference.Create(this);
+        // The engine is loaded up front (it used to wait for Start): the intro card
+        // shows this browser's bests and key bindings, and those live with the engine.
+        await LoadRecordsAsync();
         // Online mode skips the intro — characters were picked in the lobby, so the
         // page joins the meet the moment it can talk to JS.
         if (_mode == "online")
         {
             await InitOnlineAsync();
+        }
+        else
+        {
+            StateHasChanged();
+        }
+    }
+
+    /// <summary>
+    /// Read the engine's local records: bests, the ghost, the daily streak, saved keys.
+    /// JsonDocument rather than a typed deserialize, so nothing here needs to survive trimming.
+    /// </summary>
+    private async Task LoadRecordsAsync()
+    {
+        try
+        {
+            // Route-gated engine load (see wwwroot/js/engineLoader.js).
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "posports")) return;
+            using var doc = JsonDocument.Parse(await JSRuntime.InvokeAsync<string>("PoSports.records"));
+            var r = doc.RootElement;
+            _pbTotal = r.TryGetProperty("total", out var t) ? t.GetDouble() : 0;
+            _hasGhost = r.TryGetProperty("ghost", out var g) && g.ValueKind == JsonValueKind.True;
+            if (r.TryGetProperty("daily", out var d) && d.ValueKind == JsonValueKind.Object)
+            {
+                _dailyStreak = d.TryGetProperty("streak", out var s) ? s.GetInt32() : 0;
+            }
+            if (r.TryGetProperty("keys", out var k) && k.ValueKind == JsonValueKind.Object
+                && k.TryGetProperty("1", out var one) && one.TryGetProperty("sequence", out var seq)
+                && one.TryGetProperty("jump", out var jump) && seq.GetArrayLength() == 4)
+            {
+                string[] saved = [.. seq.EnumerateArray().Select(x => x.GetString() ?? ""), jump.GetString() ?? ""];
+                if (saved.All(c => c.Length > 0) && saved.Distinct().Count() == 5) _keys = saved;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoSports] records unavailable: {ex.Message}");
         }
     }
 
@@ -366,7 +576,7 @@
         Hub.SnapshotReceived += OnServerSnapshot;
         Hub.RaceFinished += OnServerFinished;
 
-        var join = await Hub.JoinRaceAsync(Code!, asPlayer: true);
+        var join = await Hub.JoinRaceAsync(Code!, asPlayer: !_watch);
         if (join is null)
         {
             // No joinable meet (none started, or the last one already finished): the lobby is
@@ -380,30 +590,19 @@
         // The server tells us which lane we own; identifying ourselves by name matching
         // bound the HUD to whichever runner happened to be in lane 0.
         _myLane = join.Lane;
+        // Asked to race but the server found us no lane: we are watching, and should say so.
+        if (_myLane < 0) _watch = true;
 
         // Lanes come from the server; the JS engine renders them as ghosts driven
         // by snapshots. All lanes are human:false locally — no local trackers/AI.
         var players = snap.Lanes
             .Select(l => new PlayerSetup(l.Character, l.Name, false, null))
             .ToList();
-        var mine = snap.Lanes.FirstOrDefault(l => l.Lane == _myLane);
-        var layout = PoSportsLayouts.For(1);
-        _humanLanes =
-        [
-            new HudLane { Name = mine?.Name ?? _playerName, Keys = layout.Sequence, JumpKey = layout.Jump },
-        ];
 
         try
         {
-            // Route-gated engine load (see wwwroot/js/engineLoader.js).
-            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "posports"))
-            {
-                Console.Error.WriteLine("[PoSports] engine failed to load");
-                return;
-            }
-
             await JSRuntime.InvokeVoidAsync("PoSports.init", "posports-container", _ref,
-                new { mode = "online", players, layout = 1 });
+                new { mode = "online", players, layout = 1, lane = _myLane, watch = _watch, keymaps = KeyMaps() });
             await JSRuntime.InvokeVoidAsync("PoSports.applySnapshot", snap);
         }
         catch (Exception ex)
@@ -415,22 +614,15 @@
     private void OnServerSnapshot(PoSportsSnapshot snap)
     {
         _ = ForwardSnapshotAsync(snap);
-        // HUD: the lane the server bound to this connection at join time.
-        var mine = snap.Lanes.FirstOrDefault(l => l.Lane == _myLane);
-        if (mine is not null && _humanLanes.Count > 0)
-        {
-            _humanLanes[0].SeqProgress = mine.SeqProgress;
-            _humanLanes[0].Position = mine.Position;
-        }
         _clock = snap.Clock;
         _leg = snap.Phase == "hurdles" ? "hurdles" : "sprint";
         var phase = snap.Phase is "sprint" or "hurdles" ? "racing" : snap.Phase;
         var phaseChanged = phase != _phase;
         _phase = phase;
 
-        // Snapshots land at 15 Hz but the HUD only shows a 0.1 s clock, whole meters, and
-        // four progress dots — re-rendering the page that often just burns phone battery.
-        // Match the local engine's 250 ms HUD cadence, and never delay a phase change.
+        // Snapshots land at 15 Hz but the HUD only shows a 0.1 s clock — re-rendering the
+        // page that often just burns phone battery. Match the local engine's 250 ms HUD
+        // cadence, and never delay a phase change.
         var now = DateTime.UtcNow;
         if (!phaseChanged && (now - _lastHudRender).TotalMilliseconds < HudRenderIntervalMs) return;
         _lastHudRender = now;
@@ -444,15 +636,16 @@
 
     private void OnServerFinished(PoSportsSnapshot final)
     {
+        // The engine needs the podium too. The server stops broadcasting the moment the
+        // meet ends, so the last periodic snapshot still says "hurdles" and this final one
+        // arrives only here — without forwarding it the canvas never left the race.
+        _ = ForwardSnapshotAsync(final);
         _results = [.. final.Lanes.Select(l => new MeetResult(
             l.Lane, l.Name, l.Character, !l.IsAi,
             l.SprintSeconds, l.HurdlesSeconds,
             l.SprintSeconds + l.HurdlesSeconds, l.Placing))];
         _phase = "podium";
-        // 2026-09-04: signal the kiosk reel that the demo meet is over. The podium
-        // otherwise lingers for the full 20s dwell — the demo attract loop sees a
-        // frozen results screen between meets.
-        if (_demo) Kiosk.MarkFinished();
+        _announcement = ResultHeadline;
         // The SERVER persisted online scores — no client submit here.
         InvokeAsync(StateHasChanged);
     }
@@ -461,14 +654,38 @@
     [JSInvokable]
     public async Task OnRemoteKey(string kind, int step)
     {
-        if (_mode != "online" || Code is null) return;
+        if (_mode != "online" || Code is null || _watch) return;
         if (kind == "jump") await Hub.SendJumpAsync(Code);
         else await Hub.SendSequenceKeyAsync(Code, step);
     }
 
-    private void OnIntroKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
+    /// <summary>
+    /// The seats persist in the lobby after a meet (the server reopens it with the same
+    /// roster), so "same again" online is one hop back there.
+    /// </summary>
+    private void BackToLobby() => Nav.NavigateTo("/posports/multi");
+
+    // ── Intro card ────────────────────────────────────────────────────────
+
+    private async Task OnIntroKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
     {
-        if (_mode != "2p" || _introDone) return;
+        if (_introDone) return;
+        if (_rebind >= 0)
+        {
+            // Capture one key for the waiting slot. A key already bound elsewhere swaps
+            // places with it, so the five stay distinct (input.js refuses duplicates).
+            if (e.Code is not ("Escape" or "Tab" or "" or "Enter"))
+            {
+                var other = Array.IndexOf(_keys, e.Code);
+                if (other >= 0) _keys[other] = _keys[_rebind];
+                _keys[_rebind] = e.Code;
+                await SaveKeysAsync();
+            }
+            _rebind = -1;
+            StateHasChanged();
+            return;
+        }
+        if (_mode != "2p") return;
         var n = Roster.Count;
         var code = e.Code;
         if (code == SelectCode(1, 0)) { if (!_p1Locked) _p1Sel = (_p1Sel - 1 + n) % n; }
@@ -482,14 +699,34 @@
         StateHasChanged();
     }
 
+    private Task SetKeysAsync(string[] preset)
+    {
+        _keys = [.. preset];
+        _rebind = -1;
+        return SaveKeysAsync();
+    }
+
+    private async Task SaveKeysAsync()
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoSports.saveKeys", KeyMaps()); } catch { /* engine not loaded: keys still apply this visit */ }
+    }
+
+    private void PickSolo(string key) => _p1Sel = IndexOf(key);
+
+    private static int IndexOf(string key)
+    {
+        for (var i = 0; i < Roster.Count; i++) if (Roster[i].Key == key) return i;
+        return 0;
+    }
+
     /// <summary>Pointer equivalent of the Q/W and I/O cycle keys. Re-picking clears
     /// that side's lock, so a player cannot end up locked to a name they just
     /// changed away from.</summary>
-    private void PickCharacter(int side, int idx)
+    private void PickCharacter(int side, string key)
     {
         if (_introDone) return;
-        if (side == 1) { _p1Sel = idx; _p1Locked = false; }
-        else { _p2Sel = idx; _p2Locked = false; }
+        if (side == 1) { _p1Sel = IndexOf(key); _p1Locked = false; }
+        else { _p2Sel = IndexOf(key); _p2Locked = false; }
     }
 
     /// <summary>Pointer equivalent of the S and L lock-in keys.</summary>
@@ -512,6 +749,8 @@
             _p2Sel = (_p2Sel + 1) % Roster.Count;
         }
         _introDone = true;
+        _forceIntro = false;
+        _rebind = -1;
         StateHasChanged();
         await InitEngine();
     }
@@ -519,14 +758,22 @@
     private async Task InitEngine()
     {
         _results = [];
+        _eventResult = null;
+        _pb = null;
         _submittedThisMeet = false;
-        _newRecord = false;
+
+        // The daily meet: everyone gets the same line-up in the same lanes, at the
+        // standard difficulty, so today's board compares like with like.
+        var daily = _mode == "1p" && _event == "daily";
+        var invariant = System.Globalization.CultureInfo.InvariantCulture;
+        var daySeed = int.Parse(DateTime.Now.ToString("yyyyMMdd", invariant), invariant);
+        var shuffle = daily ? new Random(daySeed) : Random.Shared;
 
         var players = new List<PlayerSetup>();
         if (_demo)
         {
             // Attract mode: the whole family on the track, all CPU, in a random lane order.
-            foreach (var p in Roster.OrderBy(_ => Guid.NewGuid()))
+            foreach (var p in Roster.OrderBy(_ => shuffle.Next()))
             {
                 players.Add(new PlayerSetup(p.Key, p.Name, false, null));
             }
@@ -540,32 +787,33 @@
         {
             players.Add(new PlayerSetup(Roster[_p1Sel].Key, _playerName, true, 1));
             // CPU rivals on every unpicked family member — a full four-lane meet.
-            foreach (var p in Roster.Where((_, i) => i != _p1Sel).OrderBy(_ => Guid.NewGuid()))
+            foreach (var p in Roster.Where((_, i) => i != _p1Sel).OrderBy(_ => shuffle.Next()))
             {
                 players.Add(new PlayerSetup(p.Key, p.Name, false, null));
             }
         }
 
-        _humanLanes = players
-            .Where(p => p.human)
-            .Select(p =>
-            {
-                var keys = PoSportsLayouts.For(p.layout);
-                return new HudLane { Name = p.name, Keys = keys.Sequence, JumpKey = keys.Jump };
-            })
-            .ToList();
-
         try
         {
-            // Route-gated engine load (see wwwroot/js/engineLoader.js).
             if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "posports"))
             {
                 Console.Error.WriteLine("[PoSports] engine failed to load");
                 return;
             }
 
-            await JSRuntime.InvokeVoidAsync("PoSports.init", "posports-container", _ref,
-                new { mode = _mode, players, difficulty = "medium" });
+            await JSRuntime.InvokeVoidAsync("PoSports.init", "posports-container", _ref, new
+            {
+                mode = _mode,
+                players,
+                difficulty = daily ? "medium" : _difficulty,
+                seed = daily ? daySeed : (int?)null,
+                daily,
+                ghost = _useGhost,
+                keymaps = KeyMaps(),
+                @event = IsFieldEvent ? _event : null,
+                // Relay teams run the whole family, starting from the picked runner.
+                roster = Roster.Select((c, i) => Roster[(i + _p1Sel) % Roster.Count].Key).ToArray(),
+            });
         }
         catch (Exception ex)
         {
@@ -573,43 +821,49 @@
         }
     }
 
+    // ── Engine → page ─────────────────────────────────────────────────────
+
     [JSInvokable]
     public void OnPhase(string phase, string leg)
     {
+        var changed = phase != _phase || leg != _leg;
         _phase = phase;
         _leg = leg;
+        if (changed && !IsFieldEvent)
+        {
+            // The shared polite live region: the race is pixels, this is the commentary.
+            _announcement = phase switch
+            {
+                "countdown" => "100 metre sprint. On your marks.",
+                "racing" => leg == "hurdles" ? "Hurdles — go!" : "Sprint — go!",
+                "interstitial" => "Sprint finished. Hurdles next.",
+                _ => _announcement,
+            };
+        }
         InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
-    public void OnHud(System.Text.Json.JsonElement hud)
+    public void OnHud(JsonElement hud)
     {
         _phase = hud.GetProperty("phase").GetString() ?? _phase;
         _leg = hud.GetProperty("leg").GetString() ?? _leg;
         _clock = hud.GetProperty("clock").GetDouble();
-        // Human lanes are always FIRST in the players list (see InitEngine), so HUD
-        // lane i maps straight onto _humanLanes[i].
-        var lanes = hud.GetProperty("lanes");
-        for (var i = 0; i < lanes.GetArrayLength() && i < _humanLanes.Count; i++)
-        {
-            var lane = lanes[i];
-            if (!lane.TryGetProperty("seqProgress", out var sp)) continue;
-            _humanLanes[i].SeqProgress = sp.GetInt32();
-            _humanLanes[i].Position = lane.GetProperty("position").GetDouble();
-        }
+        _ghostGap = hud.TryGetProperty("ghostGap", out var g) && g.ValueKind == JsonValueKind.Number ? g.GetDouble() : null;
         InvokeAsync(StateHasChanged);
     }
 
     [JSInvokable]
     public void OnLegDone(string leg, double[] times)
     {
-        // Interstitial banner comes from the JS overlay; nothing to do here yet.
+        // The standings between legs are drawn by the engine on the canvas (game.js
+        // drawOverlay); the page has nothing to add.
     }
 
     [JSInvokable]
-    public async Task OnMeetDone(System.Text.Json.JsonElement results)
+    public async Task OnMeetDone(JsonElement results)
     {
-        _results = [.. results.EnumerateArray().Select(r => new MeetResult(
+        _results = [.. results.GetProperty("lanes").EnumerateArray().Select(r => new MeetResult(
             r.GetProperty("lane").GetInt32(),
             r.GetProperty("name").GetString() ?? "",
             r.GetProperty("character").GetString() ?? "",
@@ -617,8 +871,28 @@
             r.GetProperty("sprintSeconds").GetDouble(),
             r.GetProperty("hurdlesSeconds").GetDouble(),
             r.GetProperty("totalSeconds").GetDouble(),
-            r.GetProperty("placing").GetInt32()))];
+            r.GetProperty("placing").GetInt32(),
+            r.GetProperty("reactionMs").GetDouble(),
+            r.GetProperty("topSpeed").GetDouble(),
+            r.GetProperty("clipped").GetInt32(),
+            r.GetProperty("inputs").GetString()))];
         _phase = "podium";
+        _ghostGap = null;
+        _announcement = ResultHeadline;
+        // 2026-09-04: signal the kiosk reel that the demo meet is over. The podium
+        // otherwise lingers for the full 20s dwell — the demo attract loop sees a
+        // frozen results screen between meets.
+        if (_demo) Kiosk.MarkFinished();
+
+        if (results.TryGetProperty("pb", out var pb) && pb.ValueKind == JsonValueKind.Object)
+        {
+            var prev = pb.GetProperty("prev");
+            _pb = new PbInfo(prev.GetProperty("sprint").GetDouble(), prev.GetProperty("hurdles").GetDouble(),
+                prev.GetProperty("total").GetDouble(), pb.GetProperty("newSprint").GetBoolean(),
+                pb.GetProperty("newHurdles").GetBoolean(), pb.GetProperty("newTotal").GetBoolean());
+        }
+        var daily = results.TryGetProperty("daily", out var dy) && dy.ValueKind == JsonValueKind.Object;
+        if (daily) _dailyStreak = dy.GetProperty("streak").GetInt32();
 
         if (_mode == "1p" && !_submittedThisMeet)
         {
@@ -627,38 +901,75 @@
             if (mine is not null)
             {
                 _gameStats.SaveLastPlayedGame("posports");
-
-                _newRecord = _bestTotal == 0 || mine.TotalSeconds < _bestTotal;
-                if (_newRecord) _bestTotal = mine.TotalSeconds;
+                if (_pb is { NewTotal: true }) { _pbTotal = mine.TotalSeconds; _hasGhost = true; }
 
                 // Through the shared record-and-submit flow: the server ratchets per player,
                 // so a submit lost to a flaky connection loses the personal best for good
                 // unless it is parked and replayed (and the player is told either way).
+                // The key log rides along: the server replays it and stores the time IT gets.
                 _stats = await GameResults.RecordAndSubmitPoSportsAsync(
                     _playerName,
                     mine.Placing == 1 ? GameResult.Win : GameResult.Loss,
                     new PoSportsHighScore
                     {
-                        PlayerName = _playerName,
+                        // The board caps names at 24 and rejects longer ones outright, which
+                        // dropped every run by a long display name (auto-guest names are 28).
+                        PlayerName = _playerName.Length > 24 ? _playerName[..24] : _playerName,
                         SprintSeconds = Math.Round(mine.SprintSeconds, 2),
                         HurdlesSeconds = Math.Round(mine.HurdlesSeconds, 2),
                         TotalTimeSeconds = Math.Round(mine.TotalSeconds, 2),
                         Character = mine.Character,
+                        Inputs = mine.Inputs,
+                        Daily = daily,
                     });
-                UpdateStats();
+                if (daily) _dailyTop = [.. (await Api.GetPoSportsDailyHighScoresAsync(3)) ?? []];
             }
         }
         await InvokeAsync(StateHasChanged);
     }
 
-    private void UpdateStats()
+    [JSInvokable]
+    public void OnEventDone(JsonElement e)
     {
-        _statItems =
-        [
-            new StatItem { Label = "Meets", Value = _stats.TotalGames.ToString() },
-            new StatItem { Label = "Wins", Value = _stats.TotalWins.ToString() },
-            new StatItem { Label = "Win %", Value = _stats.TotalGames > 0 ? $"{(int)(_stats.WinRate * 100)}%" : "—" },
-        ];
+        _eventResult = new EventResult(
+            e.GetProperty("title").GetString() ?? "",
+            e.GetProperty("value").GetDouble(),
+            e.GetProperty("unit").GetString() ?? "",
+            e.GetProperty("placing").GetInt32(),
+            e.GetProperty("record").GetBoolean(),
+            e.GetProperty("prev").GetDouble(),
+            [.. e.GetProperty("attempts").EnumerateArray().Select(a => a.GetDouble())],
+            [.. e.GetProperty("board").EnumerateArray().Select(b => new BoardRow(
+                b.GetProperty("name").GetString() ?? "", b.GetProperty("value").GetDouble(), b.GetProperty("human").GetBoolean()))]);
+        _phase = "podium";
+        _gameStats.SaveLastPlayedGame("posports");
+        _announcement = $"{_eventResult.Title}: {FormatValue(_eventResult.Value, _eventResult.Unit)}, {Ordinal(_eventResult.Placing)} place.";
+        InvokeAsync(StateHasChanged);
+    }
+
+    // ── Results card actions ──────────────────────────────────────────────
+
+    private async Task AgainAsync()
+    {
+        _results = [];
+        _eventResult = null;
+        _pb = null;
+        _submittedThisMeet = false;
+        _phase = "countdown";
+        try { await JSRuntime.InvokeVoidAsync("PoSports.restart"); } catch { }
+    }
+
+    private async Task ChangeRunnerAsync()
+    {
+        try { await JSRuntime.InvokeVoidAsync("PoSports.destroy"); } catch { }
+        _results = [];
+        _eventResult = null;
+        _pb = null;
+        _phase = "loading";
+        _p1Locked = _p2Locked = false;
+        // Reopening on purpose: "don't show this again" must not dismiss it on sight.
+        _forceIntro = true;
+        _introDone = false;
     }
 
     public async ValueTask DisposeAsync()

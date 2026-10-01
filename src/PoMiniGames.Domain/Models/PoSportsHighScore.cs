@@ -26,4 +26,16 @@ public sealed class PoSportsHighScore
     public string Date { get; set; } = string.Empty;
     /// <summary>Lobby code the score came from. Diagnostic-only; empty for single-player runs.</summary>
     public string GameCode { get; set; } = string.Empty;
+
+    // ── Request-only fields. Neither is stored: the descriptor's Sanitize builds the row
+    // from the fields above, so they never reach the table or the board read-model. ──
+
+    /// <summary>
+    /// The run's key log (format: <c>js/posports/runlog.js</c>). A solo submit must carry it:
+    /// the server replays it through its own sim and stores the time IT gets, so the three
+    /// time fields above are only a claim to compare against.
+    /// </summary>
+    public string? Inputs { get; set; }
+    /// <summary>True when the run was the day's seeded meet — it is also filed on that day's board.</summary>
+    public bool Daily { get; set; }
 }

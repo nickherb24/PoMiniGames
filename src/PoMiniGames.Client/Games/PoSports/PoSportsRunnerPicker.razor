@@ -1,0 +1,45 @@
+@using PoMiniGames.Shared.Games
+
+@* The one PoSports runner picker. The solo intro, both sides of the 2P intro and the
+   online lobby each hand-rolled their own (an emoji grid, two keyboard lists, a
+   lobby grid) — three vocabularies for "choose one of four". This renders the
+   roster once, with the character's own sprite as the portrait: frame 0 of the
+   idle sheet, cropped by CSS from the same file the race draws from.
+
+   role="listbox" + role="option" so a screen reader hears a choice of runners
+   and which one is picked; each card stays a <button> so click, Enter/Space and
+   focus behave as buttons do. *@
+<div class="ps-pick" role="listbox" aria-label="@Label">
+    @foreach (var c in PoSportsRoster.All)
+    {
+        var who = TakenBy?.Invoke(c.Key);
+        var mine = c.Key == Selected;
+        var taken = who is not null && !mine;
+        <button type="button"
+                role="option"
+                aria-selected="@(mine ? "true" : "false")"
+                class="ps-pick-card @(mine ? "ps-pick-card--picked" : "") @(mine && Locked ? "ps-pick-card--locked" : "") @(taken ? "ps-pick-card--taken" : "")"
+                disabled="@(taken || Disabled)"
+                @onclick="() => OnPick.InvokeAsync(c.Key)">
+            <span class="ps-portrait" aria-hidden="true"
+                  style="--ps-sheet: url('/images/PoSports/@(c.Key)/idle/spritesheet.webp'); --ps-cols: @c.IdleCols"></span>
+            <span class="ps-pick-name">@c.Name</span>
+            @if (taken)
+            {
+                <small class="ps-pick-by">@who</small>
+            }
+        </button>
+    }
+</div>
+
+@code {
+    /// <summary>Key of the picked runner ("" for none yet).</summary>
+    [Parameter] public string Selected { get; set; } = "";
+    [Parameter] public EventCallback<string> OnPick { get; set; }
+    /// <summary>Lobby: who already holds a runner (display name), or null when it is free.</summary>
+    [Parameter] public Func<string, string?>? TakenBy { get; set; }
+    /// <summary>The pick is locked in (2P ready-up): shown, and still changeable by re-picking.</summary>
+    [Parameter] public bool Locked { get; set; }
+    [Parameter] public bool Disabled { get; set; }
+    [Parameter] public string Label { get; set; } = "Choose your runner";
+}

@@ -1,0 +1,68 @@
+.ps-pick {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 0.4rem;
+}
+
+.ps-pick-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.3rem 0.2rem 0.35rem;
+    border-radius: 10px;
+    border: 2px solid var(--color-border);
+    background: var(--tint-soft);
+    color: inherit;
+    cursor: pointer;
+    font: inherit;
+    font-size: 0.85rem;
+    transition: border-color 120ms, transform 120ms;
+}
+
+.ps-pick-card:hover:not(:disabled) {
+    transform: translateY(-2px);
+}
+
+.ps-pick-card:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+.ps-pick-card--picked {
+    border-color: var(--accent-amber);
+    background: color-mix(in srgb, var(--accent-amber) 14%, transparent);
+}
+
+.ps-pick-card--locked {
+    border-style: double;
+    border-width: 4px;
+}
+
+.ps-pick-card--taken {
+    opacity: 0.45;
+    cursor: default;
+}
+
+/* Frame 0 of the idle sheet, zoomed 2x onto the figure: the sheet is a square grid of
+   --ps-cols frames a side and the runner stands in the middle of a mostly empty frame. */
+.ps-portrait {
+    --ps-box: 3.4rem;
+    width: var(--ps-box);
+    height: var(--ps-box);
+    background-image: var(--ps-sheet);
+    background-size: calc(var(--ps-cols) * var(--ps-box) * 2) auto;
+    background-position: calc(var(--ps-box) * -0.5) calc(var(--ps-box) * -0.42);
+    background-repeat: no-repeat;
+}
+
+.ps-pick-by {
+    font-size: 0.7rem;
+    color: var(--color-text-secondary);
+}
+
+@media (max-width: 420px) {
+    .ps-portrait {
+        --ps-box: 2.6rem;
+    }
+}

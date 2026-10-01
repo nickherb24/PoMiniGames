@@ -5,21 +5,48 @@
 // sequence key resets progress to the start of the cycle — speed is untouched,
 // the lost keystrokes are the penalty. A fifth, dedicated key jumps (P1: E · P2: P).
 //
-// AI lanes, the touch pad, online key-forwarding, and tests all reuse the same
-// state machine through injectKey(), so there is exactly one implementation of
-// the sequence rules on the client.
+// AI lanes, the touch pad, the gamepad, online key-forwarding, and tests all reuse
+// the same state machine through injectKey(), so there is exactly one implementation
+// of the sequence rules on the client.
 export const LAYOUTS = {
   1: { sequence: ['KeyQ', 'KeyW', 'KeyA', 'KeyS'], jump: 'KeyE' },
   2: { sequence: ['KeyI', 'KeyO', 'KeyK', 'KeyL'], jump: 'KeyP' },
 };
 
+/**
+ * Rebind a layout (the page passes the player's saved keys before a meet is built).
+ * Refused unless it is five distinct KeyboardEvent codes — a duplicate would make
+ * one press both a step and a jump.
+ */
+export function setLayout(n, map) {
+  const keys = [...(map?.sequence ?? []), map?.jump];
+  if (!LAYOUTS[n] || keys.length !== 5 || keys.some((k) => typeof k !== 'string' || !k)
+    || new Set(keys).size !== 5) return false;
+  LAYOUTS[n] = { sequence: keys.slice(0, 4), jump: keys[4] };
+  return true;
+}
+
+/** Short on-screen label for a KeyboardEvent code ("KeyQ" → "Q", "Space" → "␣"). */
+export function keyLabel(code) {
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  return ({
+    Space: '␣', Semicolon: ';', Comma: ',', Period: '.', Slash: '/', Quote: "'",
+    BracketLeft: '[', BracketRight: ']', Enter: '↵', ShiftLeft: '⇧', ShiftRight: '⇧',
+    ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→',
+  })[code] ?? code.slice(0, 3);
+}
+
 export class SequenceTracker {
   /**
    * @param {1|2} layout which key layout this player uses
    * @param {{onImpulse?: () => void, onJump?: () => void, onReset?: () => void,
-   *          isGated?: () => boolean, onGatedKey?: () => void}} handlers
+   *          isGated?: () => boolean, onGatedKey?: () => void,
+   *          onKey?: (kind: 'seq'|'jump', step: number, result: string) => void}} handlers
    *   isGated/onGatedKey implement the false-start rule: while gated (before the gun),
    *   EVERY sequence key is a false start rather than silently banking progress.
+   *   onKey sees every press in this layout with its ordinal and what it did — the run
+   *   recorder, the per-key sounds and the keycap HUD all hang off it.
    */
   constructor(layout, handlers = {}) {
     this.map = LAYOUTS[layout];
@@ -41,11 +68,18 @@ export class SequenceTracker {
    */
   injectKey(code) {
     if (code === this.map.jump) {
+      this.handlers.onKey?.('jump', 4, 'jump');
       this.handlers.onJump?.();
       return 'jump';
     }
-    if (!this.map.sequence.includes(code)) return null;
+    const step = this.map.sequence.indexOf(code);
+    if (step < 0) return null;
+    const result = this.step(code);
+    this.handlers.onKey?.('seq', step, result);
+    return result;
+  }
 
+  step(code) {
     // Before the gun, ONE key is already a false start — progress must never bank across
     // the start. PoSportsSim.HandleSequenceKey applies the same rule server-side; when this
     // check lived at the caller (which only saw completed 4-key cycles) a player could type
@@ -90,4 +124,31 @@ export function attachKeyboard(trackers) {
   };
   window.addEventListener('keydown', onDown);
   return () => window.removeEventListener('keydown', onDown);
+}
+
+/**
+ * Gamepads: the four face buttons are the four sequence keys (A B X Y in order),
+ * any shoulder or trigger jumps. Pad N drives layout N. Like the touch pad, a press
+ * is turned into a synthetic keydown with the layout's real code, so it reaches
+ * whichever listener is live — local trackers or the online forwarder — unchanged.
+ * Call once per frame.
+ */
+const padHeld = new Map();
+export function pollGamepads() {
+  let pads;
+  try { pads = navigator.getGamepads?.() ?? []; } catch { return; }
+  let n = 0;
+  for (const pad of pads) {
+    if (!pad || !pad.connected) continue;
+    const map = LAYOUTS[++n];
+    if (!map) break;
+    const held = padHeld.get(pad.index) ?? [];
+    const codes = [...map.sequence, map.jump, map.jump, map.jump, map.jump]; // buttons 0-3, then 4-7
+    for (let b = 0; b < codes.length; b++) {
+      const down = !!pad.buttons[b]?.pressed;
+      if (down && !held[b]) window.dispatchEvent(new KeyboardEvent('keydown', { code: codes[b], bubbles: true }));
+      held[b] = down;
+    }
+    padHeld.set(pad.index, held);
+  }
 }

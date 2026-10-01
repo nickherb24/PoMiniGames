@@ -23,10 +23,10 @@ public sealed class PoSportsRaceServiceTests
     {
         public readonly ConcurrentBag<PoSportsHighScore> Saved = [];
 
-        public Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10) =>
+        public Task<List<PoSportsHighScore>> GetPoSportsHighScoresAsync(int limit = 10, string? day = null) =>
             Task.FromResult(Saved.OrderBy(s => s.TotalTimeSeconds).Take(limit).ToList());
 
-        public Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry)
+        public Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry, string? day = null)
         {
             Saved.Add(entry);
             return Task.FromResult(entry);

@@ -11,67 +11,62 @@
 
 <PageTitle>Sports — Lobby · PoMiniGames</PageTitle>
 
+@* 2026-09-30: the lobby used to sit behind an intro card whose only job was to be
+   dismissed — one extra click before the connection even started, and a second,
+   hand-typed copy of the controls. The page now connects on arrival and the
+   how-to is a fold-out above the roster, rendered from the same PoSportsHowTo the
+   race page uses. *@
 <GameShell Title="@TitleContent" BackTo="/">
-@if (!_introDone)
-{
-    <GameIntro CueScope="posports"
-               Title="@TitleContent"
-               Objective="Race the family online — up to 4 runners. Pick a character, ready up, and the host fires the gun."
-               Controls="@HowToPlayContent"
-               Mode="GameIntro.IntroMode.OnePlayer"
-               OnStart="OnIntroStartAsync" />
-}
-else
-{
-    <LobbyPanel TPlayer="PoSportsLobbyMember"
-                State="@Hub.Lobby.State"
-                LocalConnectionId="@Hub.LobbyConnectionId"
-                ConnectionState="@Hub.Lobby.ConnectionState"
-                MaxPlayersHint="4"
-                StartLabel="Start the Meet"
-                CanStart="@CanStart"
-                CanReady="@IHavePicked"
-                WaitingHint="Waiting for everyone to pick a runner and mark Ready…"
-                PickerTitle="Your runner"
-                OnReady="Hub.ToggleReadyAsync"
-                OnStart="Hub.StartGameAsync"
-                OnLeave="LeaveAsync">
-        <PlayerLabel Context="m">
-            <span aria-hidden="true">@PoSportsRoster.Emoji(m.Character)</span> @m.DisplayName
-        </PlayerLabel>
-        <PlayerBadges Context="m">
-            @if (string.IsNullOrEmpty(m.Character))
-            {
-                <span class="lobby-pill lobby-pill--warn">picking…</span>
-            }
-        </PlayerBadges>
-        <Picker>
-            <div class="lobby-pick-grid">
-                @foreach (var c in PoSportsRoster.All)
+    <div class="ps-lobby">
+        <details class="ps-lobby-howto">
+            <summary>How to play · up to 4 runners, the host fires the gun</summary>
+            <PoSportsHowTo Lead="Two-leg meet: 100m sprint, then 110m hurdles — lowest combined time wins."
+                           Players="@HowToKeys" />
+        </details>
+
+        @if (CanWatch)
+        {
+            @* The room refuses seats while a meet is running (and when it is full), so
+               an arrival then is a spectator: offer the race instead of a dead lobby. *@
+            <p class="ps-lobby-watch">
+                No seat free right now — the room is full or a meet is running.
+                <a class="sp-btn-secondary" href="@($"/posports/race/{Hub.Lobby.State!.GameCode}?watch=1")">👀 Watch the meet</a>
+            </p>
+        }
+
+        <LobbyPanel TPlayer="PoSportsLobbyMember"
+                    State="@Hub.Lobby.State"
+                    LocalConnectionId="@Hub.LobbyConnectionId"
+                    ConnectionState="@Hub.Lobby.ConnectionState"
+                    MaxPlayersHint="4"
+                    StartLabel="Start the Meet"
+                    CanStart="@CanStart"
+                    CanReady="@IHavePicked"
+                    WaitingHint="Waiting for everyone to pick a runner and mark Ready…"
+                    PickerTitle="Your runner"
+                    OnReady="Hub.ToggleReadyAsync"
+                    OnStart="Hub.StartGameAsync"
+                    OnLeave="LeaveAsync">
+            <PlayerLabel Context="m">
+                <span aria-hidden="true">@PoSportsRoster.Emoji(m.Character)</span> @m.DisplayName
+            </PlayerLabel>
+            <PlayerBadges Context="m">
+                @if (string.IsNullOrEmpty(m.Character))
                 {
-                    var takenBy = Hub.Lobby.State?.Players.FirstOrDefault(m => m.Character == c.Key);
-                    var mine = takenBy?.ConnectionId == Hub.LobbyConnectionId;
-                    var taken = takenBy is not null && !mine;
-                    <button type="button"
-                            class="lobby-pick-card @(mine ? "lobby-pick-card--mine" : "") @(taken ? "lobby-pick-card--taken" : "")"
-                            disabled="@taken"
-                            @onclick="() => Hub.PickCharacterAsync(c.Key)">
-                        <span class="lobby-pick-card__emoji">@c.Emoji</span>
-                        <span class="lobby-pick-card__name">@c.Name</span>
-                        @if (taken)
-                        {
-                            <small>@takenBy!.DisplayName</small>
-                        }
-                    </button>
+                    <span class="lobby-pill lobby-pill--warn">picking…</span>
                 }
-            </div>
-        </Picker>
-    </LobbyPanel>
-}
+            </PlayerBadges>
+            <Picker>
+                <PoSportsRunnerPicker Selected="@(Hub.Lobby.Me?.Character ?? "")"
+                                      TakenBy="TakenBy"
+                                      Disabled="@(Hub.Lobby.Me is null)"
+                                      OnPick="k => Hub.PickCharacterAsync(k)" />
+            </Picker>
+        </LobbyPanel>
+    </div>
 </GameShell>
 
 @code {
-    private bool _introDone;
     private bool _connected;
     /// <summary>Set by Leave — dispose must not leave twice.</summary>
     private bool _leaving;
@@ -80,15 +75,14 @@ else
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🏃</span> Sports · Multiplayer</span>;
 
-    private RenderFragment HowToPlayContent => @<div>
-        <p>Two-leg meet: 100m sprint, then 110m hurdles — lowest combined time wins.</p>
-        <ul>
-            <li>Type <kbd>Q</kbd> <kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> in order to run · <kbd>E</kbd> jumps</li>
-            <li>A wrong key restarts your cycle; typing before the gun is a false start</li>
-        </ul>
-    </div>;
+    /// <summary>Online races run on layout 1 — the same labels the race page teaches.</summary>
+    private static readonly IReadOnlyList<PoSportsHowTo.Keys> HowToKeys =
+        [new("Type", PoSportsLayouts.For(1).Sequence, PoSportsLayouts.For(1).Jump)];
 
     private bool IHavePicked => !string.IsNullOrEmpty(Hub.Lobby.Me?.Character);
+
+    /// <summary>Connected, the room answered, and we hold no seat in it.</summary>
+    private bool CanWatch => _connected && Hub.Lobby.State is not null && Hub.Lobby.Me is null;
 
     private bool CanStart =>
         Hub.Lobby.State is { } s
@@ -96,10 +90,15 @@ else
         && s.Players.All(m => !string.IsNullOrEmpty(m.Character))
         && s.Players.All(m => m.ConnectionId == s.HostConnectionId || m.IsReady);
 
-    private async Task OnIntroStartAsync()
+    /// <summary>Who holds a runner, for the picker's "taken" state (null = free, or it is ours).</summary>
+    private string? TakenBy(string character)
     {
-        _introDone = true;
-        StateHasChanged();
+        var holder = Hub.Lobby.State?.Players.FirstOrDefault(m => m.Character == character);
+        return holder is null || holder.ConnectionId == Hub.LobbyConnectionId ? null : holder.DisplayName;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
         if (!await Api.IsAvailableAsync())
         {
             ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
@@ -111,7 +110,6 @@ else
         Hub.Lobby.GameStarted += OnGameStarted;
         await Hub.ConnectLobbyAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
         _connected = true;
-        StateHasChanged();
     }
 
     private void OnLobbyChanged(LobbyState<PoSportsLobbyMember> _) => InvokeAsync(StateHasChanged);

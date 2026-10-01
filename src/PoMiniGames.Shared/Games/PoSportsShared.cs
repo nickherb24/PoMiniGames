@@ -4,7 +4,8 @@ namespace PoMiniGames.Shared.Games;
 
 /// <summary>One playable family member.</summary>
 /// <param name="Key">Runtime key, matching the wwwroot/images/PoSports/&lt;key&gt; sprite directory.</param>
-public sealed record PoSportsCharacter(string Key, string Name, string Emoji);
+/// <param name="IdleCols">Columns in the character's idle sprite sheet (square grid of 256 px frames) — the pickers crop frame 0 out of it as the portrait.</param>
+public sealed record PoSportsCharacter(string Key, string Name, string Emoji, int IdleCols = 8);
 
 /// <summary>
 /// The playable roster — the one place a character is declared. The server validates score
@@ -23,7 +24,7 @@ public static class PoSportsRoster
     [
         new("kim", "Kim", "👧"),
         new("matt", "Matt", "👦"),
-        new("nick", "Nick", "🧒"),
+        new("nick", "Nick", "🧒", IdleCols: 5),
         new("tong", "Tong", "🧑"),
     ];
 
