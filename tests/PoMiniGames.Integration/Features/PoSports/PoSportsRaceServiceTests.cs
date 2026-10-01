@@ -76,9 +76,9 @@ public sealed class PoSportsRaceServiceTests
             string winnerDisplayName, string loserDisplayName, bool isDraw) =>
             Task.CompletedTask;
 
-        public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10) =>
+        public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null) =>
             Task.FromResult(new List<PoVoxelStrikeHighScore>());
-        public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry) =>
+        public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry, string? day = null) =>
             Task.FromResult(entry);
 
         public bool IsStorageHealthy() => true;

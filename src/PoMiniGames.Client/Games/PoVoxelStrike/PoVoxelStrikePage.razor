@@ -60,7 +60,10 @@
                             aria-selected="@Flag(_tab == Tab.Solo)" @onclick="() => SwitchTabAsync(Tab.Solo)">Solo</button>
                     <button type="button" role="tab" class="pvs-seg-btn @(_tab == Tab.Online ? "is-on" : null)"
                             aria-selected="@Flag(_tab == Tab.Online)" @onclick="() => SwitchTabAsync(Tab.Online)">Online</button>
-                    <a class="pvs-seg-btn" href="/povoxelstrike/demo">Demo</a>
+                    @* A button, not a link: app.js turns every in-app <a> click into a full page
+                       load, which would reboot the whole WASM app to switch a tab. *@
+                    <button type="button" role="tab" class="pvs-seg-btn" aria-selected="false"
+                            @onclick="@(() => Navigation.NavigateTo("/povoxelstrike/demo"))">Demo</button>
                 </div>
 
                 @if (_fatalError is not null)
