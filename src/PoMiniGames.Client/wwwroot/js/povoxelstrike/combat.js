@@ -58,7 +58,10 @@ export class Weapon {
     this.debris = debris;
     this.enemies = enemies;
     this.onCarve = onCarve; // (removedCount, clusterVoxelCount) → score accounting
-    this.fx = fx;           // { shot(muzzle), altLaunch(muzzle), detonate(point) } | null
+    // { shot(muzzle), altLaunch(muzzle), detonate(point), impact(point, kind, normal, radius),
+    //   carved(kind, structureIndex, point) } | null
+    this.fx = fx;
+    this._remote = false;   // true only while applyRemote is replaying a squadmate's carve
 
     this.primaryHeld = false;
     this.primaryClock = 0;
@@ -173,7 +176,36 @@ export class Weapon {
     }
   }
 
+  /**
+   * Online: replay a squadmate's carve here. `kind` 0 is a dig shot, 1 a blast;
+   * `structureIndex` indexes this.structures (the same list on every client, because the
+   * arena is built from the shared seed) or is -1 for the ground. It runs the very code a
+   * local shot runs, minus two things: it scores nothing, and it is not relayed again.
+   * @param from where the shot came from (the squadmate's avatar), for the tracer
+   */
+  applyRemote(kind, structureIndex, point, from = null) {
+    this._remote = true;
+    try {
+      if (kind === 1) { this._detonate(point); return; }
+      if (from) this._spawnTracer(from, point);
+      const structure = structureIndex >= 0 ? this.structures[structureIndex] : null;
+      if (structure) this._carveStructure(structure, point, null);
+      else if (structureIndex < 0) this._digTerrain(point, null);
+    } finally {
+      this._remote = false;
+    }
+  }
+
+  /** Score accounting for a carve — silent when the carve is a squadmate's. */
+  _scored(removed, clusterVoxels) { if (!this._remote) this.onCarve?.(removed, clusterVoxels); }
+
+  /** Tell the engine a carve landed, so an online run can relay it. Never for a replayed one. */
+  _relay(kind, structure, point) {
+    if (!this._remote) this.fx?.carved?.(kind, structure ? this.structures.indexOf(structure) : -1, point);
+  }
+
   _detonate(point) {
+    this._relay(1, null, point);
     // The blast's shrapnel budget is shared across every structure it touches, so a shot
     // into a corner where three walls meet does not spawn three full bursts.
     let budget = ALT_SHRAPNEL_BUDGET;
@@ -182,7 +214,7 @@ export class Weapon {
       let clusterVoxels = 0;
       for (const c of clusters) { clusterVoxels += c.voxels.length; this.debris.spawnCluster(s, c); }
       if (removed.length > 0) {
-        this.onCarve?.(removed.length, clusterVoxels);
+        this._scored(removed.length, clusterVoxels);
         s.applyImpact(point, ALT_IMPACT_RADIUS, ALT_IMPACT_DAMAGE);
       }
       if (removed.length > 0 && budget > 0) {
@@ -193,7 +225,7 @@ export class Weapon {
     }
     const dug = this.terrain.dig(point, ALT_DIG_RADIUS);
     if (dug > 0) {
-      this.onCarve?.(Math.max(1, Math.round(dug / TERRAIN_SCORE_DIVISOR)), 0);
+      this._scored(Math.max(1, Math.round(dug / TERRAIN_SCORE_DIVISOR)), 0);
       this._recheckUndermined(point, ALT_DIG_RADIUS);
       this.shrapnel?.spawnBurst(point, 34, DIRT_CLOD_SIZE,
         new THREE.Color(0x6d5138), ALT_SHRAPNEL_POWER * 0.8);
@@ -221,38 +253,50 @@ export class Weapon {
     this._spawnTracer(muzzleWorld, hit.point);
 
     if (hit.kind === 'structure') {
-      const { removed, clusters } = hit.structure.carveSphere(hit.point, PRIMARY_CARVE_RADIUS);
-      let clusterVoxels = 0;
-      for (const c of clusters) { clusterVoxels += c.voxels.length; this.debris.spawnCluster(hit.structure, c); }
-      if (removed.length > 0) this.onCarve?.(removed.length, clusterVoxels);
-      // Fatigue around the crater — repeated hits on one column progressively weaken it
-      // even where the carve itself removed nothing new.
-      hit.structure.applyImpact(hit.point, PRIMARY_IMPACT_RADIUS, PRIMARY_IMPACT_DAMAGE);
-      // The stone this shot knocked loose, thrown as real bodies.
-      this.shrapnel?.spawnFromCarve(hit.structure, removed, hit.point,
-        PRIMARY_SHRAPNEL_POWER, PRIMARY_SHRAPNEL_BUDGET);
-      this.debris.burstAt(hit.point, new THREE.Color(0xd9d9df), 4, 0.35);
-      this.debris.wakeNear(hit.point, PRIMARY_CARVE_RADIUS + 3); // ledge shot from under a resting chunk
-      this.fx?.impact(hit.point, 'structure', hit.normal);
+      this._carveStructure(hit.structure, hit.point, hit.normal);
     } else if (hit.kind === 'terrain') {
-      const dug = this.terrain.dig(hit.point, PRIMARY_DIG_RADIUS);
-      if (dug > 0) {
-        this.onCarve?.(Math.max(1, Math.round(dug / TERRAIN_SCORE_DIVISOR)), 0);
-        this._recheckUndermined(hit.point, PRIMARY_DIG_RADIUS);
-        // Terrain voxels are 0.1 units -- far too small to be worth a rigid body each, so
-        // the ground throws clods at DIRT_CLOD_SIZE instead of true voxel size. It is the
-        // one place the simulation is deliberately coarser than the grid.
-        this.shrapnel?.spawnBurst(hit.point, 10, DIRT_CLOD_SIZE,
-          new THREE.Color(0x6d5138), PRIMARY_SHRAPNEL_POWER * 0.7);
-      }
-      this.debris.burstAt(hit.point, new THREE.Color(0x6d5138), 5, 0.4); // dirt spray
-      this.debris.wakeNear(hit.point, PRIMARY_DIG_RADIUS + 3); // dug the floor from under debris
-      this.fx?.impact(hit.point, 'terrain', hit.normal);
+      this._digTerrain(hit.point, hit.normal);
     } else if (hit.kind === 'debris') {
       this.debris.fragment(hit.piece);
     } else {
       this.enemies.damage(hit.enemy, PRIMARY_ENEMY_DAMAGE, false);
     }
+  }
+
+  /** One dig shot into a structure. Shared by the local trigger and applyRemote. */
+  _carveStructure(structure, point, normal) {
+    this._relay(0, structure, point);
+    const { removed, clusters } = structure.carveSphere(point, PRIMARY_CARVE_RADIUS);
+    let clusterVoxels = 0;
+    for (const c of clusters) { clusterVoxels += c.voxels.length; this.debris.spawnCluster(structure, c); }
+    if (removed.length > 0) this._scored(removed.length, clusterVoxels);
+    // Fatigue around the crater — repeated hits on one column progressively weaken it
+    // even where the carve itself removed nothing new.
+    structure.applyImpact(point, PRIMARY_IMPACT_RADIUS, PRIMARY_IMPACT_DAMAGE);
+    // The stone this shot knocked loose, thrown as real bodies.
+    this.shrapnel?.spawnFromCarve(structure, removed, point,
+      PRIMARY_SHRAPNEL_POWER, PRIMARY_SHRAPNEL_BUDGET);
+    this.debris.burstAt(point, new THREE.Color(0xd9d9df), 4, 0.35);
+    this.debris.wakeNear(point, PRIMARY_CARVE_RADIUS + 3); // ledge shot from under a resting chunk
+    this.fx?.impact(point, 'structure', normal, PRIMARY_CARVE_RADIUS);
+  }
+
+  /** One dig shot into the ground. Shared by the local trigger and applyRemote. */
+  _digTerrain(point, normal) {
+    this._relay(0, null, point);
+    const dug = this.terrain.dig(point, PRIMARY_DIG_RADIUS);
+    if (dug > 0) {
+      this._scored(Math.max(1, Math.round(dug / TERRAIN_SCORE_DIVISOR)), 0);
+      this._recheckUndermined(point, PRIMARY_DIG_RADIUS);
+      // Terrain voxels are 0.1 units -- far too small to be worth a rigid body each, so
+      // the ground throws clods at DIRT_CLOD_SIZE instead of true voxel size. It is the
+      // one place the simulation is deliberately coarser than the grid.
+      this.shrapnel?.spawnBurst(point, 10, DIRT_CLOD_SIZE,
+        new THREE.Color(0x6d5138), PRIMARY_SHRAPNEL_POWER * 0.7);
+    }
+    this.debris.burstAt(point, new THREE.Color(0x6d5138), 5, 0.4); // dirt spray
+    this.debris.wakeNear(point, PRIMARY_DIG_RADIUS + 3); // dug the floor from under debris
+    this.fx?.impact(point, 'terrain', normal, PRIMARY_DIG_RADIUS);
   }
 
   /** Nearest of: structure voxel grids (DDA), the terrain surface, debris, enemies. */
@@ -303,7 +347,7 @@ export class Weapon {
         clusterVoxels += c.voxels.length;
         this.debris.spawnCluster(s, c);
       }
-      if (clusterVoxels > 0) this.onCarve?.(0, clusterVoxels);
+      if (clusterVoxels > 0) this._scored(0, clusterVoxels);
     }
   }
 

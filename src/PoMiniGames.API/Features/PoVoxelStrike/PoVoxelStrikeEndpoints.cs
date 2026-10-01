@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Models;
@@ -74,14 +75,25 @@ internal static class PoVoxelStrikeEndpoints
         var scores = app.MapGroup("/povoxelstrike/highscores").WithTags("HighScores");
 
         scores.MapGet("",
-            async (IStorageService storage, int count = 10) =>
+            async (IStorageService storage, int count = 10, string? day = null) =>
             {
                 count = Math.Clamp(count, 1, 100);
-                return Results.Ok(await storage.GetPoVoxelStrikeHighScoresAsync(count));
+                // `day` picks that day's Daily Siege board. It is re-formatted from the parsed
+                // date before it goes anywhere near storage; an unparseable one is a 400.
+                string? dayKey = null;
+                if (day is not null && !TryDayKey(day, out dayKey))
+                {
+                    return Results.ValidationProblem(new Dictionary<string, string[]>
+                    {
+                        [nameof(day)] = ["Day must be a date in yyyy-MM-dd form."],
+                    });
+                }
+                return Results.Ok(await storage.GetPoVoxelStrikeHighScoresAsync(count, dayKey));
             })
             .WithName("GetPoVoxelStrikeHighScores")
-            .WithSummary("Top PoVoxelStrike runs (one ratcheted row per player)")
-            .Produces<IEnumerable<PoVoxelStrikeHighScore>>(StatusCodes.Status200OK);
+            .WithSummary("Top PoVoxelStrike runs (one ratcheted row per player); ?day= reads a Daily Siege board")
+            .Produces<IEnumerable<PoVoxelStrikeHighScore>>(StatusCodes.Status200OK)
+            .ProducesValidationProblem();
 
         scores.MapPost("",
             async (PoVoxelStrikeRunRequest request,
@@ -104,8 +116,11 @@ internal static class PoVoxelStrikeEndpoints
 
                 // Plausibility, not anti-cheat (PRD §3.3): the stats must be able to produce
                 // the score. Formula ceiling: seconds×10 + kills×(25+50+40 worst case) +
-                // voxels÷20, plus rounding slack. A submission that exceeds its own stats'
-                // ceiling is tampered or corrupt either way — rejecting is not a retry case.
+                // voxels÷20, plus rounding slack — and, for a win, the chalice bonus. That last
+                // term was missing until 2026-09-30, so with the roaming enemies switched off
+                // (kills = 0, no slack) every won siege was rejected here and never reached the
+                // board. A submission that exceeds its own stats' ceiling is tampered or corrupt
+                // either way — rejecting is not a retry case.
                 var errors = new Dictionary<string, string[]>();
                 if (request.SurvivalSeconds is < 0 or > 14_400)
                     errors[nameof(request.SurvivalSeconds)] = ["Survival time must be between 0 and 14,400 seconds."];
@@ -113,9 +128,7 @@ internal static class PoVoxelStrikeEndpoints
                     errors[nameof(request.Kills)] = ["Run stats cannot be negative."];
                 if (request.BruteKills > request.Kills || request.CrushKills > request.Kills)
                     errors[nameof(request.BruteKills)] = ["Kill breakdowns cannot exceed total kills."];
-                var ceiling = Math.Floor(request.SurvivalSeconds + 1) * 10
-                    + (double)request.Kills * 115 + request.VoxelsDestroyed / 20d + 10;
-                if (errors.Count == 0 && request.Score > ceiling)
+                if (errors.Count == 0 && request.Score > request.ScoreCeiling())
                     errors[nameof(request.Score)] = ["Score is not plausible for the submitted run stats."];
                 if (errors.Count > 0)
                 {
@@ -139,7 +152,7 @@ internal static class PoVoxelStrikeEndpoints
                     identity.DisplayName,
                     identity.IsAuthenticated ? "Player" : "Guest");
 
-                var saved = await storage.SavePoVoxelStrikeHighScoreAsync(new PoVoxelStrikeHighScore
+                var entry = new PoVoxelStrikeHighScore
                 {
                     PlayerName = name,
                     UserId = identity.UserId,
@@ -150,8 +163,21 @@ internal static class PoVoxelStrikeEndpoints
                     BruteKills = request.BruteKills,
                     CrushKills = request.CrushKills,
                     VoxelsDestroyed = request.VoxelsDestroyed,
+                    Won = request.Won,
                     AchievedAtUtc = DateTimeOffset.UtcNow,
-                });
+                };
+                var saved = await storage.SavePoVoxelStrikeHighScoreAsync(entry);
+
+                // Daily Siege: the run also lands on that day's board. Only today (or the day
+                // either side of it, for a run that crossed midnight or a skewed clock) counts —
+                // an older date is a parked replay and still gets its all-time row above. That
+                // the run used the day's seed is the client's word; nothing here can check it.
+                if (request.Day is not null && TryDayKey(request.Day, out var dayKey)
+                    && Math.Abs((DateOnly.ParseExact(dayKey, DayFormat, CultureInfo.InvariantCulture).DayNumber
+                                 - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber)) <= 1)
+                {
+                    await storage.SavePoVoxelStrikeHighScoreAsync(entry, dayKey);
+                }
 
                 PoVoxelStrikeLog.ScoreSaved(log, identity.UserId, identity.IsGuest, saved.Score);
                 return Results.Created("/api/povoxelstrike/highscores", saved);
@@ -164,15 +190,37 @@ internal static class PoVoxelStrikeEndpoints
 
         return app;
     }
+
+    private const string DayFormat = "yyyy-MM-dd";
+
+    /// <summary>Parses a caller's day and hands back the server's own formatting of it.</summary>
+    private static bool TryDayKey(string day, out string key)
+    {
+        var ok = DateOnly.TryParseExact(day, DayFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out var date);
+        key = ok ? date.ToString(DayFormat, CultureInfo.InvariantCulture) : "";
+        return ok;
+    }
 }
 
 /// <summary>
 /// The wire shape of a run submission. Deliberately narrower than
 /// <see cref="PoVoxelStrikeHighScore"/>: identity and timestamp are server-derived, so
-/// there is no field for a caller to supply (or forge) them in.
+/// there is no field for a caller to supply (or forge) them in. <c>Won</c> and <c>Day</c>
+/// (the Daily Siege date, yyyy-MM-dd) default so a run parked before they existed still
+/// replays.
 /// </summary>
 public sealed record PoVoxelStrikeRunRequest(
-    int Score, double SurvivalSeconds, int Kills, int BruteKills, int CrushKills, int VoxelsDestroyed);
+    int Score, double SurvivalSeconds, int Kills, int BruteKills, int CrushKills, int VoxelsDestroyed,
+    bool Won = false, string? Day = null)
+{
+    /// <summary>
+    /// The most these stats can score: seconds×10 + kills×(25+50+40 worst case) + voxels÷20,
+    /// rounding slack, and the chalice bonus when the run was won.
+    /// </summary>
+    public double ScoreCeiling() =>
+        Math.Floor(SurvivalSeconds + 1) * 10 + (double)Kills * 115 + VoxelsDestroyed / 20d + 10
+        + (Won ? PoVoxelStrikeScore.WinBonus(SurvivalSeconds) : 0);
+}
 
 internal static partial class PoVoxelStrikeLog
 {

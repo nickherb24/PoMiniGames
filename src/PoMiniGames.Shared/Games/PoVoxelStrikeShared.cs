@@ -47,6 +47,12 @@ public sealed class PoVoxelStrikeInput
     public float X { get; set; }
     public float Y { get; set; }
     public float Z { get; set; }
+
+    /// <summary>
+    /// True while this player is down and waiting on a revive (2026-09-30). Peers draw the
+    /// avatar lying flat, and a downed player counts nobody who is also down as a rescuer.
+    /// </summary>
+    public bool Down { get; set; }
 }
 
 /// <summary>

@@ -1,8 +1,12 @@
-// audio.js — synthesized SFX + ambient tension bed for PoVoxelStrike.
+// audio.js — synthesized SFX for PoVoxelStrike.
 // No audio files: everything is OscillatorNode + filtered noise, following the
 // pobrawl/audio.js recipe. All output rides the platform's shared AudioContext and
-// mix graph (js/audioBus.js) through window.PoAudioBus — SFX on the 'sfx' bus, the
-// drone bed on the 'music' bus — so global mute/volume/ducking apply for free.
+// mix graph (js/audioBus.js) through window.PoAudioBus on the 'sfx' bus, so global
+// mute/volume/ducking apply for free.
+//
+// There is no music in here any more (2026-09-30). The two-saw drone this file used to
+// run played UNDER the platform soundtrack, which every game page already has; the siege
+// now steers that soundtrack instead, through PoMusicDirector.tension (see setTension).
 //
 // Every public method is throttle-guarded and mute-safe, so the engine can call them
 // from hot paths (collapse spawns, debris collide events) without its own bookkeeping.
@@ -73,13 +77,15 @@ export class VoxelAudio {
     this.sfx = null;
     this.filter = null;   // concussion lowpass, in-line on the whole SFX path
     this.noise = null;
-    this.musicNodes = null;
     this._paused = false;
     this.spatial = true;      // cleared by setQuality() on the low tier
     this.reverbZones = true;
     this._space = 0;          // 0 = open field, 1 = stone interior
+    // Where the SFX lowpass rests: wide open, or pulled in while the player is nearly dead.
+    this._openCorner = 20000;
+    this.rain = null;         // { src, gain, tone } once setRain() has built the bed
     // Per-category throttles (seconds of ctx.currentTime).
-    this._next = { collapse: 0, impact: 0, cue: 0, crush: 0 };
+    this._next = { collapse: 0, impact: 0, cue: 0, crush: 0, turret: 0, whiz: 0, step: 0 };
   }
 
   _ensure() {
@@ -252,8 +258,8 @@ export class VoxelAudio {
   }
 
   /** One enveloped oscillator into `dest`. Returns nothing; cleans itself up. */
-  _tone(dest, { type = 'sine', from, to = null, dur, gain, attack = 0.005 }) {
-    const ctx = this.ctx, now = ctx.currentTime;
+  _tone(dest, { type = 'sine', from, to = null, dur, gain, attack = 0.005, delay = 0 }) {
+    const ctx = this.ctx, now = ctx.currentTime + delay;
     const o = ctx.createOscillator();
     o.type = type;
     o.frequency.setValueAtTime(from, now);
@@ -268,8 +274,8 @@ export class VoxelAudio {
   }
 
   /** Enveloped filtered-noise burst into `dest`. */
-  _burst(dest, { filterType = 'bandpass', freq, sweepTo = null, q = 1, dur, gain, attack = 0.006 }) {
-    const ctx = this.ctx, now = ctx.currentTime;
+  _burst(dest, { filterType = 'bandpass', freq, sweepTo = null, q = 1, dur, gain, attack = 0.006, delay = 0 }) {
+    const ctx = this.ctx, now = ctx.currentTime + delay;
     const src = this._noiseSrc(dur);
     const f = ctx.createBiquadFilter();
     f.type = filterType;
@@ -321,7 +327,46 @@ export class VoxelAudio {
     this._burst(this.sfx, { filterType: 'highpass', freq: 1900, dur: 0.7, gain: 0.09, attack: 0.02 });
   }
 
+  // ── The fortress ───────────────────────────────────────────────────────
+
+  /**
+   * A wall gun firing. It used to borrow shot() — the player's own zap, unpositioned — so
+   * the fortress sounded like you. This is a heavier report, and it comes from the gun.
+   */
+  turretShot(where) {
+    if (!this._ready() || !this._gate('turret', 0.05)) return;
+    const dest = this._pan(where);
+    this._tone(dest, { type: 'square', from: rand(200, 240), to: 62, dur: 0.14, gain: 0.2 });
+    this._burst(dest, { filterType: 'highpass', freq: 1700, dur: 0.08, gain: 0.12 });
+  }
+
+  /** A bolt passing close: the falling whistle of a near miss. */
+  whiz(where) {
+    if (!this._ready() || !this._gate('whiz', 0.12)) return;
+    this._burst(this._pan(where), { freq: 2600, sweepTo: 650, q: 2.4, dur: 0.2, gain: 0.16 });
+  }
+
+  /** The chalice is taken: a rising triad that lands on an open fifth. */
+  fanfare() {
+    if (!this._ready()) return;
+    const notes = [523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((f, i) => this._tone(this.sfx, {
+      type: 'triangle', from: f, dur: 0.5, gain: 0.2, attack: 0.012, delay: i * 0.14,
+    }));
+    for (const f of [523.25, 783.99, 1046.5, 1567.98]) {
+      this._tone(this.sfx, { type: 'triangle', from: f, dur: 1.9, gain: 0.13, attack: 0.03, delay: 0.62 });
+    }
+    this._burst(this.sfx, { filterType: 'highpass', freq: 5200, dur: 1.4, gain: 0.035, attack: 0.2, delay: 0.62 });
+  }
+
   // ── Destruction ────────────────────────────────────────────────────────
+
+  /** The floor dropping out of the mix under a really big fall. */
+  subDrop(where, strength = 1) {
+    if (!this._ready()) return;
+    const s = clamp(strength, 0.2, 1);
+    this._tone(this._pan(where), { from: 88, to: 24, dur: 0.9 + 0.5 * s, gain: 0.5 * s, attack: 0.02 });
+  }
 
   /**
    * A cluster detached from a structure. Gain and length scale with voxel count so a
@@ -447,102 +492,110 @@ export class VoxelAudio {
     f.setValueAtTime(Math.max(300, f.value), now);
     f.exponentialRampToValueAtTime(corner, now + 0.06);
     f.setValueAtTime(corner, now + 0.06 + hold);
-    f.exponentialRampToValueAtTime(20000, now + 0.06 + hold + 0.6 + 0.5 * s);
+    // Back to wherever the corner rests, which is not 20 kHz while the player is nearly dead.
+    f.exponentialRampToValueAtTime(this._openCorner, now + 0.06 + hold + 0.6 + 0.5 * s);
     window.PoAudioBus?.duck?.(0.2, (hold + 0.4) * 1000);
   }
 
-  // ── Tension bed ────────────────────────────────────────────────────────
-  // Two detuned saws through a lowpass whose corner tracks tension, plus a pulse
-  // layer that only emerges when things get bad. Static graph, modulated params —
-  // no scheduler, no notes, nothing to drift.
-
-  startMusic() {
-    if (!this._ensure() || this.musicNodes) return;
-    const ctx = this.ctx;
-    const bus = window.PoAudioBus;
-    const out = ctx.createGain();
-    out.gain.value = 0;
-    out.connect((bus && bus.busSync('music')) || this.master);
-
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 260;
-    lp.Q.value = 0.8;
-    lp.connect(out);
-
-    const droneGain = ctx.createGain();
-    droneGain.gain.value = 1.0;
-    droneGain.connect(lp);
-    const mk = (freq) => {
-      const o = ctx.createOscillator();
-      o.type = 'sawtooth';
-      o.frequency.value = freq;
-      o.connect(droneGain);
-      o.start();
-      return o;
-    };
-    const d1 = mk(55), d2 = mk(55.6);
-
-    // Slow swell so the bed breathes instead of sitting on one level.
-    const lfo = ctx.createOscillator();
-    lfo.type = 'sine';
-    lfo.frequency.value = 0.06;
-    const lfoDepth = ctx.createGain();
-    lfoDepth.gain.value = 55;
-    lfo.connect(lfoDepth).connect(lp.frequency);
-    lfo.start();
-
-    // Pulse layer: audible only at high tension (gain driven by setTension).
-    const pulse = ctx.createOscillator();
-    pulse.type = 'triangle';
-    pulse.frequency.value = 110;
-    const pulseGain = ctx.createGain();
-    pulseGain.gain.value = 0;
-    const pulseLfo = ctx.createOscillator();
-    pulseLfo.type = 'square';
-    pulseLfo.frequency.value = 2.2;
-    const pulseLfoDepth = ctx.createGain();
-    pulseLfoDepth.gain.value = 0; // driven with pulseGain so the throb scales too
-    pulse.connect(pulseGain).connect(lp);
-    pulseLfo.connect(pulseLfoDepth).connect(pulseGain.gain);
-    pulse.start(); pulseLfo.start();
-
-    const now = ctx.currentTime;
-    out.gain.setTargetAtTime(0.05, now, 1.5);
-    this.musicNodes = { out, lp, droneGain, d1, d2, lfo, lfoDepth, pulse, pulseGain, pulseLfo, pulseLfoDepth };
+  /**
+   * Nearly dead: the world goes dull. Pulls the SFX lowpass in and leaves it there until
+   * the player heals or dies; heartbeat() supplies the pulse over the top.
+   */
+  setLowHp(on) {
+    const corner = on ? 2400 : 20000;
+    if (corner === this._openCorner) return;
+    this._openCorner = corner;
+    if (!this._ready() || !this.filter) return;
+    const f = this.filter.frequency, now = this.ctx.currentTime;
+    f.cancelScheduledValues(now);
+    f.setValueAtTime(Math.max(300, f.value), now);
+    f.exponentialRampToValueAtTime(corner, now + 0.5);
   }
 
-  /** 0 = quiet field, 1 = overrun. Raises brightness, level, and the throb. */
+  /** One lub-dub. Straight to the master: it is inside your head, not in the room. */
+  heartbeat() {
+    if (!this._ready() || !this.master) return;
+    this._tone(this.master, { from: 64, to: 40, dur: 0.14, gain: 0.3 });
+    this._tone(this.master, { from: 56, to: 36, dur: 0.16, gain: 0.2, delay: 0.17 });
+  }
+
+  /** A footfall. `surface` is 'grass' (turf and dug earth) or 'stone' (masonry and rubble). */
+  footstep(surface) {
+    if (!this._ready() || !this._gate('step', 0.16)) return;
+    if (surface === 'stone') {
+      this._burst(this.sfx, { freq: rand(1700, 2300), q: 2, dur: 0.05, gain: 0.05 });
+      this._tone(this.sfx, { from: rand(140, 170), to: 90, dur: 0.05, gain: 0.035 });
+    } else {
+      this._burst(this.sfx, { filterType: 'lowpass', freq: rand(560, 760), dur: 0.08, gain: 0.06 });
+    }
+  }
+
+  // ── Weather ────────────────────────────────────────────────────────────
+
+  /**
+   * The rain bed: one looping noise source, started on first use. `level` 0 stops it being
+   * heard; `indoors` (0..1) is the same roof probe the reverb uses, and closes the tone
+   * down so a vault sounds like rain on the roof rather than rain on your head.
+   */
+  setRain(level, indoors) {
+    if (!this.rain && (level <= 0 || !this._ready())) return;
+    const ctx = this.ctx, now = ctx.currentTime;
+    if (!this.rain) {
+      // White, not the low-passed rubble buffer the impacts use: rain is all hiss.
+      const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.loop = true;
+      const tone = ctx.createBiquadFilter();
+      tone.type = 'lowpass';
+      tone.frequency.value = 5200;
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(tone).connect(gain).connect(this.filter);
+      src.start();
+      this.rain = { src, tone, gain };
+    }
+    const quiet = this._paused || this._muted() ? 0 : level;
+    this.rain.gain.gain.setTargetAtTime(0.05 * quiet * (1 - 0.55 * indoors), now, 0.4);
+    this.rain.tone.frequency.setTargetAtTime(5200 - 4500 * indoors, now, 0.4);
+  }
+
+  /** Thunder, `delay` seconds after the flash — light is faster than sound. */
+  thunder(delay = 0.8) {
+    if (!this._ready()) return;
+    // 1.9 s, not longer: the shared noise buffer is 2 s and a one-shot cannot outlast it.
+    this._burst(this.sfx, { filterType: 'lowpass', freq: 190, dur: 1.9, gain: 0.5, attack: 0.06, delay });
+    this._tone(this.sfx, { from: 58, to: 27, dur: 2.0, gain: 0.26, attack: 0.05, delay });
+    this._burst(this.sfx, { filterType: 'highpass', freq: 2400, dur: 0.25, gain: 0.06, delay });
+  }
+
+  // ── Music ──────────────────────────────────────────────────────────────
+
+  /**
+   * 0 = an empty field, 1 = in the vault under every gun. The platform soundtrack's own
+   * layer mixer does the rest: it thickens and speeds up with tension, and fades back to
+   * its resting level when this is released.
+   */
   setTension(t) {
-    if (!this.musicNodes) return;
-    const m = this.musicNodes;
-    const now = this.ctx.currentTime;
-    const tt = clamp(t, 0, 1);
-    m.lp.frequency.setTargetAtTime(260 + 950 * tt, now, 0.8);
-    if (!this._paused) m.out.gain.setTargetAtTime(0.045 + 0.03 * tt, now, 0.8);
-    m.pulseGain.gain.setTargetAtTime(0.016 * Math.max(0, tt - 0.35), now, 0.8);
-    m.pulseLfoDepth.gain.setTargetAtTime(0.012 * Math.max(0, tt - 0.35), now, 0.8);
+    window.PoMusicDirector?.tension?.(this._paused ? 0 : clamp(t, 0, 1));
   }
 
   setPaused(paused) {
     this._paused = paused;
-    if (!this.musicNodes) return;
-    this.musicNodes.out.gain.setTargetAtTime(paused ? 0.012 : 0.05, this.ctx.currentTime, 0.3);
-  }
-
-  stopMusic() {
-    const m = this.musicNodes;
-    if (!m) return;
-    this.musicNodes = null;
-    try { m.out.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1); } catch { /* noop */ }
-    for (const o of [m.d1, m.d2, m.lfo, m.pulse, m.pulseLfo]) { try { o.stop(this.ctx.currentTime + 0.5); } catch { /* */ } }
-    setTimeout(() => {
-      for (const n of Object.values(m)) { try { n.disconnect(); } catch { /* */ } }
-    }, 700);
+    if (paused) window.PoMusicDirector?.tension?.(0);
+    if (this.rain && this.ctx) this.rain.gain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.2);
   }
 
   dispose() {
-    this.stopMusic();
+    // Tension belongs to the run: leave it up and the catalog hums at siege pitch.
+    window.PoMusicDirector?.tension?.(0);
+    if (this.rain) {
+      try { this.rain.src.stop(); } catch { /* never started */ }
+      for (const n of Object.values(this.rain)) { try { n.disconnect(); } catch { /* */ } }
+      this.rain = null;
+    }
     // Let one-shot tails ring out through the shared graph, then detach our chain.
     const master = this.master;
     if (master) setTimeout(() => { try { master.disconnect(); } catch { /* */ } }, 1500);

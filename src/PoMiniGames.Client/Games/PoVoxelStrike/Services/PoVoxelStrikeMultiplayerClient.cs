@@ -46,6 +46,10 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
     public event Action<string>? PlayerDropped;
     /// <summary>The host ended the run; payload is empty.</summary>
     public event Action? RunEnded;
+    /// <summary>A squadmate carved the arena: (playerNumber, kind, structure index, x, y, z).</summary>
+    public event Action<int, int, int, float, float, float>? CarveReceived;
+    /// <summary>A squadmate took the chalice; payload is their player number.</summary>
+    public event Action<int>? SquadWon;
 
     public string LobbyConnectionId => Lobby.ConnectionId;
 
@@ -82,6 +86,9 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
             _lockstepSubs.Add(_lockstep.On<PoVoxelStrikeLockstepFrame>("frame", f => FrameReceived?.Invoke(f)));
             _lockstepSubs.Add(_lockstep.On<string>("playerDropped", c => PlayerDropped?.Invoke(c)));
             _lockstepSubs.Add(_lockstep.On("runEnded", () => RunEnded?.Invoke()));
+            _lockstepSubs.Add(_lockstep.On<int, int, int, float, float, float>("carve",
+                (n, kind, structure, x, y, z) => CarveReceived?.Invoke(n, kind, structure, x, y, z)));
+            _lockstepSubs.Add(_lockstep.On<int>("squadWon", n => SquadWon?.Invoke(n)));
 
             await _lockstep.StartAsync();
 
@@ -105,6 +112,15 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
     /// <summary>Tell the server the last tick we acked + the local fingerprint for desync detection.</summary>
     public Task HeartbeatAsync(PoVoxelStrikeClientHeartbeat heartbeat)
         => _lockstep?.InvokeAsync("Heartbeat", heartbeat) ?? Task.CompletedTask;
+
+    /// <summary>Relay one carve to the squad. Sent, not invoked: nothing waits on a reply, and
+    /// a hole must never queue behind the previous one's acknowledgement.</summary>
+    public Task SendCarveAsync(int playerNumber, int kind, int structure, float x, float y, float z) =>
+        _lockstep?.SendAsync("Carve", playerNumber, kind, structure, x, y, z) ?? Task.CompletedTask;
+
+    /// <summary>Tell the squad the chalice is taken.</summary>
+    public Task ClaimChaliceAsync(int playerNumber) =>
+        _lockstep?.SendAsync("ClaimChalice", playerNumber) ?? Task.CompletedTask;
 
     /// <summary>Host-only: end the run and broadcast runEnded to every peer.</summary>
     public Task EndRunAsync() => _lockstep?.InvokeAsync("EndRun") ?? Task.CompletedTask;

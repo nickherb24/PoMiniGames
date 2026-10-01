@@ -3,30 +3,49 @@
 
 import { Engine } from './game.js';
 import { loadAssets } from './assets.js';
+import { loadSettings, saveSettings } from './settings.js';
 
 let engine = null;
 // Monotonic token for the in-flight start(): assets are fetched over the network, so two
 // starts can overlap (navigate away and back) and the slower one must not install its
 // Engine over the newer one's. Same pattern as PoMarbleRace's map fetch.
 let startToken = 0;
-// Cached by start() so restart() can rebuild a fresh world WITHOUT re-fetching or
-// re-decoding assets — "Play again" costs one world build, not a full boot.
-let lastStart = null; // { containerId, dotnetRef, demo, volumes, online }
+// Decoded voxel volumes, kept for the life of the page visit. Every start() after the
+// first — "Play again", a different seed, the squad's arena — costs one world build, not a
+// manifest fetch and a decode. stop() drops it, so a later visit sees late-ingested assets.
+let volumesPromise = null;
 
-async function boot(host, dotnetRef, demo, volumes, online) {
+function volumes() {
+  volumesPromise ??= loadAssets().catch((err) => {
+    // Manifest unreachable (offline, cold server). The procedural fallback world in
+    // world.js still needs no assets — play on with an empty list rather than dying, and
+    // forget the failure so the next start() tries the network again.
+    console.warn('[PoVoxelStrike] asset load failed, using procedural world:', err);
+    volumesPromise = null;
+    return [];
+  });
+  return volumesPromise;
+}
+
+async function boot(host, dotnetRef, demo, loaded, online, opts) {
   // Engine.start() is async: the renderer factory awaits WebGPU adapter init before it
   // can fall back. The await has to be INSIDE the try or a rejected start would surface
   // as an unhandled rejection instead of OnFatalError.
   try {
-    engine = new Engine(host, dotnetRef, demo, volumes, online ? 'multi' : 'solo', online || null);
+    engine = new Engine(host, dotnetRef, demo, loaded, online ? 'multi' : 'solo', online || null, opts || {});
     if (online) {
-      // Each lockstep batch goes to the page, which ships it through the lockstep hub.
-      engine.multiplayerSink = (batch) => {
+      const send = (method, ...args) => {
         try {
-          const p = dotnetRef.invokeMethodAsync('OnLockstepBatch', batch);
+          const p = dotnetRef.invokeMethodAsync(method, ...args);
           if (p && p.catch) p.catch(() => { });
         } catch { }
       };
+      // Each lockstep batch goes to the page, which ships it through the lockstep hub.
+      engine.multiplayerSink = (batch) => send('OnLockstepBatch', batch);
+      // Carves and the win ride their own messages: neither may be dropped the way a
+      // stale position batch is.
+      engine.carveSink = (kind, structure, x, y, z) => send('OnCarve', kind, structure, x, y, z);
+      engine.winSink = () => send('OnChaliceClaimed');
     }
     await engine.start();
   } catch (err) {
@@ -36,47 +55,62 @@ async function boot(host, dotnetRef, demo, volumes, online) {
 }
 
 window.PoVoxelStrike = {
-  // `online` is null for solo/demo, else { playerNumber, seed } from the lockstep session.
-  async start(containerId, dotnetRef, demo, online) {
+  /**
+   * Build a run. It comes up in 'ready' (rendered, frozen) behind the page's start card;
+   * enter() is what starts it. Calling start() again replaces the run — that is "Play
+   * again", a change of seed, and the squad's arena, all the same call.
+   *
+   * Flat primitives, like the rest of this surface — no DTO for the page to keep in step.
+   * @param seed the arena to build; 0 lets the engine roll one. Online, the session's seed.
+   * @param survival solo only: the roaming horde is on
+   * @param playerNumber this player's seat in an online run; 0 for solo and demo
+   * @param names online: display names, indexed by player number − 1
+   */
+  async start(containerId, dotnetRef, demo, seed, survival, playerNumber, names) {
     const token = ++startToken;
     if (engine) { engine.dispose(); engine = null; }
 
     const host = document.getElementById(containerId);
     if (!host) { console.error('[PoVoxelStrike] container not found:', containerId); return; }
 
-    let volumes;
-    try {
-      volumes = await loadAssets();
-    } catch (err) {
-      // Manifest unreachable (offline, cold server). The procedural fallback world in
-      // world.js still needs no assets — play on with an empty list rather than dying.
-      console.warn('[PoVoxelStrike] asset load failed, using procedural world:', err);
-      volumes = [];
-    }
+    const loaded = await volumes();
     if (token !== startToken) return; // a newer start() or stop() landed mid-fetch
-
-    lastStart = { containerId, dotnetRef, demo, volumes, online: online || null };
-    boot(host, dotnetRef, demo, volumes, online || null);
+    const online = playerNumber > 0
+      ? { playerNumber, seed, names: Object.fromEntries((names || []).map((n, i) => [i + 1, n])) }
+      : null;
+    boot(host, dotnetRef, demo, loaded, online, { seed, survival: !!survival });
   },
 
-  /**
-   * Fast "Play again": tear down the run, reuse the already-decoded voxel volumes,
-   * build a fresh (new-seed) world synchronously. Falls back to a no-op when no run
-   * ever started — the Blazor side only offers restart after a successful boot.
-   */
-  restart() {
-    if (!lastStart) return;
-    startToken++; // invalidate any in-flight start()
-    if (engine) { engine.dispose(); engine = null; }
-    const host = document.getElementById(lastStart.containerId);
-    if (!host) return;
-    boot(host, lastStart.dotnetRef, lastStart.demo, lastStart.volumes, lastStart.online);
-  },
+  /** The start card's button (a click, so the Pointer Lock request is legal). */
+  enter() { engine?.enter(); },
 
   /** Online: a relayed lockstep frame (every peer's latest batch) for the engine to apply. */
   applyFrame(frame) { engine?.applyLockstepFrame(frame); },
 
+  /** Online: a squadmate's carve. Flat primitives, like every other hot-ish interop call. */
+  applyCarve(playerNumber, kind, structure, x, y, z) {
+    engine?.applyCarve(playerNumber, kind, structure, x, y, z);
+  },
+
+  /** Online: a squadmate took the chalice. */
+  squadWon() { engine?.squadWin(); },
+
   resume() { engine?.resume(); },
+
+  /** Settings as "sens|invertY|fov|gfx" — a string, so the page needs no DTO to read it. */
+  getSettings() {
+    const s = loadSettings();
+    return `${s.sens}|${s.invertY ? 1 : 0}|${s.fov}|${s.gfx}`;
+  },
+
+  /** Persist, and apply to the live run. The graphics tier takes effect on the next start(). */
+  setSettings(sens, invertY, fov, gfx) {
+    const s = saveSettings({ sens, invertY, fov, gfx });
+    engine?.applySettings(s);
+  },
+
+  /** Download the run's biggest-collapse clip. False when there is none to save. */
+  saveClip() { return !!engine?.clip?.save(); },
 
   /**
    * Fullscreen the canvas host (the engine's ResizeObserver handles the resize).
@@ -94,7 +128,14 @@ window.PoVoxelStrike = {
    *  honest about intent — abort mid-run vs stop on page dispose. */
   abort() { this.stop(); },
 
-  stop() { startToken++; if (engine) { engine.dispose(); engine = null; } },
+  stop() {
+    startToken++;
+    volumesPromise = null;
+    if (engine) { engine.dispose(); engine = null; }
+  },
+
+  /** Tear the run down but keep the decoded assets: the page is switching mode, not leaving. */
+  unload() { startToken++; if (engine) { engine.dispose(); engine = null; } },
 };
 
 // TEMP DEBUG — headless verification hook (same convention as PoMarbleRace's __game):

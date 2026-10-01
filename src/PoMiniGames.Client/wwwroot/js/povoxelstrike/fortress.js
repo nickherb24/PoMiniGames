@@ -248,12 +248,31 @@ export class Chalice {
   }
 
   update(dt) {
+    if (this.celebrating) {
+      // The win beat: the cup lifts and spins up, the beacon flares to a pillar. Runs on
+      // the engine's slowed victory clock, so it reads as a held moment, not a pop.
+      this.t += dt;
+      this.group.rotation.y += dt * (3 + this.t * 4);
+      for (const p of this.parts) p.position.y += dt * 1.1;
+      const flare = Math.min(1, this.t / 1.2);
+      this.beam.scale.set(1 + flare * 3.5, 1, 1 + flare * 3.5);
+      this.beam.material.opacity = 0.16 + flare * 0.4;
+      this.light.intensity = 26 + flare * 70;
+      return;
+    }
     if (this.taken) return;
     this.t += dt;
     this.group.rotation.y += dt * 0.9;
     for (const p of this.parts) p.position.y += Math.sin(this.t * 2.1) * dt * 0.12;
     this.light.intensity = 20 + Math.sin(this.t * 3.3) * 6;
     this.beam.material.opacity = 0.13 + Math.sin(this.t * 1.7) * 0.04;
+  }
+
+  /** The chalice was taken for real (not by the kiosk bot): play the flare instead of vanishing. */
+  celebrate() {
+    this.taken = true;
+    this.celebrating = true;
+    this.t = 0;
   }
 
   /** True on the frame the player first touches it. Latches, so it fires exactly once. */
@@ -294,7 +313,8 @@ const SUPPORT_DEPTH = 7;
 
 export class FortressGuns {
   /**
-   * @param opts { onPlayerDamage(amount), fx: { fire(position), hit(position), destroyed(position) } }
+   * @param opts { onPlayerDamage(amount, fromPosition),
+   *   fx: { fire(position), hit(position), whiz(position), destroyed(position) } }
    */
   constructor(scene, structures, terrain, opts = {}) {
     this.scene = scene;
@@ -311,8 +331,15 @@ export class FortressGuns {
     this.barrelMaterial = new THREE.MeshStandardMaterial({
       color: 0x39383d, roughness: 0.5, metalness: 0.7,
     });
-    this.bulletGeometry = new THREE.SphereGeometry(0.22, 8, 6);
-    this.bulletMaterial = new THREE.MeshBasicMaterial({ color: 0xffd08a });
+    // A tracer, not a ball: a thin bolt stretched along its flight (lookAt aims it), and
+    // additive so the bloom pass turns it into a streak. At 46 u/s a 0.22 sphere was a dot
+    // you felt before you saw; a 2.6-unit line says where it came from.
+    this.bulletGeometry = new THREE.CylinderGeometry(0.07, 0.07, 2.6, 6);
+    this.bulletGeometry.rotateX(Math.PI / 2);
+    this.bulletMaterial = new THREE.MeshBasicMaterial({
+      color: 0xffd08a, transparent: true, opacity: 0.9,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
 
     this._dir = new THREE.Vector3();
     this._aim = new THREE.Vector3();
@@ -350,6 +377,13 @@ export class FortressGuns {
   get liveCount() {
     let n = 0;
     for (const t of this.turrets) if (t.alive) n++;
+    return n;
+  }
+
+  /** Guns that have had a clear line to the player in the last few seconds (music tension). */
+  get sightedCount() {
+    let n = 0;
+    for (const t of this.turrets) if (t.alive && t.sawT > 0) n++;
     return n;
   }
 
@@ -394,6 +428,7 @@ export class FortressGuns {
         this.opts.fx?.destroyed?.(t.group.position);
         continue;
       }
+      if (t.sawT > 0) t.sawT -= dt;
       const d = t.group.position.distanceTo(playerPosition);
       if (d > TURRET_RANGE) continue;
 
@@ -411,6 +446,7 @@ export class FortressGuns {
         continue;
       }
       t.cooldown = TURRET_COOLDOWN_S * (0.75 + Math.random() * 0.5);
+      t.sawT = 4;
       this._fire(t, this._aim);
     }
 
@@ -426,8 +462,12 @@ export class FortressGuns {
     vel.y += (Math.random() - 0.5) * TURRET_SPREAD * 2;
     vel.z += (Math.random() - 0.5) * TURRET_SPREAD * 2;
     vel.normalize().multiplyScalar(BULLET_SPEED);
+    mesh.lookAt(mesh.position.x + vel.x, mesh.position.y + vel.y, mesh.position.z + vel.z);
     this.scene.add(mesh);
-    this.bullets.push({ mesh, vel: vel.clone(), life: BULLET_LIFE_S });
+    this.bullets.push({
+      mesh, vel: vel.clone(), life: BULLET_LIFE_S,
+      origin: turret.group.position, whizzed: false,
+    });
     this.opts.fx?.fire?.(turret.group.position);
   }
 
@@ -442,11 +482,20 @@ export class FortressGuns {
       for (let s = 0; s < steps && !dead; s++) {
         b.mesh.position.addScaledVector(b.vel, dt / steps);
         const p = b.mesh.position;
-        if (p.distanceTo(playerPosition) < 1.15) {
-          this.opts.onPlayerDamage?.(BULLET_DAMAGE);
+        const gap = p.distanceTo(playerPosition);
+        if (gap < 1.15) {
+          // The gun's position rides along so the HUD can point at what hit you.
+          this.opts.onPlayerDamage?.(BULLET_DAMAGE, b.origin);
           this.opts.fx?.hit?.(p);
           dead = true;
           break;
+        }
+        // A near miss, once per bullet, on the step it starts moving away again.
+        if (!b.whizzed && gap < 4.5
+          && (playerPosition.x - p.x) * b.vel.x + (playerPosition.y - p.y) * b.vel.y
+            + (playerPosition.z - p.z) * b.vel.z < 0) {
+          b.whizzed = true;
+          this.opts.fx?.whiz?.(p);
         }
         if (p.y <= this.terrain.heightAt(p.x, p.z)
           || this.structures.some(st => st.solidAtWorld(p))) {

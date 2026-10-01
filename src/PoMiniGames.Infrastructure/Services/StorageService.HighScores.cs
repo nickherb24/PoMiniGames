@@ -176,6 +176,7 @@ public partial class StorageService
             ["BruteKills"] = e.BruteKills,
             ["CrushKills"] = e.CrushKills,
             ["VoxelsDestroyed"] = e.VoxelsDestroyed,
+            ["Won"] = e.Won,
             // ISO-8601 string, matching every sibling board's date convention.
             ["Date"] = e.AchievedAtUtc.ToString("yyyy-MM-ddTHH:mm:ssZ"),
         },
@@ -190,6 +191,7 @@ public partial class StorageService
             BruteKills = e.GetInt32("BruteKills") ?? 0,
             CrushKills = e.GetInt32("CrushKills") ?? 0,
             VoxelsDestroyed = e.GetInt32("VoxelsDestroyed") ?? 0,
+            Won = e.GetBoolean("Won") ?? false,
             AchievedAtUtc = DateTimeOffset.TryParse(e.GetString("Date"), out var d) ? d : default,
         },
         // Identity is the player (mirrors MarbleRaceScores): one row per (name, account,
@@ -203,11 +205,18 @@ public partial class StorageService
             (incoming.TryGetValue("Score", out var v) ? v as int? ?? 0 : 0) > (existing.GetInt32("Score") ?? -1),
     };
 
-    public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10) =>
-        GetHighScoresAsync(PoVoxelStrikeScores, limit);
+    // The Daily Siege board is the same descriptor in a per-day partition: everyone storms
+    // the one arena that day's seed builds, so the day IS the board. `day` reaches an OData
+    // filter, so it must already be a server-formatted yyyy-MM-dd (the endpoint parses and
+    // re-formats it; nothing else may pass a caller's string through).
+    private static string? PoVoxelStrikeDayPartition(string? day) =>
+        day is null ? null : $"{PoVoxelStrikePartition}_{day}";
 
-    public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry) =>
-        SaveHighScoreAsync(PoVoxelStrikeScores, entry);
+    public Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null) =>
+        GetHighScoresAsync(PoVoxelStrikeScores, limit, partition: PoVoxelStrikeDayPartition(day));
+
+    public Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry, string? day = null) =>
+        SaveHighScoreAsync(PoVoxelStrikeScores, entry, partition: PoVoxelStrikeDayPartition(day));
 
     public Task<List<MarbleRaceHighScore>> GetMarbleRaceHighScoresAsync(int limit = 10) =>
         GetHighScoresAsync(MarbleRaceScores, limit);

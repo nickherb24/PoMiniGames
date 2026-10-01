@@ -14,6 +14,8 @@
 // memory / core-count / mobile check — because the only alternative is a frame-time
 // probe, and a probe that runs during world build measures the build, not the frame.
 
+import { loadSettings } from './settings.js';
+
 const TIERS = ['low', 'medium', 'high', 'ultra'];
 
 // WebGPU status, honestly stated so nobody re-litigates it from the ticket title:
@@ -40,6 +42,9 @@ function urlFlag(name) {
 export function detectTier() {
   const forced = (urlFlag('gfx') || '').toLowerCase();
   if (TIERS.includes(forced)) return forced;
+  // The player's own choice (pause dialog → Graphics) beats the guess below.
+  const chosen = loadSettings().gfx;
+  if (TIERS.includes(chosen)) return chosen;
 
   const mobile = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent || '');
   if (mobile) return 'low';
@@ -87,6 +92,12 @@ export function resolveQuality(tier = detectTier()) {
     // them measured 28 ms of an 81 ms step, on their own. These counts keep the effect —
     // stone visibly leaving the wall — at a price the simulation can pay.
     shrapnel: at('medium') ? (at('ultra') ? 140 : at('high') ? 90 : 48) : 0,
+    // 2026-09-30 pass. All three are fragment/vertex-shader work with no CPU cost per
+    // frame; the clip recorder is the exception (a canvas readback while it runs), so it
+    // is the only one held back to the tiers that have the headroom.
+    hotCarve: at('medium'),          // glowing rim on fresh cuts (materials.js)
+    rainDrops: at('high') ? 1600 : at('medium') ? 800 : 0,
+    collapseClip: at('high'),
     // Audio (cost is CPU on the audio thread, not GPU, but it tiers the same way)
     spatialAudio: true,
     convolutionReverb: at('medium'),

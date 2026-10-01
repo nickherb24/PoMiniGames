@@ -36,6 +36,9 @@ public sealed record PoVoxelStrikeHighScore
 
     public int VoxelsDestroyed { get; init; }
 
+    /// <summary>True when the run ended with the chalice taken rather than a death.</summary>
+    public bool Won { get; init; }
+
     /// <summary>When the run happened. Persisted as an ISO-8601 string, matching sibling boards.</summary>
     public DateTimeOffset AchievedAtUtc { get; init; }
 }

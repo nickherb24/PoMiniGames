@@ -4,7 +4,14 @@
 // Input contract (PRD §4.3): during play the CANVAS owns raw input under Pointer Lock.
 // Losing the lock for any reason (Esc, tab switch) pauses the simulation and hands the
 // overlay to Blazor via OnPaused; Resume re-acquires the lock from the button's click
-// gesture. The engine's own veil appears only before the first lock of a run.
+// gesture. A run is built in state 'ready' — rendered, nothing simulated, behind the
+// page's start card — and enter() (that card's button, so a gesture) is what takes the
+// lock and starts the clock. The engine's own click-to-play veil is gone: it was a second
+// card and a second click after the first.
+//
+// A gamepad and a touch screen cannot take the lock at all. They get FREE CONTROL instead
+// (see input.js): same simulation, no lock, and pause is a button rather than lock loss.
+// `_controlling()` is the one test for "the player is driving", whichever way they got in.
 //
 // Interop contract (PRD §4.2): a 10 Hz OnHudTick pump of flat primitives (positional,
 // same convention as PoMarbleRace — no DTOs across the boundary), plus the discrete
@@ -21,12 +28,14 @@
 //
 // ARG ORDER IS A CONTRACT. The positional lists below mirror [JSInvokable] methods in
 // PoVoxelStrikePage.razor — reorder/insert on BOTH sides or the binder mis-assigns:
-//   OnHudTick(hp, heatPct, heatLocked, altPct, score, elapsed, kills, enemyCount,
-//             bodies, particles)
+//   OnHudTick(hp, score, elapsed, kills, gunsSilenced, gunsTotal, down, revivePct)
+//     (heat and blast are NOT here: the crosshair rings show them, engine-side)
 //   OnGameOver(score, survivalSeconds, kills, bruteKills, crushKills,
-//              voxelsDestroyed, seed)          ← new args go at the END only
-//   OnReady(assetCount, structureCount) · OnResumed() · OnPaused(reason)
-//   OnFatalError(message)
+//              voxelsDestroyed, seed, gunsSilenced, gunsTotal, damageTaken)
+//                                              ← new args go at the END only
+//   OnVictory(same list) · OnReady(assetCount, structureCount, weather)
+//   OnResumed() · OnPaused(reason) · OnFatalError(message)
+//   Online only: OnLockstepBatch(batch) · OnCarve(kind, structure, x, y, z) · OnChaliceClaimed()
 
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
@@ -37,17 +46,32 @@ import { EnemyManager } from './enemies.js';
 import { VoxelAudio } from './audio.js';
 import { Vfx } from './vfx.js';
 import { resolveQuality, createRenderer } from './quality.js';
-import { setQuality, createActorMaterial, SkyEnvironment } from './materials.js';
+import { setQuality, SkyEnvironment, markHotCarve, tickMaterials, resetMaterials } from './materials.js';
 import { ParticleSystem } from './particles.js';
 import { DecalField } from './decals.js';
-import { FortressGuns, Chalice } from './fortress.js';
+import { FortressGuns, Chalice, OUTER_HALF, INNER_HALF, KEEP_HALF } from './fortress.js';
 import { ShrapnelField } from './shrapnel.js';
 import { createPhysicsWorld, PHYSICS_STEP as SI_PHYSICS_STEP } from './physics.js';
+import { Avatar } from './avatar.js';
+import { AltInput } from './input.js';
+import { Weather } from './weather.js';
+import { ClipRecorder } from './clip.js';
+import { loadSettings } from './settings.js';
 
-const EYE_HEIGHT = 1.6;
 const CAM_DISTANCE = 7;
+// How close the chase camera may be pushed by a wall before the avatar is hidden — inside
+// that, the figure fills the frame and you are looking at the back of your own head.
+const CAM_HIDE_AVATAR_BELOW = 1.5;
+const CAM_WALL_MARGIN = 0.35;
 const WALK_SPEED = 9;
 const RUN_SPEED = 16;
+// Take-off speed. At SI gravity this clears about 1.7 m — a rubble pile or a wall stub,
+// never the 12 m inner curtain. Walls are still the siege; a jump is for the mess you made.
+const JUMP_SPEED = 5.8;
+const JUMP_COOLDOWN_S = 0.3;
+// Mouse look, radians per pixel at look-speed 1.0 (the pause dialog's slider scales it).
+const LOOK_RAD_PER_PX = 0.0025;
+const STRIDE_M = 2.3;                   // ground covered per footstep sound
 const PHYSICS_STEP = SI_PHYSICS_STEP;
 // The player is a rigid body now (see _buildPlayerBody). A sphere, not a capsule:
 // cannon-es has no capsule primitive, and a single sphere at the hips with a ground probe
@@ -65,10 +89,21 @@ const GROUND_PROBE = PLAYER_RADIUS + 0.25;
 const WORLD_GROUP = 1;
 const PLAYER_GROUP = 2;
 const HUD_INTERVAL_S = 0.1;
-// Taking the chalice is the win, so it has to out-score any amount of grinding: a long
-// survival run tops out around 20 k, and a siege that ends in a breach should always read
-// as the better result on the board.
-const VICTORY_BONUS = 25000;
+// Taking the chalice is the win, so it has to out-score any amount of grinding — and
+// taking it SOONER has to out-score taking it later. The bonus used to be a flat 25,000
+// beside a +10/s clock, which made standing outside the wall for an hour the best play.
+// It now decays at 40/s, four times what the clock pays, down to a 5,000 floor.
+// PoVoxelStrikeScore.WinBonus (Domain) is the server's copy: the endpoint's plausibility
+// ceiling is computed from it, so the two must change together.
+const winBonus = (seconds) => Math.max(5000, 25000 - 40 * Math.floor(seconds));
+// Seconds the win is held before the summary: the slow orbit, the flare, the fanfare.
+const VICTORY_SHOW_S = 4;
+const VICTORY_TIME_SCALE = 0.35;
+// Collapses at least this big (voxels) get the hit-stop, the sub drop and the dust front.
+const BIG_COLLAPSE_VOXELS = 400;
+const HIT_STOP_S = 0.28;
+const HIT_STOP_SCALE = 0.22;
+const LOW_HP = 30;
 // Chunks the whole fortress may re-mesh per frame for LOD changes. Greedy meshing made a
 // chunk cheap, but 44 structures changing band at once is still 800 of them.
 const REMESH_CHUNKS_PER_FRAME = 6;
@@ -104,20 +139,38 @@ const PLAYER_CRUSH_MIN_SPEED = 5;
 // co-presence: every client builds the SAME arena from the seed the session dealt, ships its
 // own position + yaw at the lockstep rate, and renders the other players as avatars at the
 // positions it is sent. Enemies and damage stay local to each client.
+//
+// 2026-09-30: three things now cross the wire besides positions. Carves do (each client
+// replays the others' through Weapon.applyRemote, so the breach is one breach); the win
+// does (one player takes the chalice, the squad wins); and "down" does — a player at 0 HP
+// with a squadmate still standing waits for a revive instead of ending their own run.
+const PLAYER_COLOR = 0xe4572e;
 const PEER_COLORS = [0x3b82f6, 0x22c55e, 0xf59e0b, 0xa855f7, 0x14b8a6, 0xec4899];
 // Seconds without a batch before a peer avatar is taken down.
 const PEER_STALE_S = 10;
+// A peer silent for longer than this cannot be counted on to revive anyone. Generous on
+// purpose: a squadmate's browser stalling on a first-carve shader compile goes quiet for
+// seconds, and at 3 s that stall read as "nobody left" and killed a player who had help.
+const PEER_LIVE_S = 6;
+const REVIVE_RADIUS = 3.5;
+const REVIVE_S = 3;
+const REVIVE_HP = 50;
+const BLEED_OUT_S = 45;
 
 export class Engine {
   /**
-   * @param {object|null} online null for solo/demo, else { playerNumber, seed } from the lockstep
-   *   session — see index.js start().
+   * @param {object|null} online null for solo/demo, else { playerNumber, seed, names } from
+   *   the lockstep session — see index.js start(). `names` maps player number → display name.
+   * @param {object} opts { seed?: number, survival?: boolean } — a seed to replay (Daily
+   *   Siege, "replay this arena") and whether the roaming horde is on.
    */
-  constructor(host, dotnetRef, demo, volumes, mode = 'solo', online = null) {
+  constructor(host, dotnetRef, demo, volumes, mode = 'solo', online = null, opts = {}) {
     this.host = host;
     this.dotnetRef = dotnetRef;
     this.demo = demo;
     this.volumes = volumes;
+    this.survival = !!opts.survival && mode !== 'multi';
+    this.settings = loadSettings();
     // 'solo' (default) or 'multi'. Multi enables the lockstep input shipper.
     this.mode = mode === 'multi' ? 'multi' : 'solo';
     this.multiplayerSink = null;
@@ -131,20 +184,29 @@ export class Engine {
 
     this.disposed = false;
     this.running = false;
-    this.state = 'playing'; // 'playing' | 'paused' | 'dead'
+    // 'ready' | 'playing' | 'paused' | 'dead'. A played run waits in 'ready' behind the
+    // start card until enter(); the kiosk bot has no card and starts playing.
+    this.state = demo ? 'playing' : 'ready';
     // World seed (PRD §F3): generated per run, surfaced in OnGameOver so the run
     // summary can show it. Hex keeps it short enough to read aloud.
     this.seed = (Math.random() * 0xffffffff) >>> 0;
+    if (Number.isFinite(opts.seed) && opts.seed > 0) this.seed = opts.seed >>> 0;
     // Online: the whole squad builds the arena the session dealt.
     if (online && online.seed) this.seed = online.seed >>> 0;
     if (online && online.playerNumber) this.multiplayerPlayerNumber = online.playerNumber | 0;
-    this.peers = new Map();   // playerNumber → { mesh, target, yaw, seenAt }
-    this.everLocked = false;
+    this.peerNames = (online && online.names) || {};
+    this.peers = new Map();   // playerNumber → { avatar, target, yaw, seenAt, down, speed }
+    this.carveSink = null;    // online: (kind, structureIndex, x, y, z) → the hub
+    this.winSink = null;      // online: () → the hub, when this player takes the chalice
+    this.free = false;        // free control: driving without Pointer Lock (pad / touch)
     this.rafId = 0;
     this.lastTime = 0;
     this.keys = new Set();
     this.yaw = 0;
     this.pitch = -0.25;
+    this._fireMouse = false;
+    this._jumpCd = 0;
+    this._jumpQueued = false;
 
     // Run stats (PRD §F7 score formula).
     this.hp = PLAYER_MAX_HP;
@@ -153,30 +215,35 @@ export class Engine {
     this.bruteKills = 0;
     this.crushKills = 0;
     this.voxelsDestroyed = 0;
+    this.damageTaken = 0;
     this.hudClock = 0;
+    // Down-but-not-out (online only): see _goDown.
+    this.downed = false;
+    this.reviveT = 0;
+    this.bleedT = 0;
+    // Simulation time scale: the hit-stop on a big collapse and the slow victory beat.
+    this._hitStopT = 0;
+    this._hitStopCd = 0;
+    this.wonAt = -1;
 
     this._onKeyDown = (e) => {
       if (e.repeat) return;
       this.keys.add(e.code);
+      if (!this._controlling() || this.state !== 'playing') return;
       // Keyboard fire (user request: trackpad users shouldn't need mouse buttons):
-      // F digs (hold = held primary fire), G blasts. Mouse buttons still work too.
-      if (this._locked() && this.state === 'playing') {
-        if (e.code === 'KeyF') this.weapon.setPrimaryHeld(true);
-        if (e.code === 'KeyG') this.weapon.fireAlt(this._muzzle());
-      }
+      // F digs (held — read off this.keys every frame), G blasts. Mouse buttons work too.
+      if (e.code === 'KeyG' && !this.downed) this.weapon.fireAlt(this._muzzle());
+      if (e.code === 'Space') { this._jumpQueued = true; e.preventDefault(); } // no page scroll
+      // Under Pointer Lock the browser takes Esc itself and the lock loss is the pause;
+      // in free control nothing does, so Esc has to be a pause key here.
+      if (e.code === 'Escape' && this.free) this.pause();
     };
-    this._onKeyUp = (e) => {
-      this.keys.delete(e.code);
-      if (e.code === 'KeyF') this.weapon?.setPrimaryHeld(false);
-    };
+    this._onKeyUp = (e) => this.keys.delete(e.code);
     this._onMouseMove = (e) => this._look(e.movementX, e.movementY);
     this._onMouseDown = (e) => this._mouseButton(e, true);
     this._onMouseUp = (e) => this._mouseButton(e, false);
     this._onContextMenu = (e) => { if (this._locked()) e.preventDefault(); };
     this._onPointerLockChange = () => this._lockChanged();
-    this._onClick = () => {
-      if (!this._locked() && !this.demo && this.state === 'playing') this.canvas.requestPointerLock();
-    };
   }
 
   /**
@@ -252,7 +319,7 @@ export class Engine {
     this.scene.add(sun);
     this.scene.add(sun.target);
 
-    this.camera = new THREE.PerspectiveCamera(70, width / height, 0.1, 500);
+    this.camera = new THREE.PerspectiveCamera(this.settings.fov, width / height, 0.1, 500);
 
     this.vfx = new Vfx(this.renderer, this.scene, this.camera, this.host, this.q);
     this.vfx.buildSky();
@@ -270,11 +337,14 @@ export class Engine {
     // Demo (kiosk) keeps the visuals but stays silent — there is no user gesture to
     // unlock an AudioContext, and the catalog page should not hum on its own.
     this.audio = this.demo ? null : new VoxelAudio();
-    this.audio?.setQuality(this.q); // before startMusic: it decides the reverb graph
-    this.audio?.startMusic();
+    this.audio?.setQuality(this.q); // before the first cue: it decides the reverb graph
     this._prevLocked = false;
     this._cueClock = 1.5;
     this._tensionClock = 0;
+    this._heartClock = 0;
+    this._steamClock = 0;
+    this._stride = 0;
+    this.indoors = 0;
 
     // Physics: cannon-es (the platform's physics engine — PoRacer/PoMarbleRace ship it
     // via the same import map).
@@ -307,6 +377,9 @@ export class Engine {
           color: 0xb9ab95, speed: 1.6, spread: 3, size: 0.9,
           life: 2.6, upward: 0.7,
         });
+        // Close enough to be in the cloud: grit on the lens.
+        if (d < 24) this.vfx.lensDust(Math.min(0.9, voxels / 450) * (1 - d / 24));
+        if (voxels >= BIG_COLLAPSE_VOXELS) this._bigCollapse(voxels, position, proximity);
       },
       impact: (mass, position) => {
         this.audio?.debrisHit(mass, position);
@@ -328,6 +401,7 @@ export class Engine {
       };
     }
     this.enemies = new EnemyManager(this.scene, this.structures, this.debris, this.terrain, {
+      enabled: this.survival,
       demo: this.demo,
       onPlayerDamage: (amount) => this._damagePlayer(amount),
       onKill: (type, byCrush) => {
@@ -350,13 +424,18 @@ export class Engine {
     this.weapon = new Weapon(this.scene, this.camera, this.structures, this.terrain, this.debris,
       this.enemies, (removed, clusterVoxels) => { this.voxelsDestroyed += removed + clusterVoxels; },
       {
-        shot: (muzzle) => { this.audio?.shot(); this.vfx.muzzleFlash(muzzle); },
+        shot: (muzzle) => { this.audio?.shot(); this.vfx.muzzleFlash(muzzle); this._firedT = 0.1; },
         altLaunch: () => this.audio?.altLaunch(),
+        // Online: every carve that lands here is offered to the squad (see index.js).
+        carved: (kind, structureIndex, point) =>
+          this.carveSink?.(kind, structureIndex, point.x, point.y, point.z),
         detonate: (point) => {
           const near = Math.max(0, 1 - this.player.position.distanceTo(point) / 55);
           this.audio?.explosion(point, near);
           this.vfx.shockwave(point);
-          this.vfx.addShake(0.45);
+          // Scaled by distance now that a squadmate's blast across the arena lands here too.
+          this.vfx.addShake(0.45 * near);
+          markHotCarve(point, 6);
           this.particles.emit(point, 70, {
             color: 0x6b6157, speed: 7, spread: 2, size: 1.4, life: 2.4, upward: 1.1,
           });
@@ -367,7 +446,8 @@ export class Engine {
         },
         // Primary-fire contact: a small puff and a small burn, so sustained digging
         // leaves a visible trench rather than a clean hole.
-        impact: (point, kind, normal) => {
+        impact: (point, kind, normal, radius) => {
+          markHotCarve(point, radius);
           this.particles.emit(point, 6, {
             color: kind === 'terrain' ? 0x6d5138 : 0xc9c6c0,
             speed: 2.2, spread: 0.6, size: 0.32, life: 0.8, upward: 0.9,
@@ -378,31 +458,35 @@ export class Engine {
       },
       this.shrapnel);
 
-    this.player = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.4, 1.0, 4, 12),
-      createActorMaterial({ color: 0xe4572e }),
-    );
+    // The player is a voxel figure (avatar.js); `this.player` is its root group, which is
+    // all the rest of the engine ever asked of the capsule it replaces — a position and a
+    // yaw.
+    this.avatar = new Avatar(PLAYER_COLOR);
+    this.player = this.avatar.group;
     // Spawn is OUTSIDE the outer wall. The origin is the middle of the keep now, and a
     // player who starts on the objective has not besieged anything.
     this.player.position.copy(this.spawnPoint);
     this._prevPlayerPos = this.player.position.clone();
     this._playerVel = new THREE.Vector3();
     this._buildPlayerBody();
-    this.player.castShadow = true;
     this.scene.add(this.player);
+    // Face the gate, not the spawn apron behind it.
+    this.player.rotation.y = this.yaw;
+    this._camDist = CAM_DISTANCE;
 
     // ── The siege fixtures ──────────────────────────────────────────────
     this.chalice = new Chalice(this.scene, chaliceSpot, this.q);
     this.guns = new FortressGuns(this.scene, this.structures, this.terrain, {
-      onPlayerDamage: (amount) => this._damagePlayer(amount),
+      onPlayerDamage: (amount, from) => this._damagePlayer(amount, from),
       fx: {
         fire: (position) => {
-          this.audio?.shot();
+          this.audio?.turretShot(position);
           this.vfx.muzzleFlash(position);
           this.particles.emit(position, 5, {
             color: 0xffd9a0, speed: 3.4, spread: 0.4, size: 0.35, life: 0.4, upward: 0.6,
           });
         },
+        whiz: (position) => this.audio?.whiz(position),
         hit: (position) => {
           this.particles.emit(position, 7, {
             color: 0xc9c6c0, speed: 2.6, spread: 0.5, size: 0.3, life: 0.6, upward: 1.0,
@@ -421,14 +505,21 @@ export class Engine {
     });
     for (const mount of turretMounts) this.guns.add(mount.position, mount.structure);
 
-    this._buildVeil();
+    // Weather belongs to the seed, so a Daily Siege and an online squad share it.
+    this.weather = new Weather(this.scene, this.seed, this.q, {
+      overcast: (amount) => { this.vfx.overcast = amount; },
+      flash: (amount) => this.vfx.flash(amount),
+      thunder: (delay) => this.audio?.thunder(delay),
+    });
+
     this._buildCrosshair();
+    this.input = new AltInput(this.host, { pause: () => this.pause() });
+    this.clip = (this.q.collapseClip && !this.demo) ? new ClipRecorder(this.canvas) : null;
 
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
     document.addEventListener('pointerlockchange', this._onPointerLockChange);
     document.addEventListener('contextmenu', this._onContextMenu);
-    this.canvas.addEventListener('click', this._onClick);
 
     this.resizeObserver = new ResizeObserver(() => this._resize());
     this.resizeObserver.observe(this.host);
@@ -437,15 +528,62 @@ export class Engine {
     this.lastTime = performance.now();
     this.rafId = requestAnimationFrame((t) => this._frame(t));
 
-    this._notify('OnReady', this.volumes.length, structures.length);
+    this._notify('OnReady', this.volumes.length, structures.length, this.weather.kind);
   }
 
-  /** Blazor Resume button (a click gesture, so the lock request is permitted). */
-  resume() {
-    if (this.state !== 'paused') return;
+  /** Is the player driving — under Pointer Lock, or in free control (pad / touch)? */
+  _controlling() { return this._locked() || this.free; }
+
+  /**
+   * Take control: the start card's button, and the pause dialog's Resume. Both are click
+   * gestures, which is what makes the lock request legal. The state only moves to
+   * 'playing' once control is actually held (_lockChanged, or _beginFree) — a refused lock
+   * request therefore leaves the card up to be clicked again, instead of a running clock
+   * with nobody at the controls.
+   * @param free force free control (a pad button pressed on the card)
+   */
+  enter(free = false) {
+    if (this.demo || this.disposed) return;
+    if (this.state !== 'ready' && this.state !== 'paused') return;
+    if (free || this.input.touch) { this._beginFree(); return; }
+    try {
+      const pending = this.canvas.requestPointerLock();
+      pending?.catch?.(() => { /* refused (no gesture, or Chrome's post-Esc cooldown): click again */ });
+    } catch { /* same */ }
+  }
+
+  /** Blazor's Resume button. Kept as its own name; it is the same act as entering. */
+  resume() { this.enter(); }
+
+  _beginFree() {
+    this.free = true;
     this.state = 'playing';
     this.audio?.setPaused(false);
-    if (!this.demo) this.canvas.requestPointerLock();
+    this.crosshair.style.display = 'block';
+    this.input.setActive(true);
+    this._notify('OnResumed');
+  }
+
+  /** Pause on purpose: the touch button, a pad's Start, or Esc in free control. */
+  pause() {
+    if (this.state !== 'playing' || this.demo) return;
+    if (this._locked()) { document.exitPointerLock(); return; } // _lockChanged does the rest
+    this.free = false;
+    this._fireMouse = false;
+    this.input.setActive(false);
+    this.crosshair.style.display = 'none';
+    this.state = 'paused';
+    this.audio?.setPaused(true);
+    this._notify('OnPaused', 'button');
+  }
+
+  /** Live settings from the pause dialog. The graphics tier is read at the next start(). */
+  applySettings(settings) {
+    this.settings = settings;
+    if (this.camera && this.camera.fov !== settings.fov) {
+      this.camera.fov = settings.fov;
+      this.camera.updateProjectionMatrix();
+    }
   }
 
   dispose() {
@@ -456,13 +594,19 @@ export class Engine {
     window.removeEventListener('keyup', this._onKeyUp);
     document.removeEventListener('pointerlockchange', this._onPointerLockChange);
     document.removeEventListener('contextmenu', this._onContextMenu);
-    this.canvas?.removeEventListener('click', this._onClick);
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mousedown', this._onMouseDown);
     document.removeEventListener('mouseup', this._onMouseUp);
     this.resizeObserver?.disconnect();
     if (this._locked()) document.exitPointerLock();
 
+    this.input?.dispose();
+    this.clip?.dispose();
+    this.weather?.dispose();
+    for (const peer of this.peers.values()) peer.avatar.dispose();
+    this.peers.clear();
+    this.avatar?.dispose();
+    resetMaterials();
     this.audio?.dispose();
     this.vfx?.dispose();
     this.particles?.dispose();
@@ -485,8 +629,9 @@ export class Engine {
     });
     this.renderer?.dispose();
     this.canvas?.remove();
-    this.veil?.remove();
     this.crosshair?.remove();
+    this.hitArc?.remove();
+    this.cracks?.remove();
   }
 
   // ── Frame loop ─────────────────────────────────────────────────────────
@@ -500,23 +645,37 @@ export class Engine {
     const dt = Math.min(Math.max((time - this.lastTime) / 1000, 0), 0.05);
     this.lastTime = time;
 
-    // Paused: render the frozen scene, nothing advances. Dead: the world keeps moving
-    // for the kill-cam beat (debris settles, enemies mill), but the clock and input do
-    // not.
-    const simulating = this.state !== 'paused';
+    // Paused, or 'ready' behind the start card: render the frozen scene, nothing advances
+    // — until 2026-09-30 the clock ran and the wall guns fired while the click-to-play
+    // veil was still up. Dead: the world keeps moving for the kill-cam beat (debris
+    // settles, enemies mill), but the clock and input do not.
+    const simulating = this.state !== 'paused' && this.state !== 'ready';
     const playing = this.state === 'playing';
+
+    // Simulation time scale. `dt` stays real time for the camera, the screen effects, the
+    // run clock and the lockstep shipper; `sdt` is what the world advances by. Two things
+    // bend it: the hit-stop under a big collapse, and the slow beat after the chalice.
+    let scale = 1;
+    if (this._hitStopT > 0) { this._hitStopT -= dt; scale = HIT_STOP_SCALE; }
+    if (this._hitStopCd > 0) this._hitStopCd -= dt;
+    if (this.wonAt >= 0 && this.wonAt < VICTORY_SHOW_S) scale = Math.min(scale, VICTORY_TIME_SCALE);
+    const sdt = dt * scale;
+
+    const pad = this.input.poll(dt);
+    if (!this.demo) this._applyInput(pad);
 
     if (playing) {
       this.elapsed += dt;
       if (this.demo) this._updateDemo(dt);
-      else if (this._locked()) this._move(dt);
+      else if (this.downed) this._updateDowned(dt);
+      else if (this._controlling()) this._move(dt, pad);
       // Height is the physics body's business now — the mesh is synced from it after the
       // step. The exponential settle onto terrain.heightAt() that used to live here was
       // what made the player float over craters and up two-metre ledges.
     }
 
     if (simulating) {
-      this.physicsAccumulator = Math.min(this.physicsAccumulator + dt, 0.1);
+      this.physicsAccumulator = Math.min(this.physicsAccumulator + sdt, 0.1);
       while (this.physicsAccumulator >= PHYSICS_STEP) {
         // Swept contacts run BEFORE the step, on the motion the step is about to take.
         this.shrapnel.sweep(PHYSICS_STEP);
@@ -534,26 +693,29 @@ export class Engine {
         this.player.position.set(b.x, b.y - PLAYER_RADIUS + 0.9, b.z);
       }
 
-      this.weapon.update(dt, this._muzzle());
+      this.weapon.update(sdt, this._muzzle());
       // Overheat lockout: sound the vent exactly once, on the rising edge.
       if (this.weapon.locked && !this._prevLocked) this.audio?.lockout();
       this._prevLocked = this.weapon.locked;
-      this.debris.update(dt);
+      this.debris.update(sdt);
       if (playing) this.enemies.updateSpawning(
         dt, this.elapsed, this.player.position, this.camera.getWorldDirection(new THREE.Vector3()));
-      this.enemies.update(dt, this.player.position);
+      this.enemies.update(sdt, this.player.position);
       this.enemies.checkCrush(this.debris.pieces);
       // Velocity is differenced, not integrated: _move() writes the position directly, so
-      // this is the only honest source for the turrets' lead calculation.
+      // this is the only honest source for the turrets' lead calculation. Differenced
+      // over SIM time, the clock the bullets fly on.
       this._playerVel.copy(this.player.position).sub(this._prevPlayerPos)
-        .divideScalar(Math.max(dt, 1e-4));
+        .divideScalar(Math.max(sdt, 1e-4));
       this._prevPlayerPos.copy(this.player.position);
-      this.guns.update(dt, this.player.position, this._playerVel);
-      this.chalice.update(dt);
+      this.guns.update(sdt, this.player.position, this._playerVel);
+      this.chalice.update(sdt);
       // Demo runs its own celebrate-and-restart loop (see _updateDemo); ending the run
       // would leave the kiosk sitting on a game-over screen.
-      if (playing && !this.demo && this.chalice.reached(this.player.position)) this._claimChalice();
-      if (playing) this._checkPlayerCrush(dt);
+      if (playing && !this.demo && !this.downed && this.chalice.reached(this.player.position)) {
+        this._claimChalice(false);
+      }
+      if (playing) this._checkPlayerCrush(sdt);
       // One re-mesh budget shared by the whole fortress. A carve's own chunks always
       // rebuild immediately (a hole must appear on the frame you made it); LOD band
       // changes are lazy and draw from this, so crossing a distance boundary spreads a
@@ -569,14 +731,24 @@ export class Engine {
       this.terrain.rebuildCollider();
     }
 
-    if (playing && this.audio) this._updateAudioAmbience(dt);
+    if (playing) this._updateFeel(dt);
+    if (this.wonAt >= 0) this._updateVictory(dt);
+
+    // The figure walks at the speed the body is actually making, not the speed asked for.
+    const bv = this.playerBody.velocity;
+    this._firedT = Math.max(0, (this._firedT ?? 0) - dt);
+    this.avatar.update(sdt, simulating ? Math.hypot(bv.x, bv.z) : 0, this._firedT > 0, this.weapon.heat);
 
     this._followCamera(dt);
+    this.vfx.setHeat(this.weapon.heat);
     this.vfx.update(dt);
+    tickMaterials(this.vfx.time);
     this.vfx.applyShake(); // AFTER lookAt so the shake never fights the follow lerp
-    this.particles.update(dt);
+    this.particles.update(sdt);
     this.decals.update(dt);
-    this.shrapnel.update(dt);
+    this.shrapnel.update(sdt);
+    this._updateSpace(dt);
+    this.weather.update(dt, this.camera.position, this.indoors);
     this._updateShadowCamera();
     this._streamColliders(dt);
     this._updateRenderScale(dt);
@@ -586,11 +758,10 @@ export class Engine {
       // so it is also what the player should hear.
       this.camera.updateMatrixWorld();
       this.audio.setListener(this.camera);
-      this._updateSpace(dt);
     }
 
     this.hudClock -= dt;
-    if (this.hudClock <= 0 && this.state !== 'dead') {
+    if (this.hudClock <= 0 && (this.state === 'playing' || this.state === 'paused')) {
       this.hudClock = HUD_INTERVAL_S;
       this._pumpHud();
     }
@@ -629,14 +800,84 @@ export class Engine {
         back: k.has('KeyS') || k.has('ArrowDown'),
         left: k.has('KeyA') || k.has('ArrowLeft'),
         right: k.has('KeyD') || k.has('ArrowRight'),
-        fire: false,
+        // Cosmetic on the far side (the squadmate's gun kicks); the carve itself travels
+        // as its own message, because a batch is latest-wins and a hole must not be.
+        fire: this.weapon.primaryHeld && !this.weapon.locked,
         altFire: false,
         yaw: THREE.MathUtils.radToDeg(this.yaw),
         pitch: THREE.MathUtils.radToDeg(this.pitch),
         x: p.x, y: p.y, z: p.z,
+        down: this.downed,
       }],
     };
     try { this.multiplayerSink(batch); } catch { /* the page reports a dead hub itself */ }
+  }
+
+  /** A squadmate's carve, relayed by the hub: replay it on this client's copy of the arena. */
+  applyCarve(playerNumber, kind, structureIndex, x, y, z) {
+    if (this.mode !== 'multi' || this.disposed || !this.weapon) return;
+    const peer = this.peers.get(playerNumber);
+    const from = peer ? peer.avatar.group.position.clone().setY(peer.avatar.group.position.y + 0.7) : null;
+    this.weapon.applyRemote(kind, structureIndex, new THREE.Vector3(x, y, z), from);
+  }
+
+  /** A squadmate took the chalice: this player wins too, on their own stats. */
+  squadWin() {
+    if (this.mode !== 'multi' || this.disposed || this.state !== 'playing') return;
+    this.chalice.taken = true;
+    this._claimChalice(true);
+  }
+
+  /** Squadmates who could still walk over and revive someone. */
+  _livePeers() {
+    let n = 0;
+    const now = performance.now();
+    for (const peer of this.peers.values()) {
+      if (!peer.down && now - peer.seenAt < PEER_LIVE_S * 1000) n++;
+    }
+    return n;
+  }
+
+  /**
+   * 0 HP with a squadmate still standing: down, not dead. The guns stop mattering
+   * (_damagePlayer ignores a downed player), the HUD shows the revive, and the run ends
+   * here only if nobody comes — a squadmate holding within REVIVE_RADIUS for REVIVE_S
+   * stands the player back up on REVIVE_HP. Each client decides its own revive from the
+   * positions it is sent; there is no server referee, the same as everything else online.
+   */
+  _goDown() {
+    this.downed = true;
+    this.hp = 0;
+    this.reviveT = 0;
+    this.bleedT = 0;
+    this.weapon.setPrimaryHeld(false);
+    this.avatar.setDown(true);
+    const v = this.playerBody.velocity;
+    v.x = v.z = 0;
+    this.audio?.playerHit();
+    this._pumpHud();
+  }
+
+  _updateDowned(dt) {
+    const v = this.playerBody.velocity;
+    v.x = v.z = 0;
+    let helper = false;
+    const now = performance.now();
+    for (const peer of this.peers.values()) {
+      if (peer.down || now - peer.seenAt > PEER_LIVE_S * 1000) continue;
+      if (peer.avatar.group.position.distanceTo(this.player.position) <= REVIVE_RADIUS) { helper = true; break; }
+    }
+    this.reviveT = helper ? this.reviveT + dt : Math.max(0, this.reviveT - dt * 2);
+    this.bleedT += dt;
+    if (this.reviveT >= REVIVE_S) {
+      this.downed = false;
+      this.hp = REVIVE_HP;
+      this.avatar.setDown(false);
+      this._showCracks();
+      return;
+    }
+    // Nobody left who could come, or nobody came.
+    if (this._livePeers() === 0 || this.bleedT >= BLEED_OUT_S) this._die();
   }
 
   /** A relayed frame: every peer's latest batch. Ours is skipped; the rest move their avatars. */
@@ -650,19 +891,21 @@ export class Engine {
       if (!peer) peer = this._spawnPeer(b.playerNumber, input);
       peer.target.set(input.x || 0, input.y || 0, input.z || 0);
       peer.yaw = THREE.MathUtils.degToRad(input.yaw || 0);
+      peer.firing = !!input.fire;
+      peer.down = !!input.down;
       peer.seenAt = performance.now();
     }
   }
 
   _spawnPeer(playerNumber, input) {
-    const mesh = new THREE.Mesh(
-      new THREE.CapsuleGeometry(0.4, 1.0, 4, 12),
-      createActorMaterial({ color: PEER_COLORS[(playerNumber - 1) % PEER_COLORS.length] }),
-    );
-    mesh.castShadow = true;
-    mesh.position.set(input.x || 0, input.y || 0, input.z || 0);
-    this.scene.add(mesh);
-    const peer = { mesh, target: mesh.position.clone(), yaw: 0, seenAt: performance.now() };
+    const avatar = new Avatar(PEER_COLORS[(playerNumber - 1) % PEER_COLORS.length]);
+    avatar.setName(this.peerNames[playerNumber] || `P${playerNumber}`);
+    avatar.group.position.set(input.x || 0, input.y || 0, input.z || 0);
+    this.scene.add(avatar.group);
+    const peer = {
+      avatar, target: avatar.group.position.clone(), yaw: 0,
+      seenAt: performance.now(), down: false, firing: false,
+    };
     this.peers.set(playerNumber, peer);
     return peer;
   }
@@ -672,15 +915,106 @@ export class Engine {
     const k = Math.min(1, dt * 12);
     const now = performance.now();
     for (const [n, peer] of this.peers) {
-      peer.mesh.position.lerp(peer.target, k);
-      peer.mesh.rotation.y = peer.yaw;
+      const at = peer.avatar.group.position;
+      const before = this._peerVec ??= new THREE.Vector3();
+      before.copy(at);
+      at.lerp(peer.target, k);
+      peer.avatar.group.rotation.y = peer.yaw;
+      // Walk cycle from the distance the avatar was actually moved this frame.
+      const speed = Math.hypot(at.x - before.x, at.z - before.z) / Math.max(dt, 1e-4);
+      peer.avatar.setDown(peer.down);
+      peer.avatar.update(dt, speed, peer.firing, 0);
       if (now - peer.seenAt > PEER_STALE_S * 1000) {
-        this.scene.remove(peer.mesh);
-        peer.mesh.geometry.dispose();
-        peer.mesh.material.dispose();
+        peer.avatar.dispose();
         this.peers.delete(n);
       }
     }
+  }
+
+  /**
+   * A pad or touch frame, folded into the same switches the keyboard and mouse throw.
+   * Held fire is recomputed here every frame from all three sources, so no device has to
+   * remember to release it for another.
+   */
+  _applyInput(pad) {
+    // A pad button on the start card or the pause dialog is a way in: free control.
+    if ((this.state === 'ready' || this.state === 'paused') && pad.any) { this.enter(true); return; }
+    if (this.state !== 'playing' || !this._controlling()) { this.weapon.setPrimaryHeld(false); return; }
+    if (pad.pause) { this.pause(); return; }
+    if (pad.lookX || pad.lookY) this._look(pad.lookX, pad.lookY);
+    this.weapon.setPrimaryHeld(!this.downed && (this._fireMouse || this.keys.has('KeyF') || pad.fire));
+    if (pad.alt && !this.downed) this.weapon.fireAlt(this._muzzle());
+    if (pad.jump) this._jumpQueued = true;
+  }
+
+  /**
+   * The feel layer: everything in here is picture or sound, never simulation. Runs on
+   * real time while the run is live.
+   */
+  _updateFeel(dt) {
+    // Overheated: the barrel vents steam for as long as the lockout lasts.
+    if (this.weapon.locked) {
+      this._steamClock -= dt;
+      if (this._steamClock <= 0) {
+        this._steamClock = 0.09;
+        this.particles.emit(this._muzzle(), 3, {
+          color: 0xdfe6ee, speed: 1.3, spread: 0.25, size: 0.5, life: 0.9, upward: 1.7,
+        });
+      }
+    }
+
+    // Nearly dead: colour drains, the mix goes dull, a heartbeat that quickens as HP falls.
+    const low = !this.demo && this.hp > 0 && this.hp <= LOW_HP;
+    this.vfx.setDesat(low ? 0.25 + 0.45 * (1 - this.hp / LOW_HP) : 0);
+    this.audio?.setLowHp(low);
+    if (low) {
+      this._heartClock -= dt;
+      if (this._heartClock <= 0) {
+        this._heartClock = 0.55 + 0.4 * (this.hp / LOW_HP);
+        this.audio?.heartbeat();
+      }
+    }
+
+    // Footsteps: one per stride of ground actually covered, voiced by what is underfoot.
+    if (this.onGround && !this.downed && this.audio) {
+      const b = this.playerBody;
+      this._stride += Math.hypot(b.velocity.x, b.velocity.z) * dt;
+      if (this._stride >= STRIDE_M) {
+        this._stride = 0;
+        // Standing clear above the terrain surface means masonry or rubble is underfoot.
+        const feet = b.position.y - PLAYER_RADIUS;
+        const turf = feet - this.terrain.heightAt(b.position.x, b.position.z) < 0.4;
+        this.audio.footstep(turf ? 'grass' : 'stone');
+      }
+    }
+
+    if (this.audio) this._updateAudioAmbience(dt);
+  }
+
+  /** The win beat: a gold fountain off the plinth while the camera circles the keep. */
+  _updateVictory(dt) {
+    this.wonAt += dt;
+    if (this.wonAt > VICTORY_SHOW_S + 1) return;
+    this._fountainT = (this._fountainT ?? 0) - dt;
+    if (this._fountainT > 0) return;
+    this._fountainT = 0.2;
+    this.particles.emit(this.chalice.position, 30, {
+      color: 0xffd05a, speed: 9, spread: 1.2, size: 0.7, life: 2.4, upward: 2.2,
+    });
+  }
+
+  /**
+   * A fall big enough to stop the clock for: a few frames of hit-stop, the sub dropping
+   * out, a dust front racing along the ground, and — if it beats the run's best — the clip.
+   * One collapse arrives as many clusters, so the stop is rate-limited rather than stacked.
+   */
+  _bigCollapse(voxels, position, proximity) {
+    this.clip?.trigger(voxels);
+    this.vfx.groundRing(position, this.terrain.heightAt(position.x, position.z));
+    if (proximity <= 0.15 || this._hitStopCd > 0) return;
+    this._hitStopCd = 1.5;
+    this.audio?.subDrop(position, Math.min(1, voxels / 900) * proximity);
+    if (!this.q.reducedMotion) this._hitStopT = HIT_STOP_S;
   }
 
   /** Enemy presence cues + music tension, on their own slow clocks. */
@@ -688,7 +1022,13 @@ export class Engine {
     this._tensionClock -= dt;
     if (this._tensionClock <= 0) {
       this._tensionClock = 1;
-      this.audio.setTension(Math.min(1, this.enemies.count / 16 + this.elapsed / 420));
+      // How deep into the fortress, and how many guns have had a line on the player
+      // lately. The rings are squares, so "depth" is the larger of |x| and |z|.
+      const p = this.player.position;
+      const reach = Math.max(Math.abs(p.x), Math.abs(p.z));
+      const depth = reach < KEEP_HALF ? 0.75 : reach < INNER_HALF ? 0.5 : reach < OUTER_HALF ? 0.3 : 0.1;
+      this.audio.setTension(depth + Math.min(0.3, this.guns.sightedCount * 0.06)
+        + (this.hp <= LOW_HP ? 0.15 : 0) + this.enemies.count / 40);
     }
 
     this._cueClock -= dt;
@@ -787,7 +1127,11 @@ export class Engine {
       indoors = Math.max(indoors, s.indoorAt(head));
       if (indoors >= 1) break;
     }
-    this.audio.setSpace(indoors);
+    // Three listeners: the reverb, the rain bed, and (via this.indoors) the rain itself,
+    // which must not fall through a roof.
+    this.indoors = indoors;
+    this.audio?.setSpace(indoors);
+    this.audio?.setRain(this.weather.wet && this.state === 'playing' ? 1 : 0, indoors);
   }
 
   /**
@@ -825,18 +1169,28 @@ export class Engine {
       this.ringAlt.classList.toggle('pvs-ring-ready', altPct >= 100);
     }
 
-    // Flat positional primitives by design — see the interop note at the top.
+    // Flat positional primitives by design — see the interop note at the top. Heat and
+    // blast are deliberately absent: the rings above are their only readout now.
     this._notify('OnHudTick',
       Math.max(0, Math.round(this.hp)),
-      Math.round(this.weapon.heat * 100),
-      this.weapon.locked,
-      Math.round((1 - this.weapon.altReadyIn / this.weapon.altCooldownTotal) * 100),
       this._score(),
       Math.round(this.elapsed),
       this.kills,
-      this.enemies.count,
-      this.debris.bodyCount,
-      this.debris.particleCount);
+      this.guns.turrets.length - this.guns.liveCount,
+      this.guns.turrets.length,
+      this.downed,
+      Math.round(Math.min(1, this.reviveT / REVIVE_S) * 100));
+  }
+
+  /** The end-of-run payload, shared by the loss and the win. Order is the interop contract. */
+  _runStats(score) {
+    return [
+      score, Math.round(this.elapsed * 10) / 10,
+      this.kills, this.bruteKills, this.crushKills, this.voxelsDestroyed,
+      this.seed.toString(16).padStart(8, '0'),
+      this.guns.turrets.length - this.guns.liveCount, this.guns.turrets.length,
+      Math.round(this.damageTaken),
+    ];
   }
 
   _score() {
@@ -849,23 +1203,41 @@ export class Engine {
    * death (same pointer-lock release, same HUD pump) so there is one end-of-run path and
    * only the notification differs.
    */
-  _claimChalice() {
+  /** @param relayed true when a squadmate took it — do not announce it to the squad again. */
+  _claimChalice(relayed) {
     this.state = 'dead';
     this.won = true;
-    this.chalice.group.visible = false;
-    this.audio?.explosion(this.chalice.position, 1);
+    this.wonAt = 0;            // starts the victory beat: slow time, orbit camera, fountain
+    this.downed = false;
+    this.avatar.setDown(false);
+    this.chalice.celebrate();
+    this.audio?.explosion(this.chalice.position, 0.6);
+    this.audio?.fanfare();
+    this.audio?.setLowHp(false);
+    this.vfx.setDesat(0);
+    this.cracks.style.opacity = '0';   // the visor is whole again for the victory lap
     this.vfx.addShake(0.6);
     this.vfx.shockwave(this.chalice.position);
     this.particles.emit(this.chalice.position, 120, {
       color: 0xffd05a, speed: 8, spread: 1.5, size: 0.7, life: 2.2, upward: 1.6,
     });
-    this.weapon.setPrimaryHeld(false);
-    if (this._locked()) document.exitPointerLock();
+    this._endControl();
     this._pumpHud();
-    this._notify('OnVictory',
-      this._score() + VICTORY_BONUS, Math.round(this.elapsed * 10) / 10,
-      this.kills, this.bruteKills, this.crushKills, this.voxelsDestroyed,
-      this.seed.toString(16).padStart(8, '0'));
+    if (!relayed) this.winSink?.();
+    // The bonus is priced on the same rounded seconds the submission carries, so the
+    // server's WinBonus(survivalSeconds) lands on the identical number.
+    const seconds = Math.round(this.elapsed * 10) / 10;
+    this._notify('OnVictory', ...this._runStats(this._score() + winBonus(seconds)));
+  }
+
+  /** The run is over either way: let go of the gun, the lock and the on-screen controls. */
+  _endControl() {
+    this.weapon.setPrimaryHeld(false);
+    this._fireMouse = false;
+    this.free = false;
+    this.input.setActive(false);
+    this.crosshair.style.display = 'none';
+    if (this._locked()) document.exitPointerLock();
   }
 
   /**
@@ -922,25 +1294,53 @@ export class Engine {
     return result.hasHit;
   }
 
-  _damagePlayer(amount) {
-    if (this.demo || this.state !== 'playing') return;
+  /** @param from world position of whatever did it (a wall gun), for the HUD's hit arc */
+  _damagePlayer(amount, from = null) {
+    if (this.demo || this.state !== 'playing' || this.downed) return;
     this.hp -= amount;
+    this.damageTaken += amount;
     this.audio?.playerHit();
     this.vfx.flashDamage(Math.min(0.7, 0.2 + amount / 30));
     this.vfx.addShake(Math.min(0.5, amount / 45));
-    if (this.hp <= 0) {
-      this.hp = 0;
-      this.state = 'dead';
-      this.audio?.death();
-      this.vfx.addShake(0.8);
-      this.weapon.setPrimaryHeld(false);
-      if (this._locked()) document.exitPointerLock();
-      this._pumpHud();
-      this._notify('OnGameOver',
-        this._score(), Math.round(this.elapsed * 10) / 10,
-        this.kills, this.bruteKills, this.crushKills, this.voxelsDestroyed,
-        this.seed.toString(16).padStart(8, '0'));
-    }
+    if (from) this._showHitArc(from);
+    this._showCracks();
+    if (this.hp > 0) return;
+    this.hp = 0;
+    // Online, with someone still standing: down and waiting, not out.
+    if (this.mode === 'multi' && this._livePeers() > 0) this._goDown();
+    else this._die();
+  }
+
+  _die() {
+    this.hp = 0;
+    this.downed = false;
+    this.state = 'dead';
+    this.audio?.death();
+    this.vfx.setDesat(0.8);
+    this.vfx.addShake(0.8);
+    this._endControl();
+    this._pumpHud();
+    this._notify('OnGameOver', ...this._runStats(this._score()));
+  }
+
+  /**
+   * Point at what hit you: an arc on the reticle, turned to the attacker's bearing
+   * relative to where the camera is looking. The CSS animation is the fade; restarting it
+   * (remove class, reflow, add class) is how a second hit re-flashes an arc already shown.
+   */
+  _showHitArc(from) {
+    const p = this.player.position;
+    // Bearing of the source in the camera's ground frame; forward is (−sin yaw, −cos yaw).
+    const bearing = Math.atan2(from.x - p.x, -(from.z - p.z)) + this.yaw;
+    this.hitArc.style.setProperty('--bearing', `${THREE.MathUtils.radToDeg(bearing).toFixed(0)}deg`);
+    this.hitArc.classList.remove('pvs-hit-arc-on');
+    void this.hitArc.offsetWidth;
+    this.hitArc.classList.add('pvs-hit-arc-on');
+  }
+
+  /** The visor cracks as HP falls below 60, and stays cracked until the run ends. */
+  _showCracks() {
+    this.cracks.style.opacity = (THREE.MathUtils.clamp((60 - this.hp) / 60, 0, 1) * 0.85).toFixed(2);
   }
 
   /** The debris is impartial (PRD §F5) — the player half of the crush check. */
@@ -1155,16 +1555,37 @@ export class Engine {
     this.demoState.lastZ = s.z;
   }
 
-  _move(dt) {
-    let fwd = 0, strafe = 0;
+  /** @param pad this frame's AltInput record: its stick adds to the keys, analogue. */
+  _move(dt, pad) {
+    let fwd = pad.moveY, strafe = pad.moveX;
     if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) fwd += 1;
     if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) fwd -= 1;
     if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) strafe += 1;
     if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) strafe -= 1;
-    if (fwd === 0 && strafe === 0) return;
+    this.player.rotation.y = this.yaw;
 
-    const speed = (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')) ? RUN_SPEED : WALK_SPEED;
+    // Jump: an impulse on the body, so gravity and the solver own the arc and the landing.
+    this._jumpCd -= dt;
+    if (this._jumpQueued && this.onGround && this._jumpCd <= 0) {
+      this.playerBody.velocity.y = JUMP_SPEED;
+      this._jumpCd = JUMP_COOLDOWN_S;
+    }
+    this._jumpQueued = false;
+
+    const v = this.playerBody.velocity;
+    // A stick is analogue (a half push is a half-speed walk); keys are all-or-nothing and
+    // a diagonal must not be faster than a straight line, so the length is capped at 1.
     const len = Math.hypot(fwd, strafe);
+    if (len < 0.05) {
+      // Nothing held: stop. The body is frictionless against the world by design (see
+      // physics.js), so until 2026-09-30 — when this branch simply returned — releasing
+      // the keys left the last commanded velocity in place and the player slid on forever.
+      if (this.onGround) { v.x = 0; v.z = 0; }
+      return;
+    }
+    // Shift runs; so does a stick pushed to the stop.
+    const run = this.keys.has('ShiftLeft') || this.keys.has('ShiftRight') || Math.hypot(pad.moveX, pad.moveY) > 0.92;
+    const speed = (run ? RUN_SPEED : WALK_SPEED) * Math.min(1, len);
     const sin = Math.sin(this.yaw), cos = Math.cos(this.yaw);
     // Move in the camera's ground frame: forward is where the camera looks on XZ.
     const wishX = (fwd * -sin + strafe * cos) / len * speed;
@@ -1173,14 +1594,12 @@ export class Engine {
     // Horizontal velocity is COMMANDED, vertical is left to gravity and contacts. That
     // split is what keeps the controls crisp while still letting the world push back:
     // walls stop you because the solver says so, not because a probe vetoed the move.
-    const v = this.playerBody.velocity;
     // In the air the player keeps most of their momentum — you cannot turn on a sixpence
     // mid-fall — while on the ground the command wins outright.
     const control = this.onGround ? 1 : 0.18;
     v.x += (wishX - v.x) * control;
     v.z += (wishZ - v.z) * control;
     this._stepUp(wishX, wishZ);
-    this.player.rotation.y = this.yaw;
   }
 
   /**
@@ -1214,32 +1633,81 @@ export class Engine {
    * obstacle are ignored.
    */
 
+  /** Deltas are in mouse pixels; the pad and the touch drag are converted to them in input.js. */
   _look(mx, my) {
-    if (!this._locked()) return;
-    this.yaw -= mx * 0.0025;
-    this.pitch = THREE.MathUtils.clamp(this.pitch - my * 0.0025, -1.2, 0.5);
+    if (!this._controlling() || this.state !== 'playing') return;
+    const k = LOOK_RAD_PER_PX * this.settings.sens;
+    this.yaw -= mx * k;
+    this.pitch = THREE.MathUtils.clamp(
+      this.pitch - my * k * (this.settings.invertY ? -1 : 1), -1.2, 0.5);
   }
 
   _mouseButton(e, down) {
     if (!this._locked() || this.state !== 'playing') return;
-    if (e.button === 0) this.weapon.setPrimaryHeld(down);
-    if (e.button === 2 && down) this.weapon.fireAlt(this._muzzle());
+    if (e.button === 0) this._fireMouse = down;   // _applyInput turns it into held fire
+    if (e.button === 2 && down && !this.downed) this.weapon.fireAlt(this._muzzle());
   }
 
   _followCamera(dt) {
-    const eyeY = this.player.position.y + 0.7;
-    const target = new THREE.Vector3(
-      this.player.position.x + CAM_DISTANCE * Math.sin(this.yaw) * Math.cos(this.pitch),
-      eyeY + CAM_DISTANCE * -Math.sin(this.pitch),
-      this.player.position.z + CAM_DISTANCE * Math.cos(this.yaw) * Math.cos(this.pitch),
-    );
-    // Exponential smoothing, framerate-independent.
-    const k = 1 - Math.exp(-12 * dt);
-    this.camera.position.lerp(target, k);
+    const p = this.player.position;
+    const eyeY = p.y + 0.7;
+
+    // The win: let go of the player and circle the keep from above, slowly, so the beam,
+    // the breach and the wreckage are all in frame for the beat before the summary.
+    if (this.wonAt >= 0 && !this.q.reducedMotion) {
+      // Out past the outer wall and well above the keep's roof (34 units): any closer and
+      // the frame is one face of the keep.
+      const c = this.chalice.position;
+      const a = this.yaw + this.wonAt * 0.4;
+      const orbit = this._orbitVec ??= new THREE.Vector3();
+      orbit.set(c.x + Math.sin(a) * 84, c.y + 62, c.z + Math.cos(a) * 84);
+      this.camera.position.lerp(orbit, 1 - Math.exp(-2.2 * dt));
+      this.camera.lookAt(c.x, c.y + 14, c.z);
+      this.player.visible = true;
+      return;
+    }
+
+    // Unit vector from the eye back to where the chase camera wants to sit.
+    const back = this._camBack ??= new THREE.Vector3();
+    back.set(Math.sin(this.yaw) * Math.cos(this.pitch), -Math.sin(this.pitch),
+      Math.cos(this.yaw) * Math.cos(this.pitch));
+    // The eye is eased toward the head, not pinned to it: the body moves on the fixed
+    // physics step, and a camera bolted to it stutters on any display faster than that.
+    const head = this._camHead ??= new THREE.Vector3();
+    head.set(p.x, eyeY, p.z);
+    const eye = this._camEye ??= head.clone();
+    eye.lerp(head, 1 - Math.exp(-22 * dt));
+
+    // Wall collision. The camera used to be clamped against the terrain height and
+    // nothing else, so inside the keep — the room the whole game points at — it sat on
+    // the far side of the masonry looking at the outside of a wall. One ray from the eye
+    // along the boom, against every structure near enough to matter and the ground:
+    // whatever it meets first is how long the boom may be.
+    let reach = CAM_DISTANCE;
+    for (const s of this.structures) {
+      const dx = s.group.position.x - p.x, dz = s.group.position.z - p.z;
+      const near = Math.max(s.dims[0], s.dims[2]) * s.scale * 0.75 + CAM_DISTANCE;
+      if (dx * dx + dz * dz > near * near) continue;
+      const hit = s.raycast(eye, back, reach);
+      if (hit && hit.distance < reach) reach = hit.distance;
+    }
+    const ground = this.terrain.raycast(eye, back, reach);
+    if (ground && ground.distance < reach) reach = ground.distance;
+    reach = Math.max(0.3, reach - CAM_WALL_MARGIN);
+
+    // Pulled IN at once (a camera easing through a wall shows the far side of it on the
+    // way), let back OUT gently so walking past a pillar is not a snap-zoom.
+    this._camDist = reach < this._camDist
+      ? reach
+      : this._camDist + (reach - this._camDist) * (1 - Math.exp(-5 * dt));
+    this.camera.position.copy(eye).addScaledVector(back, this._camDist);
     // Never let the chase camera sink into a hillside behind the player.
-    const camFloor = this.terrain.heightAt(this.camera.position.x, this.camera.position.z) + 0.8;
+    const camFloor = this.terrain.heightAt(this.camera.position.x, this.camera.position.z) + 0.4;
     if (this.camera.position.y < camFloor) this.camera.position.y = camFloor;
-    this.camera.lookAt(this.player.position.x, eyeY, this.player.position.z);
+    this.camera.lookAt(eye);
+    // Hard against a wall the boom is shorter than the figure is deep: hide it, and the
+    // view is first-person until there is room again.
+    this.player.visible = this._camDist >= CAM_HIDE_AVATAR_BELOW;
   }
 
   _resize() {
@@ -1260,42 +1728,36 @@ export class Engine {
   _lockChanged() {
     if (this.disposed) return;
     const locked = this._locked();
-    this.crosshair.style.display = locked ? 'block' : 'none';
     if (locked) {
-      this.everLocked = true;
-      this.veil.style.display = 'none';
+      this.free = false;
+      this.crosshair.style.display = 'block';
       document.addEventListener('mousemove', this._onMouseMove);
       document.addEventListener('mousedown', this._onMouseDown);
       document.addEventListener('mouseup', this._onMouseUp);
-      // The Blazor state machine learns "actually playing" only from here — pointer
-      // lock is the moment control transfers, both on first click and after Resume.
-      if (!this.demo && this.state === 'playing') this._notify('OnResumed');
+      // Pointer lock is the moment control transfers — from the start card ('ready') and
+      // from the pause dialog alike — so it is also the moment the run goes live, and the
+      // only place the Blazor state machine learns "actually playing" from.
+      if (!this.demo && (this.state === 'ready' || this.state === 'paused')) {
+        this.state = 'playing';
+        this.audio?.setPaused(false);
+        this._notify('OnResumed');
+      }
       return;
     }
+    if (this.free) return; // lock was never the way in; nothing was lost
+    this.crosshair.style.display = 'none';
+    this._fireMouse = false;
     this.weapon.setPrimaryHeld(false);
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mousedown', this._onMouseDown);
     document.removeEventListener('mouseup', this._onMouseUp);
     // Lock loss during play ALWAYS pauses (PRD §F9) — the player is never killed while
-    // unable to steer. Blazor owns the pause overlay; the engine veil stays for the
-    // never-locked-yet state only.
-    if (this.state === 'playing' && this.everLocked && !this.demo) {
+    // unable to steer. Blazor owns the pause dialog.
+    if (this.state === 'playing' && !this.demo) {
       this.state = 'paused';
       this.audio?.setPaused(true);
       this._notify('OnPaused', 'pointerlock');
     }
-  }
-
-  /** Click-to-play veil over the canvas before the first pointer lock of a run. */
-  _buildVeil() {
-    this.veil = document.createElement('div');
-    this.veil.className = 'pvs-veil';
-    this.veil.innerHTML =
-      '<div class="pvs-veil-card"><strong>Click to play</strong>' +
-      '<span>WASD move · trackpad/mouse look · <b>F</b> dig · <b>G</b> blast (mouse buttons work too) · Esc pause</span></div>';
-    this.veil.addEventListener('click', () => this.canvas.requestPointerLock());
-    if (this.demo) this.veil.style.display = 'none';
-    this.host.appendChild(this.veil);
   }
 
   _buildCrosshair() {
@@ -1303,13 +1765,30 @@ export class Engine {
     this.crosshair.className = 'pvs-crosshair';
     this.crosshair.style.display = 'none';
     // Glanceable state around the reticle: inner ring = weapon heat, outer = blast
-    // cooldown. Conic-gradient fills driven by --p (0..100) from _pumpHud.
+    // cooldown. Conic-gradient fills driven by --p (0..100) from _pumpHud. Since
+    // 2026-09-30 these rings are the ONLY heat/blast readout — the HUD's two bars said the
+    // same thing a second time, a glance away from where the player is aiming.
     this.crosshair.innerHTML =
       '<div class="pvs-ring pvs-ring-heat" style="--p: 0"></div>' +
       '<div class="pvs-ring pvs-ring-alt" style="--p: 100"></div>';
     this.ringHeat = this.crosshair.querySelector('.pvs-ring-heat');
     this.ringAlt = this.crosshair.querySelector('.pvs-ring-alt');
     this.host.appendChild(this.crosshair);
+
+    // Which way the hit came from (see _showHitArc). Always in the DOM; the class shows it.
+    this.hitArc = document.createElement('div');
+    this.hitArc.className = 'pvs-hit-arc';
+    this.host.appendChild(this.hitArc);
+
+    // The cracked visor (see _showCracks): a few fracture lines out of the corners.
+    this.cracks = document.createElement('div');
+    this.cracks.className = 'pvs-cracks';
+    this.cracks.style.opacity = '0';
+    this.cracks.innerHTML =
+      '<svg viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">' +
+      '<path d="M0 8 L9 13 L14 9 L22 18 M9 13 L7 24 L13 31 M100 90 L90 84 L86 90 L77 80 M90 84 L93 73 L87 66' +
+      ' M0 78 L8 74 L11 80 L19 72 M100 14 L92 19 L89 13 L82 22 M92 19 L94 29"/></svg>';
+    this.host.appendChild(this.cracks);
   }
 
   _notify(method, ...args) {

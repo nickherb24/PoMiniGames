@@ -17,6 +17,16 @@ public readonly record struct PoVoxelStrikeScore
     public const int Min = 0;
     public const int Max = 10_000_000;
 
+    /// <summary>
+    /// What taking the chalice is worth after <paramref name="seconds"/> of siege. It decays
+    /// faster (40/s) than the clock pays (10/s), so breaching sooner always out-scores
+    /// stalling — the flat 25,000 it replaced rewarded waiting outside the wall. This is the
+    /// server's copy of <c>winBonus</c> in game.js; the two must change together, because the
+    /// endpoint's plausibility ceiling is computed from this one.
+    /// </summary>
+    public static int WinBonus(double seconds) =>
+        Math.Max(5_000, 25_000 - 40 * (int)Math.Floor(Math.Clamp(seconds, 0, 14_400)));
+
     private PoVoxelStrikeScore(int value) => Value = value;
 
     public int Value { get; }

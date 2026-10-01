@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using PoMiniGames.TestUtilities;
 
 namespace PoMiniGames.E2EAPI;
 
@@ -69,7 +70,7 @@ public class PoVoxelStrikeEndpointsTests
     }
 
     [Fact]
-    public async Task RunRoutes_AreAuthGated()
+    public async Task RunRoutes_AreAuthGated_AndPriceAWinByItsFlag()
     {
         using var client = _factory.CreateClient();
 
@@ -88,6 +89,40 @@ public class PoVoxelStrikeEndpointsTests
             voxelsDestroyed = 500,
         });
         post.StatusCode.Should().BeOneOf(HttpStatusCode.Unauthorized, HttpStatusCode.Redirect, HttpStatusCode.Found);
+
+        // Signed in. A siege won at 60 s scores 600 on the clock plus the chalice bonus
+        // (25,000 − 40/s = 22,600). The plausibility ceiling had no term for that bonus, so
+        // with the roaming enemies off (no kills, no slack) every win was a 400 and never
+        // reached the board. The Won flag is what prices it — and only the flag: the same
+        // score without it is still implausible. (Same method as the auth gate above rather
+        // than its own, because this tier is one fact from its ceiling.)
+        var login = await client.GetAsync($"/auth/login/fake?displayName=Siege{Guid.NewGuid().ToString("N")[..8]}");
+        login.IsSuccessStatusCode.Should().BeTrue("guest login must succeed under the Test environment");
+        await client.ArmAntiforgeryAsync();
+
+        object Run(bool won) => new
+        {
+            score = 23_200,
+            survivalSeconds = 60.0,
+            kills = 0,
+            bruteKills = 0,
+            crushKills = 0,
+            voxelsDestroyed = 0,
+            won,
+            day = "not-a-date", // a bad Daily Siege date is ignored, never a reason to refuse the run
+        };
+
+        var win = await client.PostAsJsonAsync("/api/povoxelstrike/highscores", Run(won: true));
+        win.StatusCode.Should().Be(HttpStatusCode.Created, await win.Content.ReadAsStringAsync());
+        using var saved = JsonDocument.Parse(await win.Content.ReadAsStringAsync());
+        saved.RootElement.GetProperty("won").GetBoolean().Should().BeTrue();
+
+        var unflagged = await client.PostAsJsonAsync("/api/povoxelstrike/highscores", Run(won: false));
+        unflagged.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+        (await unflagged.Content.ReadAsStringAsync()).Should().Contain("not plausible");
+
+        (await client.GetAsync("/api/povoxelstrike/highscores?day=2026-13-45"))
+            .StatusCode.Should().Be(HttpStatusCode.BadRequest, "a Daily Siege board is addressed by a real date");
     }
 
     [Fact]

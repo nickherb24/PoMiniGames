@@ -99,8 +99,9 @@ public interface IStorageService
     Task<PoSportsHighScore> SavePoSportsHighScoreAsync(PoSportsHighScore entry);
 
     // PoVoxelStrike High Scores (highest run score wins, one ratcheted row per player)
-    Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10);
-    Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry);
+    // `day` (yyyy-MM-dd, server-formatted) selects that day's Daily Siege board instead.
+    Task<List<PoVoxelStrikeHighScore>> GetPoVoxelStrikeHighScoresAsync(int limit = 10, string? day = null);
+    Task<PoVoxelStrikeHighScore> SavePoVoxelStrikeHighScoreAsync(PoVoxelStrikeHighScore entry, string? day = null);
 
     // PoCabinet High Scores (lowest best-lap wins, partitioned by TrackId)
     Task<List<PoCabinetHighScore>> GetPoCabinetHighScoresAsync(int limit = 10, string? trackId = null);

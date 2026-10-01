@@ -38,13 +38,102 @@ const PROBE_INTERVAL_S = 2.5;
  * since every voxel's colour comes from the palette baked into the mesh.
  */
 export function createVoxelMaterial(extra = {}, quality = activeQuality) {
-  if (!quality.pbr) return new THREE.MeshLambertMaterial({ vertexColors: true, ...extra });
-  return new THREE.MeshStandardMaterial({
-    vertexColors: true,
-    roughness: 0.88,   // stone and dirt; the env probe supplies the only sheen
-    metalness: 0.02,   // not zero — a hair of grazing reflection keeps edges readable
-    ...extra,
-  });
+  const material = quality.pbr
+    ? new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.88,   // stone and dirt; the env probe supplies the only sheen
+      metalness: 0.02,   // not zero — a hair of grazing reflection keeps edges readable
+      ...extra,
+    })
+    : new THREE.MeshLambertMaterial({ vertexColors: true, ...extra });
+  if (quality.hotCarve) hookHotCarve(material);
+  voxelMaterials.add(material);
+  applyWetness(material);
+  return material;
+}
+
+// ── Hot carve edges + wet stone ────────────────────────────────────────────
+// Both are properties of "every voxel surface", so both live with the one factory those
+// surfaces come from.
+//
+// Hot edges: the last few carves are kept as spheres in a uniform ring buffer, and the
+// fragment shader adds an orange emissive to whatever lies on the shell of one while it is
+// under ~2 s old. The glow is on the stone the cut EXPOSED, and it follows a re-mesh for
+// free because it is evaluated in world space rather than baked into the geometry — which
+// is the same reason decals.js gives for not projecting onto meshes that are about to be
+// rebuilt. One shared program (customProgramCacheKey), so it costs no extra compiles.
+const HOT_CARVES = 8;
+const HOT_LIFE_S = 2.2;
+const hot = {
+  spheres: { value: Array.from({ length: HOT_CARVES }, () => new THREE.Vector4(0, -9999, 0, 0)) },
+  births: { value: new Float32Array(HOT_CARVES).fill(-1000) },
+  time: { value: 0 },
+};
+let hotNext = 0;
+const voxelMaterials = new Set();
+let wetness = 0;
+
+function hookHotCarve(material) {
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uHot = hot.spheres;
+    shader.uniforms.uHotBirth = hot.births;
+    shader.uniforms.uHotTime = hot.time;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vPvsWorld;')
+      .replace('#include <project_vertex>', /* glsl */`#include <project_vertex>
+        vec4 pvsWorld = vec4(transformed, 1.0);
+        #ifdef USE_INSTANCING
+          pvsWorld = instanceMatrix * pvsWorld;
+        #endif
+        vPvsWorld = (modelMatrix * pvsWorld).xyz;`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', /* glsl */`#include <common>
+        varying vec3 vPvsWorld;
+        uniform vec4 uHot[${HOT_CARVES}];
+        uniform float uHotBirth[${HOT_CARVES}];
+        uniform float uHotTime;`)
+      .replace('#include <emissivemap_fragment>', /* glsl */`#include <emissivemap_fragment>
+        for (int i = 0; i < ${HOT_CARVES}; i++) {
+          float pvsAge = uHotTime - uHotBirth[i];
+          if (pvsAge < 0.0 || pvsAge > ${HOT_LIFE_S.toFixed(1)}) continue;
+          float pvsShell = 1.0 - smoothstep(0.0, 0.6, abs(distance(vPvsWorld, uHot[i].xyz) - uHot[i].w));
+          float pvsCool = 1.0 - pvsAge / ${HOT_LIFE_S.toFixed(1)};
+          totalEmissiveRadiance += vec3(1.0, 0.34, 0.05) * pvsShell * pvsCool * pvsCool * 2.2;
+        }`);
+  };
+  material.customProgramCacheKey = () => 'pvs-hot-carve';
+}
+
+/** A carve just happened here: its rim glows and cools. */
+export function markHotCarve(point, radius) {
+  hot.spheres.value[hotNext].set(point.x, point.y, point.z, radius);
+  hot.births.value[hotNext] = hot.time.value;
+  hotNext = (hotNext + 1) % HOT_CARVES;
+}
+
+/** Advance the glow clock. Call once per frame with the engine's running time. */
+export function tickMaterials(time) { hot.time.value = time; }
+
+function applyWetness(material) {
+  // Wet stone is darker and shinier. Lambert has no roughness, so it only darkens.
+  material.color.setScalar(1 - 0.2 * wetness);
+  if (material.isMeshStandardMaterial) {
+    material.roughness = 0.88 - 0.42 * wetness;
+    material.metalness = 0.02 + 0.06 * wetness;
+  }
+}
+
+/** 0 = dry, 1 = rain-soaked. Applies to every voxel material, present and future. */
+export function setWetness(amount) {
+  wetness = Math.min(1, Math.max(0, amount));
+  for (const m of voxelMaterials) applyWetness(m);
+}
+
+/** Forget the finished run's materials and glows. Call from the engine's dispose. */
+export function resetMaterials() {
+  voxelMaterials.clear();
+  wetness = 0;
+  hot.births.value.fill(-1000);
 }
 
 /** Solid-colour material for actors (player capsule, enemies). */

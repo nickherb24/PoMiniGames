@@ -401,12 +401,14 @@ public class ApiService
         }
     }
 
-    public async Task<PoMiniGames.Domain.Models.PoVoxelStrikeHighScore[]?> GetPoVoxelStrikeHighScoresAsync(int count = 10)
+    /// <param name="day">yyyy-MM-dd reads that day's Daily Siege board instead of the all-time one.</param>
+    public async Task<PoMiniGames.Domain.Models.PoVoxelStrikeHighScore[]?> GetPoVoxelStrikeHighScoresAsync(int count = 10, string? day = null)
     {
         try
         {
             return await _http.GetFromJsonAsync(
-                $"/api/povoxelstrike/highscores?count={count}", ApiJsonContext.Default.PoVoxelStrikeHighScoreArray);
+                $"/api/povoxelstrike/highscores?count={count}{(day is null ? "" : $"&day={day}")}",
+                ApiJsonContext.Default.PoVoxelStrikeHighScoreArray);
         }
         catch
         {

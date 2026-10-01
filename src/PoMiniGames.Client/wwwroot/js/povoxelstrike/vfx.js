@@ -210,6 +210,13 @@ class CombinePass extends Pass {
         tShaft: { value: null },
         aoEnabled: { value: 0 },
         shaftEnabled: { value: 0 },
+        // 2026-09-30: four screen-feel terms folded into this pass rather than given
+        // passes of their own — each is a few instructions on a fetch that already happens.
+        uTime: { value: 0 },
+        heat: { value: 0 },    // 0..1 gun heat above 70%: shimmer off the barrel
+        dust: { value: 0 },    // 0..1 grit on the lens after a collapse nearby
+        desat: { value: 0 },   // 0..1 the colour draining out at low HP
+        flash: { value: 0 },   // 0..1 lightning
       },
       vertexShader: /* glsl */`
         varying vec2 vUv;
@@ -217,16 +224,49 @@ class CombinePass extends Pass {
       fragmentShader: /* glsl */`
         uniform sampler2D tScene, tAo, tShaft;
         uniform float aoEnabled, shaftEnabled;
+        uniform float uTime, heat, dust, desat, flash;
         varying vec2 vUv;
+
+        float hash21(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+        float valueNoise(vec2 p) {
+          vec2 i = floor(p), f = fract(p);
+          f = f * f * (3.0 - 2.0 * f);
+          return mix(mix(hash21(i), hash21(i + vec2(1.0, 0.0)), f.x),
+                     mix(hash21(i + vec2(0.0, 1.0)), hash21(i + vec2(1.0, 1.0)), f.x), f.y);
+        }
+
         void main() {
-          vec4 c = texture2D(tScene, vUv);
+          vec2 uv = vUv;
+          if (heat > 0.001) {
+            // Strongest low and centre, where the gun is; gone by the screen edge.
+            float m = heat * smoothstep(0.7, 0.0, distance(uv, vec2(0.5, 0.34)));
+            uv += vec2(sin(uv.y * 95.0 + uTime * 9.0), cos(uv.x * 70.0 + uTime * 7.0)) * 0.0024 * m;
+          }
+          vec4 c = texture2D(tScene, uv);
           if (aoEnabled > 0.5) {
-            float ao = texture2D(tAo, vUv).r;
+            float ao = texture2D(tAo, uv).r;
             // AO darkens ambient, not direct light, so keep a floor — a hard multiply
             // turns every voxel crease into a black seam at this density.
             c.rgb *= mix(0.55, 1.0, ao);
           }
           if (shaftEnabled > 0.5) c.rgb += texture2D(tShaft, vUv).rgb;
+          if (dust > 0.001) {
+            // Blotches of grit, thicker toward the edge of the glass. Screen-fixed on
+            // purpose: it is on the lens, so it must not move with the world.
+            float n = valueNoise(vUv * 6.0) * 0.6 + valueNoise(vUv * 19.0) * 0.4;
+            n = smoothstep(0.5, 0.86, n) * (0.35 + 0.65 * smoothstep(0.12, 0.72, distance(vUv, vec2(0.5))));
+            float luma = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+            c.rgb = mix(c.rgb, vec3(0.62, 0.55, 0.45) * (0.45 + luma), n * dust * 0.6);
+          }
+          if (desat > 0.001) {
+            float luma = dot(c.rgb, vec3(0.2126, 0.7152, 0.0722));
+            c.rgb = mix(c.rgb, vec3(luma) * vec3(1.0, 0.93, 0.92), desat);
+          }
+          c.rgb *= 1.0 + flash * 1.5;
           gl_FragColor = c;
         }`,
       depthTest: false,
@@ -257,6 +297,13 @@ export class Vfx {
     this.time = 0;
     this.dayPhase = START_PHASE;
     this.shocks = [];
+    // Combine-pass terms (see the uniforms there). Targets are eased in update().
+    this._heat = 0;
+    this._dust = 0;
+    this._desat = 0;
+    this._desatTarget = 0;
+    this._flash = 0;
+    this.overcast = 0;   // 0..1 from weather.js: greys the sky and takes the edge off the sun
     this.sun = null; // set by attachSun()
     this._sunDir = new THREE.Vector3(0.4, 0.8, 0.25).normalize();
 
@@ -429,7 +476,7 @@ export class Vfx {
       }
     }
     const t = b.p === a.p ? 0 : (phase - a.p) / (b.p - a.p);
-    return {
+    const k = {
       top: new THREE.Color(a.top).lerp(new THREE.Color(b.top), t),
       horizon: new THREE.Color(a.horizon).lerp(new THREE.Color(b.horizon), t),
       sun: new THREE.Color(a.sun).lerp(new THREE.Color(b.sun), t),
@@ -437,6 +484,18 @@ export class Vfx {
       hemi: a.hemi + (b.hemi - a.hemi) * t,
       amb: a.amb + (b.amb - a.amb) * t,
     };
+    if (this.overcast > 0) {
+      // Cloud cover: the sky greys toward its own luminance and the sun loses its edge.
+      // The unshadowed fills (hemi, amb) keep most of their level — overcast light is
+      // flat, not dark, and the vault still has to be readable in a storm.
+      const o = this.overcast;
+      const grey = new THREE.Color(0x66707f).multiplyScalar(0.35 + 0.65 * Math.min(1, k.sunI / 2.8));
+      k.top.lerp(grey, o * 0.8);
+      k.horizon.lerp(grey, o * 0.6);
+      k.sunI *= 1 - 0.6 * o;
+      k.hemi *= 1 - 0.12 * o;
+    }
+    return k;
   }
 
   _applyDayPhase() {
@@ -509,8 +568,38 @@ export class Vfx {
     const mesh = new THREE.Mesh(this.shockGeometry, this.shockMaterial.clone());
     mesh.position.copy(position);
     this.scene.add(mesh);
-    this.shocks.push({ mesh, life: SHOCK_LIFE_S });
+    this.shocks.push({ mesh, life: SHOCK_LIFE_S, total: SHOCK_LIFE_S, grow: 14 });
   }
+
+  /**
+   * The dust front of a big collapse: the same ring, laid flat on the ground, slower,
+   * wider and the colour of masonry. `groundY` keeps it on the surface rather than at the
+   * height the mass detached from.
+   */
+  groundRing(position, groundY) {
+    const material = this.shockMaterial.clone();
+    material.color.set(0xb9ab95);
+    material.blending = THREE.NormalBlending;
+    const mesh = new THREE.Mesh(this.shockGeometry, material);
+    mesh.position.set(position.x, groundY + 0.25, position.z);
+    mesh.rotation.x = -Math.PI / 2;
+    this.scene.add(mesh);
+    this.shocks.push({ mesh, life: 1.1, total: 1.1, grow: 30, flat: true });
+  }
+
+  /** Gun heat, 0..1. Only the top 30% shimmers; reduced motion gets none (it moves the frame). */
+  setHeat(heat) {
+    this._heat = this.reducedMotion ? 0 : THREE.MathUtils.clamp((heat - 0.7) / 0.3, 0, 1);
+  }
+
+  /** Throw grit at the lens, 0..1. It settles over a few seconds. */
+  lensDust(amount) { this._dust = Math.min(1, this._dust + amount); }
+
+  /** How washed-out the picture should be, 0..1. Eased, so it never snaps. */
+  setDesat(target) { this._desatTarget = target; }
+
+  /** Lightning: a full-frame exposure spike that dies in a fraction of a second. */
+  flash(amount) { this._flash = Math.min(1, this._flash + amount); }
 
   update(dt) {
     this.time += dt;
@@ -549,10 +638,22 @@ export class Vfx {
         this.shocks.splice(i, 1);
         continue;
       }
-      const t = 1 - s.life / SHOCK_LIFE_S;
-      s.mesh.scale.setScalar(1 + t * 14);
-      s.mesh.material.opacity = 0.8 * (1 - t);
-      s.mesh.quaternion.copy(this.camera.quaternion); // billboard toward the camera
+      const t = 1 - s.life / s.total;
+      s.mesh.scale.setScalar(1 + t * s.grow);
+      s.mesh.material.opacity = (s.flat ? 0.5 : 0.8) * (1 - t);
+      if (!s.flat) s.mesh.quaternion.copy(this.camera.quaternion); // billboard toward the camera
+    }
+
+    this._dust = Math.max(0, this._dust - dt * 0.28);
+    this._flash *= Math.exp(-dt * 9);
+    this._desat += (this._desatTarget - this._desat) * Math.min(1, dt * 2.5);
+    if (this.combinePass) {
+      const u = this.combinePass.material.uniforms;
+      u.uTime.value = this.time;
+      u.heat.value = this._heat;
+      u.dust.value = this._dust;
+      u.desat.value = this._desat;
+      u.flash.value = this._flash < 0.004 ? 0 : this._flash;
     }
   }
 

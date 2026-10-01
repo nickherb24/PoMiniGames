@@ -1,13 +1,16 @@
 @page "/povoxelstrike"
 @page "/povoxelstrike/{Mode}"
-@* The lobby hands the squad here with the run's code (2026-09-14). This route never existed:
-   the lobby navigated to it and landed on Page not found. *@
-@page "/povoxelstrike/multi/{GameCode}"
+@* One page for every way in (2026-09-30). `/povoxelstrike/multi` used to be a separate lobby
+   page that handed the squad to `/povoxelstrike/multi/{code}` here — two pages, two intro
+   cards, then the engine's own click-to-play veil. The lobby now lives on this page's start
+   card (the Online tab), and the run starts in place. *@
+@using System.Globalization
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Models
 @using PoMiniGamesClient.Services
 @using PoMiniGamesClient.Games.PoVoxelStrike.Services
 @using PoMiniGames.Shared.Games
+@using PoMiniGames.Domain.Models
 @implements IAsyncDisposable
 @inject PlayerNameService PlayerNameService
 @inject GameResultService GameResults
@@ -16,6 +19,9 @@
 @inject KioskCoordinator Kiosk
 @inject PoVoxelStrikeMultiplayerClient Hub
 @inject ToastService ToastService
+@inject AuthStateService AuthState
+@inject ApiService Api
+@inject UiFeedbackService Feedback
 
 <PageTitle>Voxel Strike · PoMiniGames</PageTitle>
 
@@ -23,177 +29,250 @@
            Player="@_playerName"
            BackTo="/"
            GameOver="@(_phase == Phase.Dead && !_demo)"
-           GameOverDelayMs="1200"
-           Outcome="@(_phase == Phase.Dead ? GameResult.Loss : GameResult.InProgress)"
+           GameOverDelayMs="@(_won ? 4500 : 1200)"
+           Outcome="@(_phase != Phase.Dead ? GameResult.InProgress : _won ? GameResult.Win : GameResult.Loss)"
            GameKey="povoxelstrike"
            RequiresWebGl="true"
            PlayAgain="RestartAsync"
            GameSummary="@GameSummaryContent">
-    @* Pointer lock + keyboard are the whole control scheme, so a touch-only device gets
-       a plain notice instead of a canvas it cannot drive. Pure CSS gate (hover/pointer
-       media query) — no interop, no engine download on phones. *@
-    <div class="pvs-touch-fallback" role="note">
-        <div class="pvs-touch-card">
-            <h2>🖱️ Keyboard + mouse needed</h2>
-            <p>Voxel Strike aims with pointer lock and digs from the keyboard — a touch screen cannot drive it. Open it on a desktop or laptop to play.</p>
-            <a class="pvs-btn pvs-btn-primary" href="/">Back to the games</a>
-        </div>
-    </div>
-
-    <div class="pvs-game">
-    @if (_phase == Phase.Intro)
+    @if (_phase == Phase.Intro && _demo)
     {
         <GameIntro CueScope="povoxelstrike"
                    Title="@TitleContent"
-                   Objective="@(IsMulti ? "Same arena, whole squad: blast through the walls to the golden chalice — while the guns shoot back." : "Blast through the walls to the golden chalice — while the guns shoot back.")"
-                   Controls="@HowToPlayContent"
-                   Mode="@(_demo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
-                   OnStart="OnIntroStartAsync" />
+                   Objective="Blast through the walls to the golden chalice — while the guns shoot back."
+                   Controls="@ControlsContent"
+                   Mode="GameIntro.IntroMode.Demo"
+                   OnStart="StartDemoAsync" />
+    }
+    else if (_phase == Phase.Intro)
+    {
+        @* The start card: mode, run type, controls, settings and the way in. The arena is
+           already built and rendering behind it, so the one button is the one click the
+           browser needs before it will hand over Pointer Lock. It borrows the shared
+           intro card's classes rather than the component: that card has no "not ready
+           yet" state for its button, and no slot for a lobby. *@
+        <div class="gps-intro-overlay" role="dialog" aria-modal="true" aria-label="Voxel Strike — start">
+            <div class="gps-intro-card pvs-start">
+                <div class="gps-intro-title">@TitleContent</div>
+
+                <div class="pvs-seg" role="tablist" aria-label="Mode">
+                    <button type="button" role="tab" class="pvs-seg-btn @(_tab == Tab.Solo ? "is-on" : null)"
+                            aria-selected="@Flag(_tab == Tab.Solo)" @onclick="() => SwitchTabAsync(Tab.Solo)">Solo</button>
+                    <button type="button" role="tab" class="pvs-seg-btn @(_tab == Tab.Online ? "is-on" : null)"
+                            aria-selected="@Flag(_tab == Tab.Online)" @onclick="() => SwitchTabAsync(Tab.Online)">Online</button>
+                    <a class="pvs-seg-btn" href="/povoxelstrike/demo">Demo</a>
+                </div>
+
+                @if (_fatalError is not null)
+                {
+                    <p class="pvs-start-error" role="alert">The arena could not start: @_fatalError</p>
+                }
+
+                @if (_tab == Tab.Solo)
+                {
+                    <p class="gps-intro-objective">Blast through the walls to the golden chalice — while the guns shoot back.</p>
+
+                    <div class="pvs-seg pvs-seg--sub" role="radiogroup" aria-label="Run type">
+                        @foreach (var run in Enum.GetValues<SoloRun>())
+                        {
+                            <button type="button" role="radio" class="pvs-seg-btn @(_solo == run ? "is-on" : null)"
+                                    aria-checked="@Flag(_solo == run)" @onclick="() => SetSoloRunAsync(run)">@RunLabel(run)</button>
+                        }
+                    </div>
+                    <p class="pvs-start-note">@RunNote</p>
+
+                    <div class="gps-intro-controls">
+                        <div class="gps-intro-section-label">Controls</div>
+                        @ControlsContent
+                    </div>
+
+                    <details class="pvs-details">
+                        <summary>Settings</summary>
+                        @SettingsContent
+                    </details>
+
+                    <div class="gps-intro-actions">
+                        <button type="button" class="gps-intro-btn gps-intro-btn--primary"
+                                disabled="@(!_ready)" @onclick="EnterAsync">
+                            @(_ready ? "Enter the siege" : "Building the arena…")
+                        </button>
+                    </div>
+                }
+                else if (!_runStarted)
+                {
+                    <LobbyPanel TPlayer="PoVoxelStrikeLobbyPlayer"
+                                State="@Hub.Lobby.State"
+                                LocalConnectionId="@Hub.LobbyConnectionId"
+                                ConnectionState="@Hub.Lobby.ConnectionState"
+                                Hint="One shared room — first to arrive hosts. Every wall one of you opens is open for all, and one hand on the chalice wins it for the squad."
+                                MaxPlayersHint="6"
+                                StartLabel="Start the Run"
+                                OnReady="Hub.ToggleReadyAsync"
+                                OnStart="Hub.StartGameAsync"
+                                OnLeave="() => SwitchTabAsync(Tab.Solo)">
+                        <PlayerLabel Context="p">
+                            <span class="lobby-pill lobby-pill--muted">P@(p.PlayerNumber)</span> @p.DisplayName
+                        </PlayerLabel>
+                    </LobbyPanel>
+                }
+                else
+                {
+                    <p class="gps-intro-objective">
+                        Same arena, whole squad — you are P@(_playerNumber) of @(_squadSize).
+                        Go down and a squadmate standing over you gets you back up.
+                    </p>
+                    <div class="gps-intro-controls">
+                        <div class="gps-intro-section-label">Controls</div>
+                        @ControlsContent
+                    </div>
+                    <div class="gps-intro-actions">
+                        <button type="button" class="gps-intro-btn gps-intro-btn--primary"
+                                disabled="@(!_ready)" @onclick="EnterAsync">
+                            @(_ready ? "Deploy" : "Building the squad's arena…")
+                        </button>
+                    </div>
+                }
+            </div>
+        </div>
     }
 
     <div class="pvs-wrap">
         <div id="povoxelstrike-container" class="pvs-canvas-host"
              role="img" aria-label="Voxel arena — the game renders here">
 
-            @* HUD only while control is (or was) live — not under the click-to-play
-               veil, not behind the game-over modal. *@
+            @* One strip while control is (or was) live. Heat and blast are not on it: the
+               rings round the crosshair already show both, where the player is looking. *@
             @if (!_demo && _phase is Phase.Playing or Phase.Paused)
             {
-                <div class="pvs-hud" aria-hidden="true">
-                    <div class="pvs-hud-left pvs-glass" data-glass>
-                        <div class="pvs-bar @(_hp <= 30 ? "pvs-bar-low" : null)">
-                            <span class="pvs-bar-label">HP</span>
-                            <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_hp)%"></div></div>
-                            <span class="pvs-bar-value">@_hp</span>
-                        </div>
-                        <div class="pvs-bar">
-                            <span class="pvs-bar-label">HEAT</span>
-                            <div class="pvs-bar-track"><div class="pvs-bar-fill @(_heatLocked ? "pvs-bar-heat-locked" : "pvs-bar-heat")" style="--fill: @(_heatPct)%"></div></div>
-                        </div>
-                        <div class="pvs-bar">
-                            <span class="pvs-bar-label">BLAST</span>
-                            <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-alt" style="--fill: @(_altPct)%"></div></div>
-                        </div>
+                <div class="pvs-hud pvs-glass" data-glass>
+                    <div class="pvs-bar @(_hp <= 30 ? "pvs-bar-low" : null)">
+                        <span class="pvs-bar-label">HP</span>
+                        <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_hp)%"></div></div>
+                        <span class="pvs-bar-value">@_hp</span>
                     </div>
-                    <div class="pvs-hud-right pvs-glass" data-glass>
-                        <div class="pvs-hud-score-wrap">
-                            @foreach (var pop in _popups)
-                            {
-                                <span class="pvs-pop" @key="pop.Id">+@pop.Amount</span>
-                            }
-                            <div class="pvs-hud-score">@_score.ToString("N0")</div>
-                        </div>
-                        <div class="pvs-hud-meta">@FormatTime(_elapsed) · @_kills kills · @_structureCount pieces standing@(IsMulti ? $" · P{_playerNumber} of {_squadSize}" : "")</div>
+                    <div class="pvs-hud-meta">
+                        @FormatTime(_elapsed) · @_gunsSilenced/@_gunsTotal guns silenced@(_solo == SoloRun.Survival && !IsMulti ? $" · {_kills} kills" : "")@(IsMulti ? $" · P{_playerNumber} of {_squadSize}" : "")
                     </div>
+                    <div class="pvs-hud-score-wrap">
+                        @foreach (var pop in _popups)
+                        {
+                            <span class="pvs-pop" @key="pop.Id">+@pop.Amount</span>
+                        }
+                        <div class="pvs-hud-score">@_score.ToString("N0")</div>
+                    </div>
+                    <button class="pvs-hud-btn" type="button" title="Fullscreen"
+                            aria-label="Toggle fullscreen" @onclick="ToggleFullscreenAsync">⛶</button>
                 </div>
-            }
 
-            @if (!_demo && _phase is Phase.Ready or Phase.Playing or Phase.Paused)
-            {
-                <button class="pvs-fs-btn" type="button" title="Fullscreen (Esc exits)"
-                        aria-label="Toggle fullscreen" @onclick="ToggleFullscreenAsync">⛶</button>
+                @if (_down)
+                {
+                    <div class="pvs-down" role="status">
+                        <strong>Down</strong>
+                        <span>@(_revivePct > 0 ? "A squadmate is getting you up…" : "A squadmate standing over you gets you back up")</span>
+                        <div class="pvs-bar-track"><div class="pvs-bar-fill pvs-bar-hp" style="--fill: @(_revivePct)%"></div></div>
+                    </div>
+                }
             }
 
             @if (_phase == Phase.Paused)
             {
-                <div class="pvs-pause" role="dialog" aria-label="Game paused">
-                    <div class="pvs-pause-card">
+                <div class="pvs-pause-backdrop">
+                    <dialog open class="pvs-pause" aria-label="Game paused">
                         <h2>Paused</h2>
-                        <p>The arena holds its breath while the mouse is free.</p>
                         <div class="pvs-pause-stats">
                             <div><span>@_score.ToString("N0")</span><small>score</small></div>
                             <div><span>@FormatTime(_elapsed)</span><small>time</small></div>
-                            <div><span>@_kills</span><small>kills</small></div>
+                            <div><span>@_gunsSilenced/@_gunsTotal</span><small>guns silenced</small></div>
                         </div>
-                        <ul class="pvs-pause-controls">
-                            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · mouse to look</li>
-                            <li>Hold <kbd>F</kbd> to dig · <kbd>G</kbd> to blast — mouse buttons work too</li>
-                        </ul>
+                        @ControlsContent
+                        @SettingsContent
                         <div class="pvs-pause-actions">
-                            <button class="pvs-btn pvs-btn-primary" @onclick="ResumeAsync">Resume</button>
+                            <button class="pvs-btn pvs-btn-primary" @ref="_resumeButton" @onclick="ResumeAsync">Resume</button>
                             <button class="pvs-btn" @onclick="RestartAsync">Restart</button>
+                            <button class="pvs-btn" @onclick="ToggleFullscreenAsync">Fullscreen</button>
                             <button class="pvs-btn" @onclick="@(() => Navigation.NavigateTo("/"))">Quit</button>
                         </div>
-                    </div>
+                    </dialog>
                 </div>
             }
         </div>
-
-        <div class="pvs-status" role="status" aria-live="polite">
-            @if (_fatalError is not null)
-            {
-                <span class="pvs-status-error">The arena could not start: @_fatalError</span>
-            }
-            else if (_phase == Phase.Loading)
-            {
-                <span>Building the arena…</span>
-            }
-            else if (_phase is Phase.Ready or Phase.Playing or Phase.Paused)
-            {
-                <span>
-                    @(_assetCount > 0
-                        ? $"{_assetCount} imported asset{(_assetCount == 1 ? "" : "s")}"
-                        : "No imported assets — procedural arena")
-                    · @_structureCount fortress pieces · the guns on the walls are shooting at you.
-                    Hold <kbd>F</kbd> to dig, <kbd>G</kbd> to blast. Breach the walls, reach the golden chalice in the keep.
-                </span>
-            }
-        </div>
-    </div>
     </div>
 </GameShell>
 
 @code {
     [Parameter] public string? Mode { get; set; }
-    /// <summary>Run code from the lobby's <c>/povoxelstrike/multi/{code}</c> handoff; null for solo/demo.</summary>
-    [Parameter] public string? GameCode { get; set; }
     [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
     [SupplyParameterFromQuery(Name = "demo")] public int Demo { get; set; }
+    /// <summary>An arena to replay, as the 8 hex digits the run summary shows.</summary>
+    [SupplyParameterFromQuery(Name = "seed")] public string? SeedQuery { get; set; }
 
-    // One lifecycle machine (PRD §4.2), replacing the four booleans that used to
-    // approximate it (_introDone/_engineStarted/_engineReady + implicit veil state).
-    // Intro → Loading → Ready → Playing ⇄ Paused → Dead; Restart re-enters Loading.
-    // Ready = engine built, veil up, pointer not yet locked; the JS engine reports
-    // the Ready→Playing edge via OnResumed when pointer lock is acquired.
-    private enum Phase { Intro, Loading, Ready, Playing, Paused, Dead }
+    private const string Container = "povoxelstrike-container";
+
+    // One lifecycle machine (PRD §4.2). Intro is the start card, with the arena built and
+    // frozen behind it; the JS engine reports the Intro→Playing edge via OnResumed when it
+    // actually has control (pointer lock, or free control on a pad / touch screen).
+    // Intro → Playing ⇄ Paused → Dead; Play again re-enters Intro.
+    private enum Phase { Intro, Playing, Paused, Dead }
+    private enum Tab { Solo, Online }
+    private enum SoloRun { Siege, Survival, Daily }
 
     private string _playerName = "";
     private bool _demo;
+    private Tab _tab;
+    private SoloRun _solo;
+    private Phase _phase = Phase.Intro;
+    private string? _routeKey;       // the route this instance last set itself up for
+    private bool _routeDirty;
+    private bool _engineLoaded;
+    private bool _ready;             // the arena is built and waiting behind the card
+    private bool _autoEnter;         // Play again: go straight in when the arena is ready
+    private string _weather = "";
+    private string? _fatalError;
+    private DotNetObjectReference<PoVoxelStrikePage>? _ref;
+    private ElementReference _resumeButton;
+    private bool _focusResume;
 
-    // ── Online (co-presence over the lockstep hub) ──
-    // The session deals one seed so the squad shares an arena; each client ships its position
-    // at the lockstep rate and renders the others from theirs. See game.js, "Online".
-    private bool IsMulti => !string.IsNullOrEmpty(GameCode);
+    // ── Online ──
+    // The squad shares one seed, so one arena; each client ships its position at the
+    // lockstep rate, relays its carves, and announces the win. See game.js, "Online".
+    private bool IsMulti => _tab == Tab.Online && _runStarted;
+    private bool _runStarted;
+    private bool _lobbySubscribed;
     private int _playerNumber = 1;
     private int _squadSize = 1;
-    private object? _onlineOpts;
     private Task _applyFrameInFlight = Task.CompletedTask;
     private Task _submitInFlight = Task.CompletedTask;
-    private bool _hubSubscribed;
-    private int _assetCount;
-    private int _structureCount;
-    private string? _fatalError;
-    private Phase _phase = Phase.Intro;
-    private DotNetObjectReference<PoVoxelStrikePage>? _ref;
+
+    // ── This run ──
+    private uint? _seedOverride;     // ?seed= or "Replay this arena"
+    private string? _runDay;         // yyyy-MM-dd when this run is a Daily Siege
 
     // HUD snapshot, updated by the engine's 10 Hz pump.
     private int _hp = 100;
-    private int _heatPct;
-    private bool _heatLocked;
-    private int _altPct = 100;
     private int _score;
     private int _elapsed;
     private int _kills;
-    private int _enemyCount;
+    private int _gunsSilenced;
+    private int _gunsTotal;
+    private bool _down;
+    private int _revivePct;
+
+    // Settings (mirrors js/povoxelstrike/settings.js; the engine owns the storage).
+    private double _sens = 1;
+    private bool _invertY;
+    private int _fov = 70;
+    private string _gfx = "auto";
 
     // Final run summary.
     private double _finalSurvival;
     private int _finalBruteKills;
     private int _finalCrushKills;
     private int _finalVoxels;
+    private int _finalDamage;
     private string _finalSeed = "";
     private bool _isNewBest;
     private bool _won;   // set by OnVictory; a loss never clears it mid-run, only a restart does
+    private PoVoxelStrikeHighScore[]? _dailyBoard;
 
     // Floating "+N" score popups. Spawned on HUD ticks whose score delta beats the
     // passive time drip (kills/crushes, not the +10/s clock), pruned on later ticks
@@ -205,91 +284,376 @@
 
     private RenderFragment TitleContent => @<span>🧱 Voxel Strike@(IsMulti ? " · Online" : "")</span>;
 
-    private RenderFragment HowToPlayContent => @<div>
-        @* 2026-09-11: word budget — the intro card is capped at 100 words. The
-           prose paragraph carried the fortress layout in prose; the essentials
-           (destructible walls, turrets, crush danger) stay, the tour went. *@
-        <p>Every wall is destructible — there's always a way in. Turrets track you on open ground; drop the masonry on one and it falls silent.</p>
-        <ul>
-            <li>Click the arena to take control (pointer lock)</li>
-            <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · mouse to look · <kbd>Shift</kbd> run</li>
-            <li>Hold <kbd>F</kbd> to dig · <kbd>G</kbd> for an explosive blast</li>
-            <li><kbd>Esc</kbd> pauses and frees the mouse</li>
-        </ul>
+    // The ONE controls block: the start card, the squad's deploy card and the pause dialog
+    // all render this. It used to be written out four times (intro, veil, pause, a status
+    // line under the canvas) plus a fifth, wrong, copy on the lobby page.
+    private RenderFragment ControlsContent => @<ul class="pvs-controls">
+        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look</li>
+        <li>Hold <kbd>F</kbd> or left mouse to dig · <kbd>G</kbd> or right mouse to blast</li>
+        <li><kbd>Esc</kbd> pauses · a gamepad or a touch screen works too</li>
+    </ul>;
+
+    private RenderFragment SettingsContent => @<div class="pvs-settings">
+        <label>
+            <span>Look speed</span>
+            <input type="range" min="0.3" max="2.5" step="0.1" value="@_sens.ToString(CultureInfo.InvariantCulture)"
+                   @onchange="e => SetSettingsAsync(sens: ParseDouble(e.Value, _sens))" />
+        </label>
+        <label>
+            <span>Field of view</span>
+            <input type="range" min="55" max="100" step="1" value="@_fov"
+                   @onchange="e => SetSettingsAsync(fov: (int)ParseDouble(e.Value, _fov))" />
+        </label>
+        <label class="pvs-settings-check">
+            <input type="checkbox" checked="@_invertY" @onchange="e => SetSettingsAsync(invertY: e.Value is true)" />
+            <span>Invert look up/down</span>
+        </label>
+        <label>
+            <span>Graphics <small>(next run)</small></span>
+            <select value="@_gfx" @onchange="e => SetSettingsAsync(gfx: e.Value?.ToString())">
+                <option value="auto">Auto</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+                <option value="ultra">Ultra</option>
+            </select>
+        </label>
     </div>;
 
     private RenderFragment GameSummaryContent => @<div class="pvs-summary">
-        @if (_won)
+        @if (_won || _isNewBest)
         {
-            <div class="pvs-win-badge">🏆 The chalice is yours — the fortress has fallen!</div>
-        }
-        @if (_isNewBest)
-        {
-            <div class="pvs-best-badge">🏆 New personal best!</div>
+            <div class="@(_won ? "pvs-win-badge" : "pvs-best-badge")">
+                🏆 @(_won ? "The chalice is yours" : "New personal best")@(_won && _isNewBest ? " — and a new personal best" : "")
+            </div>
         }
         <div class="pvs-tiles">
             <div class="pvs-tile"><span class="pvs-tile-icon">💀</span><span class="pvs-tile-value">@_score.ToString("N0")</span><span class="pvs-tile-label">score</span></div>
-            <div class="pvs-tile"><span class="pvs-tile-icon">⏱️</span><span class="pvs-tile-value">@FormatTime((int)_finalSurvival)</span><span class="pvs-tile-label">survived</span></div>
-            <div class="pvs-tile"><span class="pvs-tile-icon">⚔️</span><span class="pvs-tile-value">@_kills</span><span class="pvs-tile-label">kills</span></div>
-            <div class="pvs-tile"><span class="pvs-tile-icon">🟣</span><span class="pvs-tile-value">@_finalBruteKills</span><span class="pvs-tile-label">brutes</span></div>
-            <div class="pvs-tile"><span class="pvs-tile-icon">🧱</span><span class="pvs-tile-value">@_finalCrushKills</span><span class="pvs-tile-label">crushed</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">⏱️</span><span class="pvs-tile-value">@FormatTime((int)_finalSurvival)</span><span class="pvs-tile-label">@(_won ? "to the chalice" : "survived")</span></div>
+            <div class="pvs-tile"><span class="pvs-tile-icon">🔇</span><span class="pvs-tile-value">@_gunsSilenced/@_gunsTotal</span><span class="pvs-tile-label">guns silenced</span></div>
             <div class="pvs-tile"><span class="pvs-tile-icon">⛏️</span><span class="pvs-tile-value">@_finalVoxels.ToString("N0")</span><span class="pvs-tile-label">voxels</span></div>
+            @* The horde's tiles only when there was a horde: in a Siege all three read 0. *@
+            @if (_kills > 0)
+            {
+                <div class="pvs-tile"><span class="pvs-tile-icon">⚔️</span><span class="pvs-tile-value">@_kills</span><span class="pvs-tile-label">kills</span></div>
+                <div class="pvs-tile"><span class="pvs-tile-icon">🟣</span><span class="pvs-tile-value">@_finalBruteKills</span><span class="pvs-tile-label">brutes</span></div>
+                <div class="pvs-tile"><span class="pvs-tile-icon">🧱</span><span class="pvs-tile-value">@_finalCrushKills</span><span class="pvs-tile-label">crushed</span></div>
+            }
         </div>
-        @if (_finalSeed.Length > 0)
+        @if (Medals().ToList() is { Count: > 0 } medals)
         {
-            <div class="pvs-seed">arena seed @_finalSeed</div>
+            <div class="pvs-medals">
+                @foreach (var (icon, name, why) in medals)
+                {
+                    <span class="pvs-medal" title="@why">@icon @name</span>
+                }
+            </div>
         }
+        @if (_dailyBoard is { Length: > 0 })
+        {
+            <ol class="pvs-daily">
+                @foreach (var row in _dailyBoard)
+                {
+                    <li><span>@row.PlayerName@(row.Won ? " 🏆" : "")</span><span>@row.Score.ToString("N0")</span></li>
+                }
+            </ol>
+        }
+        <div class="pvs-summary-actions">
+            @if (_finalSeed.Length > 0 && !IsMulti)
+            {
+                <button class="pvs-btn" type="button" title="Arena @_finalSeed" @onclick="ReplayArenaAsync">Replay this arena</button>
+                <button class="pvs-btn" type="button" @onclick="CopyArenaLinkAsync">Copy link</button>
+            }
+            <button class="pvs-btn" type="button" @onclick="SaveClipAsync">Save collapse clip</button>
+        </div>
     </div>;
 
-    protected override void OnInitialized()
+    /// <summary>Earned on this run, from numbers the engine already counted.</summary>
+    private IEnumerable<(string Icon, string Name, string Why)> Medals()
     {
-        _demo = GameModes.Parse(Mode, ModeQuery, Demo) == GameMode.Demo;
-        _playerName = PlayerNameService.GetPlayerName();
+        if (_gunsTotal > 0 && _gunsSilenced == _gunsTotal) yield return ("🔇", "Silencer", "Every wall gun silenced");
+        if (_won && _finalDamage == 0) yield return ("🛡️", "Untouched", "Took the chalice without a scratch");
+        if (_won && _finalSurvival < 120) yield return ("⚡", "Blitz", "Chalice in under two minutes");
+        if (_finalVoxels >= 250_000) yield return ("🧨", "Demolisher", "A quarter of a million voxels destroyed");
     }
 
-    // The engine boots only after the intro card is dismissed — same gate as the other
-    // 3D games, so nothing renders (or requests pointer lock) behind the welcome.
-    private async Task OnIntroStartAsync()
+    private static string RunLabel(SoloRun run) => run switch
     {
-        if (_phase != Phase.Intro) return; // intro renders once; guard a double click
-        _phase = Phase.Loading;
-        await InvokeAsync(StateHasChanged);
-        _ref = DotNetObjectReference.Create(this);
-        if (IsMulti && !await JoinSessionAsync()) return;
-        await StartEngineAsync();
+        SoloRun.Survival => "Survival",
+        SoloRun.Daily => "Daily Siege",
+        _ => "Siege",
+    };
+
+    private string RunNote => _solo switch
+    {
+        SoloRun.Survival => "The siege, plus a horde that never stops coming.",
+        SoloRun.Daily => "One arena for everyone today (UTC). Your best run lands on today's board.",
+        _ when _seedOverride is { } seed => $"Replaying arena {seed:x8}.",
+        _ => _ready && _weather.Length > 0 ? $"A fresh fortress every run. Today: {_weather}." : "A fresh fortress every run.",
+    };
+
+    // Blazor renders a bool attribute as present/absent, and ARIA wants the word.
+    private static string Flag(bool on) => on ? "true" : "false";
+
+    private static double ParseDouble(object? value, double fallback) =>
+        double.TryParse(value?.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out var d) ? d : fallback;
+
+    protected override void OnInitialized() => _playerName = PlayerNameService.GetPlayerName();
+
+    // The Demo tab is a link to another route on this same component, and Blazor keeps the
+    // instance across it — so "which mode am I" is re-read on every parameter set, and a
+    // change tears the old mode down (after the render: the teardown needs JS).
+    protected override void OnParametersSet()
+    {
+        var mode = GameModes.Parse(Mode, ModeQuery, Demo);
+        var key = $"{mode}|{SeedQuery}";
+        if (key == _routeKey) return;
+        _routeKey = key;
+        _routeDirty = true;
+        _demo = mode == GameMode.Demo;
+        _tab = mode == GameMode.Multiplayer ? Tab.Online : Tab.Solo;
+        _seedOverride = uint.TryParse(SeedQuery, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var seed) && seed > 0
+            ? seed
+            : null;
     }
 
-    /// <summary>Bind to the run the lobby started: our seat number and the shared seed.</summary>
-    private async Task<bool> JoinSessionAsync()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_focusResume)
+        {
+            _focusResume = false;
+            try { await _resumeButton.FocusAsync(); } catch { /* dialog already gone */ }
+        }
+        if (!_routeDirty) return;
+        _routeDirty = false;
+        await ApplyRouteAsync();
+    }
+
+    private async Task ApplyRouteAsync()
+    {
+        await LeaveOnlineAsync();
+        ResetRun();
+        _phase = Phase.Intro;
+        _fatalError = null;
+        _ref ??= DotNetObjectReference.Create(this);
+        StateHasChanged();
+        if (_demo)
+        {
+            // The demo intro card starts the engine itself, after its two-second flash.
+            try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.unload"); } catch { /* engine not loaded yet */ }
+            return;
+        }
+        if (!await EnsureEngineAsync()) return;
+        if (_tab == Tab.Online) await ConnectLobbyAsync();
+        else await BuildSoloAsync();
+    }
+
+    private async Task<bool> EnsureEngineAsync()
+    {
+        if (_engineLoaded) return true;
         try
         {
-            if (!_hubSubscribed)
+            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "povoxelstrike"))
             {
-                _hubSubscribed = true;
-                Hub.FrameReceived += OnLockstepFrame;
-                Hub.RunEnded += OnRunEnded;
-                Hub.PlayerDropped += OnPlayerDropped;
-            }
-            var info = await Hub.JoinLockstepAsync(GameCode!);
-            if (info is null)
-            {
-                _fatalError = "that run is no longer open — go back to the lobby and start again.";
+                _fatalError = "the 3D engine failed to load. Check your connection and try again.";
                 StateHasChanged();
                 return false;
             }
-            var me = info.Players.FirstOrDefault(p => p.ConnectionId == Hub.LobbyConnectionId);
-            _playerNumber = me?.PlayerNumber ?? 1;
-            _squadSize = Math.Max(1, info.Players.Count);
-            _onlineOpts = new { playerNumber = _playerNumber, seed = info.Seed };
+            _engineLoaded = true;
+            var parts = (await JSRuntime.InvokeAsync<string>("PoVoxelStrike.getSettings")).Split('|');
+            if (parts.Length == 4)
+            {
+                _sens = ParseDouble(parts[0], 1);
+                _invertY = parts[1] == "1";
+                _fov = (int)ParseDouble(parts[2], 70);
+                _gfx = parts[3];
+            }
             return true;
         }
         catch (Exception ex)
         {
-            Console.Error.WriteLine($"[PoVoxelStrike] lockstep join failed: {ex.Message}");
-            _fatalError = "couldn't join the run — go back to the lobby and start again.";
+            Console.Error.WriteLine($"[PoVoxelStrike] JS init failed: {ex.Message}");
+            _fatalError = "the 3D engine failed to start.";
             StateHasChanged();
             return false;
+        }
+    }
+
+    /// <summary>Build (or rebuild) the solo arena behind the start card.</summary>
+    private async Task BuildSoloAsync()
+    {
+        _ready = false;
+        _runDay = _solo == SoloRun.Daily ? DateTime.UtcNow.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) : null;
+        // 0 lets the engine roll its own seed.
+        var seed = _runDay is not null ? DailySeed(_runDay) : _seedOverride ?? 0;
+        StateHasChanged();
+        await StartEngineAsync(demo: false, seed, _solo == SoloRun.Survival, playerNumber: 0, names: null);
+    }
+
+    /// <summary>The Daily Siege arena: FNV-1a of the UTC date, so every client lands on the same one.</summary>
+    private static uint DailySeed(string day)
+    {
+        unchecked
+        {
+            var hash = 2166136261u;
+            foreach (var c in "pvs-daily-" + day) hash = (hash ^ c) * 16777619u;
+            return hash == 0 ? 1 : hash;
+        }
+    }
+
+    private async Task StartEngineAsync(bool demo, uint seed, bool survival, int playerNumber, string[]? names)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("PoVoxelStrike.start", Container, _ref, demo, (double)seed, survival, playerNumber, names);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoVoxelStrike] engine start failed: {ex.Message}");
+            _fatalError = "the 3D engine failed to start.";
+            StateHasChanged();
+        }
+    }
+
+    private async Task StartDemoAsync()
+    {
+        if (_phase != Phase.Intro) return; // intro renders once; guard a double fire
+        _phase = Phase.Playing;
+        await InvokeAsync(StateHasChanged);
+        if (!await EnsureEngineAsync()) return;
+        await StartEngineAsync(demo: true, seed: 0, survival: false, playerNumber: 0, names: null);
+    }
+
+    private async Task SwitchTabAsync(Tab tab)
+    {
+        if (tab == _tab) return;
+        _fatalError = null;
+        await LeaveOnlineAsync();
+        _tab = tab;
+        if (tab == Tab.Online)
+        {
+            // The squad's arena is built from the session's seed once the host starts; the
+            // solo one behind the card is no use to it, so stop paying to render it.
+            _ready = false;
+            try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.unload"); } catch { }
+            StateHasChanged();
+            await ConnectLobbyAsync();
+        }
+        else
+        {
+            await BuildSoloAsync();
+        }
+    }
+
+    private async Task SetSoloRunAsync(SoloRun run)
+    {
+        if (run == _solo) return;
+        _solo = run;
+        if (run != SoloRun.Siege) _seedOverride = null;
+        await BuildSoloAsync();
+    }
+
+    /// <summary>The card's button: a click, which is what makes the Pointer Lock request legal.</summary>
+    private async Task EnterAsync()
+    {
+        if (!_ready) return;
+        try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.enter"); }
+        catch (Exception ex) { Console.Error.WriteLine($"[PoVoxelStrike] enter failed: {ex.Message}"); }
+        await Feedback.GameStartAsync("povoxelstrike");
+    }
+
+    // ── Online ─────────────────────────────────────────────────────────────
+
+    private async Task ConnectLobbyAsync()
+    {
+        if (!await Api.IsAvailableAsync())
+        {
+            ToastService.Show("Server unavailable. Try Solo.", ToastType.Error);
+            return;
+        }
+        if (!_lobbySubscribed)
+        {
+            _lobbySubscribed = true;
+            Hub.Lobby.StateChanged += OnLobbyChanged;
+            Hub.Lobby.ConnectionChanged += OnConnectionChanged;
+            Hub.Lobby.EventReceived += OnLobbyEvent;
+            Hub.Lobby.GameStarted += OnGameStarted;
+            Hub.FrameReceived += OnLockstepFrame;
+            Hub.RunEnded += OnRunEnded;
+            Hub.PlayerDropped += OnPlayerDropped;
+            Hub.CarveReceived += OnCarveReceived;
+            Hub.SquadWon += OnSquadWon;
+        }
+        try
+        {
+            await Hub.ConnectLobbyAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoVoxelStrike] lobby connect failed: {ex.Message}");
+            ToastService.Show("Couldn't reach the lobby. Try Solo.", ToastType.Error);
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Drop the lobby seat and the run link. Safe to call when neither is held.</summary>
+    private async Task LeaveOnlineAsync()
+    {
+        if (!_lobbySubscribed) return;
+        _runStarted = false;
+        try { await Hub.StopLockstepAsync(); } catch { }
+        try { await Hub.LeaveLobbyAsync(); } catch { }
+    }
+
+    private void OnLobbyChanged(LobbyState<PoVoxelStrikeLobbyPlayer> _) => InvokeAsync(StateHasChanged);
+    private void OnConnectionChanged(Microsoft.AspNetCore.SignalR.Client.HubConnectionState _) => InvokeAsync(StateHasChanged);
+
+    private void OnLobbyEvent(LobbyEvent ev) => ToastService.Show(ev.Message, ev.Kind switch
+    {
+        "left" => ToastType.Warning,
+        "starting" => ToastType.Success,
+        _ => ToastType.Info,
+    });
+
+    // The host pressed Start: every client binds to the run and builds the dealt arena, in
+    // place. The card stays up (now showing Deploy) because each player still owes the
+    // browser a click before it will lock the pointer.
+    private void OnGameStarted(string gameCode) => _ = InvokeAsync(() => StartSquadRunAsync(gameCode));
+
+    private async Task StartSquadRunAsync(string gameCode)
+    {
+        if (_tab != Tab.Online || _runStarted) return;
+        _runStarted = true;
+        _ready = false;
+        ResetRun();
+        _phase = Phase.Intro;
+        StateHasChanged();
+        try
+        {
+            var info = await Hub.JoinLockstepAsync(gameCode);
+            if (info is null)
+            {
+                _fatalError = "that run is no longer open — wait for the next one.";
+                _runStarted = false;
+                StateHasChanged();
+                return;
+            }
+            var me = info.Players.FirstOrDefault(p => p.ConnectionId == Hub.LobbyConnectionId);
+            _playerNumber = me?.PlayerNumber ?? 1;
+            _squadSize = Math.Max(1, info.Players.Count);
+            var names = new string[info.Players.Max(p => p.PlayerNumber)];
+            foreach (var p in info.Players)
+            {
+                if (p.PlayerNumber >= 1) names[p.PlayerNumber - 1] = p.DisplayName;
+            }
+            await StartEngineAsync(demo: false, (uint)info.Seed, survival: false, _playerNumber, names);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"[PoVoxelStrike] lockstep join failed: {ex.Message}");
+            _fatalError = "couldn't join the run — wait for the next one.";
+            _runStarted = false;
+            StateHasChanged();
         }
     }
 
@@ -298,13 +662,21 @@
         // One-deep: a frame that lands while the previous interop call is still in flight is
         // dropped, not queued — the next one is 50 ms away.
         if (!_applyFrameInFlight.IsCompleted) return;
-        _applyFrameInFlight = ApplyFrameAsync(frame);
+        _applyFrameInFlight = CallEngineAsync("PoVoxelStrike.applyFrame", frame);
     }
 
-    private async Task ApplyFrameAsync(PoVoxelStrikeLockstepFrame frame)
+    // Carves are NOT dropped the way frames are: a missed position is corrected by the next
+    // one, a missed hole is a wall that stays shut on this client for the rest of the run.
+    private void OnCarveReceived(int playerNumber, int kind, int structure, float x, float y, float z) =>
+        _ = InvokeAsync(() => CallEngineAsync("PoVoxelStrike.applyCarve", playerNumber, kind, structure, x, y, z));
+
+    private void OnSquadWon(int playerNumber) =>
+        _ = InvokeAsync(() => CallEngineAsync("PoVoxelStrike.squadWon"));
+
+    private async Task CallEngineAsync(string method, params object?[] args)
     {
-        try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.applyFrame", frame); }
-        catch { /* engine torn down mid-frame */ }
+        try { await JSRuntime.InvokeVoidAsync(method, args); }
+        catch { /* engine torn down mid-call */ }
     }
 
     // A run that ended because the squad died already shows the game-over modal; the
@@ -324,36 +696,44 @@
     {
         if (!IsMulti || !_submitInFlight.IsCompleted) return;
         batch.PlayerNumber = _playerNumber;
-        _submitInFlight = SubmitQuietlyAsync(batch);
+        _submitInFlight = QuietlyAsync(Hub.SubmitInputsAsync(batch));
     }
 
-    private async Task SubmitQuietlyAsync(PoVoxelStrikeInputBatch batch)
+    /// <summary>This player carved the arena; relay it to the squad.</summary>
+    [JSInvokable]
+    public void OnCarve(int kind, int structure, double x, double y, double z)
     {
-        try { await Hub.SubmitInputsAsync(batch); }
+        if (IsMulti) _ = QuietlyAsync(Hub.SendCarveAsync(_playerNumber, kind, structure, (float)x, (float)y, (float)z));
+    }
+
+    /// <summary>This player took the chalice; the squad wins with them.</summary>
+    [JSInvokable]
+    public void OnChaliceClaimed()
+    {
+        if (IsMulti) _ = QuietlyAsync(Hub.ClaimChaliceAsync(_playerNumber));
+    }
+
+    private static async Task QuietlyAsync(Task hubCall)
+    {
+        try { await hubCall; }
         catch { /* the hub's disconnect path reports a dead link */ }
     }
 
-    private async Task StartEngineAsync()
+    // ── Run lifecycle ──────────────────────────────────────────────────────
+
+    private void ResetRun()
     {
-        try
-        {
-            if (!await JSRuntime.InvokeAsync<bool>("loadEngine", "povoxelstrike"))
-            {
-                _fatalError = "the 3D engine failed to load. Check your connection and try again.";
-                return;
-            }
-            await JSRuntime.InvokeVoidAsync("PoVoxelStrike.start", "povoxelstrike-container", _ref, _demo, _onlineOpts);
-        }
-        catch (Exception ex)
-        {
-            Console.Error.WriteLine($"[PoVoxelStrike] JS init failed: {ex.Message}");
-            _fatalError = "the 3D engine failed to start.";
-        }
+        _won = false;
+        _isNewBest = false;
+        _dailyBoard = null;
+        _hp = 100; _score = 0; _elapsed = 0; _kills = 0;
+        _gunsSilenced = 0; _down = false; _revivePct = 0;
+        _popups.Clear();
+        _lastScore = 0;
     }
 
     private async Task ResumeAsync()
     {
-        _phase = Phase.Playing;
         try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.resume"); }
         catch (Exception ex) { Console.Error.WriteLine($"[PoVoxelStrike] resume failed: {ex.Message}"); }
     }
@@ -364,56 +744,97 @@
         catch (Exception ex) { Console.Error.WriteLine($"[PoVoxelStrike] fullscreen failed: {ex.Message}"); }
     }
 
+    private async Task SetSettingsAsync(double? sens = null, bool? invertY = null, int? fov = null, string? gfx = null)
+    {
+        _sens = sens ?? _sens;
+        _invertY = invertY ?? _invertY;
+        _fov = fov ?? _fov;
+        _gfx = gfx ?? _gfx;
+        try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.setSettings", _sens, _invertY, _fov, _gfx); }
+        catch (Exception ex) { Console.Error.WriteLine($"[PoVoxelStrike] settings failed: {ex.Message}"); }
+    }
+
+    /// <summary>
+    /// Play again / Restart. Solo: a fresh arena, entered straight away when the browser
+    /// still honours the click (the card is the fallback when it does not). Online: back to
+    /// the lobby, which the host's end-of-run call has reopened with the same roster.
+    /// </summary>
     private async Task RestartAsync()
     {
-        _won = false;
-        _phase = Phase.Loading;
-        _hp = 100; _heatPct = 0; _heatLocked = false; _altPct = 100;
-        _score = 0; _elapsed = 0; _kills = 0; _enemyCount = 0;
-        _isNewBest = false;
-        _popups.Clear();
-        _lastScore = 0;
-        StateHasChanged();
+        ResetRun();
+        _phase = Phase.Intro;
+        if (_tab == Tab.Online)
+        {
+            _runStarted = false;
+            _ready = false;
+            try { await Hub.StopLockstepAsync(); } catch { }
+            try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.unload"); } catch { }
+            StateHasChanged();
+            return;
+        }
+        if (_solo != SoloRun.Daily) _seedOverride = null;
+        _autoEnter = true;
+        await BuildSoloAsync();
+    }
+
+    private async Task ReplayArenaAsync()
+    {
+        if (!uint.TryParse(_finalSeed, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out var seed)) return;
+        ResetRun();
+        _phase = Phase.Intro;
+        _solo = _solo == SoloRun.Daily ? SoloRun.Siege : _solo;
+        _seedOverride = seed;
+        _autoEnter = true;
+        await BuildSoloAsync();
+    }
+
+    private async Task CopyArenaLinkAsync()
+    {
         try
         {
-            // Fast path: the JS side reuses the already-decoded voxel volumes and only
-            // rebuilds the world (new seed) — no manifest fetch, no asset decode.
-            await JSRuntime.InvokeVoidAsync("PoVoxelStrike.restart");
+            await JSRuntime.InvokeVoidAsync("navigator.clipboard.writeText",
+                Navigation.ToAbsoluteUri($"/povoxelstrike/1player?seed={_finalSeed}").ToString());
+            ToastService.Show("Arena link copied.", ToastType.Success);
         }
-        catch (Exception ex)
+        catch
         {
-            Console.Error.WriteLine($"[PoVoxelStrike] restart failed: {ex.Message}");
-            _fatalError = "restart failed — reload the page.";
+            ToastService.Show($"Couldn't copy. The arena is {_finalSeed}.", ToastType.Info);
         }
+    }
+
+    private async Task SaveClipAsync()
+    {
+        var saved = false;
+        try { saved = await JSRuntime.InvokeAsync<bool>("PoVoxelStrike.saveClip"); } catch { }
+        if (!saved) ToastService.Show("No collapse big enough to clip this run (clips need High graphics).", ToastType.Info);
     }
 
     [JSInvokable]
-    public void OnReady(int assetCount, int structureCount)
+    public void OnReady(int assetCount, int structureCount, string weather)
     {
-        _phase = Phase.Ready;
-        _assetCount = assetCount;
-        _structureCount = structureCount;
+        _ready = true;
+        _weather = weather;
         StateHasChanged();
+        if (!_autoEnter) return;
+        _autoEnter = false;
+        _ = CallEngineAsync("PoVoxelStrike.enter");
     }
 
-    /// <summary>Pointer lock acquired — first click on the veil, or Resume.</summary>
+    /// <summary>The engine has control — the first entry, or Resume.</summary>
     [JSInvokable]
     public void OnResumed()
     {
-        if (_phase is Phase.Ready or Phase.Paused) _phase = Phase.Playing;
+        if (_phase is Phase.Intro or Phase.Paused) _phase = Phase.Playing;
         StateHasChanged();
     }
 
     // Flat positional primitives by design — the platform interop convention (no DTO
     // deserialization on a hot-ish path; see PoMarbleRace's parallel-array contract).
     [JSInvokable]
-    public void OnHudTick(int hp, int heatPct, bool heatLocked, int altPct, int score,
-        int elapsed, int kills, int enemyCount, int bodies, int particles)
+    public void OnHudTick(int hp, int score, int elapsed, int kills, int gunsSilenced, int gunsTotal,
+        bool down, int revivePct)
     {
         _hp = hp;
-        _heatPct = heatPct;
-        _heatLocked = heatLocked;
-        _altPct = altPct;
         // A tick's passive drip is ≤ +20 (two 10-point clock seconds can land in one
         // 100 ms tick after a stall); anything above it means kills/crushes landed.
         var delta = score - _lastScore;
@@ -426,34 +847,43 @@
         _score = score;
         _elapsed = elapsed;
         _kills = kills;
-        _enemyCount = enemyCount;
+        _gunsSilenced = gunsSilenced;
+        _gunsTotal = gunsTotal;
+        _down = down;
+        _revivePct = revivePct;
         StateHasChanged();
     }
 
     [JSInvokable]
     public void OnPaused(string reason)
     {
-        if (_phase == Phase.Playing) _phase = Phase.Paused;
+        if (_phase == Phase.Playing)
+        {
+            _phase = Phase.Paused;
+            _focusResume = true;
+        }
         StateHasChanged();
     }
 
     /// <summary>
     /// The chalice was taken: the siege was won. Same payload and the same submit path as
-    /// <see cref="OnGameOver"/> -- only <c>_won</c> differs, which is what the summary
-    /// reads to choose its banner. Keeping one submit path is deliberate: a second one is
-    /// how a win would eventually stop reaching the leaderboard.
+    /// <see cref="OnGameOver"/> -- only <c>_won</c> differs, which the summary reads for its
+    /// banner and the submit reads for the result and the server's win bonus. Keeping one
+    /// submit path is deliberate: a second one is how a win would eventually stop reaching
+    /// the leaderboard.
     /// </summary>
     [JSInvokable]
     public Task OnVictory(int score, double survivalSeconds, int kills, int bruteKills,
-        int crushKills, int voxelsDestroyed, string seed)
+        int crushKills, int voxelsDestroyed, string seed, int gunsSilenced, int gunsTotal, int damageTaken)
     {
         _won = true;
-        return OnGameOver(score, survivalSeconds, kills, bruteKills, crushKills, voxelsDestroyed, seed);
+        return OnGameOver(score, survivalSeconds, kills, bruteKills, crushKills, voxelsDestroyed, seed,
+            gunsSilenced, gunsTotal, damageTaken);
     }
 
     [JSInvokable]
     public async Task OnGameOver(int score, double survivalSeconds, int kills, int bruteKills,
-        int crushKills, int voxelsDestroyed, string seed)
+        int crushKills, int voxelsDestroyed, string seed, int gunsSilenced, int gunsTotal, int damageTaken)
     {
         _phase = Phase.Dead;
         _finalSeed = seed;
@@ -463,11 +893,15 @@
         _finalBruteKills = bruteKills;
         _finalCrushKills = crushKills;
         _finalVoxels = voxelsDestroyed;
+        _gunsSilenced = gunsSilenced;
+        _gunsTotal = gunsTotal;
+        _finalDamage = damageTaken;
+        _down = false;
         StateHasChanged();
 
         // Close the run so the shared lobby reopens for the next squad instead of reading
         // "in progress" until everyone leaves this page. The hub honours the host's call only.
-        if (IsMulti) _ = Hub.EndRunAsync();
+        if (IsMulti) _ = QuietlyAsync(Hub.EndRunAsync());
 
         if (_demo)
         {
@@ -481,12 +915,16 @@
         {
             // Every finished run submits — the server ratchets to the best. A failed submit
             // parks in the offline queue (guests included) and flushes on sign-in/reconnect.
-            await GameResults.RecordAndSubmitPoVoxelStrikeAsync(_playerName, GameResult.Loss,
-                new PoVoxelStrikeRunRequest(score, survivalSeconds, kills, bruteKills, crushKills, voxelsDestroyed),
+            // The result and the Won flag both come from _won: until 2026-09-30 every run was
+            // recorded as a Loss, and a win's bonus had no flag for the server to price it by.
+            await GameResults.RecordAndSubmitPoVoxelStrikeAsync(_playerName, _won ? GameResult.Win : GameResult.Loss,
+                new PoVoxelStrikeRunRequest(score, survivalSeconds, kills, bruteKills, crushKills, voxelsDestroyed,
+                    Won: _won, Day: _runDay),
                 onNewBest: isNewBest =>
                 {
                     _isNewBest = isNewBest;
                 });
+            if (_runDay is not null) _dailyBoard = await Api.GetPoVoxelStrikeHighScoresAsync(5, _runDay);
             StateHasChanged(); // the game-over modal may already be up — repaint the badge in
         }
         catch (Exception ex)
@@ -507,12 +945,20 @@
     public async ValueTask DisposeAsync()
     {
         try { await JSRuntime.InvokeVoidAsync("PoVoxelStrike.stop"); } catch { }
-        if (_hubSubscribed)
+        if (_lobbySubscribed)
         {
+            Hub.Lobby.StateChanged -= OnLobbyChanged;
+            Hub.Lobby.ConnectionChanged -= OnConnectionChanged;
+            Hub.Lobby.EventReceived -= OnLobbyEvent;
+            Hub.Lobby.GameStarted -= OnGameStarted;
             Hub.FrameReceived -= OnLockstepFrame;
             Hub.RunEnded -= OnRunEnded;
             Hub.PlayerDropped -= OnPlayerDropped;
+            Hub.CarveReceived -= OnCarveReceived;
+            Hub.SquadWon -= OnSquadWon;
             try { await Hub.StopLockstepAsync(); } catch { }
+            try { await Hub.LeaveLobbyAsync(); } catch { }
+            try { await Hub.DisposeAsync(); } catch { }
         }
         _ref?.Dispose();
     }

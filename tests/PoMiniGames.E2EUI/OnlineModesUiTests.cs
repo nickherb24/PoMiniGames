@@ -50,7 +50,10 @@ public class OnlineModesUiTests
     [Theory]
     [InlineData("/pobrawl/multi", "Start Fight", "/pobrawl/online", "#pobrawl-container canvas")]
     [InlineData("/poracer/multi", "Start Race", "/poracer", ".race-hud")]
-    [InlineData("/povoxelstrike/multi", "Start the Run", "/povoxelstrike/multi/", "#povoxelstrike-container canvas")]
+    // Voxel Strike's lobby is the Online tab of the game page itself (2026-09-30): the run starts
+    // in place, so the URL does not move and the engine canvas — which only exists once the
+    // host has started and the squad's arena is built — is what proves both arrived.
+    [InlineData("/povoxelstrike/multi", "Start the Run", "/povoxelstrike/multi", "#povoxelstrike-container canvas")]
     public async Task LobbyGame_TwoPlayersReady_HostStarts_AndBothReachTheMatch(string lobby, string startLabel, string matchPath, string marker)
     {
         using var playwright = await Playwright.CreateAsync();

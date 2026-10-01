@@ -93,7 +93,8 @@ public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILo
         new("PoBrawlHighScores", ["pobrawl"], ["PlayerInitials"]),
         new("PoRacerHighScores", ["poracer"], ["PlayerName"]),
         new("PoSportsHighScores", ["posports"], ["PlayerName"]),
-        new("PoVoxelStrikeHighScores", ["povoxelstrike"], ["PlayerName"]),
+        // Every partition: the Daily Siege boards are one partition per day beside the main one.
+        new("PoVoxelStrikeHighScores", null, ["PlayerName"]),
 
         // The ladder keeps one row per player keyed by sanitised name (see StorageService).
         new("PoBrawlLadder", ["pobrawlladder"], ["PlayerName", "PlayerInitials"], RowKeyIsName: true),

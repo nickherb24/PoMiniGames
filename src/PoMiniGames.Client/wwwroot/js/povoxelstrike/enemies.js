@@ -12,13 +12,13 @@
 // The escalation curve is continuous (endless survival, PRD §F7): spawn interval
 // shrinks and the archetype mix hardens with elapsed time; there are no wave breaks.
 //
-// SIEGE RETHEME (2026-08-19): roaming enemies are OFF. The fortress guns are the threat
-// now, and chasing blocks pulled the player's attention away from the walls -- the thing
-// the whole game is about. `ENEMIES_ENABLED` is the switch: everything below still works
-// and is still wired into the HUD, scoring and crush plumbing, so flipping it back on
-// restores the survival mode without touching another file. Deleting the archetypes
-// instead would have taken the debris-crush kill path and the threat-perception code
-// with them, and both are load-bearing for the destruction sandbox.
+// SIEGE RETHEME (2026-08-19): roaming enemies are off in the Siege. The fortress guns are
+// the threat there, and chasing blocks pulled the player's attention away from the walls --
+// the thing the whole game is about. They were kept behind a constant rather than deleted
+// (the debris-crush kill path and the threat-perception code are load-bearing for the
+// destruction sandbox), and since 2026-09-30 that constant is `opts.enabled`: the start
+// card's Survival mode turns the horde back on, on top of the guns. Solo only — an online
+// run is co-presence, and each client would be fighting its own private horde.
 
 import * as THREE from 'three';
 import { createActorMaterial } from './materials.js';
@@ -39,14 +39,12 @@ const ARCHETYPES = {
   },
 };
 
-const ENEMIES_ENABLED = false;
-
 const CRUSH_MIN_SPEED = 5;
 const FLEE_PROBE_RADIUS = 10;
 
 export class EnemyManager {
   /**
-   * @param opts { demo, onPlayerDamage(amount), onKill(type, byCrush),
+   * @param opts { enabled, demo, onPlayerDamage(amount), onKill(type, byCrush),
    *               onCarve(removed, clusterVoxels),
    *               fx?: { spit(pos), enemyDeath(type, pos) } }
    */
@@ -71,7 +69,7 @@ export class EnemyManager {
   // ── Spawn director (continuous escalation) ─────────────────────────────
 
   updateSpawning(dt, elapsed, playerPos, cameraForward) {
-    if (!ENEMIES_ENABLED) return;
+    if (!this.opts.enabled) return;
     this.spawnClock -= dt;
     if (this.spawnClock > 0) return;
     const maxAlive = Math.min(40, 6 + elapsed / 15);

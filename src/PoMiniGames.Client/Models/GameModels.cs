@@ -134,7 +134,8 @@ public class PoBrawlHighScore
 // (PoVoxelStrikeRunRequest in Features/PoVoxelStrike) — identity and timestamp are
 // server-derived, so there is no field here to forge them in.
 public sealed record PoVoxelStrikeRunRequest(
-    int Score, double SurvivalSeconds, int Kills, int BruteKills, int CrushKills, int VoxelsDestroyed);
+    int Score, double SurvivalSeconds, int Kills, int BruteKills, int CrushKills, int VoxelsDestroyed,
+    bool Won = false, string? Day = null);
 
 public class PoBrawlLadderEntry
 {
