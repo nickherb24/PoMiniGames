@@ -8,8 +8,8 @@ using PoMiniGames.Shared.Games;
 namespace PoMiniGames.E2EAPI;
 
 /// <summary>
-/// §PoCabinet (T9c, 2026-09-14): the lobby and race hubs are auth-gated at the
-/// route-group layer (CLAUDE.md §3). The deeper "two-browser lobby → race"
+/// The lobby and race hubs are auth-gated at the
+/// route-group layer. The deeper "two-browser lobby → race"
 /// handoff requires a SignalR client against a live Kestrel host and is
 /// verified by the E2E-UI tier.
 ///

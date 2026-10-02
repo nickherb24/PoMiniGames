@@ -27,12 +27,12 @@ export const materialSnow = { value: 0 };     // 0..1 snow coverage factor
 // the sky colour a wet surface reflects. Set once per frame by the renderer, like the clock.
 export const materialWet = { value: 0 };
 export const materialSky = { value: new THREE.Color(0x8ec5ff) };
-// The naturalist lenses (2026-09-30): how far a creature's instance colour replaces its lit
+// The naturalist lenses: how far a creature's instance colour replaces its lit
 // colour. 0 = an ordinary tinted Lambert; 1 = the flat lens colour, readable in the dark.
 // Only materials hooked with `lens: true` (the creatures) listen to it.
 export const materialLens = { value: 0 };
 
-// Cloud shadows (2026-09-30). The deck sky.js draws is a noise field anchored to the world,
+// Cloud shadows. The deck sky.js draws is a noise field anchored to the world,
 // so the same field, sampled where the sun's ray through a surface point meets the deck,
 // says whether that point is in shade. The renderer sets these four once per frame from the
 // sky it has just updated; the terrain binds the same objects (terrainMesh.js).
@@ -164,7 +164,7 @@ export function enhanceLambert(material, { rim = 0.35, rimColor = 0xbfd4ff, mott
       // normal_fragment_begin — AFTER color_fragment. Injecting `normal.y` there made the
       // whole instanced Lambert program fail to compile ('normal' : undeclared identifier),
       // so every hooked creature/prop mesh drew as a garbage blob and flooded the console
-      // with useProgram warnings (found via renderer.info.programs diagnostics, 2026-09-16).
+      // with useProgram warnings (visible in renderer.info.programs).
       // normal is view-space; inverseTransformDirection (from <common>) gives world up.
       .replace('#include <normal_fragment_begin>', `
         #include <normal_fragment_begin>

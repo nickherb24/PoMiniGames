@@ -1,7 +1,7 @@
 @namespace PoMiniGamesClient.Components
 
 @*
-    Universal "no rows yet" view (2026-09-04 UI sweep, Option 8).
+    Universal "no rows yet" view.
 
     Drop-in primitive for every list / lobby / leaderboard that can render
     empty. Composition: icon (emoji, supplied by caller) + headline + body
@@ -11,7 +11,7 @@
 
     Pages that currently roll their own empty markup (`<p>No scores yet.</p>`,
     themed one-offs in `.prf-page`, etc.) should migrate here. The
-    inline-style rule from CLAUDE.md is honoured: this component passes any
+    no-inline-style rule is honoured: this component passes any
     runtime values via CSS custom properties on `style="…"` rather than
     static styles.
 *@

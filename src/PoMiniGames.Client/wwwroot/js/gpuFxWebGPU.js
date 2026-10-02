@@ -1,4 +1,4 @@
-// gpuFxWebGPU.js — the title swarm on the game intro card (WebGPU compute, §GFX-12).
+// gpuFxWebGPU.js — the title swarm on the game intro card (WebGPU compute).
 //
 // A few thousand particles start scattered across the whole viewport, fall into the letters
 // of the game's title on the intro card, dissolve into the real heading, and burst back out

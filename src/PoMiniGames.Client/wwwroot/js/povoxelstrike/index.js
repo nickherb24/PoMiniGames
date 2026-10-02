@@ -123,7 +123,7 @@ window.PoVoxelStrike = {
     else host.requestFullscreen?.().catch?.(() => { });
   },
 
-  /** PRD §4.2 interop surface: cancel the current run immediately (no game-over
+  /** Interop surface: cancel the current run immediately (no game-over
    *  event fires). Same teardown as stop(); the distinct name keeps call sites
    *  honest about intent — abort mid-run vs stop on page dispose. */
   abort() { this.stop(); },

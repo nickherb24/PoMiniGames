@@ -10,8 +10,7 @@
     --accent-ink: #c7d2fe; --accent-success-ink: #6ee7b7; --accent-warning-ink: #fcd34d; --accent-danger-ink: #fca5a5; --accent-amber-ink: #fcd34d;
     --accent-soft: rgba(129, 140, 248, 0.16);
     /* The Racer palette, once. It is a per-game canvas palette (scheme-invariant, like the canvas
-       itself), and every PoRacer stylesheet reads it from here: until 2026-10-01 the same dozen
-       colours were retyped as raw hex across five files, in two or three spellings each. */
+       itself), and every PoRacer stylesheet reads it from here rather than retyping raw hex. */
     --racer-bg: #09131e; --racer-text: #edf7ff; --racer-ink: #fff; --racer-muted: #cadbe9; --racer-faint: #a8bacd;
     --racer-panel: #102033f2; --racer-well: #07142099; --racer-line: #60839d66; --racer-control: #16304cdd;
     --racer-accent: #79e0fc; --racer-accent-line: #91e4ff; --racer-accent-fill: #19405a; --racer-on-accent: #071723;
@@ -25,7 +24,7 @@
 .racer-card a { color: var(--racer-accent-line); text-underline-offset: 4px; }
 .racer-note { margin: 0; color: var(--racer-muted); font-size: 14px; }
 
-/* The opening card is the shared GameIntro (2026-10-02). .racer-intro is display:contents and
+/* The opening card is the shared GameIntro. .racer-intro is display:contents and
    exists so the card can be widened from here: three track cards do not fit in 440px. The solo
    choices sit in the card as one Racer-palette panel (.racer-setup), because the track cards
    and paint chips are drawn for a dark surface and the shared card is light in the light theme. */

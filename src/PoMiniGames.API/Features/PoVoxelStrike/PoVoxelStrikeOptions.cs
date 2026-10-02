@@ -18,9 +18,8 @@ public sealed class PoVoxelStrikeOptions
     public string ConvertedPath { get; set; } = "App_Data/povoxelstrike/converted";
 
     /// <summary>
-    /// Voxel count along the model's longest axis. Fixed detail is a product decision
-    /// (PRD elicitation round 5) — per-file overrides are a future milestone, so this is
-    /// a single knob rather than a per-asset setting.
+    /// Voxel count along the model's longest axis. Fixed detail is a product decision,
+    /// so this is a single knob rather than a per-asset setting.
     /// </summary>
     public int VoxelResolution { get; set; } = 64;
 }

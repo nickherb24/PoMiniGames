@@ -1,6 +1,6 @@
 // pojevarena/postfx.js — one WebGL2 pass over the finished Canvas 2D frame.
 //
-// The arena is drawn in Canvas 2D (SPEC §3: no three.js); this pass only grades the picture:
+// The arena is drawn in Canvas 2D (no three.js); this pass only grades the picture:
 // a cheap single-pass glow on bright pixels (projectiles, heals, confetti), a chromatic split
 // that follows the hit shake, a vignette that tints and pulses as units panic, and a warm
 // desaturated grade for slow motion. The 2D canvas stays underneath as the input and the pointer

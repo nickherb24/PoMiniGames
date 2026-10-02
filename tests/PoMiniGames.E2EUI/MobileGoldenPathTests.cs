@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 namespace PoMiniGames.E2EUI;
 
 /// <summary>
-/// §5 E2E-UI "Golden Path" smoke tests under a strict mobile-portrait viewport
+/// E2E-UI "Golden Path" smoke tests under a strict mobile-portrait viewport
 /// (390×844 — the platform is mobile-first). These drive a real Chromium browser
 /// through the player's first interactions: land on home, see the game catalog,
 /// open a single-player game. The default (non-mock) fixture is used, so these
@@ -20,7 +20,7 @@ public class MobileGoldenPathTests
 
     private async Task<IPage> OpenHomeAsync(IBrowser browser)
     {
-        // §3 BFF Header Overrides: every browser context attaches the FakeAuth headers
+        // BFF header overrides: every browser context attaches the FakeAuth headers
         // so the FakeAuth scheme authenticates each request without depending on the
         // cookie flow (which is brittle across dynamic-port Kestrel hosts).
         var context = await browser.NewContextAsync(new BrowserNewContextOptions

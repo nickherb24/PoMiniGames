@@ -1,8 +1,7 @@
 // config.js — every tunable number in the PoEcosystem simulation lives here.
 //
-// The sim is deterministic per seed (SPEC §13 criterion 4), so changing any value in
-// this file changes every world; the population tuning at plan checkpoint CP-C happens
-// here and nowhere else.
+// The sim is deterministic per seed, so changing any value in
+// this file changes every world; population tuning happens here and nowhere else.
 
 // ── Time ─────────────────────────────────────────────────────────────────
 export const TICK_SECONDS = 0.05;          // fixed sim step (20 Hz)
@@ -10,8 +9,6 @@ export const MAX_STEPS_PER_TICK = 4;       // accumulator cap: a hidden tab neve
 export const YEAR_SECONDS = 30;            // creature ages are displayed in years
 export const DAY_SECONDS = 120;            // cosmetic light cycle, not tied to years
 export const DAYS_PER_YEAR = 10;           // calendar days shown in the HUD clock (Year N · Day D)
-export const SEASON = Object.freeze({ SPRING: 0, SUMMER: 1, AUTUMN: 2, WINTER: 3 });
-export const SEASON_NAMES = Object.freeze(['Spring', 'Summer', 'Autumn', 'Winter']);
 // Tick 0 is mid-morning, not midnight: a world that opens in the dark reads as broken.
 export const DAY_START_FRACTION = 0.32;
 export const SPEEDS = Object.freeze([0, 1, 2, 4]);
@@ -37,8 +34,8 @@ export const RNG_SALT = Object.freeze({
   events: 0x4e6a8dbf,
   names: 0x5f7b9ed1,
   cosmetic: 0x6a8cafe3,
-  // Added 2026-09-23. New keys never shift the six above (each stream is seeded from its
-  // own salt), and a snapshot written before they existed simply leaves them at their seed.
+  // Adding a key never shifts the streams above it (each stream is seeded from its own
+  // salt), and a snapshot written before a key existed simply leaves it at its seed.
   weather: 0x7b9dc1f5,
   tribes: 0x8cae02a7,     // diplomacy + caravans: they called Math.random until now
   ecology: 0x9dbf1339,    // disease outbreaks and spread
@@ -60,7 +57,7 @@ export const PROP_SIZES = Object.freeze([
 // ── External modules (workers have no import map; see plan decision 2) ───
 export const CANNON_CDN_URL = 'https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js';
 
-// ── Flora (SPEC §7.6) ────────────────────────────────────────────────────
+// ── Flora ────────────────────────────────────────────────────
 export const FLORA = Object.freeze({
   grassInit: Object.freeze({ grass: 0.8, forest: 0.5, hill: 0.4 }),
   // Logistic regrowth rate per second, db/dt = r·(b + seed)·(1 − b); the seed term lets a
@@ -77,7 +74,7 @@ export const FLORA = Object.freeze({
   logsPerTree: 3,
 });
 
-// ── Behaviour (SPEC §7.5) ────────────────────────────────────────────────
+// ── Behaviour ────────────────────────────────────────────────
 export const MEMORY = Object.freeze({ foodSeconds: 120, waterSeconds: 240 });
 export const BEHAVIOR = Object.freeze({
   spatialCell: 8,            // metres per spatial-hash cell (max perception 25 m = 4 cells)
@@ -93,7 +90,7 @@ export const BEHAVIOR = Object.freeze({
   firstHutWaterRadius: 4,    // the first hut is placed on grass within this many tiles of water
 });
 
-// ── World composition (SPEC §7.2 start population, §7.5/7.7 interaction rules) ──
+// ── World composition (start population, interaction rules) ──
 export const POPULATION = Object.freeze({ rabbits: 40, deer: 20, wolves: 6, humans: 18, huts: 3, initialAgeFraction: 0.6 });
 export const TRIBES = Object.freeze({
   count: 3,
@@ -149,7 +146,7 @@ export const TECH = Object.freeze({
   towerHuntReachBonus: 1.5,
 });
 
-// ── Physics (SPEC §7.7). Cosmetic only: no rule reads a body. ───────────
+// ── Physics. Cosmetic only: no rule reads a body. ───────────
 export const PHYSICS = Object.freeze({
   gravity: 9.81,
   substeps: 2,               // cannon steps per sim tick (1 on low-end devices)
@@ -169,7 +166,7 @@ export const PHYSICS = Object.freeze({
   restitution: 0.15,
 });
 
-// ── Natural events (SPEC §7.7) ───────────────────────────────────────────
+// ── Natural events ───────────────────────────────────────────
 export const EVENTS = Object.freeze({
   minSpacingSeconds: 45,     // between any two natural events
   intervalSeconds: Object.freeze({ lightning: [90, 240], rockslide: [120, 300], eruption: [240, 480], drought: [180, 420] }),
@@ -250,7 +247,7 @@ export const VARIETY = Object.freeze({ drift: 0.26, minCount: 6, max: 40, settle
 // ── Timeline (dashboard) ─────────────────────────────────────────────────
 export const HISTORY = Object.freeze({ landmarksMax: 300, yearsMax: 2000 });
 
-// ── Thoughts (SPEC §7.8) ─────────────────────────────────────────────────
+// ── Thoughts ─────────────────────────────────────────────────
 export const THOUGHTS = Object.freeze({
   maxPromptChars: 600,
   maxThoughtChars: 120,

@@ -21,7 +21,7 @@ public class AuthStateService
     private bool _initialized;
     private bool _msalInitialized;
 
-    // 2026-07-26 browser audit #2: serialize concurrent InitializeAsync calls so
+    // Serialize concurrent InitializeAsync calls so
     // a navigation race between two pages doesn't fire two parallel
     // /api/auth/handshake requests — the second one always aborts the first
     // with ERR_ABORTED, the first request's response gets discarded, and every
@@ -57,7 +57,7 @@ public class AuthStateService
 
     public async Task InitializeAsync(string? queryString = null)
     {
-        // 2026-07-26 browser audit #2: serialize concurrent handshakes. A second
+        // Serialize concurrent handshakes. A second
         // caller arriving while the first is still awaiting the network reuses
         // the in-flight Task rather than issuing a parallel request that the
         // browser will abort as soon as the second navigation tears down the
@@ -113,8 +113,8 @@ public class AuthStateService
         Error = null;
         NotifyStateChanged();
 
-        // §6: single-RTT auth handshake. The previous implementation fetched config
-        // then user profile in two round-trips, causing one extra paint of the spinner.
+        // Single-RTT auth handshake: config and user profile come back together, so
+        // the spinner is painted once.
         AuthHandshake? handshake;
         try
         {
@@ -122,7 +122,7 @@ public class AuthStateService
         }
         catch (ApiService.AuthHandshakeUnavailableException ex)
         {
-            // 2026-07-19 browser audit #4: a navigation race aborts the
+            // A navigation race aborts the
             // in-flight handshake with ERR_ABORTED. Treat that as
             // "still warming up" — keep whatever identity we already have
             // rather than blanking the header to a stale guest name, and
@@ -134,7 +134,7 @@ public class AuthStateService
         }
         catch (ApiService.AuthHandshakeReauthRequiredException)
         {
-            // 2026-07-19 browser audit #3: the data-protection key ring was
+            // The data-protection key ring was
             // rebuilt (Azurite wipe, dev-box restart, or the host relaunched
             // with a different content root — the dev ring is `keys/` *under
             // the content root*, so `dotnet run --project src/PoMiniGames.API`
@@ -142,14 +142,12 @@ public class AuthStateService
             // share one). The existing DevCookie can't be unprotected.
             await _api.DevLogoutAsync();
 
-            // 2026-08-11: re-run the handshake now the stale cookie is cleared.
-            // This used to set `handshake = null` and fall through, but the
+            // Re-run the handshake now the stale cookie is cleared. Setting
+            // `handshake = null` and falling through is wrong: the
             // `handshake is null` branch below nulls _config — which drops
             // DevLoginEnabled and MicrosoftEnabled to false and renders the
             // "Authentication is not configured on the server" dead end, with
-            // no Continue-as-Guest button and no way back. The comment claimed
-            // it fell through "to the DevLoginEnabled branch"; it never could,
-            // because that branch reads the _config this path had just cleared.
+            // no Continue-as-Guest button and no way back.
             // One retry only — if the server still signals reauth, the cookie
             // did not clear and looping would not help.
             try
@@ -233,10 +231,10 @@ public class AuthStateService
                 return;
             }
 
-            // §9.3 chaos-engineering hardening: every auto-guest session gets a unique
-            // per-tab suffix so the rate limiter can't collapse two different kiosk
-            // browsers into the same bucket (which previously let one browser's burst
-            // DOS another browser's legitimate guest actions).
+            // Every auto-guest session gets a unique per-tab suffix so the rate limiter
+            // can't collapse two different kiosk browsers into the same bucket (which
+            // would let one browser's burst DOS another browser's legitimate guest
+            // actions).
             if ((_config.AutoGuestLogin || _config.DevLoginEnabled) && IsAutoGuestOptIn(queryString))
             {
                 var sessionTag = await JsSessionTagAsync();
@@ -464,15 +462,14 @@ public class AuthStateService
         // Guests need a unique name — it is the identity key in the multiplayer
         // lobbies/scoring (Fun Quiz, Couple Quiz), and a shared "Guest" collapsed
         // distinct players into one (both crowned King/host). But the uniquifying
-        // is the SERVER's job and always has been: DevLoginIntake.BuildProfile
-        // appends its own random 6-digit suffix to every dev/guest login.
+        // is the SERVER's job: DevLoginIntake.BuildProfile appends its own random
+        // 6-digit suffix to every dev/guest login.
         //
-        // Sending "Guest######" from here meant both suffixes were applied and
-        // every guest ended up named "Guest813527-519086" — 18 characters that
-        // read as a database key, clipped in the top bar at every width and
-        // truncated a second time inside the profile hero. Sending the bare
-        // "Guest" yields "Guest-519086": same uniqueness, same collision
-        // guarantee, and it actually fits. 2026-09-11 UI audit.
+        // Sending "Guest######" from here would apply both suffixes and name every
+        // guest like "Guest813527-519086" — 18 characters that read as a database
+        // key, clipped in the top bar at every width and truncated a second time
+        // inside the profile hero. Sending the bare "Guest" yields "Guest-519086":
+        // same uniqueness, same collision guarantee, and it actually fits.
         var profile = await _api.DevBypassAsync("Guest");
         if (profile != null)
         {
@@ -498,8 +495,8 @@ public class AuthStateService
         return pairs["user"];
     }
 
-    // §5 of QA report: AutoGuestLogin now requires an explicit `?autoGuest=1` URL
-    // parameter in addition to the server-side flag. This is a deliberate opt-in so
+    // AutoGuestLogin requires an explicit `?autoGuest=1` URL parameter in addition
+    // to the server-side flag. This is a deliberate opt-in so
     // the silent bypass can never be hit by accident (e.g. bookmarked URL, deep link).
     private static bool IsAutoGuestOptIn(string? queryString)
     {
@@ -548,8 +545,8 @@ public class AuthStateService
         {
             Error = null;
             _user = profile;
-            // §10: keep the local player-name in sync with the new identity
-            // so /profile and the bottom-tab bar show the new name immediately,
+            // Keep the local player-name in sync with the new identity
+            // so /profile and the top bar show the new name immediately,
             // not the previously-cached "Player" / random adjective-noun.
             // SetPlayerNameFromAuth ignores empty values, which is what we want
             // when the user typed a real name (DisplayName is non-empty).

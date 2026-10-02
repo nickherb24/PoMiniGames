@@ -9,7 +9,7 @@ using PoMiniGamesClient.Services.Ui;
 namespace PoMiniGamesClient.Services.Http;
 
 /// <summary>
-/// §2026-07-16 — SignalR credentials pass-through handler factory.
+/// SignalR credentials pass-through handler factory.
 ///
 /// <see cref="Microsoft.AspNetCore.SignalR.Client.HubConnectionBuilder"/> with the
 /// string-only <c>WithUrl(string)</c> overload constructs its own internal

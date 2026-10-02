@@ -18,17 +18,15 @@
 
 @* Stats are the adaptive-ELO bucket, which 2-player never updates
    (HandleTwoPlayerMove records a local match instead) — so showing the
-   grid there displayed stale 1P figures. Matches ConnectFive.
-   2026-07-19 browser audit #7: the header was missing the ELO badge that
-   Connect Five and Brawl both render — now passed through GameShell.Elo
-   so the live rating shows next to the signed-in identity on 1P AI. *@
+   grid there would display stale 1P figures. Matches ConnectFive.
+   The ELO badge, like Connect Five and Brawl, goes through GameShell.Elo so the
+   live rating shows next to the signed-in identity on 1P AI. *@
 <PageTitle>Tic-Tac-Toe · PoMiniGames</PageTitle>
 
-@* 2026-08-12 audit #1: same 5 s post-win pause as Connect Five — let the winning
+@* Same 5 s post-win pause as Connect Five — let the winning
    line flash on the board before the modal covers it. Razor block comments
    placed between attributes of an element are parsed as attribute names and
-   crash the page at runtime (see 2026-08-10 audit). Comment lives OUTSIDE
-   the tag. *@
+   crash the page at runtime, so this comment lives OUTSIDE the tag. *@
 <GameShell
     Title=@TitleContent
     Player="@_playerName"
@@ -50,17 +48,10 @@
                    Mode="@_introMode"
                    OnStart="DismissIntro" />
     }
-    @* 2026-08-10: the §GFX-4 WebGL board layer was removed here, the same way and
-       for the same reason it was removed from Connect Five. It drew the marks as
-       scattered single red slashes straddling cell borders instead of X's in cells,
-       while .ttt-board--gl faded the correct SVG marks out — so the board looked
-       broken rather than merely plain. Nothing had to be built to replace it: the
-       CSS/SVG board underneath was always the documented fallback and was always
-       complete. The canvas was hiding it; removing the canvas makes it visible. *@
-    @* One column: the quick-match card (online only), the turn strip, the board. Until
-       2026-10-01 the card and the board were two children of the game area, which is a
-       row: on a phone the card took the left half and pushed three of the board's six
-       columns off the right edge. *@
+    @* One column: the quick-match card (online only), the turn strip, the board. The
+       game area is a row, so the card and the board must not be two direct children of
+       it: on a phone the card would take the left half and push three of the board's
+       six columns off the right edge. *@
     <div class="ttt-layout">
     <div class="ttt-slot">
         @if (IsOnline)
@@ -82,8 +73,7 @@
     @if (!OnlineWaiting)
     {
     <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="Tic-Tac-Toe game board">
-        @* role="grid" requires role="row" between it and its gridcells (2026-08-08
-           audit #2 — 234 axe violations across this board and Connect Five). The
+        @* role="grid" requires role="row" between it and its gridcells. The
            wrapper is `display: contents` so all 36 cells stay direct grid items of
            .ttt-board and the 6×6 template, the --ci stagger and the win-line
            geometry are all untouched. *@
@@ -122,14 +112,14 @@
                     }
                     else if (!isDisabled)
                     {
-                        @* §7 ghost preview of whoever moves next (X vs CPU; the active token in 2P). *@
+                        @* Ghost preview of whoever moves next (X vs CPU; the active token in 2P). *@
                         @Mark(isX: PlayMode == "2p" ? _current2pToken == CellValue.X : PlayMode == "online" ? _mySide == TurnMatchSide.First : true, ghost: true)
                     }
                 </div>
             }
             </div>
         }
-        @* §2 animated strike through the winning run — geometry computed from the
+        @* Animated strike through the winning run — geometry computed from the
            shared --ttt-* grid tokens so it lines up at any cell size. *@
         @if (_winCells.Count >= 2)
         {
@@ -149,10 +139,8 @@
     /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
-    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
 
-    private GameMode RouteMode => GameModes.Parse(Mode, ModeQuery, DemoQuery);
+    private GameMode RouteMode => GameModes.Parse(Mode);
     private bool IsDemo => RouteMode == GameMode.Demo;
 
     private TicTacToeBoard _board = new();
@@ -168,7 +156,7 @@
     // the modal sounds the neutral round-over instead of celebrating at someone.
     private GameResult OutcomeForCue => PlayMode is "ai" or "online" ? _gameResult : GameResult.InProgress;
 
-    // Spoken by GameShell's shared live region (browser audit #6). The board is a
+    // Spoken by GameShell's shared live region. The board is a
     // grid of labelled cells, so a screen reader can read the position — what it
     // could not tell was whose turn it is or that the game had ended. Demo drives
     // itself with nobody listening, so it announces nothing.
@@ -255,7 +243,7 @@
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
     private string P1Name => string.IsNullOrWhiteSpace(_playerName) ? "Player 1" : _playerName;
     private List<(int Row, int Col)> _winCells = new();
-    // §5 the most-recent placement (highlighted with a ring so the AI's last move
+    // The most-recent placement (highlighted with a ring so the AI's last move
     // is trackable on a busy 6x6 board). Null until the first move of a game.
     private (int Row, int Col)? _lastMove;
     // Bumped on every ResetGame so each cell's @key changes, which recreates the
@@ -272,9 +260,8 @@
     // Intro/welcome gate — overlay blocks the board until dismissed (OK); demo
     // flashes it for 2s. Nothing auto-moves in human modes, so the overlay is
     // the only gate needed.
-    // Audit #5: 2-player route used to inherit the 1P intro ("the CPU answers
-    // with ⭕") even though there is no CPU. Branch on PlayMode so each
-    // variant surfaces the controls that actually apply.
+    // The intro branches on PlayMode so each variant surfaces the controls that
+    // actually apply (the 1P "the CPU answers with ⭕" copy is wrong for 2P).
     private bool _introDone;
     private GameIntro.IntroMode _introMode => PlayMode switch
     {
@@ -290,16 +277,14 @@
         if (IsOnline) _ = StartOnlineAsync();
     }
 
-    // 2026-07-19 browser audit #8: the title used to leak the grid dimension
-    // ("TicTacToe6") into the product name. Surface the classic "Tic-Tac-Toe"
-    // and let the in-game intro / how-to-play carry the 6×6 / 4-in-a-row
-    // details.
+    // The title is the classic "Tic-Tac-Toe", without the grid dimension; the
+    // in-game intro / how-to-play carry the 6×6 / 4-in-a-row details.
     private RenderFragment TitleContent => @<span><span aria-hidden="true">❌</span> Tic-Tac-Toe</span>;
 
-    // Audit #5: mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
+    // Mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players taking turns, the demo is a CPU-vs-CPU exhibition.
     // Each variant says only what its mode adds: the intro card prints the objective
-    // ("line up N in a row…") directly above, and used to get it again from here.
+    // ("line up N in a row…") directly above.
     private RenderFragment HowToPlayContent => PlayMode switch
     {
         "demo" => @<div>
@@ -388,10 +373,8 @@
         }
     }
     
-    // The legacy in-canvas Controls fragment was unreachable (the Settings
-    // drawer was removed 2026-07-06) and is intentionally gone. The manual
-    // difficulty picker is gone too — 1-player strength is always matched to
-    // the player's adaptive ELO, exactly like ConnectFive.
+    // There is no manual difficulty picker — 1-player strength is always matched
+    // to the player's adaptive ELO, exactly like ConnectFive.
     private RenderFragment? GameSummaryContent => !_isGameOver ? null
         : IsOnline ? OnlineSummary
         : PlayMode == "2p" ? TwoPlayerSummary
@@ -528,7 +511,7 @@
         }
         if (!ct.IsCancellationRequested && _gameResult != GameResult.InProgress)
         {
-            // 2026-09-04: signal the kiosk reel that the demo match is done. Without this
+            // Signal the kiosk reel that the demo match is done. Without this
             // it sits on the post-game screen until the 12s dwell expires; with it the
             // reel rotates ~2.5s after the last move (the post-game linger). MarkFinished is
             // a no-op when the kiosk is inactive, so the standalone /tictactoe route is
@@ -588,7 +571,7 @@
             return;
         }
         if (_gameResult != GameResult.InProgress || _isAiTurn) return;
-        // §4 tapping an occupied cell is a no-op — give a short error buzz so the
+        // Tapping an occupied cell is a no-op — give a short error buzz so the
         // rejected input is felt, not silently ignored.
         if (_board.Get(row, col) != CellValue.None) { _ = Feedback.ErrorAsync(); return; }
 

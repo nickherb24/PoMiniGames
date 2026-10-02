@@ -10,15 +10,11 @@ namespace PoMiniGames.Unit.Features.PoFunQuiz;
 /// <see cref="MultiplayerLobbyService"/> with a stub <see cref="IOpenAIService"/>.
 /// </summary>
 /// <remarks>
-/// <para><b>§1 100/50/25/25 Rule.</b> Originally 10 single-case <c>[Fact]</c>s; consolidated
-/// to 3 <c>[Theory]</c>s + 3 <c>[Fact]</c>s. Player lifecycle (Join/Remove) collapses into
-/// one theory; scoring updates into one theory.</para>
+/// <para>Player lifecycle (Join/Remove) is one theory; scoring updates are another.</para>
 ///
-/// <para><b>2026-08-10.</b> Game codes are gone, so <c>CreateAsync</c> + <c>Join(gameId, …)</c>
-/// are one <see cref="MultiplayerLobbyService.JoinOrCreateAsync"/>. The old
-/// <c>Join_UnknownGame_ReturnsNull</c> case died with the code entry — you can no longer name
-/// a game — and its slot now covers the property that replaced it: the second caller lands in
-/// the *same* lobby as the first rather than opening their own.</para>
+/// <para>There are no game codes, so create and join are one
+/// <see cref="MultiplayerLobbyService.JoinOrCreateAsync"/>: you cannot name a game, and the
+/// second caller lands in the *same* lobby as the first rather than opening their own.</para>
 /// </remarks>
 public sealed class MultiplayerLobbyServiceTests
 {

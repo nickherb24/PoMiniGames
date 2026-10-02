@@ -1,7 +1,7 @@
 // world.js — composition root. Everything the host or a test touches goes through
 // createWorld(): step() advances one fixed tick, stats()/detail() read, debug() pokes.
 //
-// Determinism contract (SPEC §13 criterion 4): every rule below reads only sim state
+// Determinism contract: every rule below reads only sim state
 // and the seeded streams. `physics` is write-only — the world tells it about deaths,
 // felled trees and rocks and reads back prop poses for the frame, never for a rule.
 import { BEHAVIOR, CREATURE_CAP, EVENTS, FLORA, HISTORY, POPULATION, TECH, THOUGHTS, TICK_SECONDS, TRAITS, VARIETY, WORLD } from './core/config.js';
@@ -183,7 +183,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const traitHistory = [];
   const tribe = tribeName(seed);
 
-  // ── 2026-09-23 additions: weather, disease, varieties, the timeline ──
+  // ── weather, disease, varieties, the timeline ──
   // All of it is the island's own doing. PoEcosystem is observed, never steered: nothing
   // here takes input from the page, and a world stays deterministic per seed.
   const weather = createWeather();
@@ -199,7 +199,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
   const landmarks = createEventLog(HISTORY.landmarksMax);
   const yearHistory = [];
   let lastYearSampled = -1;
-  // ── 2026-09-30 additions: all three are bookkeeping no rule reads and no RNG touches ──
+  // ── heat, journal and the rest: bookkeeping no rule reads and no RNG touches ──
   // Heat: where things happened, on a coarse grid (HEAT_CELL metres a cell) — deaths, kills
   // by a predator, and creature-seconds spent sick. The minimap's data layers draw these.
   const heatSide = Math.ceil(size / HEAT_CELL);
@@ -1194,7 +1194,7 @@ export function createWorld({ seed = 1, caps = {}, physics = null, terrain: supp
     if (s.landmarks) landmarks.setState(s.landmarks);
     yearHistory.length = 0; for (const r of s.yearHistory ?? []) yearHistory.push(r.slice());
     lastYearSampled = Number.isInteger(s.lastYearSampled) ? s.lastYearSampled : -1;
-    // Heat and the journal are additive (2026-09-30): an older save restores with both empty.
+    // Heat and the journal are additive: an older save restores with both empty.
     for (const k of ['deaths', 'kills', 'sick']) { heat[k].fill(0); if (s.heat?.[k]?.length === heat[k].length) heat[k].set(s.heat[k]); }
     journal.length = 0; for (const j of s.journal ?? []) journal.push({ ...j });
     popHistory.length = 0; for (const r of s.popHistory) popHistory.push(r.slice());

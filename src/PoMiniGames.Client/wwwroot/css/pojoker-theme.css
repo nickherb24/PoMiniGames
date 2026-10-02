@@ -36,8 +36,7 @@
     display: block;
     /* Stretch to fill `.gps-game-area` instead of hugging its content. The
        medieval-dark theme is a full-bleed surface; sized to content it left the
-       bottom third of the viewport showing the light page background under it
-       (2026-08-07 browser audit #10). */
+       bottom third of the viewport showing the light page background under it. */
     align-self: stretch;
     width: 100%;
     min-height: 100%;

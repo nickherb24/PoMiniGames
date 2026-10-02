@@ -4,8 +4,8 @@ using System.Text.Json.Serialization;
 namespace PoMiniGames.TestUtilities;
 
 /// <summary>
-/// §2 CSRF: arms an <see cref="HttpClient"/> with the antiforgery token every
-/// state-changing <c>/api/*</c> call now requires.
+/// Arms an <see cref="HttpClient"/> with the antiforgery token every
+/// state-changing <c>/api/*</c> call requires.
 /// </summary>
 /// <remarks>
 /// <para>

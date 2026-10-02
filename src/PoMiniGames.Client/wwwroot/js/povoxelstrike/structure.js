@@ -1,8 +1,8 @@
-// structure.js — a placed, destructible voxel structure (PRD §F5).
+// structure.js — a placed, destructible voxel structure.
 //
 // Owns the mutable voxel grid, its chunked render meshes, its coarse static collision
-// body, and the structural-support solver. The stress model is the PRD's load-bearing
-// option made cheap enough for a per-click budget: support propagates from grounded
+// body, and the structural-support solver. The stress model is a load-bearing
+// one made cheap enough for a per-click budget: support propagates from grounded
 // voxels — full strength straight up a column, decaying per lateral/hanging step — and
 // any solid voxel the propagation cannot reach fails. That expresses both "no load path
 // to the ground" (severed) and "cantilever exceeds material strength" (too far from a

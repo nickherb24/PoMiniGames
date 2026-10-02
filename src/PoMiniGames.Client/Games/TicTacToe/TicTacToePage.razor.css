@@ -1,5 +1,4 @@
-/* Tic Tac Toe — scoped board styles (§2 style isolation: migrated out of the
-   1,895-line global games.css). Design tokens (--color-*, --radius-*, --ease-*,
+/* Tic Tac Toe — scoped board styles. Design tokens (--color-*, --radius-*, --ease-*,
    --accent-*) are inherited from the global :root in css/app.css. */
 
 /* ── Board ── */
@@ -9,7 +8,7 @@
     --ttt-cell: clamp(44px, calc((100vh - 220px) / 6), 78px);
     --ttt-gap: 4px;
     --ttt-pad: 12px;
-    /* §3 distinct player colours: X = warm coral, O = cyan. */
+    /* Distinct player colours: X = warm coral, O = cyan. */
     --ttt-x: #ff6b6b;
     --ttt-o: #00e5ff;
 
@@ -24,7 +23,7 @@
     overflow: hidden;
     border-radius: var(--radius-lg);
     border: 1px solid var(--color-border);
-    /* §8 depth: glass surface + inner top highlight + elevation, so the board
+    /* Depth: glass surface + inner top highlight + elevation, so the board
        reads as a physical object instead of a flat rectangle. */
     background:
         linear-gradient(180deg, rgba(255, 255, 255, 0.04), transparent 40%),
@@ -35,7 +34,7 @@
         inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
-/* ARIA row wrapper (audit #2). `display: contents` keeps the 36 cells as direct
+/* ARIA row wrapper. `display: contents` keeps the 36 cells as direct
    grid items of .ttt-board, so the 6×6 template above still lays them out — the
    element exists purely to satisfy grid > row > gridcell in the a11y tree. */
 .ttt-row { display: contents; }
@@ -56,7 +55,7 @@
     transition: background var(--dur-fast) var(--ease-standard),
                 border-color var(--dur-fast) var(--ease-standard),
                 transform var(--dur-fast) var(--ease-standard);
-    /* §5 staggered board entrance — --ci is the linear cell index set inline. */
+    /* Staggered board entrance — --ci is the linear cell index set inline. */
     animation: ttt-cell-in var(--dur-base) var(--ease-out) backwards;
     animation-delay: calc(var(--ci, 0) * 10ms);
 }
@@ -67,7 +66,7 @@
     transform: translateY(-1px);
 }
 
-/* §7 tactile press — the cell sinks slightly on pointer-down. */
+/* Tactile press — the cell sinks slightly on pointer-down. */
 .ttt-cell:not(.disabled):active {
     transform: translateY(0) scale(0.96);
     background: rgba(0, 229, 255, 0.12);
@@ -115,7 +114,7 @@
 
 @keyframes ttt-draw { to { stroke-dashoffset: 0; } }
 
-/* §7 ghost hover preview — a faint mark of the current player's token in empty
+/* Ghost hover preview — a faint mark of the current player's token in empty
    cells, revealed on hover. Pointer-events off so it never blocks the click. */
 .ttt-mark--ghost {
     position: absolute;
@@ -161,7 +160,7 @@
     50%      { box-shadow: 0 0 32px rgba(0, 229, 255, 0.9), inset 0 0 16px rgba(0, 229, 255, 0.6); }
 }
 
-/* §2 strike line — anchored at the first winning cell centre, rotated + scaled
+/* Strike line — anchored at the first winning cell centre, rotated + scaled
    from left. Holographic electric laser beam. */
 .ttt-winline {
     position: absolute;
@@ -182,7 +181,7 @@
     to   { transform: rotate(var(--wl-angle, 0deg)) scaleX(1); opacity: 1; }
 }
 
-/* ── §6 AI-thinking state: pulsing inset ring so the hand-off feels alive
+/* ── AI-thinking state: pulsing inset ring so the hand-off feels alive
      rather than frozen during the AI's move delay. ── */
 .ttt-board--thinking::before {
     content: '';
@@ -200,7 +199,7 @@
     50%      { opacity: 0.9; }
 }
 
-/* ── §9 outcome moments ── */
+/* ── Outcome moments ── */
 /* Decided (someone won): dim the non-winning cells to spotlight the line, and
    run a one-shot shimmer sweep across the board. Mode-safe — works for a vs-AI
    win, a vs-AI loss, and either side of a 2-player game. */

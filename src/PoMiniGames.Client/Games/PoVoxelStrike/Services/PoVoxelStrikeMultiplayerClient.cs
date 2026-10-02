@@ -37,7 +37,7 @@ public sealed class PoVoxelStrikeMultiplayerClient : IAsyncDisposable
     /// <summary>The game code this connection is bound to; surfaced for the lockstep reconnect handler.</summary>
     private string _gameCode = "";
 
-    /// <summary>The lobby half: the shared ready/start client (2026-09-14). Pages subscribe to its events directly.</summary>
+    /// <summary>The lobby half: the shared ready/start client. Pages subscribe to its events directly.</summary>
     public LobbyClient<PoVoxelStrikeLobbyPlayer> Lobby { get; }
 
     /// <summary>One tick of authoritative state; the engine applies each batch in order.</summary>

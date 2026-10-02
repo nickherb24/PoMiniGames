@@ -19,7 +19,7 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 // The host serves both the WASM client and the API on the SAME origin (no separate
-// frontend server, no CORS — see CLAUDE.md "Architecture"), so the origin the app was served from is
+// frontend server, no CORS), so the origin the app was served from is
 // always where the API lives. Use it directly. This is correct in every scenario:
 //   • dev run on :5080  -> served from :5080 -> API on :5080
 //   • E2E-UI / any host on a dynamic port -> served from that port -> API on that port
@@ -33,7 +33,7 @@ if (string.IsNullOrWhiteSpace(apiBase))
 {
     apiBase = builder.HostEnvironment.BaseAddress;
 }
-// §Cross-origin credentials: the Blazor WASM HttpClient uses the browser's
+// Cross-origin credentials: the Blazor WASM HttpClient uses the browser's
 // `fetch` underneath, which defaults to `credentials: 'omit'`. On the
 // standalone-client dev setup (Blazor served from :5261, API on :5000)
 // every cross-origin request therefore drops the DevCookie set by
@@ -49,7 +49,7 @@ if (string.IsNullOrWhiteSpace(apiBase))
 // The HttpClient is built over an explicit DelegatingHandler pipeline so
 // credential inclusion has a code-level guarantee (IncludeCredentialsHandler),
 // not only the JS monkey-patch, and so transient GET failures get a bounded
-// retry (TransientRetryHandler), and so §2 CSRF tokens are attached without every
+// retry (TransientRetryHandler), and so CSRF tokens are attached without every
 // call site remembering to (AntiforgeryHandler). Order (outer → inner):
 //   TransientRetryHandler → PlaySessionHandler → AntiforgeryHandler
 //     → IncludeCredentialsHandler → HttpClientHandler
@@ -88,21 +88,21 @@ builder.Services.AddScoped(sp => new HttpClient(
 builder.Services.AddScoped<PlaySessionStore>();
 builder.Services.AddScoped<PlaySessionService>();
 builder.Services.AddScoped<ApiService>();
-// §Absolute API endpoints: resolved once from configuration + host env so
+// Absolute API endpoints: resolved once from configuration + host env so
 // SignalR and other string-URL transports can target the API host (:5000)
 // even when the WASM is served standalone on :5261.
 builder.Services.AddScoped<ApiEndpoints>();
 builder.Services.AddScoped<AuthStateService>();
-// §2.3: BFF-aware AuthenticationStateProvider wired into <AuthorizeRouteView>.
+// BFF-aware AuthenticationStateProvider wired into <AuthorizeRouteView>.
 builder.Services.AddScoped<AuthenticationStateProvider, BffAuthenticationStateProvider>();
 builder.Services.AddAuthorizationCore();
 builder.Services.AddScoped<PlayerNameService>();
 builder.Services.AddScoped<ToastService>();
 builder.Services.AddScoped<GameStatsService>();
-// T9a: PoCabinet race session owns both lobby + race hub connections for
+// PoCabinet race session owns both lobby + race hub connections for
 // the lifetime of one race. Scoped — each Blazor circuit creates its own.
 builder.Services.AddScoped<PoCabinetSession>();
-// T13 (2026-09-17): PoCabinetCareerState holds the player's 3-stage progress
+// PoCabinetCareerState holds the player's 3-stage progress
 // in localStorage and exposes a Changed event the ChampionshipView subscribes
 // to. Scoped so each Blazor circuit reads its own ILocalStorageService cache.
 builder.Services.AddScoped<PoCabinetCareerState>();
@@ -115,7 +115,7 @@ builder.Services.AddScoped<MatchHistoryService>();
 // Game invites: push opt-in for this device and invite-a-past-opponent.
 builder.Services.AddScoped<InviteService>();
 builder.Services.AddScoped<ActivityFeedService>();
-// §5 Native Web Audio micro-feedback — shared across every game so the platform
+// Native Web Audio micro-feedback — shared across every game so the platform
 // has a consistent sound vocabulary. Lazily resolves the AudioContext on first call.
 builder.Services.AddScoped<UiFeedbackService>();
 // The silent, visual-only half of the feedback stack: particles and screen feel
@@ -125,11 +125,11 @@ builder.Services.AddScoped<UiFeedbackService>();
 builder.Services.AddScoped<ScreenFxService>();
 // Global settings (master mute, FPS badge) shared by the layout and every game.
 builder.Services.AddScoped<SettingsService>();
-// Blazored.LocalStorage (2026-09-02). New code should take ILocalStorageService and use
+// Blazored.LocalStorage. New code should take ILocalStorageService and use
 // the *AsString* members; the generic overloads go through reflection-based JSON that the
 // trim analyzer rejects. Existing raw `localStorage.getItem` interop is left as-is.
 builder.Services.AddBlazoredLocalStorage();
-// NetRun10 audit #6: viewport-width helper so leaderboards can render
+// Viewport-width helper so leaderboards can render
 // top-3 on mobile and top-10 on desktop without a JS-only media query.
 builder.Services.AddScoped<BrowserViewport>();
 // PWA: connectivity state for the offline banner, and service-worker registration
@@ -162,10 +162,8 @@ builder.Services.AddScoped<PoMiniGamesClient.Games.PoJevArena.PoJevArenaApiClien
 // TTS + Web-Audio effects run via JS interop
 // (pojoker-speech-interop.js / pojoker-audio-interop.js). PerformanceSettings is a plain
 // singleton consumed by JesterStage when it constructs the PerformanceOrchestrator.
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.IJokerSpeechService,
-    PoMiniGamesClient.Games.PoJoker.JokerSpeechService>();
-builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.IJokerAudioService,
-    PoMiniGamesClient.Games.PoJoker.JokerAudioService>();
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.JokerSpeechService>();
+builder.Services.AddScoped<PoMiniGamesClient.Games.PoJoker.JokerAudioService>();
 builder.Services.AddSingleton<PoMiniGames.Shared.Games.PoJoker.PerformanceSettings>();
 
 var host = builder.Build();
@@ -173,7 +171,7 @@ var host = builder.Build();
 // Initialize LocalStorageService with the JS runtime so all localStorage operations work
 LocalStorageService.SetJSRuntime(host.Services.GetRequiredService<IJSRuntime>());
 
-// §Cross-origin credentials patch: must run before any HttpClient is used
+// Cross-origin credentials patch: must run before any HttpClient is used
 // (i.e. before any component renders), so we install it right after Build
 // but before RunAsync. Requests to `apiBase` get credentials: 'include' so
 // the DevCookie set by /api/auth/dev-login round-trips on the

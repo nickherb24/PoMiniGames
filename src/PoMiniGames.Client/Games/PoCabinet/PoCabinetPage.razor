@@ -12,7 +12,7 @@
 
 <PageTitle>Cabinet · PoMiniGames</PageTitle>
 
-@* The race ends on the shared end-of-game modal (2026-10-02): the results are its summary,
+@* The race ends on the shared end-of-game modal: the results are its summary,
    and its one button goes back to the hub. A demo has nobody to press it, so it loops instead.
    No GameKey: the unified leaderboard has no Cabinet board, and the summary carries the podium. *@
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
@@ -21,7 +21,7 @@
     <div class="pocabinet-root">
         @if (_phase == Phase.Start)
         {
-            @* The shared opening card, like every other game (2026-10-02). Not until the
+            @* The shared opening card, like every other game. Not until the
                stored settings are read: a player who ticked "don't show this again" starts
                the race from inside the card's own first render. .pocabinet-intro is
                display:contents, there so this page's scoped CSS can widen the shared card. *@

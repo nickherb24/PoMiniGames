@@ -32,9 +32,8 @@ namespace PoMiniGames.Infrastructure;
 /// The authenticated game API is one <c>MapGroup("/api")</c>: the prefix is declared
 /// once here and every slice below mounts a relative group under it, so the shared
 /// <c>/api</c> segment and the auth gate that guards it are stated in the same place.
-/// (This was <c>MapGroup("")</c> until 2026-09-11, with all twenty-odd slice groups
-/// repeating the literal <c>/api</c> — which meant the boundary the antiforgery filter
-/// keys on was invisible at the registration site.) Anonymous surfaces below are mapped
+/// (Declaring it once keeps the boundary the antiforgery filter keys on visible at the
+/// registration site.) Anonymous surfaces below are mapped
 /// straight on <c>app</c> and therefore still spell their full path. SignalR hubs are mapped directly on
 /// <c>app</c> because <c>MapHub&lt;T&gt;</c> returns <c>IHubEndpointConventionBuilder</c>,
 /// which is not an <c>IEndpointConventionBuilder</c> and cannot be composed inside a group.
@@ -45,7 +44,7 @@ internal static class EndpointRouteExtensions
     {
         // ── Platform: unprotected (auth flow, health probes, diagnostics) ──
         app.MapAuthEndpoints();
-        // §2 CSRF token issuer. Anonymous + GET, so it stays reachable before sign-in
+        // CSRF token issuer. Anonymous + GET, so it stays reachable before sign-in
         // and is itself exempt from the validation gate it feeds.
         app.MapAntiforgeryEndpoints();
         app.MapHealthEndpoints();
@@ -60,34 +59,18 @@ internal static class EndpointRouteExtensions
         // Browser-side error sink (js/errorReporter.js). Deliberately NOT under /api: it is fed
         // by sendBeacon, which cannot carry the antiforgery header that scope requires.
         app.MapClientErrorEndpoints();
-        // MapPoGalleryEndpoints removed 2026-09-11: /api/diag/gallery and
-        // /api/gallery/upload existed only to feed Pages/PoGallery.razor, a dev-only
-        // demo surface for the external img2threejs pipeline. The page shipped in every
-        // player's WASM bundle (plus 1.1 MB of models under wwwroot/games/pogallery)
-        // while the endpoints 404'd outside Development — same trade that retired the
-        // Blazor /diag page on 2026-08-07. Page, endpoints and assets all went together.
-        // MapMockablesEndpoints removed: IMockable interface retired.
-        // MapTelemetryStatusEndpoints removed 2026-08-18: /api/diag/telemetry had zero
-        // consumers — no client call, no test, no doc. /api/diag already reports the
-        // telemetry configuration state.
-        // MapTestHarnessEndpoints removed 2026-08-07. The three /test/* routes
-        // (offline-mode, render-diagnostics, api-timeout) returned instructions for a
-        // developer to follow by hand, and their only consumer was Pages/TestPage.razor,
-        // which was deleted with the rest of the dev-only UI. They were already
-        // Development-gated, so nothing shipped — but nothing called them either.
 
         // ── Public read-only leaderboards (guest-first) ────────────────────
-        // §10 A brand-new visitor can browse the boards before signing in, so
+        // A brand-new visitor can browse the boards before signing in, so
         // the leaderboard READ endpoints are anonymous. These are pure GETs
-        // (no writes), and default authorization is anonymous — the only reason
-        // they were gated before was the authenticated group below. Score
+        // (no writes), and default authorization is anonymous — they just have to
+        // stay outside the authenticated group below. Score
         // SUBMIT paths stay authenticated (guests park scores locally and flush
         // them on sign-in), so anonymous read never becomes anonymous write.
-        app.MapGetLeaderboard();
         app.MapUnifiedLeaderboardEndpoints();
         // PoVoxelStrike voxel assets are read-only game content (content-addressed,
-        // immutable), so they sit with the anonymous reads; the M4 run-submission POST
-        // will join the authenticated group below instead.
+        // immutable), so they sit with the anonymous reads; the run-submission POST
+        // is in the authenticated group below.
         app.MapPoVoxelStrikeAssetEndpoints();
         // PoEcosystem gallery: shared islands are public by their owners' choice, and a visit
         // is a read of bytes only the browser engine can interpret.
@@ -114,17 +97,13 @@ internal static class EndpointRouteExtensions
         gameApi.MapAccountEndpoints();
         gameApi.MapGetPlayerStats();
         gameApi.MapSavePlayerStats();
-        gameApi.MapGetAllPlayerStatistics();
         gameApi.MapMarbleRaceHighScoresEndpoints();
         gameApi.MapPoBrawlLeaderboardEndpoints();
         gameApi.MapPoBrawlPresserEndpoints();
         // The 1P ladder run per claim identity, so it follows a player across devices.
         gameApi.MapPoBrawlProgressEndpoints();
         gameApi.MapMatchHistoryEndpoints();
-        // MapCoupleQuizEndpoints removed 2026-09-11: it mapped no routes at all. Its last
-        // one (GET /runtime/status) went on 2026-08-31, leaving a method that built an
-        // empty MapGroup and returned it. PoCoupleQuiz is SignalR-first — CoupleQuizHub
-        // below is its entire server surface.
+        // PoCoupleQuiz is SignalR-first — CoupleQuizHub below is its entire server surface.
         gameApi.MapFunQuizEndpoints();
         gameApi.MapPoJokerEndpoints();
         gameApi.MapPoRacerScoreEndpoints();

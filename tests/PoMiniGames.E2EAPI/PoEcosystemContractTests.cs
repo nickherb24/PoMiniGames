@@ -5,7 +5,7 @@ using PoMiniGames.Shared.Games.PoEcosystem;
 namespace PoMiniGames.E2EAPI;
 
 /// <summary>
-/// §PoEcosystem (2026-09-14): contract tests for the island's server surface. The gallery is
+/// Contract tests for the island's server surface. The gallery is
 /// anonymous and must always answer with an array (empty when storage is down); everything
 /// under the authenticated group must answer 401 — not 403 — to an anonymous caller, so a
 /// slot's existence never leaks. One theory over the routes: the E2E-API tier has room for

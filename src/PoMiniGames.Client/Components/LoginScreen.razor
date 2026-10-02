@@ -5,12 +5,10 @@
 <div class="login-page">
     <span class="login-mesh" aria-hidden="true"></span>
     <div class="login-card">
-        @* An <h1>, not a <div> (2026-08-09): now that this screen IS the whole
-           page until a session exists, it was the only view in the app with no
-           heading at all — nothing for a screen reader to announce as the page,
-           and nothing for App.razor's <FocusOnNavigate Selector="h1"> to focus.
-           The .login-brand class already carries the size and weight, so this is
-           an outline change only. *@
+        @* An <h1>, not a <div>: this screen IS the whole page until a session
+           exists, so it needs a heading for a screen reader to announce as the page
+           and for App.razor's <FocusOnNavigate Selector="h1"> to focus. The
+           .login-brand class already carries the size and weight. *@
         <h1 class="login-brand">
             <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
@@ -69,8 +67,7 @@
             <p class="login-error">@AuthState.Error</p>
         }
 
-        @* This line carries the job the 2026-08-08 audit #15 banner used to do:
-           tell a visitor who deep-linked to /leaderboards or /profile that the
+        @* Tells a visitor who deep-linked to /leaderboards or /profile that the
            page is there and they are not lost. Without it a bare sign-in form
            replacing a requested page reads as "that page is broken". *@
         <p class="login-env-note">

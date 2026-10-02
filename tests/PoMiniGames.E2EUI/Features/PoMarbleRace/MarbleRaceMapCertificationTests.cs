@@ -12,10 +12,9 @@ namespace PoMiniGames.E2EUI.Features.PoMarbleRace;
 /// so this measures the course, not the frame rate.
 /// </summary>
 /// <remarks>
-/// This exists because the maps were never checked as a whole: a 2026-09-30 census found Spiral
-/// Works losing ~50 marbles a race (and ~35 more stuck to the timeout) and Grand Spiral losing
-/// all 101 — 98% of those to an out-of-bounds test that measured side lanes against the main
-/// lane. Run it after any change to a course, the collision shell, the containment or the
+/// This exists because a course can lose marbles (off the map, or stuck until the timeout) without
+/// any single-marble test noticing, for example an out-of-bounds test that measures side lanes
+/// against the main lane. Run it after any change to a course, the collision shell, the containment or the
 /// physics constants. It is slow (a few minutes per map) by nature.
 /// </remarks>
 [Collection(KestrelServerCollection.Name)]

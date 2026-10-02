@@ -1,11 +1,10 @@
-// §5 Native Web Audio feedback — zero-asset micro-cues.
+// Native Web Audio feedback — zero-asset micro-cues.
 // Generates triangle/sine oscillator bursts at the call site; no MP3/WAV to
 // ship. Lazy AudioContext init on first user gesture (mobile autoplay rules).
 //
-// 2026-07-29: this module no longer owns an AudioContext. It was one of five
-// modules each constructing their own, which meant no global mix and a mute
-// flag re-checked independently at every call site. Context, mute and the
-// output bus now come from audioBus.js; voices connect to the 'ui' bus rather
+// This module does not own an AudioContext: a private one would mean no global
+// mix and a mute flag re-checked independently at every call site. Context, mute
+// and the output bus come from audioBus.js; voices connect to the 'ui' bus rather
 // than ctx.destination so they can be ducked and metered with everything else.
 
 import * as AudioBus from './audioBus.js';
@@ -108,7 +107,7 @@ export async function playChord(freqs, ms, gain) {
 }
 
 /**
- * §10 Play a frequency sweep from fromHz → toHz over ms milliseconds.
+ * Play a frequency sweep from fromHz → toHz over ms milliseconds.
  * Used for swipe-back feedback (downsweep = leaving the page).
  * @param {number} fromHz
  * @param {number} toHz
@@ -138,7 +137,7 @@ export async function playSweep(fromHz, toHz, ms, gain, type) {
 }
 
 /**
- * §10 Play an arpeggio (sequential notes with individual durations).
+ * Play an arpeggio (sequential notes with individual durations).
  * Used for personal-best celebration.
  * @param {number[]} freqs
  * @param {number[]} durationsMs
@@ -257,7 +256,7 @@ export async function playChipDrop(opts) {
 }
 
 /**
- * §10 Vibration helper — gated on navigator.vibrate availability.
+ * Vibration helper — gated on navigator.vibrate availability.
  * @param {number[]} pattern - alternating vibrate/pause ms, e.g. [12, 40, 18]
  */
 export async function vibrate(pattern) {
@@ -272,20 +271,20 @@ export async function vibrate(pattern) {
         // once per interaction, and a stale cache would ignore the toggle until
         // the next reload.
         if (localStorage.getItem('pomini_haptics') === '0') return;
-        // Bug fix (2026-08-07): the kiosk attract reel runs without a user
-        // gesture, so every navigator.vibrate call below this guard would
-        // emit "Blocked call to navigator.vibrate because user hasn't tapped"
-        // to the console — a dozen or so per second on Connect Five, drowning
-        // the real errors. No one is holding a kiosk screen, so skip entirely
-        // on any ?kiosk=N or /{game}/demo route.
+        // The kiosk attract reel runs without a user gesture, so every
+        // navigator.vibrate call below this guard would emit "Blocked call to
+        // navigator.vibrate because user hasn't tapped" to the console — a dozen
+        // or so per second on Connect Five, drowning the real errors. No one is
+        // holding a kiosk screen, so skip entirely on any ?kiosk=N or /{game}/demo
+        // route.
         if (isOnKioskRoute()) return;
         // The kiosk guard above catches the attract reel, but not every
         // gesture-less caller: /login fires a UI cue while the sign-in gate is
-        // still mounting, which produced "Blocked call to navigator.vibrate
+        // still mounting, which would produce "Blocked call to navigator.vibrate
         // because user hasn't tapped on the frame" on the app's own entry page
         // — one guaranteed console error for every visitor. The browser's rule
         // is about a gesture having happened AT ALL, so track that directly
-        // rather than enumerating the routes where one has not. 2026-09-11.
+        // rather than enumerating the routes where one has not.
         if (!hasUserGestured()) return;
         if (navigator && typeof navigator.vibrate === 'function') {
             navigator.vibrate(pattern);
@@ -328,10 +327,6 @@ function isOnKioskRoute() {
     } catch {
         return false;
     }
-}
-
-export function isAudioAvailable() {
-    return !!(window.AudioContext || window.webkitAudioContext);
 }
 
 export function crystalPing(opts) {

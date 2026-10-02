@@ -26,7 +26,7 @@
     /* Dimmed until it is that player's move: the active side is the signal, so the
        inactive one has to give up contrast for it to read as one. 0.62, not lower:
        0.45 measured 2.92:1 on the light surface, and the waiting player's name is
-       still content. 2026-09-11 UI audit. */
+       still content. */
     opacity: 0.62;
     transition: opacity var(--dur-fast) var(--ease-standard);
 }

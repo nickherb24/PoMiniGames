@@ -57,7 +57,7 @@ public class PoCabinetCarBody
 /// removes the outward velocity component.
 ///
 /// <para>
-/// Contacts (2026-09-30) are between car-shaped hulls, not circles: a capsule 39 long and 17
+/// Contacts are between car-shaped hulls, not circles: a capsule 39 long and 17
 /// wide, the body the client draws. A hit is an impulse along the contact normal (equal masses,
 /// a little restitution) applied where the hulls touch, so it shoves a car sideways
 /// (<see cref="PoCabinetCarBody.Slip"/>) and turns it (<see cref="PoCabinetCarBody.Spin"/>) as

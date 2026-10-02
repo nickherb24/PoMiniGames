@@ -1,9 +1,8 @@
 @page "/povoxelstrike"
 @page "/povoxelstrike/{Mode}"
-@* One page for every way in (2026-09-30). `/povoxelstrike/multi` used to be a separate lobby
-   page that handed the squad to `/povoxelstrike/multi/{code}` here — two pages, two intro
-   cards, then the engine's own click-to-play veil. The lobby now lives on this page's start
-   card (the Online tab), and the run starts in place. *@
+@* One page for every way in. The lobby lives on this page's start card (the Online tab),
+   and the run starts in place: no second page, no second intro card, no hand-off to the
+   engine's own click-to-play veil. *@
 @using System.Globalization
 @using PoMiniGamesClient.Components
 @using PoMiniGamesClient.Models
@@ -205,14 +204,12 @@
 
 @code {
     [Parameter] public string? Mode { get; set; }
-    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "demo")] public int Demo { get; set; }
     /// <summary>An arena to replay, as the 8 hex digits the run summary shows.</summary>
     [SupplyParameterFromQuery(Name = "seed")] public string? SeedQuery { get; set; }
 
     private const string Container = "povoxelstrike-container";
 
-    // One lifecycle machine (PRD §4.2). Intro is the start card, with the arena built and
+    // One lifecycle machine. Intro is the start card, with the arena built and
     // frozen behind it; the JS engine reports the Intro→Playing edge via OnResumed when it
     // actually has control (pointer lock, or free control on a pad / touch screen).
     // Intro → Playing ⇄ Paused → Dead; the pause menu's Restart re-enters Intro.
@@ -409,7 +406,7 @@
     // change tears the old mode down (after the render: the teardown needs JS).
     protected override void OnParametersSet()
     {
-        var mode = GameModes.Parse(Mode, ModeQuery, Demo);
+        var mode = GameModes.Parse(Mode);
         var key = $"{mode}|{SeedQuery}";
         if (key == _routeKey) return;
         _routeKey = key;
@@ -916,7 +913,7 @@
 
         if (_demo)
         {
-            // 2026-09-04: signal the kiosk reel that the demo run is over. The death
+            // Signal the kiosk reel that the demo run is over. The death
             // screen otherwise lingers for the full 20s dwell while the attract loop
             // sits on a frozen game-over modal.
             Kiosk.MarkFinished();
@@ -926,8 +923,8 @@
         {
             // Every finished run submits — the server ratchets to the best. A failed submit
             // parks in the offline queue (guests included) and flushes on sign-in/reconnect.
-            // The result and the Won flag both come from _won: until 2026-09-30 every run was
-            // recorded as a Loss, and a win's bonus had no flag for the server to price it by.
+            // The result and the Won flag both come from _won: the server needs the flag to
+            // price a win's bonus.
             await GameResults.RecordAndSubmitPoVoxelStrikeAsync(_playerName, _won ? GameResult.Win : GameResult.Loss,
                 new PoVoxelStrikeRunRequest(score, survivalSeconds, kills, bruteKills, crushKills, voxelsDestroyed,
                     Won: _won, Day: _runDay),

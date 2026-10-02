@@ -12,8 +12,7 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// and answer-similarity scoring. The <c>couplequiz</c> deployment is resolved through
 /// <see cref="AIFoundryOptions"/>.
 ///
-/// <para><b>Mock fallback</b>: per the 2026-06-13 mock-data fix (see user memory
-/// <c>pofunquiz-mock-data-fix.md</c>), the fallback to <see cref="MockQuestionService"/>
+/// <para><b>Mock fallback</b>: the fallback to <see cref="MockQuestionService"/>
 /// is gated on <c>IsDevelopment() || IsEnvironment("Test")</c> AND the explicit
 /// <c>PoCoupleQuiz:Features:UseMockAI</c> flag. In Production, missing config
 /// causes an <see cref="InvalidOperationException"/> on first call rather than
@@ -47,7 +46,7 @@ public sealed class AiQuestionService : IQuestionService
     private readonly GameChatClientFactory _clients;
     private readonly AiEmbeddingService _embeddings;
     private readonly MockQuestionService _mock;
-    private readonly IAiDecisionOptionsCache _optionsCache;
+    private readonly AiDecisionOptionsCache _optionsCache;
 
     public AiQuestionService(
         IOptionsMonitor<CoupleQuizOptions> optionsMonitor,
@@ -58,7 +57,7 @@ public sealed class AiQuestionService : IQuestionService
         GameChatClientFactory clients,
         AiEmbeddingService embeddings,
         MockQuestionService mock,
-        IAiDecisionOptionsCache optionsCache)
+        AiDecisionOptionsCache optionsCache)
     {
         _optionsMonitor = optionsMonitor;
         _foundryOptions = foundryOptions;
@@ -226,15 +225,14 @@ public sealed class AiQuestionService : IQuestionService
     /// cache indefinitely rather than only until the model drifts.
     /// </para>
     /// <para>
-    /// <b>Why the fallback still exists.</b> The shared account's verified deployment list
-    /// (2026-07-29) contains no embedding model, so on today's configuration
-    /// <see cref="AiEmbeddingService.IsConfigured"/> is false and this takes the chat path exactly
-    /// as before. Deploying <c>text-embedding-3-small</c> and setting
+    /// <b>Why the fallback exists.</b> The shared account's deployment list contains no
+    /// embedding model, so <see cref="AiEmbeddingService.IsConfigured"/> is false and this takes
+    /// the chat path. Deploying <c>text-embedding-3-small</c> and setting
     /// <c>PoMiniGames:AI:EmbeddingDeployment</c> is the whole switch-over.
     /// </para>
     /// <para>
     /// A null from the embedding service means "unavailable or failed", NOT "score 0" — the
-    /// distinction the chat path used to lose (a reply missing its <c>score</c> field returned
+    /// distinction the chat path cannot make (a reply missing its <c>score</c> field returns
     /// <c>0f</c>, indistinguishable from two genuinely unrelated answers).
     /// </para>
     /// </remarks>

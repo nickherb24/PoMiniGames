@@ -58,7 +58,7 @@ function createEngine(container, dotnetRef, opts) {
     lastBorn: -1, lastDied: 0, eventPressure: 0,
     // GFX pass 2: the chronicle card, the reel, the genome synth.
     chronicle: null, reel: null, leitmotif: null, subjectTimer: 0, bloomTimer: 0,
-    // 2026-09-30: the finder's request counter, the minimap's data layer, the kin of
+    // The finder's request counter, the minimap's data layer, the kin of
     // whoever the camera is on (asked for every two seconds), and ambient mode.
     findId: 0, layer: 'none', kinOf: NONE, kinAt: 0, heatAt: 0, ambient: false, wakeLock: null, past: -1,
   };
@@ -66,8 +66,7 @@ function createEngine(container, dotnetRef, opts) {
   state.leitmotif = createLeitmotif(state.audio, state.music);
   const rootEl = () => container?.closest?.('.poeco-root') ?? null;
   // Palette and motion are the app's settings (<html data-colorsafe> / <html data-motion>,
-  // the settings sheet). The island had a switch of its own for each until 2026-10-01; the
-  // 'palette' and 'reducedMotion' prefs an older build stored are no longer read.
+  // the settings sheet), so the island has no switch of its own for either.
   const paletteInUse = () =>
     (typeof document !== 'undefined' && document.documentElement.dataset.colorsafe === '1') ? 'cb' : 'default';
   const motionReduced = () =>
@@ -311,7 +310,7 @@ function createEngine(container, dotnetRef, opts) {
   }
 
   /**
-   * Ambient mode (2026-09-30): the island as a picture on a second screen — the director
+   * Ambient mode: the island as a picture on a second screen — the director
    * films, the HUD goes away, the screen is kept awake and the root goes fullscreen where
    * the browser allows it. Any camera input, or Esc, ends it.
    */
@@ -407,7 +406,7 @@ function createEngine(container, dotnetRef, opts) {
             if (action === 'follow') { state.renderer.follow(state.selected !== NONE ? state.selected : state.directorSubject); return; }
             // The director's subject is NOT selected. Selecting it opened the inspector
             // popover over the shot and outlined the creature in wireframe, turning a
-            // cinematic camera into a stats readout; the shot is the point (2026-09-16).
+            // cinematic camera into a stats readout; the shot is the point.
             // The handle is still remembered so T can follow what is on screen.
             if (action === 'directorSubject') { state.directorSubject = value ?? NONE; return; }
             if (action === 'director') {
@@ -511,7 +510,7 @@ function createEngine(container, dotnetRef, opts) {
     },
     speciesInfo: () => fetchSpeciesInfo(),
 
-    // ── 2026-09-30: finder · lenses · map layers · ticker · ambient · time machine ──
+    // ── finder · lenses · map layers · ticker · ambient · time machine ──
     /** Ask the sim for living creatures matching `text`, ordered by `sort`; answered on OnFound. */
     find(text, sort) {
       state.findId++;
@@ -673,7 +672,7 @@ function createEngine(container, dotnetRef, opts) {
   return api;
 }
 
-// ── page helpers that need no running engine (2026-09-30) ─────────────────────────────
+// ── page helpers that need no running engine ─────────────────────────────
 
 // Island thumbnails for the cloud slots and the gallery. A world is deterministic from its
 // seed, so its map can be drawn from the seed alone: nothing is uploaded, nothing is
@@ -821,7 +820,6 @@ const PoEcosystem = {
   resetBindings: () => engine?.resetBindings() ?? null,
   captureKey: () => engine?.captureKey() ?? Promise.resolve(null),
   async speciesInfo() { try { return JSON.stringify(await (engine ? engine.speciesInfo() : fetchSpeciesInfo())); } catch { return '[]'; } },
-  // 2026-09-30
   find: (text, sort) => engine?.find(text, sort),
   setLayer: (name) => engine?.setLayer(name) ?? 'none',
   ticker: (text) => engine?.ticker(text),

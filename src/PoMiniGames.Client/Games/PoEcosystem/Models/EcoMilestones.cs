@@ -4,7 +4,7 @@ using PoMiniGamesClient.Services.Play;
 namespace PoMiniGamesClient.Games.PoEcosystem.Models;
 
 /// <summary>
-/// Field notes (feature #4, 2026-09-23): milestones for having <i>witnessed</i> something on
+/// Field notes: milestones for having <i>witnessed</i> something on
 /// the island. PoEcosystem is observed, never steered, so every note is about the world's own
 /// history — a dynasty five generations deep, a species that came back from the brink — and
 /// none can be earned by doing anything to it. Kept per browser, across every island watched.

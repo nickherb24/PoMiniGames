@@ -14,12 +14,7 @@
 
    The test for whether a rule belongs in this file: does its markup appear ONLY
    in MainLayout.razor? Offline banner, .gl-content and the toast stack pass.
-   Everything else does not.
-
-   Also removed as dead: `.demo-bar*` (the kiosk progress bar, deleted along with
-   KioskControlBar), `.bottom-tab-bar` (deleted 2026-07-05), `.gl-sync-pill*` /
-   `.gl-center-action*` (no markup in any layout), and the `gl-fade-in-up` /
-   `gl-pulse` keyframes, which had no remaining consumers. */
+   Everything else does not. */
 
 /* ── Offline banner ─────────────────────────────────────────────────────────
    Deliberately calmer than the mock-data banner: being offline is a supported
@@ -60,11 +55,10 @@
 }
 
 /* ── Skip link ──
-   The rule moved to wwwroot/css/app.css (2026-08-08 audit #9). It lived here, in
-   a SCOPED stylesheet, which meant the class only worked inside MainLayout —
-   A layout of its own would need its own skip link, which would have rendered
-   as unstyled text sitting on top of the page. An accessibility affordance every
-   layout is expected to carry cannot live in one layout's scoped file. */
+   The rule lives in wwwroot/css/app.css, not in this SCOPED stylesheet, which would
+   make the class work only inside MainLayout: another layout would render its skip
+   link as unstyled text sitting on top of the page. An accessibility affordance
+   every layout is expected to carry cannot live in one layout's scoped file. */
 
 /* The skip target must not draw a focus ring of its own when focused
    programmatically — that would outline the entire page. */
@@ -77,10 +71,8 @@
     flex: 1;
     display: flex;
     flex-direction: column;
-    /* Respect the home-indicator inset on phones. This used to be
-       `calc(56px + env(safe-area-inset-bottom) + var(--space-3))`, reserving 56px
-       for the bottom tab bar deleted on 2026-07-05 — a strip of empty space under
-       every page for a bar that no longer rendered. Only the real inset remains. */
+    /* Respect the home-indicator inset on phones; nothing else is reserved at the
+       bottom, so there is no strip of empty space under every page. */
     padding-bottom: env(safe-area-inset-bottom, 0);
 }
 

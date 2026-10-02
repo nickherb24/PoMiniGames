@@ -6,7 +6,7 @@
 // photographers whose flashbulbs race.js fires on a personal-best lap or a
 // photo finish (and, on Press Briefing, whenever something fast goes by).
 //
-// The grandstand (2026-09-29) holds a crowd that jumps when race.js excites it
+// The grandstand holds a crowd that jumps when race.js excites it
 // (a pass by, an overtake, a PB, the finish); `crowd.center` is where audio.js
 // puts its murmur and cheers.
 //

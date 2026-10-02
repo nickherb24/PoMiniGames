@@ -40,10 +40,10 @@ const IMPACT_SECONDS = 0.22;
 // #10 — impulse response length for the convolution reverb.
 const IR_SECONDS = 1.5;
 
-// ── Surface-aware rolling (GFX 2026-09-30) ──
-// The rolling bed used to be one bandpass riding the LEADER's speed on every surface. It now
-// follows the camera's marble and the material it is actually touching (game.js reads the
-// contact list after each step): filter shape, level and a tremolo rate/depth per surface. The
+// ── Surface-aware rolling ──
+// The rolling bed follows the camera's marble and the material it is actually touching
+// (game.js reads the contact list after each step): filter shape, level and a tremolo
+// rate/depth per surface. The
 // tremolo is what makes a rumble band or a washboard read as ridges rather than as louder noise.
 // `air` is silence — a marble in flight makes no rolling sound, which sells the jumps.
 const SURFACES = {

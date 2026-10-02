@@ -16,7 +16,7 @@ public static class PoBrawlPresserEndpoints
     public static IEndpointRouteBuilder MapPoBrawlPresserEndpoints(this IEndpointRouteBuilder app)
     {
         app.MapGroup("/pobrawl").WithTags("PoBrawl")
-            .MapPost("/presser", async (PoBrawlPresserRequest request, IPoBrawlPresserService presser, CancellationToken ct) =>
+            .MapPost("/presser", async (PoBrawlPresserRequest request, PoBrawlPresserService presser, CancellationToken ct) =>
             {
                 var reply = await presser.AskAsync(request, ct);
                 return reply is null
@@ -29,10 +29,10 @@ public static class PoBrawlPresserEndpoints
             .ProducesProblem(StatusCodes.Status400BadRequest)
             .RequireRateLimiting("ai-generation");
 
-        // The ring introduction the PA reads under the VS splash (2026-09-29). Same deployment,
+        // The ring introduction the PA reads under the VS splash. Same deployment,
         // budget, cache and canned fallback as the press line; one cached line per pairing.
         app.MapGroup("/pobrawl").WithTags("PoBrawl")
-            .MapPost("/intro", async (PoBrawlIntroRequest request, IPoBrawlPresserService presser, CancellationToken ct) =>
+            .MapPost("/intro", async (PoBrawlIntroRequest request, PoBrawlPresserService presser, CancellationToken ct) =>
             {
                 var reply = await presser.IntroAsync(request, ct);
                 return reply is null

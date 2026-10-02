@@ -4,7 +4,7 @@
 // seeded spawn jitter, so `node` can drive a whole match headlessly and the same seed plus the
 // same decisions replays the same fight. Decisions come in through applyDecision() (from Jev,
 // via scheduler.js); the physics never decides anything itself — it only carries out the
-// latest intent, and holds it indefinitely when Jev is late (the user's call, SPEC §4.5).
+// latest intent, and holds it indefinitely when Jev is late.
 //
 // Units are metres and seconds throughout; render.js scales by PPM (40 px = 1 m).
 //
@@ -64,7 +64,7 @@ const PANIC_THRESHOLD = 0.70;
 const UNDER_FIRE_SECONDS = 1.5;
 const ALLY_NEAR_M = 4;
 
-// Melee, for every creature (SPEC §4.3).
+// Melee, for every creature.
 const STRIKE_REACH_M = 0.3;
 const STRIKE_WINDUP_S = 0.12;
 const STRIKE_LUNGE_S = 0.22;                     // an explosive step: time to cover the reach from a standstill
@@ -98,9 +98,9 @@ const NAV_SKIN_M = 0.06;                         // turning points sit this far 
 const CORNER_MS = 3;                             // pace taken through a turning point (a 1.1 m radius on packed dirt)
 const SHOT_CLEARANCE_M = 0.15;                   // a shot needs this much room past a block's edge (projectiles are 0.12 wide)
 
-// Every blow's damage, after the formulas above. The PRD numbers make a 10v10 blob of focus
-// fire end in ~25 s at designed HP; halving them was the tuned pace until 2026-09-30, when the
-// user asked for five times fewer hit points — see battleHp. One knob, applied in applyDamage.
+// Every blow's damage, after the formulas above. At designed HP a 10v10 blob of focus fire
+// ends in ~25 s; the halving here and the reduced battle HP together set the pace — see
+// battleHp. One knob, applied in applyDamage.
 const DAMAGE_SCALE = 0.5;
 
 /**

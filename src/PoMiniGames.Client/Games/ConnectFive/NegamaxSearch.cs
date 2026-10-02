@@ -3,7 +3,7 @@ using PoMiniGamesClient.Models;
 namespace PoMiniGamesClient.Games.ConnectFive;
 
 /// <summary>
-/// Audit #7: 4-ply alpha-beta negamax with a transposition table.
+/// 4-ply alpha-beta negamax with a transposition table.
 /// For Connect-Five's 9x9 board (4.5 x 10^10 positions), 4-ply is reachable
 /// inside the existing AiMoveBudgetMs (8 s in ConnectFivePage.RunAiTurnAsync).
 ///

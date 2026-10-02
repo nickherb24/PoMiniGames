@@ -22,10 +22,9 @@ public sealed class MicrosoftAuthOptions
     public string[] AllowedTenantIds { get; init; } = Array.Empty<string>();
 
     /// <summary>
-    /// Controls whether the Microsoft sign-in button surfaces in the SPA. The legacy
-    /// intent was an opt-in flag (set <c>Enabled=true</c> in dev even before the App
-    /// Registration is wired). The 2026-06-26 prod regression taught us that this
-    /// flag is brittle in production: a deployment with <see cref="ClientId"/> +
+    /// Controls whether the Microsoft sign-in button surfaces in the SPA. It can be set
+    /// (<c>Enabled=true</c> in dev) even before the App Registration is wired, but it is
+    /// brittle in production: a deployment with <see cref="ClientId"/> +
     /// <see cref="ApiClientId"/> correctly populated must NOT require a separate
     /// <c>Enabled=true</c> secret in KV to function — otherwise the user sees the
     /// "Authentication is not configured" screen even though every required value is

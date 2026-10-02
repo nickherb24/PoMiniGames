@@ -15,10 +15,10 @@
 @inject NavigationManager NavigationManager
 
 <div class="gl-page">
-    @* 2026-08-07 browser audit #9: first tab stop on every route. The header is
-       persistent chrome (brand, game title, back link, identity, Sign out), so a
-       keyboard or screen-reader user had to walk all of it again on every single
-       navigation before reaching the game. Visually hidden until focused. *@
+    @* First tab stop on every route. The header is persistent chrome (brand, game
+       title, identity, account menu), so without this a keyboard or screen-reader
+       user would have to walk all of it again on every single navigation before
+       reaching the game. Visually hidden until focused. *@
     <a class="gl-skip-link" href="#main-content">Skip to content</a>
 
     @* Offline is silent without this: the service worker serves a fully working app
@@ -32,17 +32,11 @@
             <span>Offline — you can keep playing. Scores will sync when you reconnect.</span>
         </div>
     }
-    @* §9 mock banner — desktop gets the full-width shimmer banner; mobile gets
-       a tappable dot that expands to the same label. Keeps the safety guard
-       visible without sacrificing ~36 px of chrome on portrait phones.
-
-       Browser audit #5 (2026-08-10): the full-width banner read as an error/
-       warning to a first-time visitor who hit "Continue as Guest" on a sign-in
-       page that was already gated on auth being disabled. The mock data flag
-       is a server-side concern (Storage is in dev or a CI stub), not a user
-       concern. Surface it as a tiny dev-only corner pill with a tooltip; the
-       full banner + dot stays as a tooltip-driven secondary affordance for
-       devs who actually want to see why /leaderboards is empty. *@
+    @* Mock-data banner. A full-width banner would read as an error/warning to a
+       first-time visitor, but the mock data flag is a server-side concern (Storage
+       is in dev or a CI stub), not a user concern. So it is a tiny dev-only corner
+       pill with a tooltip; the fuller detail stays as a tooltip-driven secondary
+       affordance for devs who want to see why /leaderboards is empty. *@
     @if (AuthState.UsingMockData)
     {
         <div class="gl-mock-banner">
@@ -53,12 +47,10 @@
         </div>
     }
     <header class="gl-top-bar">
-        @* 2026-08-08 audit #10: <nav> landmark. The brand link and the game
-           Quick Switcher ARE this app's persistent navigation on every route,
-           but they were plain <div>s, so a screen-reader user had no landmark to
-           jump to — an axe sweep found zero navigation landmarks across all 20
-           pages. Labelled because a second <nav> (in-game) may appear later, and
-           unlabelled sibling landmarks are indistinguishable in a landmark list. *@
+        @* <nav> landmark. The brand link IS this app's persistent navigation on
+           every route, so a screen-reader user needs a landmark to jump to.
+           Labelled because a second <nav> (in-game) may appear, and unlabelled
+           sibling landmarks are indistinguishable in a landmark list. *@
         <nav class="gl-top-bar-left" aria-label="Main">
             <a href="/" class="gl-brand">
                 <span class="gl-brand-icon">
@@ -72,12 +64,9 @@
                 <span class="gl-brand-text">PoMiniGames</span>
             </a>
 
-            @* 2026-08-12 (user request): the Browse menu added in audit #4 was
-               removed on the same day — same fate as the 2026-08-10 "Games"
-               quick-switcher and the GameShell "← Game hub" pill. The brand
-               already returns to the catalog grid, which is one tap from any
-               game; a top-bar control that navigates away from the game
-               duplicates that and crowds the chrome. *@
+            @* The brand already returns to the catalog grid, one tap from any game,
+               so there is no other top-bar control that navigates away from the
+               game. *@
         </nav>
 
         @* Consolidated game header: the active game (via GameShell) projects its
@@ -94,26 +83,20 @@
         </div>
 
         <div class="gl-auth">
-            @* ⚙️ settings gear and 🔧 dev switch-user wrench removed per user
-               request (2026-07-13). Master mute / FPS-badge toggles and the
-               dev-only identity switcher are gone from the top bar entirely. *@
             @if (AuthState.IsConfigured && !AuthState.IsLoading)
             {
                 @* Live ELO badge for single-player rated games, projected here by
                    GameShell so it sits right beside the player's identity. Renders
                    nothing outside a rated 1P game. *@
                 <SectionOutlet SectionName="game-elo" />
-                @* The account menu (2026-10-01): the name chip is the one button, and it
-                   holds every page-level destination. It replaced a bare name, an
-                   always-visible Sign out pill, three of the hub's four action buttons
-                   and the footer's Settings link, and it is the only way to the settings
-                   sheet from inside a game (the footer is hidden on game routes). No
-                   gear: the 2026-07-13 call stands.
+                @* The account menu: the name chip is the one button, and it holds every
+                   page-level destination. It is the only way to the settings sheet from
+                   inside a game (the footer is hidden on game routes). There is no gear.
 
                    There is no signed-out branch. AuthGate renders the login screen in
-                   place of this layout until a session exists, so the Sign in / ANON /
-                   ⋯ controls that used to sit here could only ever show on the
-                   /auth/callback page, for the moment it takes to finish signing in.
+                   place of this layout until a session exists, so a signed-out control
+                   here could only ever show on the /auth/callback page, for the moment
+                   it takes to finish signing in.
 
                    Native Popover API: light-dismiss, Escape-to-close and the top layer
                    come free. popovertargetaction="hide" closes the panel on activation
@@ -175,29 +158,19 @@
         </div>
     }
 
-    @* Kiosk reel controls. Restored after the 2026-07-04 cleanup removed the bar
-       but left the coordinator's Pause/Skip/Exit API — and left a player who
-       started the reel unable to stop it from inside a demo. Renders nothing
-       unless the reel is actually running, so the portrait-chrome concern that
-       motivated the original removal does not apply. *@
+    @* Kiosk reel controls: lets a player stop the reel from inside a demo. Renders
+       nothing unless the reel is actually running. *@
     <KioskControlBar />
 
-    <!-- §9 Bottom-tab-bar REMOVED per user request (2026-07-05): the 3-icon
-         Home/Scores/Me strip on mobile portrait was removed. The top bar's
-         brand + Sign in/Sign out affordance is the only nav surface now. -->
+    @* The footer is the page's <footer> landmark, so a screen-reader user has a
+       site-info landmark to jump to. It renders below the page content (no overlap
+       with the sticky top bar) and surfaces the build version + a "support" link.
 
-    @* 2026-08-10 audit: the app had <header>, <nav>, and <main> landmarks but
-       no <footer>, so a screen-reader user had no site-info landmark to jump
-       to on the 18 routes. Footer renders below the page content (no overlap
-       with the sticky top bar) and surfaces the build version + a "support"
-       link — both of which were previously only available via /api/diag.
-
-       2026-09-11 UI sweep (option 9): the ~54px footer was exactly the space a
-       portrait game page needed to fit without vertical scroll (measured: PoBrawl
-       +33px, PoJoker +49px over the fold — both under the footer's height), and
-       its links are support/dev surfaces, not gameplay surfaces; the brand link
-       already returns to the hub, where the footer remains. Hidden on game
-       routes only — the contentinfo landmark stays on every other route. *@
+       It is hidden on game routes: its ~54px is exactly the space a portrait game
+       page needs to fit without vertical scroll (PoBrawl would overflow by 33px,
+       PoJoker by 49px), and its links are support/dev surfaces, not gameplay
+       surfaces; the brand link already returns to the hub, where the footer
+       remains. The contentinfo landmark stays on every other route. *@
     @if (!IsGameRoute)
     {
         <footer class="gl-footer" aria-label="Site information">
@@ -220,7 +193,7 @@
     private Action? _onOnlineFlush;
     private EventHandler<LocationChangedEventArgs>? _onLocationChanged;
 
-    // 2026-09-11 UI sweep: first path segment match — every game keeps all of
+    // First path segment match — every game keeps all of
     // its routes under one segment (/pobrawl, /pobrawl/demo, /posports/lobby,
     // /couplequiz/game, …), so segment[0] alone decides. Keep in sync with
     // src/PoMiniGames.Client/Games/. Drives footer suppression (see footer note).
@@ -269,9 +242,6 @@
         }
     }
 
-    // `IsHome` lived here to gate the 🎮 quick switcher on non-home routes. The switcher
-    // was removed on 2026-08-10 and nothing else read the property, so it went with it.
-
     protected override void OnInitialized()
     {
         // Auth is initialized by <AuthGate> before MainLayout ever renders, so here we
@@ -281,7 +251,7 @@
         _onAuthStateChanged = () => InvokeAsync(StateHasChanged);
         AuthState.StateChanged += _onAuthStateChanged;
 
-        // §10 fire the mock-data buzz once on mount so the developer notices
+        // Fire the mock-data buzz once on mount so the developer notices
         // the safety guard when they hit the home page in a mock-data env.
         if (AuthState.UsingMockData)
         {

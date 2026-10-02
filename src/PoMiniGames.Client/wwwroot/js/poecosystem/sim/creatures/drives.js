@@ -1,4 +1,4 @@
-// drives.js — hunger, thirst, age and health integration (SPEC §7.3). Pure over the
+// drives.js — hunger, thirst, age and health integration. Pure over the
 // entity store; the caller decides death via lifecycle.checkVitals().
 import { YEAR_SECONDS } from '../core/config.js';
 

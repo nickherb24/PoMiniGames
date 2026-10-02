@@ -40,14 +40,14 @@
 
     // /poecosystem and /poecosystem/1player are YOUR island: it is kept in this browser and
     // offered back on the next visit. /poecosystem/demo is the kiosk — a fresh island every
-    // time, never saved. Until 2026-09-30 this was hardcoded to demo, so the resume prompt
-    // could not be reached and every visit autosaved a new island over the last one.
+    // time, never saved. Treating every mode as demo would make the resume prompt
+    // unreachable and every visit autosave a new island over the last one.
     private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem</span>;
 
     private RenderFragment HowToPlayContent => @<div>
-        @* 2026-09-11: word budget — the intro card is capped at 100 words. Everything the
+        @* Word budget — the intro card is capped at 100 words. Everything the
            dashboard holds is discoverable in situ; the card teaches movement + inspection. *@
         <p><strong>You are a naturalist drifting over the island. Nothing here needs you, and nothing you do changes it.</strong></p>
         <ul>

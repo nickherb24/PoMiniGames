@@ -21,12 +21,11 @@ public static class DevLoginIntake
         var rawName = request?.DisplayName ?? userName;
         var displayName = SanitizeDisplayName(rawName, fallbackName);
 
-        // 2026-08-10: every dev login gets a random 6-digit suffix so two tabs of the
+        // Every dev login gets a random 6-digit suffix so two tabs of the
         // same browser — or two kiosks auto-spawning "Guest" — produce distinct
-        // identities. Previously only the literal "ANON" name was suffixed, which
-        // meant three Couple Quiz tabs in one browser (or two re-opens in the same
-        // session) all collided on "GuestXXX" and the server's name-keyed session
-        // merged them into one player. With a per-login suffix, "Alice" becomes
+        // identities. Without it, several Couple Quiz tabs in one browser
+        // would collide on one name and the server's name-keyed session
+        // would merge them into one player. With a per-login suffix, "Alice" becomes
         // "Alice-463443" on tab 1, "Alice-781029" on tab 2, and the leaderboard
         // distinguishes them automatically.
         var suffix = Random.Shared.Next(100_000, 999_999);

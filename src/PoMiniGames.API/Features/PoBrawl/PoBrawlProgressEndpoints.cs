@@ -9,7 +9,7 @@ namespace PoMiniGames.Features.PoBrawl;
 
 /// <summary>
 /// GET/PUT /api/pobrawl/progress — the 1P ladder run, per claim identity, so it follows a player
-/// to another device. Until 2026-09-29 the rung lived in localStorage only, keyed by display name.
+/// to another device (localStorage alone is keyed by display name and stays on one browser).
 /// </summary>
 public static class PoBrawlProgressEndpoints
 {

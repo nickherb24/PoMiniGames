@@ -1,10 +1,9 @@
 @namespace PoMiniGamesClient.Components
 
 @* The strip above a two-sided board: who is on each side, whose move it is, and one line
-   of status between them. Connect Five had this as its own markup and Tic-Tac-Toe had
-   nothing visible at all outside online play (the turn was only spoken), so the same
-   board game told a sighted player whose turn it was in one and not in the other.
-   2026-10-01.
+   of status between them. It shows a sighted player whose turn it is in every board
+   game, including Tic-Tac-Toe outside online play, where the turn is otherwise only
+   spoken.
 
    aria-hidden on purpose. GameShell's polite live region already speaks the same state
    (the page's Announcement), and exposing both would announce every turn twice.

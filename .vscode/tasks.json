@@ -24,26 +24,6 @@
 			"problemMatcher": []
 		},
 		{
-			"label": "start-client",
-			"type": "shell",
-			"command": "dotnet run --project ${workspaceFolder}/src/PoMiniGames.Client/PoMiniGamesClient.csproj",
-			"isBackground": true,
-			"problemMatcher": {
-				"pattern": {
-					"regexp": "^$"
-				},
-				"background": {
-					"activeOnStart": true,
-					"beginsPattern": "Now listening on",
-					"endsPattern": "Application started"
-				}
-			},
-			"presentation": {
-				"reveal": "always",
-				"panel": "dedicated"
-			}
-		},
-		{
 			"label": "start-api",
 			"type": "shell",
 			"command": "dotnet run --project ${workspaceFolder}/src/PoMiniGames.API/PoMiniGames.API.csproj",
@@ -119,23 +99,6 @@
 			],
 			"dependsOrder": "sequence",
 			"problemMatcher": []
-		},
-		{
-			"label": "kill-and-inspect",
-			"type": "shell",
-			"command": "taskkill /F /IM dotnet.exe /T 2>nul; Start-Sleep -Seconds 2; Write-Output 'KILLED'; Get-Process -Name dotnet -ErrorAction SilentlyContinue | Format-Table Id, ProcessName, StartTime -AutoSize"
-		},
-		{
-			"label": "restart-api",
-			"type": "shell",
-			"command": "dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj",
-			"isBackground": true
-		},
-		{
-			"label": "restart-api",
-			"type": "shell",
-			"command": "dotnet run --project src/PoMiniGames.API/PoMiniGames.API.csproj",
-			"isBackground": true
 		}
 	]
 }

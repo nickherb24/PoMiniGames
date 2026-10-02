@@ -1,7 +1,7 @@
 // minimap.js — a 2D canvas map: the island's biomes drawn once, then species dots, huts,
 // fire and the player's arrow on top each frame. Cheap enough to redraw at render rate.
 //
-// DATA LAYERS (2026-09-30). One optional overlay between the ground and the dots: a small
+// DATA LAYERS. One optional overlay between the ground and the dots: a small
 // grid of values (deaths, kills, sick-seconds from the sim's heat book; grazing pressure
 // from the tile sync; foot traffic from trails.js) drawn as a heat ramp. The grid is
 // painted into its own tiny canvas when it arrives and scaled up with the browser's own
@@ -111,8 +111,8 @@ export function createMinimap(canvas, terrain) {
         ctx.fillStyle = SPECIES_DOT[view[o + 5] | 0] ?? '#ffffff';
         ctx.fillRect(view[o] * s - 1, view[o + 2] * s - 1, layer ? 1.5 : 2.5, layer ? 1.5 : 2.5);
       }
-      // Player marker: a big white triangle pointing along the view direction (2026-09-02:
-      // user call — the small grey arrow was too easy to lose among the species dots).
+      // Player marker: a big white triangle pointing along the view direction, large enough
+      // not to be lost among the species dots.
       const px = player.x * s; const pz = player.z * s;
       ctx.save();
       ctx.translate(px, pz);

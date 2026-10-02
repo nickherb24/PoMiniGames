@@ -1,4 +1,4 @@
-// templates.js — thoughts without a model (SPEC §7.8): chosen by species and the dominant
+// templates.js — thoughts without a model: chosen by species and the dominant
 // drive, flavoured by the dominant trait. Templates never apply nudges.
 import { dominantDrive } from '../creatures/drives.js';
 import { dominantTrait } from '../creatures/traits.js';

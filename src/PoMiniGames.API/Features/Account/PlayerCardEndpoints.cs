@@ -21,7 +21,7 @@ public static class PlayerCardEndpoints
             string? name,
             HttpContext http,
             IStorageService storage,
-            IScoreIntegrityGuard integrity,
+            ScoreIntegrityGuard integrity,
             CancellationToken ct) =>
         {
             var identity = RequestIdentity.Resolve(http.User);
@@ -50,7 +50,7 @@ public static class PlayerCardEndpoints
             string? name,
             HttpContext http,
             IStorageService storage,
-            IScoreIntegrityGuard integrity,
+            ScoreIntegrityGuard integrity,
             CancellationToken ct) =>
         {
             var identity = RequestIdentity.Resolve(http.User);

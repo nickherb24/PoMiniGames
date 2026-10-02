@@ -7,7 +7,7 @@
 
 export const LLM_STATE = Object.freeze({ OFF: 'off', UNSUPPORTED: 'unsupported', LOADING: 'loading', READY: 'ready', ERROR: 'error' });
 
-// Verified against @mlc-ai/web-llm 0.2.84 prebuiltAppConfig (2026-09-02).
+// Ids match @mlc-ai/web-llm 0.2.84 prebuiltAppConfig.
 export const MODELS = Object.freeze([
   { id: 'SmolLM2-135M-Instruct-q4f16_1-MLC', label: 'SmolLM2 135M', vramMb: 180, note: 'Instant edge download — starts fastest.' },
   { id: 'SmolLM2-360M-Instruct-q4f16_1-MLC', label: 'SmolLM2 360M', vramMb: 376, note: 'Fast & responsive balanced model.' },
@@ -27,9 +27,6 @@ export const CLOUD_MIN_INTERVAL_MS = 20_000;
  * model download that then crawls on the CPU, so an adapter alone is not enough — it has to
  * be a hardware one.
  *
- * This used to defer to a global gpuProbe loaded on every page (js/posurvive/gpuProbe.js),
- * with this logic as its fallback. That script went with PoSurvive on 2026-09-12 and
- * PoEcosystem was its only other caller, so the check lives here now — including the
  * powerPreference quirk: passing 'high-performance' on Windows can hand back a discrete
  * adapter the browser then fails to initialise, so the option is only set off Windows.
  */

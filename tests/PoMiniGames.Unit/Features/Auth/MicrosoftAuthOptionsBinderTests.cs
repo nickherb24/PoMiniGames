@@ -5,15 +5,14 @@ using PoMiniGames.Features.Auth;
 namespace PoMiniGames.Unit.Features.Auth;
 
 /// <summary>
-/// Tests the §2026-06-26 prod regression fix. A deployment with ClientId + ApiClientId
+/// Tests that a deployment with ClientId + ApiClientId
 /// correctly populated must surface Microsoft sign-in WITHOUT requiring a separate
 /// <c>MicrosoftAuth:Enabled=true</c> secret in KV. The binder promotes <c>Enabled</c>
 /// to true whenever FullyConfigured is true and the flag was absent from config.
 /// </summary>
 /// <remarks>
-/// <b>§1 100/50/25/25 Rule.</b> Two [Theory]s cover the auto-promote / explicit-override
-/// matrix; one [Fact] covers FullyConfigured semantics. Three product tests, one
-/// maintenance surface.
+/// Two [Theory]s cover the auto-promote / explicit-override
+/// matrix; one [Fact] covers FullyConfigured semantics.
 /// </remarks>
 public class MicrosoftAuthOptionsBinderTests
 {

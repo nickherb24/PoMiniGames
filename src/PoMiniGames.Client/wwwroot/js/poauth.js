@@ -1,7 +1,7 @@
 // Microsoft sign-in (MSAL.js) interop for the Blazor WASM client.
 //
 // The server exposes the SPA's ClientId / Authority / Scope / RedirectPath via
-// /api/auth/config; AuthStateService passes them here. Sign-in uses a popup so
+// /api/auth/handshake; AuthStateService passes them here. Sign-in uses a popup so
 // no route-level redirect handling is required. acquireTokenSilent fetches an
 // access token for the API scope, which the C# side attaches as the bearer for
 // authenticated API calls.

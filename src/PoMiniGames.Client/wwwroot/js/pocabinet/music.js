@@ -1,6 +1,6 @@
 // pocabinet/music.js
 //
-// Adaptive race score (2026-09-29). Synthesized like everything in audio.js — no
+// Adaptive race score. Synthesized like everything in audio.js — no
 // assets — and routed into audio.js's bus, so the master volume, mute, pause duck
 // and the photo-finish slow-mo lowpass all apply to it for free.
 //

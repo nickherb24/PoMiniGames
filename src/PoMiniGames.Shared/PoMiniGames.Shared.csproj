@@ -1,15 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
-         §1.7 Trimming Safeguards. PoMiniGames.Shared is consumed by the WASM client; any
+         Trimming safeguards. PoMiniGames.Shared is consumed by the WASM client; any
          non-trim-safe API in a public type will surface here at build time. -->
     <IsTrimmable>true</IsTrimmable>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
   </PropertyGroup>
-  <!-- §PoBrawlOnline (2026-09-14): the shared file now references PoBrawlFighter
-       from Domain.Primitives so the lobby/match DTOs can carry fighter identity.
-       Domain is a leaf project with no API/Shared dependency, so adding the edge
-       here is safe and the WASM client still only takes types it actually uses
+  <!-- The shared file references PoBrawlFighter from Domain.Primitives so the
+       lobby/match DTOs can carry fighter identity.
+       Domain is a leaf project with no API/Shared dependency, so the edge
+       is safe and the WASM client still only takes types it actually uses
        (ProjectReference is consumed by the trimmer, not pulled in wholesale). -->
   <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />

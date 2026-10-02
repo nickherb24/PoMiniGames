@@ -27,13 +27,10 @@ public enum ThemeMode
 /// </summary>
 /// <remarks>
 /// <para>
-/// The /settings page and its SettingsPanel were removed on 2026-08-11 (user
-/// request), which left this a read-and-apply service with nothing writing the
-/// keys. The setters came back on 2026-10-01 (user request) behind
-/// <c>Components/SettingsSheet.razor</c>, a dialog rather than a page, together
-/// with <c>pomini_colorsafe</c>. A fresh browser still gets the defaults below
-/// (Auto theme, unmuted, full volume, haptics on, motion unreduced, standard
-/// palettes).
+/// The setters sit behind <c>Components/SettingsSheet.razor</c>, a dialog rather
+/// than a page, which also covers <c>pomini_colorsafe</c>. A fresh browser gets
+/// the defaults below (Auto theme, unmuted, full volume, haptics on, motion
+/// unreduced, standard palettes).
 /// </para>
 /// <para>
 /// Volume and mute are enforced on the JS side — audioBus.js owns both the gain

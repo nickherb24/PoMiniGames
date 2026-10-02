@@ -3,8 +3,7 @@ using System.Net;
 namespace PoMiniGames.E2EAPI;
 
 /// <summary>
-/// §5 API contract smoke tests. C# port of <c>api-contract.spec.js</c> (deleted
-/// during the JS → C# e2e migration). Verifies the public contract surface the
+/// API contract smoke tests. Verifies the public contract surface the
 /// frontend and SignalR clients depend on, without requiring a live browser.
 /// </summary>
 [Collection(PoMiniGamesE2ECollection.Name)]
@@ -29,24 +28,14 @@ public class ApiContractSmokeTests
     }
 
     [Fact]
-    public async Task AuthConfig_ReturnsPublicShape()
+    public async Task AuthHandshake_Anonymous_ReturnsConfigAndNoUser()
     {
         using var client = _factory.CreateClient();
-        var response = await client.GetAsync("/api/auth/config");
+        var response = await client.GetAsync("/api/auth/handshake");
 
-        // /api/auth/config is anonymous; it must always return 200 with the
-        // public client config (microsoft-enabled flag, dev-login flag, etc.).
+        // Anonymous: 200 with the public client config and a null user, never a 401.
         response.StatusCode.Should().Be(HttpStatusCode.OK);
-    }
-
-    [Fact]
-    public async Task AuthMe_Anonymous_Returns200()
-    {
-        using var client = _factory.CreateClient();
-        var response = await client.GetAsync("/auth/me");
-
-        // §2.2: /auth/me is anonymous and returns the unauthenticated auth
-        // state shape, not a 401.
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        var body = await response.Content.ReadAsStringAsync();
+        body.Should().Contain("\"config\"");
     }
 }

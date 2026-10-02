@@ -1,3 +1,14 @@
+// Wire shapes that are identical on both sides are the Domain types themselves, not
+// hand-kept mirrors: a renamed server field then fails to compile here instead of
+// deserializing as null. Aliased globally because PoMiniGames.Domain.Models also declares
+// a PlayerStats, so importing that namespace wholesale is ambiguous with the client one.
+global using GameLeaderboardDto = PoMiniGames.Domain.Models.GameLeaderboardDto;
+global using LeaderboardEntryDto = PoMiniGames.Domain.Models.LeaderboardEntryDto;
+global using MarbleRaceHighScore = PoMiniGames.Domain.Models.MarbleRaceHighScore;
+global using PoBrawlDemoResultRequest = PoMiniGames.Domain.Models.PoBrawlDemoResultRequest;
+global using PoBrawlHighScore = PoMiniGames.Domain.Models.PoBrawlHighScore;
+global using PoBrawlLadderEntry = PoMiniGames.Domain.Models.PoBrawlLadderEntry;
+
 namespace PoMiniGamesClient.Models;
 
 public class DifficultyStats
@@ -56,13 +67,6 @@ public class AdaptiveRating
     public double WinRate => TotalGames > 0 ? (double)Wins / TotalGames : 0;
 }
 
-public class StatusInfo
-{
-    public string Icon { get; set; } = "";
-    public string Text { get; set; } = "";
-    public string ClassName { get; set; } = "";
-}
-
 public class WinResult
 {
     public bool Won { get; set; }
@@ -76,18 +80,8 @@ public class PlayerStatsDto
     public PlayerStats Stats { get; set; } = new();
 }
 
-/// <summary>A row read back from the PoMarbleRace board. Read-only — the server owns every field.</summary>
-public sealed class MarbleRaceHighScore
-{
-    public string PlayerInitials { get; set; } = "";
-    public string UserId { get; set; } = "";
-    public bool IsGuest { get; set; }
-    public int BestScore { get; set; }
-    public DateTimeOffset AchievedAtUtc { get; set; }
-}
-
 /// <summary>
-/// PoCabinet (T11, 2026-09-17): the lap time the server ratchets on
+/// PoCabinet: the lap time the server ratchets on
 /// <c>POST /api/pocabinet/scores</c>. Identity fields
 /// (<c>PlayerDisplayName</c> / <c>UserId</c> / <c>IsGuest</c>) are resolved
 /// server-side from the auth cookie, so the payload is intentionally minimal —
@@ -117,14 +111,6 @@ public sealed record PoCabinetHighScoreRequest(
     string? Inputs = null,
     bool Wet = false);
 
-public class PoBrawlHighScore
-{
-    public string PlayerInitials { get; set; } = "";
-    public double KoTimeSeconds { get; set; }
-    public string Character { get; set; } = "";
-    public string Date { get; set; } = "";
-}
-
 // PoSports scores use PoMiniGames.Domain.Models.PoSportsHighScore directly — the client
 // references that assembly, so a hand-kept mirror only bought silent drift: a renamed
 // server field still deserialized, just as null.
@@ -137,22 +123,6 @@ public sealed record PoVoxelStrikeRunRequest(
     int Score, double SurvivalSeconds, int Kills, int BruteKills, int CrushKills, int VoxelsDestroyed,
     bool Won = false, string? Day = null);
 
-public class PoBrawlLadderEntry
-{
-    public string PlayerName { get; set; } = "";
-    public int PresidentsBeaten { get; set; }
-    public int Elo { get; set; }
-    public string Date { get; set; } = "";
-}
-
-
-/// <summary>
-/// One finished CPU-vs-CPU demo match. Carries who fought and who won, and nothing else:
-/// the ratings, the deltas, and the fighters' display names are all resolved server-side,
-/// so there is no field here to forge a rating in. On a draw the winner/loser split is
-/// arbitrary and <see cref="IsDraw"/> decides the scoring.
-/// </summary>
-public sealed record PoBrawlDemoResultRequest(string WinnerFighterId, string LoserFighterId, bool IsDraw);
 
 /// <summary>
 /// Queued PlayerStats PUT for the offline score-sync pipeline: a stats snapshot

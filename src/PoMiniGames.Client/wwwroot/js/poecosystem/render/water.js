@@ -30,7 +30,7 @@
 // water is at a point, and the CPU already has that. Sampling a baked texture is one tap;
 // re-deriving it in the shader would mean shipping the heightfield to the GPU anyway.
 //
-// LAKES ARE PLAIN BLUE (user call, 2026-10-01). The bake's second channel marks inland
+// LAKES ARE PLAIN BLUE. The bake's second channel marks inland
 // lakes, and on a lake nothing that whitens the surface is drawn: no foam, no caustics,
 // no sun glint, no sun-warmed reflection. Body colour, the sky's Fresnel reflection and
 // the fog are all a lake gets. The sea keeps every term.

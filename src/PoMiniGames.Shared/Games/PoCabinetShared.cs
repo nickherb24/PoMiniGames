@@ -1,32 +1,5 @@
 namespace PoMiniGames.Shared.Games;
 
-// ──────────────────────────────  Enums  ──────────────────────────────
-
-/// <summary>Camel-case string values for JSON wire compatibility.</summary>
-public enum PoCabinetTrackId
-{
-    Capitol = 0,
-    MarALago = 1,
-    PressBriefing = 2,
-    Playground = 3,
-}
-
-public enum PoCabinetOfficialId
-{
-    SeanS = 0,
-    SteveB = 1,
-    BillB = 2,
-    MikeP = 3,
-}
-
-public enum PoCabinetDialogueKind
-{
-    PreRace = 0,
-    PositionChange = 1,
-    LapFinish = 2,
-    RaceFinish = 3,
-}
-
 // ──────────────────────────────  Career state  ──────────────────────────────
 
 /// <summary>
@@ -128,7 +101,7 @@ public sealed class PoCabinetRaceSnapshot
     public IReadOnlyList<PoCabinetCarState> Cars { get; set; } = new List<PoCabinetCarState>();
     public PoCabinetDialogueEvent? LatestDialogue { get; set; }
     public PoCabinetStaticWorld? Static { get; set; }
-    // T11 (2026-09-17): the player's best lap, populated on the solo path
+    // The player's best lap, populated on the solo path
     // (the JS ticker) and on the server path (the registry). The page reads
     // this value on `Finished=true` to compute the leaderboard submission.
     public double? BestLapSeconds { get; set; }
@@ -243,7 +216,7 @@ public sealed record PoCabinetFinalEntry(
     double BestLapSeconds = -1,
     int CarId = -1);
 
-// ──────────────────────────────  AI: banter + debrief (2026-09-29)  ──────────────────────────────
+// ──────────────────────────────  AI: banter + debrief  ──────────────────────────────
 
 /// <summary>
 /// The officials' radio lines for one track (GET /api/pocabinet/banter?track=): official id →

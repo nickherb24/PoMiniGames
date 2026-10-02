@@ -5,7 +5,7 @@
 // apply without a line here, and when the bus is missing it is silent. The music is not here:
 // the page's soundtrack is PoMusicDirector's, which index.js drives with the fight's tension.
 //
-// Readability over realism, as with the art (SPEC §4.8): each ability has its own timbre, sounds
+// Readability over realism, as with the art: each ability has its own timbre, sounds
 // pan with the arena x, loudness follows damage, and at most MAX_VOICES play at once, so a
 // 20-unit brawl thickens instead of clipping. Creature voices are built from the creature's own
 // data — pitch from mass, waveform, vibrato and formant from temperament — so the same creature

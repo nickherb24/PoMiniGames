@@ -1,9 +1,9 @@
-// routeFx.js — the route-transition wipe (§GFX).
+// routeFx.js — the route-transition wipe.
 //
-// Navigating between the catalog and a game was an instant DOM swap: one frame
-// the gallery, the next frame a game. Nothing told the player the app had moved,
-// and nothing connected the accent they were about to be surrounded by to the
-// card they had just pressed.
+// Navigating between the catalog and a game is an instant DOM swap: one frame
+// the gallery, the next frame a game. Nothing tells the player the app has moved,
+// or connects the accent they are about to be surrounded by to the card they
+// just pressed.
 //
 // This is a ~260 ms wipe tinted to the DESTINATION's palette, so the transition
 // is also the introduction to where you are going. paletteBus already owns the

@@ -1,4 +1,4 @@
-// lighting.js — sun, sky, atmosphere and the day/night cycle (SPEC §8: 120 s per cycle).
+// lighting.js — sun, sky, atmosphere and the day/night cycle (120 s per cycle).
 // The shadow camera follows the player, so a 2048 map covers the ~80 m the god can
 // actually see rather than the whole 200 m island (the trick from povoxelstrike/game.js).
 //
@@ -7,7 +7,7 @@ import * as THREE from 'three';
 
 const SHADOW_HALF = 120; // Encloses the full 200m island (plus margins) to eliminate frustum clipping lines
 
-// Night is deliberately mild (2026-09-02: user call) — the sky darkens slightly and the
+// Night is deliberately mild — the sky darkens slightly and the
 // sun dims, but light floors stay high enough that creatures and terrain remain clearly
 // observable around the clock. The scene must never become a dark screen.
 const DAY_SKY = new THREE.Color(0x8ec5ff);
@@ -15,7 +15,7 @@ const NIGHT_SKY = new THREE.Color(0x2a3c5a);
 const DUSK_SKY = new THREE.Color(0xf59e0b);
 const DAY_SUN = new THREE.Color(0xfff2df);
 const NIGHT_SUN = new THREE.Color(0x9db4d8);
-// A closed storm deck greys the sky and the haze together (weather, 2026-09-23).
+// A closed storm deck greys the sky and the haze together (weather).
 const OVERCAST_SKY = new THREE.Color(0x7d8894);
 
 export function createLighting(scene, { shadows = true, shadowMapSize = 2048 } = {}) {

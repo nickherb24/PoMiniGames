@@ -24,9 +24,8 @@ namespace PoMiniGames.AI;
 /// <para>
 /// <b>Optional by construction.</b> <see cref="IsConfigured"/> is false when no embedding
 /// deployment is set, and callers fall back to their chat path. This is not defensive
-/// over-engineering: the deployment inventory verified on the shared account (2026-07-29) contains
-/// no embedding model at all, so on today's account this service is dormant and PoCoupleQuiz still
-/// scores via chat. Deploying <c>text-embedding-3-small</c> and setting
+/// over-engineering: the deployment inventory on the shared account contains no embedding model
+/// at all, so this service is dormant and PoCoupleQuiz scores via chat. Deploying <c>text-embedding-3-small</c> and setting
 /// <see cref="AIFoundryOptions.EmbeddingDeployment"/> switches the cheap path on with no code change.
 /// </para>
 /// </remarks>

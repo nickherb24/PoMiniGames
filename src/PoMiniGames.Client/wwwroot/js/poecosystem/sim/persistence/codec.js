@@ -32,8 +32,6 @@ export function encodeSnapshot(snapshot) {
   });
 }
 
-export const CODEC_VERSION = 2;
-
 /** Migrate snapshot schema: converts legacy v1 snapshots cleanly to v2. */
 export function migrateSnapshot(snap) {
   if (!snap || typeof snap !== 'object') return snap;

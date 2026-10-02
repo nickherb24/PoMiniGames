@@ -96,7 +96,7 @@ export async function loadWorld(store) {
 export const loadWorldMeta = (store) => store.get(META);
 export async function deleteWorld(store) { await store.delete(CURRENT); await store.delete(META); }
 
-// ── Keyframes (the time machine, 2026-09-30) ───────────────────────────────────────────
+// ── Keyframes (the time machine) ───────────────────────────────────────────
 // One whole snapshot per decade of the CURRENT world, beside the autosave: `kf:index` lists
 // them ({ seed, frames: [{ year, tick, counts, savedAt }] }) and `kf:<year>` holds each. A
 // frame is only ever opened read-only (simRuntime marks the world ephemeral), so the past

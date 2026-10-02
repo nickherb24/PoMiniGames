@@ -54,7 +54,7 @@ public sealed class PoRacerSurfaceZoneWire
 // ──────────────────────────────  Lobby  ──────────────────────────────
 
 // The lobby state and event records live in LobbyShared.cs (LobbyState<PoRacerLobbyPlayer>,
-// LobbyEvent) since 2026-09-14 — one wire shape for every ready/start lobby.
+// LobbyEvent) — one wire shape for every ready/start lobby.
 // TrackId is this seat's track pick. Only the host's counts (PoRacerRaceRegistry.StartMultiplayer
 // reads it), but it rides on the seat so the shared lobby state carries it with no extra message.
 public sealed record PoRacerLobbyPlayer(
@@ -69,8 +69,8 @@ public sealed record PoRacerLobbyPlayer(
 
 /// <summary>
 /// What never changes during a race, per car. Sent in <see cref="PoRacerStaticWorld.Roster"/> on
-/// join and re-broadcast as <c>raceRoster</c> when a driver's paint arrives; until 2026-09-30 the
-/// name and three colour strings rode every 20 Hz snapshot for all eight cars.
+/// join and re-broadcast as <c>raceRoster</c> when a driver's paint arrives, so the
+/// name and colour strings do not ride every 20 Hz snapshot for all eight cars.
 /// </summary>
 public sealed record PoRacerCarInfo(int Id, string Name, string Color, string ColorDark, string Livery, bool IsPlayer, string Trait);
 

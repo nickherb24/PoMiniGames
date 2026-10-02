@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 namespace PoMiniGames.E2EUI;
 
 /// <summary>
-/// §5 E2E-UI environment-state assertion: when mock dependencies are active
+/// E2E-UI environment-state assertion: when mock dependencies are active
 /// (<c>FeatureFlags:UseMockData=true</c>), the Blazor render tree must inject a
 /// prominent, high-contrast "USING MOCK DATA" banner into the top navigation so a
 /// human can never mistake a mock-backed environment for the real one.
@@ -21,7 +21,7 @@ public class MockBannerUiTests
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(
             BrowserLaunch.Options());
-        // §3 BFF Header Overrides: attach FakeAuth headers so every request carries
+        // BFF header overrides: attach FakeAuth headers so every request carries
         // identity without depending on the cookie flow.
         var context = await browser.NewContextAsync(new BrowserNewContextOptions
         {

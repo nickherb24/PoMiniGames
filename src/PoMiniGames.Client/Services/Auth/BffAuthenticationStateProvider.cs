@@ -12,7 +12,7 @@ namespace PoMiniGamesClient.Services.Auth;
 /// <summary>
 /// BFF-aware <see cref="AuthenticationStateProvider"/>: the real session lives in an
 /// HttpOnly cookie managed by the host. This provider proxies the cookie's presence via
-/// <c>GET /auth/me</c> and surfaces the result to Blazor's authorization pipeline.
+/// <c>GET /api/auth/handshake</c> and surfaces the result to Blazor's authorization pipeline.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -28,7 +28,7 @@ namespace PoMiniGamesClient.Services.Auth;
 /// <para>
 /// Pattern: Adapter (Gamma et al., 1994). The Blazor authorization surface
 /// (<see cref="AuthenticationState"/>, <see cref="ClaimsPrincipal"/>) is the
-/// target; the underlying store is the BFF's <c>/auth/me</c> HTTP endpoint. The
+/// target; the underlying store is the BFF's <c>/api/auth/handshake</c> HTTP endpoint. The
 /// adapter translates between the two contracts and caches the result for the
 /// duration of the WASM session.
 /// </para>

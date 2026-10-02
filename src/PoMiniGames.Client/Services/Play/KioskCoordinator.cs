@@ -70,9 +70,8 @@ public sealed class KioskCoordinator : IDisposable
     // reel doesn't sit on a restart; slower ones (a full race, a comedy bit) get longer.
     // Keyed by the catalog GameKey (DemoEntry.Key). Anything unmapped uses AdvanceSeconds.
     //
-    // 2026-09-04 calibration: PoJoker's 10-joke set with crowd reactions runs ~30s,
-    // and the previous 24s dwell jumped mid-bit (audit #10). PoRacer stays at 18s —
-    // it ends after one race, not loops.
+    // PoJoker's 10-joke set with crowd reactions runs ~30s, so a shorter dwell would
+    // jump mid-bit. PoRacer stays at 18s — it ends after one race, not loops.
     private static readonly Dictionary<string, int> DwellByKey = new(StringComparer.OrdinalIgnoreCase)
     {
         ["tictactoe"] = 12,

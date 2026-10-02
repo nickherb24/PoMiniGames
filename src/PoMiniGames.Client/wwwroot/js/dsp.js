@@ -1,4 +1,4 @@
-// dsp.js — main-thread front end for the AudioWorklet synthesis engine (§GFX-10).
+// dsp.js — main-thread front end for the AudioWorklet synthesis engine.
 //
 // Call sites describe a sound as data (`{wave, freq, freqEnd, dur, cutoff, …}`)
 // and this module gets it onto the audio thread. One AudioWorkletNode is

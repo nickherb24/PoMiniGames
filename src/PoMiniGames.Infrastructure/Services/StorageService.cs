@@ -27,7 +27,7 @@ public partial class StorageService : IStorageService
     private const string PoBrawlTable = "PoBrawlHighScores";
     private const string PoBrawlLadderTable = "PoBrawlLadder";
     private const string PoBrawlEloTable = "PoBrawlFighterRatings";
-    // §PoBrawlOnline (2026-09-14): the player-Elo table for live 1v1 over SignalR.
+    // The player-Elo table for live 1v1 over SignalR.
     // Distinct from PoBrawlEloTable (which rates fighters from CPU-vs-CPU demo) —
     // see PoBrawlPlayerRating's remarks for why a single table cannot serve both.
     private const string PoBrawlPlayerEloTable = "PoBrawlPlayerRatings";
@@ -72,15 +72,13 @@ public partial class StorageService : IStorageService
     // the same name, could never flip it back. Keep this a legal table name.
     private const string HealthProbeTableName = "PoMiniGamesStorageHealthProbe";
 
-    // NOTE (2026-09-11): there is deliberately no in-memory fallback here any more.
-    // StorageService used to hand off to an InMemoryStorageService whenever Table Storage
-    // was unreachable, which meant a storage outage in Production silently redirected every
-    // score into process memory — and on F1 (no AlwaysOn, so idle means recycle) that memory
-    // is gone minutes later. It duplicated, worse, a durability mechanism the client already
-    // has: PendingScoreStore parks a failed submit in localStorage and ScoreSyncService
-    // flushes it when the API comes back. Unreachable storage now takes the path this class
-    // already implemented for it — reads return empty, writes are skipped, the health check
-    // reports Degraded, and the client keeps the score until the write actually lands.
+    // There is deliberately no in-memory fallback here: redirecting scores into process
+    // memory during a storage outage in Production would lose them minutes later (on F1 there
+    // is no AlwaysOn, so idle means recycle), and the client already has a better durability
+    // mechanism: PendingScoreStore parks a failed submit in localStorage and ScoreSyncService
+    // flushes it when the API comes back. Unreachable storage takes the degraded path —
+    // reads return empty, writes are skipped, the health check reports Degraded, and the
+    // client keeps the score until the write actually lands.
 
     internal static readonly HashSet<char> _invalidChars =
         Path.GetInvalidFileNameChars()
@@ -378,7 +376,7 @@ public partial class StorageService : IStorageService
             return;
         }
 
-        // §9: clamp client-supplied values into their legitimate ranges before they touch
+        // Clamp client-supplied values into their legitimate ranges before they touch
         // storage. EloRating is client-authoritative for adaptive games but must stay within
         // the same band the client clamps to (100–3000); the ceiling here rejects a tampered
         // int.MaxValue that would otherwise own the leaderboard.
@@ -387,7 +385,7 @@ public partial class StorageService : IStorageService
         BackfillLegacyElo(stats);
         stats.UpdatedAt = DateTime.UtcNow;
 
-        // §1/§2: read-modify-write under optimistic concurrency. The client sends ABSOLUTE
+        // Read-modify-write under optimistic concurrency. The client sends ABSOLUTE
         // totals, so a blind replace lets a stale client regress another writer's counters.
         // We merge against the stored row — monotonic counters take the max, non-monotonic
         // fields (WinStreak, EloRating) take the latest value — so a concurrent finish can
@@ -425,7 +423,7 @@ public partial class StorageService : IStorageService
         }
     }
 
-    // §9: clamp each difficulty bucket into its legitimate range. Counters are non-negative;
+    // Clamp each difficulty bucket into its legitimate range. Counters are non-negative;
     // EloRating is bounded to [0, 3000] (the adaptive client's own clamp ceiling).
     private static void ClampStats(PlayerStats stats)
     {
@@ -455,7 +453,7 @@ public partial class StorageService : IStorageService
         }
     }
 
-    // §2: merge two absolute snapshots. Monotonic counters take the max so a stale write can't
+    // Merge two absolute snapshots. Monotonic counters take the max so a stale write can't
     // regress totals; WinStreak/EloRating take the incoming (latest) value.
     private static PlayerStats MergeStats(PlayerStats existing, PlayerStats incoming)
     {

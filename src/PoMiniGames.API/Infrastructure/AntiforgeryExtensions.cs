@@ -3,7 +3,7 @@ using Microsoft.AspNetCore.Antiforgery;
 namespace PoMiniGames.Infrastructure;
 
 /// <summary>
-/// §2 Antiforgery (CSRF) protection for every state-changing API call.
+/// Antiforgery (CSRF) protection for every state-changing API call.
 ///
 /// This app authenticates with a BFF cookie, which browsers attach to cross-site
 /// requests automatically — the exact precondition CSRF exploits. <c>SameSite=Strict</c>

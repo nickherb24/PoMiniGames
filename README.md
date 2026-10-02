@@ -5,9 +5,6 @@ Blazor WebAssembly client from a single origin (port 5080), with SignalR for rea
 multiplayer, Azure Table Storage for persistence, and Azure AI Foundry behind the
 AI-powered games.
 
-> This file is the short tour. **`CLAUDE.md` is the authoritative engineering
-> reference** (commands, gates, architecture contracts); `SPEC.md` is the PoJevArena game's specification.
-
 ## Games (`src/PoMiniGames.Client/Games/`)
 
 | Game | One-liner |
@@ -20,9 +17,12 @@ AI-powered games.
 | PoJoker | AI joke judge with a grandma audience |
 | PoMarbleRace | Physics marble race on baked GLB tracks; online 2-player via host-streamed physics |
 | PoRacer | Canvas racer with WebGL effects, solo races, and a multiplayer lobby |
+| PoCabinet | 3D circuit racer: solo career across four tracks, AI officials, and a server-simulated online lobby |
 | PoSports | Sprite-based sports mini-game |
 | PoVoxelStrike | Third-person survival shooter with fully destructible voxel structures |
 | PoJevArena | Design creatures, draft 10 v 10, and watch TypeSafe's Jev make every tactical call; post-match Black Box scrubber |
+| PoEcosystem | Watch-only island simulation: species, tribes and an AI-written chronicle; cloud save slots and a shared gallery |
+| SandPlayground | GPU sand-and-water sandbox |
 
 ## Quick start
 

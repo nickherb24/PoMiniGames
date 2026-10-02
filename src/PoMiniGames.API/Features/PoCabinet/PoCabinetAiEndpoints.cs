@@ -14,14 +14,14 @@ public static class PoCabinetAiEndpoints
     {
         var group = app.MapGroup("/pocabinet").WithTags("PoCabinet");
 
-        group.MapGet("/banter", async (string? track, IPoCabinetAiService ai, CancellationToken ct) =>
+        group.MapGet("/banter", async (string? track, PoCabinetAiService ai, CancellationToken ct) =>
                 Results.Ok(await ai.BanterAsync(track, ct)))
             .WithName("PoCabinetBanter")
             .WithSummary("The officials' radio lines for a track (cached per track per day)")
             .Produces<PoCabinetBanterPool>()
             .RequireRateLimiting("ai-generation");
 
-        group.MapPost("/debrief", async (PoCabinetDebriefRequest request, IPoCabinetAiService ai, CancellationToken ct) =>
+        group.MapPost("/debrief", async (PoCabinetDebriefRequest request, PoCabinetAiService ai, CancellationToken ct) =>
                 Results.Ok(await ai.DebriefAsync(request, ct)))
             .WithName("PoCabinetDebrief")
             .WithSummary("A post-race headline and up to three driving tips from the race numbers")

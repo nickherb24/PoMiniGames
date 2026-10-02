@@ -1,4 +1,4 @@
-// lightning.js — a strike on one tile (SPEC §7.7): creatures within killRadius die and are
+// lightning.js — a strike on one tile: creatures within killRadius die and are
 // launched as ragdolls, trees within treeRadius burn, the tile ignites, the area is
 // frightened, and the physics world gets a radial impulse. Deaths are decided on sim
 // positions, never on physics contacts.

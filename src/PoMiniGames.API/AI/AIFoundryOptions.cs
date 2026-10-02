@@ -129,19 +129,16 @@ public sealed class AIFoundryOptions
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This was an <see cref="IDictionary{TKey, TValue}"/> property over a readonly
-    /// <see cref="StringComparer.OrdinalIgnoreCase"/> field, on the documented assumption that
-    /// the configuration binder would populate the existing instance through the indexer and so
-    /// preserve the comparer. It does not — measured 2026-07-29, with
-    /// <c>PoMiniGames:AI:Deployments:joker = gpt-5.4-nano</c> present in configuration,
-    /// <see cref="ResolveDeployment"/> still returned <see cref="DefaultDeployment"/>. Nothing
-    /// failed loudly: <em>every</em> game silently ran on the Key Vault default deployment while
-    /// <c>/api/infer/status</c> reported the per-game name from a separate raw-config read, so the
-    /// two answers to "which model serves this game?" disagreed in production.
+    /// This is a plain settable <see cref="Dictionary{TKey, TValue}"/> because that is the shape the
+    /// configuration binder handles reliably. A readonly <see cref="IDictionary{TKey, TValue}"/>
+    /// over a case-insensitive field does not work: the binder does not populate the existing
+    /// instance through the indexer, so with <c>PoMiniGames:AI:Deployments:joker = gpt-5.4-nano</c>
+    /// present in configuration <see cref="ResolveDeployment"/> would still return
+    /// <see cref="DefaultDeployment"/>, silently running every game on the Key Vault default while
+    /// <c>/api/infer/status</c> reported the per-game name from a separate raw-config read.
     /// </para>
     /// <para>
-    /// A plain settable <see cref="Dictionary{TKey, TValue}"/> is the shape the binder handles
-    /// reliably; the comparer is therefore no longer guaranteed, and
+    /// The binder may replace the dictionary, so the comparer is not guaranteed;
     /// <see cref="ResolveDeployment"/> compares case-insensitively itself rather than trusting it.
     /// </para>
     /// </remarks>
@@ -159,7 +156,7 @@ public sealed class AIFoundryOptions
     /// rather than cacheable-until-the-model-drifts.
     /// </para>
     /// <para>
-    /// But the deployment inventory verified on the shared account (2026-07-29) lists only
+    /// But the deployment inventory on the shared account lists only
     /// <c>gpt-5.4-nano</c>, <c>gpt-5-nano</c>, <c>gpt-5.4-mini</c>, <c>Phi-4-mini-instruct</c> and
     /// <c>Phi-4</c> — <b>no embedding model</b>. So this is left empty by default and the scorer
     /// falls back to the chat path when it is. Deploy <c>text-embedding-3-small</c> and set this to

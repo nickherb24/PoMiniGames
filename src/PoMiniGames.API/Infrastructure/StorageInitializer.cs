@@ -24,13 +24,7 @@ public sealed class StorageInitializer
     /// <summary>Tables used by the consolidated games.</summary>
     public static readonly string[] AdditionalTables =
     [
-        // "PoCoupleQuizTeams" and "PoCoupleQuizHistory" were dropped with the Teams
-        // subsystem (2026-08-10): nothing in the game ever wrote a row to either, so both
-        // tables were created on every boot and stayed empty for the life of the app.
         "PoFunQuizPlayers",
-        // "EvolutionRecords" went with PoSurvive (2026-09-12), as did
-        // "SimulationSessions" and "HeartbeatEvents" before it. Existing rows are left
-        // in the account rather than dropped here — this list only creates tables.
         // PoJoker (demo-only): per-session joke-performance records that back the
         // /api/joker/leaderboard surface (PartitionKey = SessionId).
         "PoJokerPerformances",

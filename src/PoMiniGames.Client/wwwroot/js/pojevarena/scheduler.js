@@ -6,7 +6,7 @@
 // tab (the loop stops stepping) makes no calls at all.
 //
 // A unit with a request in flight is skipped, never double-asked. Failures change nothing: the
-// unit keeps acting on its last intent, indefinitely (the user's call, SPEC §4.5), and its stale
+// unit keeps acting on its last intent, indefinitely, and its stale
 // timer keeps climbing for the inspector. Account-level stops (allowance spent, match expired,
 // Jev rejected the key) end scheduling for the match; units hold their intents to the end.
 

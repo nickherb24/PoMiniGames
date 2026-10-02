@@ -8,7 +8,7 @@ namespace PoMiniGames.Shared.Games;
 /// join until <see cref="PoVoxelStrikeLobbyState.MaxPlayers"/> is reached.
 /// </summary>
 // The lobby state and event records live in LobbyShared.cs (LobbyState<PoVoxelStrikeLobbyPlayer>,
-// LobbyEvent) since 2026-09-14 — one wire shape for every ready/start lobby.
+// LobbyEvent) — one wire shape for every ready/start lobby.
 public sealed record PoVoxelStrikeLobbyPlayer(
     string ConnectionId,
     string DisplayName,
@@ -40,7 +40,7 @@ public sealed class PoVoxelStrikeInput
     public float Pitch { get; set; }
 
     /// <summary>
-    /// The player's world position at this tick. Added 2026-09-14 for co-presence: peers
+    /// The player's world position at this tick, for co-presence: peers
     /// render each other from these rather than re-simulating each other's movement, which
     /// keeps the run playable without a deterministic engine (see game.js, "Online").
     /// </summary>
@@ -49,7 +49,7 @@ public sealed class PoVoxelStrikeInput
     public float Z { get; set; }
 
     /// <summary>
-    /// True while this player is down and waiting on a revive (2026-09-30). Peers draw the
+    /// True while this player is down and waiting on a revive. Peers draw the
     /// avatar lying flat, and a downed player counts nobody who is also down as a rescuer.
     /// </summary>
     public bool Down { get; set; }
@@ -91,26 +91,6 @@ public sealed class PoVoxelStrikeClientHeartbeat
     public int LastAckTick { get; set; }
     public int LocalFingerprint { get; set; }
     public double RttMs { get; set; }
-}
-
-/// <summary>
-/// Per-player score payload for the multiplayer leaderboard. Same ratchet semantics
-/// as the single-player board; the descriptor guards on PlayerNumber so two players
-/// in the same match do not collide on RowKey.
-/// </summary>
-public sealed class PoVoxelStrikeMultiplayerScoreDto
-{
-    public string PlayerDisplayName { get; set; } = "";
-    public string UserId { get; set; } = "";
-    public int Score { get; set; }
-    public double SurvivalSeconds { get; set; }
-    public int Kills { get; set; }
-    public int CrushKills { get; set; }
-    public int VoxelsDestroyed { get; set; }
-    public int PlayerNumber { get; set; }
-    public string GameCode { get; set; } = "";
-    public DateTimeOffset AchievedAtUtc { get; set; }
-    public bool IsGuest { get; set; }
 }
 
 /// <summary>One-shot payload the lockstep hub returns to a freshly-joined client. Lives in

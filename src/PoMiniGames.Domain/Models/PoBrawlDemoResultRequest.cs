@@ -11,7 +11,6 @@ namespace PoMiniGames.Domain.Models;
 /// beside its route.
 ///
 /// Carries who fought and who won, and nothing else: ratings and deltas are all resolved
-/// server-side, so there is no field here to forge a rating in. The client mirrors this
-/// record in PoMiniGamesClient.Models by design — see the note in GameModels.cs.
+/// server-side, so there is no field here to forge a rating in.
 /// </remarks>
 public sealed record PoBrawlDemoResultRequest(string WinnerFighterId, string LoserFighterId, bool IsDraw);

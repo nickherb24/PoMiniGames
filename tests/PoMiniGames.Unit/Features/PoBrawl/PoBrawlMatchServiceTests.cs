@@ -13,7 +13,7 @@ namespace PoMiniGames.Unit.Features.PoBrawl;
 /// <remarks>
 /// Bundled into a handful of <c>[Fact]</c>s so the Unit tier stays under its
 /// 100-method ceiling. Each test covers one observable behaviour of the resolver.
-/// Since 2026-09-23 the ring has spacing: the corners open 3.2 m apart, out of every
+/// The ring has spacing: the corners open 3.2 m apart, out of every
 /// attack's reach, so each test that wants a hit walks in first (<see cref="CloseIn"/>).
 /// </remarks>
 public class PoBrawlMatchServiceTests
@@ -144,7 +144,7 @@ public class PoBrawlMatchServiceTests
     }
 
     /// <summary>
-    /// The 2026-09-29 lifecycle in one fact (Unit ceiling): the pre-roll holds the fight, each tick
+    /// The match lifecycle in one fact (Unit ceiling): the pre-roll holds the fight, each tick
     /// reports what each corner's swing did (the 3D view lands exactly that), a corner that stays
     /// away forfeits, and the rematch needs both corners' votes.
     /// </summary>

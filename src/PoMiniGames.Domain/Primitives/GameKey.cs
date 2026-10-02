@@ -124,9 +124,8 @@ public readonly record struct GameKey(string Value) : IComparable<GameKey>
     public static readonly GameKey PoJevArena = new("pojevarena");
 
     // This catalogue gates PlayerStats reads/writes (PlayerStatsEndpoints uses TryParse as
-    // the §8 allowlist), so it must cover every game the client can mirror stats for —
-    // it had drifted behind the client's GameKeys list (poracer/pobrawl/posports missing),
-    // which 400'd their stats and leaderboard calls.
+    // the allowlist), so it must cover every game the client can mirror stats for —
+    // a game missing here gets its stats and leaderboard calls rejected with a 400.
     private static readonly GameKey[] All =
     {
         CoupleQuiz, FunQuiz, Joker,

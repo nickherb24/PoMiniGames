@@ -8,13 +8,12 @@ namespace PoMiniGames.Features.PoCabinet;
 /// The one in-memory PoCabinet lobby: whoever arrives first hosts, the next arrivals take the
 /// free seats up to eight, the host starts, and optional AI officials fill the rest. The lobby
 /// outlives its race — when the race ends it reopens with the same roster, which is what
-/// "rematch" means. There are no join codes (removed 2026-09-29): everyone who opens the
+/// "rematch" means. There are no join codes: everyone who opens the
 /// multiplayer page lands in this lobby.
 ///
 /// <para>
 /// Seats are keyed by the caller's claim id, not the SignalR connection id. A reconnect gets a
-/// new connection id; keying seats on it (as this class did until 2026-09-23) turned every
-/// network blip into a lost seat. Connection ids are still tracked per player so a player is
+/// new connection id; keying seats on it would turn every network blip into a lost seat. Connection ids are still tracked per player so a player is
 /// only dropped once their LAST connection goes.
 /// </para>
 /// <para>

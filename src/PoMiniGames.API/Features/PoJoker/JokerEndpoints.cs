@@ -1,11 +1,12 @@
 using Microsoft.AspNetCore.Mvc;
+using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Shared.Games.PoJoker;
 
 namespace PoMiniGames.Features.PoJoker;
 
 /// <summary>
-/// Minimal-API surface for the PoJoker demo game: fetch a joke, analyze it with AI,
-/// and read the session leaderboard. The original PoJoker app
+/// Minimal-API surface for the PoJoker demo game: fetch a joke and analyze it with AI.
+/// The original PoJoker app
 /// routed these through MediatR; here the handler logic is inlined as direct service
 /// calls to match the PoMiniGames per-game endpoint convention (no MediatR dependency).
 /// </summary>
@@ -29,11 +30,6 @@ public static class JokerEndpoints
             .Produces<JokeAnalysisDto>()
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable);
 
-        group.MapGet("/leaderboard", GetLeaderboard)
-            .WithName("PoJokerGetLeaderboard")
-            .WithSummary("Get the top jester sessions by triumph score")
-            .Produces<IReadOnlyList<LeaderboardEntryDto>>();
-
         return app;
     }
 
@@ -42,7 +38,7 @@ public static class JokerEndpoints
         [FromQuery] int[]? excludeIds,
         [FromQuery] string? category,
         IJokeApiClient jokeApiClient,
-        IJokeRewriteService rewriteService,
+        JokeRewriteService rewriteService,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
@@ -101,7 +97,7 @@ public static class JokerEndpoints
     /// </remarks>
     private static async Task<JokeDto> CleanIfNeededAsync(
         JokeDto joke,
-        IJokeRewriteService rewriteService,
+        JokeRewriteService rewriteService,
         ILogger logger,
         CancellationToken cancellationToken)
     {
@@ -130,7 +126,7 @@ public static class JokerEndpoints
         [FromBody] JokeDto joke,
         [FromHeader(Name = "X-Session-Id")] string? sessionId,
         IAnalysisService analysisService,
-        IJokeStorageClient storageClient,
+        JokeStorageClient storageClient,
         ILoggerFactory loggerFactory,
         CancellationToken cancellationToken)
     {
@@ -159,30 +155,6 @@ public static class JokerEndpoints
         }
 
         return Results.Ok(result);
-    }
-
-    private static async Task<IResult> GetLeaderboard(
-        IJokeStorageClient storageClient,
-        string sortBy = "Triumph",
-        int top = 10,
-        CancellationToken cancellationToken = default)
-    {
-        top = Math.Clamp(top, 1, 100);
-
-        var entries = await storageClient.GetLeaderboardAsync(top * 2, cancellationToken);
-
-        var sorted = sortBy?.ToUpperInvariant() switch
-        {
-            "TRIUMPH" => entries.OrderByDescending(e => e.Triumphs),
-            _ => entries.OrderByDescending(e => e.Score)
-        };
-
-        var result = sorted
-            .Take(top)
-            .Select((entry, index) => entry with { Rank = index + 1 })
-            .ToList();
-
-        return Results.Ok((IReadOnlyList<LeaderboardEntryDto>)result);
     }
 
     private static bool IsValidJoke(JokeDto? joke) =>

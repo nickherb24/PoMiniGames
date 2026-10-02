@@ -9,10 +9,9 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// pure views driven by <see cref="IFunQuizClient"/> events.
 /// </summary>
 /// <remarks>
-/// <b>2026-08-10 — no game codes.</b> <c>CreateGame</c> + <c>JoinGame(gameId, …)</c> are one
-/// <see cref="JoinLobby"/>. Every other method dropped its <c>gameId</c> argument as well:
-/// the caller's game is resolved from their connection, so a client can no longer name a
-/// game it isn't in, and the "normalize the code, then look it up twice" dance is gone.
+/// <b>No game codes.</b> Joining is one <see cref="JoinLobby"/> call, and no method takes a
+/// <c>gameId</c> argument: the caller's game is resolved from their connection, so a client
+/// cannot name a game it isn't in.
 /// </remarks>
 [AllowAnonymous]
 public class FunQuizHub : Hub<IFunQuizClient>
@@ -139,12 +138,10 @@ public class FunQuizHub : Hub<IFunQuizClient>
             {
                 // Advance to the next question. HasFinished is reset inside
                 // MultiplayerLobbyService.AdvanceQuestion.
-                // §Bug fix (2026-07-07): the host-only guard in
-                // MultiplayerLobbyService.AdvanceQuestion was blocking the advance
-                // when the NON-host player was the second to finish — the if
-                // branch above was entered, but `_lobby.AdvanceQuestion(...)`
-                // returned false because Context.ConnectionId wasn't the host.
-                // Bypass that helper when we're auto-advancing from
+                // The host-only guard in MultiplayerLobbyService.AdvanceQuestion would
+                // block the advance when the NON-host player is the second to finish —
+                // `_lobby.AdvanceQuestion(...)` returns false because Context.ConnectionId
+                // isn't the host. So bypass that helper when auto-advancing from
                 // PlayerFinished so either player can drive the transition;
                 // keep the host-only guard for the explicit AdvanceQuestion
                 // hub method (manual host control).

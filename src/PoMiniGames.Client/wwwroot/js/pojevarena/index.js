@@ -457,7 +457,7 @@ function endMatch(m) {
     pushInspectors(m);
 }
 
-/** Rolling window of draw durations, for the render budget check (SPEC §4.8: ≤ 8 ms p95). */
+/** Rolling window of draw durations, for the render budget check (target: ≤ 8 ms p95). */
 function noteDrawTime(m, ms) {
     m.drawMs ??= [];
     m.drawMs.push(ms);

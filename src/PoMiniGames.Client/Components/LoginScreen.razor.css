@@ -33,13 +33,9 @@
     padding: 2.25rem 2rem;
     border: 1px solid var(--color-border);
     border-radius: 1.25rem;
-    /* 2026-08-09: was a hard-coded rgba(17, 24, 39, 0.82) — a near-black card —
-       while every piece of text inside it read --color-text-primary /
-       --color-text-secondary. In light mode those tokens flip to dark ink, so
-       the card rendered dark-on-dark and the sign-in copy was unreadable.
-       (Same failure mode as PoBrawl's .pb-hp-name: a fixed surface under
-       theme-following text.) Now the surface follows the theme too, which is
-       also what the app-wide token rule requires. */
+    /* The surface follows the theme: the text inside reads --color-text-primary /
+       --color-text-secondary, which flip to dark ink in light mode, so a fixed
+       dark card would render dark-on-dark and make the sign-in copy unreadable. */
     background: var(--surface-raised);
     backdrop-filter: blur(10px);
     box-shadow: var(--elevation-3);

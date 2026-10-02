@@ -1,4 +1,4 @@
-/* §6 SwipeBack wrapper — transparent container that lets pointer events
+/* SwipeBack wrapper — transparent container that lets pointer events
    reach the inner content while still capturing the gesture. Touch-action
    pan-y lets vertical page scroll pass through but lets the browser know
    we may handle horizontal pans ourselves. */

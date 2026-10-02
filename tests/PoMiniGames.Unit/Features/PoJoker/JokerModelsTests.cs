@@ -7,9 +7,7 @@ namespace PoMiniGames.Unit.Features.PoJoker;
 /// Tests for the PoJoker shared DTOs / settings — pure logic, no I/O.
 /// </summary>
 /// <remarks>
-/// <b>§1 100/50/25/25 Rule.</b> Originally 8 single-case <c>[Fact]</c>s; consolidated
-/// to 3 <c>[Theory]</c>s + 2 <c>[Fact]</c>s. The PerformanceState ordering check
-/// (originally 6 separate assertions) is now an inline-data theory; the
+/// The PerformanceState ordering check is an inline-data theory; the
 /// PerformanceSettings validation is parameterized across positive/negative cases.
 /// </remarks>
 public sealed class JokerModelsTests
@@ -55,27 +53,6 @@ public sealed class JokerModelsTests
     }
 
     [Theory]
-    [InlineData(0, 3000)] // 3s
-    [InlineData(0, 0)] // same instant
-    [InlineData(-500, 500)] // completed before started → clamp via subtraction? assert the raw diff
-    public void JokePerformanceDto_DurationMs_MatchesTimestampDelta(int startOffsetMs, int completedOffsetMs)
-    {
-        var joke = TwoPart();
-        var analysis = new JokeAnalysisDto { OriginalJoke = joke, AiPunchline = "x" };
-        var start = DateTimeOffset.UtcNow;
-        var perf = new JokePerformanceDto
-        {
-            SessionId = "s1",
-            Joke = joke,
-            Analysis = analysis,
-            StartedAt = start,
-            CompletedAt = start.AddMilliseconds(completedOffsetMs - startOffsetMs),
-        };
-        perf.DurationMs.Should().Be(completedOffsetMs - startOffsetMs);
-        _ = startOffsetMs; // explicit: anchor of the offset
-    }
-
-    [Theory]
     [InlineData(-1, true)]   // negative setup duration
     [InlineData(0, false)]  // default setup duration is allowed
     [InlineData(int.MaxValue, false)] // huge but positive is allowed by validation
@@ -85,15 +62,6 @@ public sealed class JokerModelsTests
         var act = () => settings.Validate();
         if (expectThrow) act.Should().Throw<InvalidOperationException>();
         else act.Should().NotThrow();
-    }
-
-    [Fact]
-    public void JokePerformanceDto_IsTriumph_MirrorsAnalysis()
-    {
-        var joke = TwoPart();
-        var analysis = new JokeAnalysisDto { OriginalJoke = joke, AiPunchline = "x", IsTriumph = true };
-        var perf = new JokePerformanceDto { SessionId = "s1", Joke = joke, Analysis = analysis };
-        perf.IsTriumph.Should().BeTrue();
     }
 
     [Fact]

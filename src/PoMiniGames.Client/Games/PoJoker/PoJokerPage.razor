@@ -9,11 +9,8 @@
 
 <PageTitle>Joker · PoMiniGames</PageTitle>
 
-@* 2026-07-16: this page wrapped GameShell but never passed GameOver, so the
-   shared modal could never render and the show ended on an inline, non-blocking
-   completion screen with no way back to the menu. JesterStage now reports the
-   finish (OnShowComplete) and the show ends on the same centered modal as every
-   other game. *@
+@* JesterStage reports the finish (OnShowComplete) and the show ends on the same
+   centered modal as every other game, with a way back to the menu. *@
 <GameShell Title="@TitleContent"
            BackTo="/"
            GameOver="@_showComplete"
@@ -30,13 +27,12 @@
                    OnStart="DismissIntro" />
     }
     <div class="pojoker-root">
-        @* Browser audit #1 (2026-08-10): do NOT auto-start the show on /pojoker
-           while the intro modal is up. AutoStart=true was arming the
-           beforeunload guard before the player had even read the controls —
-           click the brand link while the intro is up, browser prompts
-           "Leave site? Changes you made may not be saved." for a show that
-           hasn't begun. Demo mode keeps AutoStart=true because the kiosk
-           has nobody to dismiss anything. *@
+        @* Do NOT auto-start the show on /pojoker while the intro modal is up.
+           AutoStart=true would arm the beforeunload guard before the player had
+           even read the controls — click the brand link while the intro is up
+           and the browser prompts "Leave site? Changes you made may not be
+           saved." for a show that hasn't begun. Demo mode keeps AutoStart=true
+           because the kiosk has nobody to dismiss anything. *@
         <JesterStage AutoStart="@(_isDemo || _introDone)" Loop="@_isDemo" OnShowComplete="HandleShowComplete" />
     </div>
 </GameShell>
@@ -71,9 +67,9 @@
 
     // Intro/welcome gate. /pojoker/demo gets the 2s auto-clearing flash (nobody
     // is there to press OK); /pojoker gets the same OK-gated controls card as the
-    // other nine games. It used to hard-code Demo on both routes, so a player who
-    // chose Joker from the home page had the card yanked away after two seconds
-    // before they could read it (2026-08-07 browser audit #10).
+    // other nine games. The mode must not be hard-coded to Demo, or a player who
+    // chose Joker from the home page would have the card yanked away after two
+    // seconds before they could read it.
     private bool _introDone;
     private void DismissIntro()
     {
@@ -124,10 +120,10 @@
             new StatItem { Value = $"{Math.Round(triumphs * 100.0 / JokesPerShow)}%", Label = "Rate" },
         ];
         _showComplete = true;
-        // 2026-09-04: end-of-set signal for the kiosk reel. Only fired in demo
-        // mode — on /pojoker the player is still here and the OK button on
-        // GameOverModal owns the next action. Without this the reel waits the
-        // full 32s dwell on a finished set.
+        // End-of-set signal for the kiosk reel. Only fired in demo mode — on
+        // /pojoker the player is still here and the OK button on GameOverModal
+        // owns the next action. Without this the reel waits the full 32s dwell
+        // on a finished set.
         if (_isDemo) Kiosk.MarkFinished();
     }
 }

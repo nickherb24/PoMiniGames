@@ -117,7 +117,7 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     /// <summary>Colour every creature through a lens (<see cref="EcoLens"/>): a trait 0–4, hunger, health, thermal, kin, or -1 for species colours.</summary>
     public ValueTask SetLensAsync(int lens) => SafeInvokeAsync("PoEcosystem.setTint", lens);
 
-    // ── finder · map layers · ticker · ambient · time machine (2026-09-30) ──
+    // ── finder · map layers · ticker · ambient · time machine ──
     /// <summary>Ask the sim for living creatures matching <paramref name="text"/>; answered on <see cref="Found"/>.</summary>
     public ValueTask FindAsync(string text, string sort) => SafeInvokeAsync("PoEcosystem.find", text, sort);
     /// <summary>The minimap's data layer (<see cref="EcoMapLayer"/> ids).</summary>

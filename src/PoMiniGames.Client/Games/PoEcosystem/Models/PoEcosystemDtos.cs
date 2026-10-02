@@ -4,10 +4,7 @@ using PoMiniGames.Shared.Games.PoEcosystem;
 namespace PoMiniGamesClient.Games.PoEcosystem.Models;
 
 // Flat records only — these cross the JS interop boundary through the source-generated
-// serializer below, so the WASM trim analyzer sees no reflection (§1.7 trimming rules).
-
-/// <summary>One species column in the HUD and the dashboard chart.</summary>
-public enum EcoSpecies { Rabbit = 0, Deer = 1, Wolf = 2, Human = 3 }
+// serializer below, so the WASM trim analyzer sees no reflection.
 
 /// <summary>
 /// The species vocabulary the UI needs: the plural the sim uses in its log, and the token
@@ -88,7 +85,7 @@ public sealed record EcoLandmark(int Id, int Tick, int Year, string Kind, string
 
 /// <summary>
 /// The timeline's data: landmarks, one row per year [year, rabbits, deer, wolves, humans, tech, H'×1000],
-/// and the journal — the sagas written for this island, which the snapshot carries (2026-09-30).
+/// and the journal — the sagas written for this island, which the snapshot carries.
 /// </summary>
 public sealed record EcoHistory(EcoLandmark[] Landmarks, int[][] Years, EcoSaga[]? Sagas = null);
 

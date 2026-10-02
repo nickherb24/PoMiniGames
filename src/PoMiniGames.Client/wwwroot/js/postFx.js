@@ -1,4 +1,4 @@
-// postFx.js — post-processing pieces shared by the three.js games (§GFX-2).
+// postFx.js — post-processing pieces shared by the three.js games.
 //
 // PoBrawl and PoMarbleRace each built their own composer, and each one grew a
 // slightly different version of the same ideas. What is here is the part that
@@ -159,13 +159,7 @@ export function applyCameraShake(camera, nowSec, amplitude) {
     camera.translateY(y);
 }
 
-// The planar reflection floor (createReflectiveFloor) was removed 2026-08-07 per
-// user request, along with PoBrawl's use of it — PoBrawl was its only caller, so
-// nothing here is left unreachable. The `three` import went with it: THREE was
-// referenced at runtime only by that function's PlaneGeometry, everywhere else in
-// this module it appears solely in JSDoc types.
-
-// §GFX-14: window alias so non-module scripts (impactFx.js) can drive the
+// Window alias so non-module scripts (impactFx.js) can drive the
 // punch effects without an import — this file is an ES module and impactFx is
 // a classic script loaded before Blazor boots.
 window.PoThreeFx = {

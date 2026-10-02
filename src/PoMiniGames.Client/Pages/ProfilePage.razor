@@ -19,10 +19,10 @@
 @if (_loading)
 {
     @* role="status" is required, not decorative: `aria-label` is prohibited on a
-       plain <div> with no role (axe: aria-prohibited-attr), so the label was
-       being dropped and the loading state announced as nothing at all. "status"
+       plain <div> with no role (axe: aria-prohibited-attr), so the label would
+       be dropped and the loading state announced as nothing at all. "status"
        is the right role for a transient progress message and gives the label
-       somewhere to live. 2026-09-11 UI audit. *@
+       somewhere to live. *@
     <div class="profile-skel" role="status" aria-busy="true" aria-label="Loading profile">
         <div class="profile-skel__header">
             <div class="profile-skel__avatar"></div>
@@ -39,15 +39,13 @@
 }
 else
 {
-    @* One page, no tabs (2026-10-01). The five tabs (Overview, Gamer Card, High Scores,
-       Head-to-Head, Games & Data) each showed a slice of the same record: win rate
-       three times, W/L/D three times, streak and rating twice. They were also
-       unreachable on a phone, where the tab strip ran 300px past the screen edge.
+    @* One page, no tabs: tabs would each show a slice of the same record (win rate,
+       W/L/D, streak and rating repeated) and the tab strip overflows a phone.
 
        The Gamer Card is the hero. Under it, one strip of headline numbers, one card
        per game the player has touched (its best score, its record and its ratings in
        the same card), the head-to-head tables, and the two charts folded away.
-       "Your data" moved to the settings sheet, with the other account controls. *@
+       "Your data" lives in the settings sheet, with the other account controls. *@
     <header class="prf-head">
         @* The display name is not repeated here: it is the headline of the card below. *@
         <h1 class="prf-name">My Stats</h1>
@@ -57,12 +55,13 @@ else
 
     @* "Saved matches" counts FINISHED, PERSISTED matches (the W/L record). Sessions
        that carry no outcome (a Joker set, a guest's unsynced plays) ride beside it
-       so "0" is not the whole story (browser audit #6, 2026-08-10). A stat the
-       player has not earned yet is a dash with its how-to in the tooltip; the
-       sentences that used to sit under each chip made the hero 361px on a phone.
+       so "0" is not the whole story. A stat the player has not earned yet is a
+       dash with its how-to in the tooltip; sentences under each chip would make
+       the hero 361px on a phone.
 
-       With nothing recorded at all the row is left out: it was four boxes reading
-       0 and three dashes, under a card that already says "No ranked games yet". *@
+       With nothing recorded at all the row is left out: it would be four boxes
+       reading 0 and three dashes, under a card that already says "No ranked games
+       yet". *@
     @if (_totalGames > 0 || _unsyncedSessions > 0)
     {
     <div class="prf-chips">
@@ -264,8 +263,8 @@ else
 </div>
 
 @code {
-    // Only the markup-bearing member lives here. Everything else moved to
-    // ProfilePage.razor.cs on 2026-09-11 — see that file for why.
+    // Only the markup-bearing member lives here; everything else is in
+    // ProfilePage.razor.cs.
     //
     // This one cannot move: a RenderFragment written as inline Razor markup is
     // compiled by the Razor generator, not by csc, so it has to stay in the .razor.
@@ -273,7 +272,7 @@ else
     private RenderFragment RenderOpponentTable(List<OpponentRecord> opponents, bool invitable) => __builder =>
     {
         @*
-            §2: <Virtualize> wraps the opponent table body. A player's full head-to-head
+            <Virtualize> wraps the opponent table body. A player's full head-to-head
             history is unbounded (each new opponent is a new row), so without virtualization
             a profile page with 200+ opponents scrolls janky and allocates a DOM node per
             opponent. The virtualizer recycles rows in a 48 px slot, keeping the DOM flat.

@@ -7,8 +7,8 @@ import { createWorld, stepWorld } from './physics.js';
 import { mapById, DEFAULT_MAP_ID } from './maps.js';
 import { createMarbles, MARBLE_COUNT, PLAYER_INDEX, SKINS } from './marbles.js';
 import { createAudio } from './audio.js';
-// §GFX-16/§GFX-17 — marble is the weather + glass launch consumer. Classic-style
-// IIFE modules imported as modules: they self-register on window and run once.
+// Weather + glass: classic-style IIFE modules imported as modules, they self-register
+// on window and run once.
 import '../weather.js';
 import '../glassFx.js';
 
@@ -23,10 +23,10 @@ const LEADERS = 3;          // rivals drawn in glass and trailed (marbles.js)
 const AIR_HOLD = 0.12;      // s without floor contact before the rolling bed calls it airborne
 const SECTORS_KEY = 'pomarblerace_sectors';          // { [mapId]: [best sector seconds] }
 
-// ── Staying on the map (2026-09-30) ──
+// ── Staying on the map ──
 // A marble is only retired when it is BOTH outside the course envelope AND has touched nothing
 // for LOST_AIR seconds. Touching any static body means it is on the map, whatever the centerline
-// maths says — the old envelope-only test deleted marbles rolling on side lanes. One that is
+// maths says — an envelope-only test would delete marbles rolling on side lanes. One that is
 // touching track while the envelope disagrees has reached another part of the course, so its
 // position is re-acquired rather than the marble deleted.
 const LOST_AIR = 1.0;
@@ -208,14 +208,14 @@ export class Game {
     if (this.online) this.seed = this.online.seed >>> 0;
     this.track = null;
 
-    // §GFX-17: weather derives from the race seed, so every client of the same
-    // seed computes the same sky with zero network traffic. §GFX-19: the match
+    // Weather derives from the race seed, so every client of the same
+    // seed computes the same sky with zero network traffic. The match
     // state wakes the reactive soundtrack. Both are optional modules — a
     // missing one costs atmosphere, never functionality. (Placed after the
     // seed assignment: the seed IS the weather input.)
     this._weatherType = window.PoWeather?.apply({ seed: String(this.seed), stage: this.container }) || 'clear';
     window.PoMusicDirector?.match(true);
-    // §GFX-16: scene-composited glass behind the pick card and podium panels.
+    // Scene-composited glass behind the pick card and podium panels.
     // Deferred a beat — the renderer canvas exists by now, but its first frame
     // does not, and glassFx captures live so the panels update as the race runs.
     setTimeout(() => {
@@ -267,10 +267,9 @@ export class Game {
     if (this.demo) this._autoPickSoon();
   }
 
-  // 2026-07-19 browser audit #1: the engine used to call _setPhase('pick')
-  // during construction and immediately start a 3s auto-pick, all while
-  // the intro modal was still on screen. resume() is the explicit
-  // acknowledgment from the host that the intro is dismissed and the
+  // The constructor calls _setPhase('pick'), and an auto-pick would start a 3s
+  // countdown, all while the intro modal is still on screen. resume() is the
+  // explicit acknowledgment from the host that the intro is dismissed and the
   // engine may now run the pick phase (and the rAF tick).
   resume() {
     if (this._paused) {
@@ -330,8 +329,8 @@ export class Game {
     }
   }
 
-  // One steering push on one marble. Split out of _applySteer (2026-09-14, online mode) so the
-  // host can apply it to the guest's marble too. The sign history below is unchanged.
+  // One steering push on one marble. Separate from _applySteer so the online host can apply
+  // it to the guest's marble too.
   _pushMarble(m, dir, sdt) {
     if (!m || m.finished || m.eliminated) return;
 
@@ -339,27 +338,17 @@ export class Game {
     // A lateral acceleration (÷ mass so it's independent of the mass unit), applied along the
     // track's local right vector.
     //
-    // NOT negated. The sign has now been flipped twice and the history is the useful part:
+    // NOT negated. The baked basis defines right = dir x up, and a camera's screen-right is
+    // likewise forward x up, so track-right is already screen-right whenever the shot is
+    // anchored on the subject (it anchors on the marble itself, see ROAD_BIAS).
     //
-    //   1. Originally un-negated, derived from first principles — the baked basis defines
-    //      right = dir x up, a camera's screen-right is likewise forward x up, so track-right
-    //      should already be screen-right.
-    //   2. Negated, because players reported steering backwards. It was, at the time.
-    //   3. Un-negated again — because between (2) and now the CAMERA changed. It used to frame
-    //      the road centreline; it now anchors on the marble itself (see ROAD_BIAS). Reframing
-    //      the shot changed which way `right` reads on screen and undid the correction.
-    //   4. Still un-negated, and reported backwards again on 2026-09-12 — but the sign was not
-    //      the culprit this time and flipping it would have broken the other two maps. The
-    //      chute's generator was publishing -(dir x up) as its right vector while both baked
-    //      GLB courses published dir x up, so the SAME sign here steered correctly on the
-    //      authored courses and backwards on the chute. Fixed where the disagreement was:
-    //      maps.js adaptProceduralTrack now negates the chute's vector at the boundary.
+    // Every track must publish `right` as dir x up. The chute's generator produces -(dir x up),
+    // so maps.js adaptProceduralTrack negates its vector at the boundary; flipping the sign here
+    // instead would break the two baked GLB courses.
     //
-    // The lesson worth keeping: steering feel is a property of the CAMERA, not of the track
-    // basis. The derivation in (1) is sound and holds whenever the shot is anchored on the
-    // subject. Do not re-derive this — if it ever feels backwards again, check first whether it
-    // is backwards on EVERY map. If it is, look at the camera, then flip this sign and record
-    // why. If it is only one map, that map's basis is what disagrees.
+    // Steering feel is a property of the CAMERA, not of the track basis. If it ever feels
+    // backwards, check first whether it is backwards on EVERY map. If it is, look at the camera,
+    // then flip this sign. If it is only one map, that map's basis is what disagrees.
     const dv = (STEER_ACCEL / m.body.mass) * dir * sdt;
     m.body.velocity.x += rb.x * dv;
     m.body.velocity.y += rb.y * dv;
@@ -391,7 +380,7 @@ export class Game {
     if (this.track) this.track.dispose();
     this.audio.dispose();
     this.scene.dispose();
-    // §GFX-16/§GFX-17 teardown: the glass capturer holds a capture interval and
+    // Teardown: the glass capturer holds a capture interval and
     // the weather overlay a rAF loop — both must die with the game.
     if (this._glassStop) this._glassStop();
     window.PoWeather?.stop();
@@ -471,8 +460,7 @@ export class Game {
     if (p === 'pick') this._setGrade('pick');
     else if (p === 'racing') this._setGrade('racing');
     if (p !== 'racing') window.PoMusicDirector?.tension?.(0);
-    // 2026-07-19 browser audit #1: skip phase notifications while the
-    // intro is up. The host can't react to OnPhase('pick') until resume()
+    // Skip phase notifications while the intro is up. The host can't react to OnPhase('pick') until resume()
     // fires anyway, and a notify during intro would race the host's
     // StartPickCountdown. The constructor's first _setPhase('pick') is
     // simply held until resume() flushes it.
@@ -826,7 +814,7 @@ export class Game {
         this.audio.playFinish(this.scene.audioCue(m.mesh.position));
         if (m.index === this.chosen) this._celebrateOwnFinish(m, m.finishOrder + 1);
       }
-      // §GFX-2 — rack the focus for the WINNER only. Firing it per finisher
+      // Rack the focus for the WINNER only. Firing it per finisher
       // would re-trigger it a hundred times as the pack crosses, which reads as
       // the image pumping rather than as a photo finish.
       if (justFinished.length && justFinished.some((m) => m.finishOrder === 0)) {
@@ -834,7 +822,7 @@ export class Game {
         // camera locked to your own marble back in the pack it blurred your view of the course.
         if (this._lastFocus && this._lastFocus.finishOrder === 0) this.scene.photoFinish();
         window.PoImpact?.impact('win', 1);
-        // §GFX-14/§GFX-18: photo-finish post preset + the finish-gate chime.
+        // Photo-finish post preset + the finish-gate chime.
         window.PoImpactFx?.win(1);
         window.PoMaterialAudio?.hit('glass', 0.7);
       }

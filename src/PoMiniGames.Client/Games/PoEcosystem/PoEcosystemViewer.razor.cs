@@ -93,7 +93,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private HashSet<int> _watched = [];
     private List<EcoCultureProfile> _cultures = [];
 
-    // ── 2026-09-30: finder, lenses, map layers, ambient, time machine, wagers, alerts ──
+    // ── finder, lenses, map layers, ambient, time machine, wagers, alerts ──
     private HudBar? _hudBar;
     private int _lens = EcoLens.None;
     private string _layer = "none";
@@ -118,7 +118,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private (string Id, string Label, string What) LayerInfo =>
         EcoMapLayer.All.FirstOrDefault(l => l.Id == _layer) is { Id: not null } l ? l : EcoMapLayer.All[0];
 
-    // ── 2026-09-23: timeline, field notes, council/herald, tour, viewing settings ──
+    // ── timeline, field notes, council/herald, tour, viewing settings ──
     private EcoHistory? _history;
     private readonly EcoMilestoneTracker _milestones = new();
     private EcoSpeciesCard[] _cards = [];
@@ -319,8 +319,8 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     /// <summary>
     /// The island's own news — a field note, a legend, a decade turning, a pact — as a quiet
-    /// line under the status chip (render/chronicle.js). These were toasts until 2026-09-30,
-    /// stacked in the corner on top of the chronicle card for the same moment.
+    /// line under the status chip (render/chronicle.js), not toasts stacked in the corner on
+    /// top of the chronicle card for the same moment.
     /// </summary>
     private void Ticker(string text) => _ = Interop.TickerAsync(text).AsTask();
 

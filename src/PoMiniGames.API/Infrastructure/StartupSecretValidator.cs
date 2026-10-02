@@ -102,7 +102,7 @@ public sealed class StartupSecretValidator : IHostedService
 
             // OAuth wiring: in Production the Entra app registration IDs must be present
             // (either inline or via Key Vault). The full fail-fast here complements the
-            // /api/auth/config "microsoftConfigured" flag — the boot guard ensures we
+            // /api/auth/handshake "microsoftConfigured" flag — the boot guard ensures we
             // never accept traffic in a half-configured state.
             var clientId = _configuration["PoMiniGames:MicrosoftAuth:ClientId"];
             var apiClientId = _configuration["PoMiniGames:MicrosoftAuth:ApiClientId"];

@@ -5,10 +5,8 @@
 @* The one mode switch: 1P / 2P / Online / Demo for whichever game the address is on,
    read from GameCatalog so a mode the game declares cannot go missing from it.
 
-   Before 2026-10-01 Racer, Cabinet and Voxel Strike each drew their own (three sets of
-   markup and styles), and the other eleven games had none: changing mode meant going
-   back to the hub. GameIntro renders this on every game's opening card; the three games
-   with a start card of their own place it there.
+   Changing mode never means going back to the hub. GameIntro renders this on every
+   game's opening card; the games with a start card of their own place it there.
 
    Buttons, not links: app.js turns every in-app <a> click into a full page load. *@
 @if (_game is { Modes.Count: > 1 } game)
@@ -44,10 +42,9 @@
     private CatalogGame? _game;
     private GameMode _current;
 
-    // What may follow the game in an address that is one of its modes: the four slugs and
-    // the legacy forms GameModes.Parse still reads.
+    // What may follow the game in an address that is one of its modes: the four slugs.
     private static readonly string[] ModeSegments =
-        [GameModes.OnePlayerSlug, GameModes.TwoPlayerSlug, GameModes.MultiplayerSlug, GameModes.DemoSlug, "2p", "2ps", "1"];
+        [GameModes.OnePlayerSlug, GameModes.TwoPlayerSlug, GameModes.MultiplayerSlug, GameModes.DemoSlug];
 
     protected override void OnParametersSet()
     {
@@ -68,10 +65,7 @@
         _game = GameCatalog.All.FirstOrDefault(g => g.Modes.Any(m =>
             m.Url.StartsWith(root, StringComparison.OrdinalIgnoreCase)
             && (m.Url.Length == root.Length || m.Url[root.Length] is '/' or '?')));
-        _current = Current ?? GameModes.Parse(
-            segments.ElementAtOrDefault(1),
-            uri.Query.Contains("mode=2p", StringComparison.OrdinalIgnoreCase) ? "2p" : null,
-            uri.Query.Contains("demo=1", StringComparison.OrdinalIgnoreCase) ? 1 : 0);
+        _current = Current ?? GameModes.Parse(segments.ElementAtOrDefault(1));
     }
 
     private async Task SelectAsync(CatalogMode mode)

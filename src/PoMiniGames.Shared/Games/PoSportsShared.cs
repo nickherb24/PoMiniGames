@@ -69,7 +69,7 @@ public static class PoSportsLayouts
 // ──────────────────────────────  Lobby  ──────────────────────────────
 
 // The lobby state and event records live in LobbyShared.cs (LobbyState<PoSportsLobbyMember>,
-// LobbyEvent) since 2026-09-14 — one wire shape for every ready/start lobby.
+// LobbyEvent) — one wire shape for every ready/start lobby.
 public sealed record PoSportsLobbyMember(
     string ConnectionId,
     string DisplayName,

@@ -20,7 +20,7 @@ namespace PoMiniGames.Features.Auth;
 /// A production startup guard (see Program.cs) throws if this scheme is ever registered in Production.
 /// </para>
 /// <para>
-/// §9.1 chaos-engineering hardening: the user value is sanitised through a strict
+/// The user value is sanitised through a strict
 /// identity grammar (max 64 chars; alphanumerics + <c>._-@</c>) so a tampered header
 /// like <c>X-Fake-User: ../admin</c> is rejected as anonymous rather than being used
 /// as a <see cref="ClaimTypes.NameIdentifier"/>. Role values go through the typed

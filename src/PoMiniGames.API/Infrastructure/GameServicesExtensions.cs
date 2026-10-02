@@ -25,16 +25,14 @@ internal static class GameServicesExtensions
         // The guard is what stands between a public leaderboard and a client that can post any
         // number it likes. Registered here rather than in its slice so the options binding,
         // the session minter and the guard itself cannot be wired up half-way — a guard with
-        // no IPlaySessionService behind it silently degrades to range checks only.
+        // no PlaySessionService behind it silently degrades to range checks only.
         services.AddOptions<PoMiniGames.Features.Integrity.IntegrityOptions>()
             .BindConfiguration(PoMiniGames.Features.Integrity.IntegrityOptions.SectionName);
         // TryAdd: TimeProvider.System is the default the framework registers in most hosts, but
         // not all of them, and PlaySessionService's elapsed measurement is the whole mechanism.
         services.TryAddSingleton(TimeProvider.System);
-        services.AddSingleton<PoMiniGames.Features.Integrity.IPlaySessionService,
-                              PoMiniGames.Features.Integrity.PlaySessionService>();
-        services.AddSingleton<PoMiniGames.Features.Integrity.IScoreIntegrityGuard,
-                              PoMiniGames.Features.Integrity.ScoreIntegrityGuard>();
+        services.AddSingleton<PoMiniGames.Features.Integrity.PlaySessionService>();
+        services.AddSingleton<PoMiniGames.Features.Integrity.ScoreIntegrityGuard>();
         // Scoped: one cross-table scan per request, and it holds no state between them.
         services.AddScoped<PoMiniGames.Features.Account.PlayerDataService>();
 
@@ -86,11 +84,11 @@ internal static class GameServicesExtensions
             });
         services.AddSingleton<AIFoundryClientFactory>();
         services.AddSingleton<AIFoundryChatClientCache>();
-        // §3: register the resilience pipeline (retry + circuit breaker + outer timeout)
+        // Register the resilience pipeline (retry + circuit breaker + outer timeout)
         // used by every AI Foundry consumer. Idempotent — safe to call multiple times.
         // Consumed by ResilientChatClient, which every keyed game chat client is wrapped in;
-        // for a long while it was registered here and resolved nowhere, so a single call could
-        // (and did) run 51.6 s against its own documented 20 s ceiling.
+        // a pipeline that is registered but resolved nowhere would let a single call run far
+        // past its documented 20 s ceiling.
         services.AddAzureOpenAIResilience();
         // Cross-cutting AI concerns: usage/latency read-model, per-identity spend ceiling, and a
         // startup check that every configured deployment name exists on the account.
@@ -115,10 +113,8 @@ internal static class GameServicesExtensions
         services.AddHostedService<AiTokenBudgetFlushService>();
         // Memoizes per-(game, deployment) ChatOptions so the JSON-element cloning and the
         // raw-representation factory allocation happen once per pair rather than once per call.
-        // Pure-local hot-path win; no network effect. Registered as the interface too so the
-        // game services that inject IAiDecisionOptionsCache resolve the same singleton.
+        // Pure-local hot-path win; no network effect.
         services.AddSingleton<AiDecisionOptionsCache>();
-        services.AddSingleton<IAiDecisionOptionsCache>(sp => sp.GetRequiredService<AiDecisionOptionsCache>());
         // Embeddings for the similarity-scoring path. Dormant unless
         // PoMiniGames:AI:EmbeddingDeployment names a deployment — the shared account currently has
         // none, so PoCoupleQuiz still scores via chat; see AiEmbeddingService.
@@ -192,8 +188,7 @@ internal static class GameServicesExtensions
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
         // Fail-fast startup validator: throws in Production if any consolidated game's
-        // required Azure OpenAI secrets are missing. See PoFunQuiz StartupSecretValidator
-        // (2026-06-13 mock-data fix) for the original pattern.
+        // required Azure OpenAI secrets are missing.
         services.AddHostedService<StartupSecretValidator>();
 
         // PoCoupleQuiz — Phase 1 of the consolidation. See Features/PoCoupleQuiz/.
@@ -201,11 +196,9 @@ internal static class GameServicesExtensions
         // or Azure OpenAI is not configured; in Production it always uses the real
         // service (StartupSecretValidator fails-fast if the secrets are missing).
         // CoupleQuizOptions is bound in Program.cs before AddPoMiniGamesGameServices.
-        services.AddSingleton<IGameSessionManager, GameSessionManager>();
+        services.AddSingleton<GameSessionManager>();
         // Note: GameSessionManager is a pure in-memory state holder, not a hosted service.
         // The round timer lives in CoupleQuizRoundDirector below.
-        // Every consumer injects IGameSessionManager; nothing resolves the concrete type, so
-        // the previous concrete-forwarding registration was dead and has been removed.
         services.AddSingleton<IQuestionService, AiQuestionService>();
         services.AddSingleton<MockQuestionService>();
         // Owns the round clock. A Hub instance lives for one invocation and cannot hold a
@@ -218,7 +211,7 @@ internal static class GameServicesExtensions
         // PoFunQuizPlayers table (PartitionKey = Category, RowKey = Guid).
         // MultiplayerLobbyService is the in-memory registry for the SignalR hub
         // (CreateGame/JoinGame/StartGame/UpdateScore/PlayerFinished).
-        // §3.4 HybridCache: stampede-protected memoization for deterministic, expensive
+        // HybridCache: stampede-protected memoization for deterministic, expensive
         // Azure OpenAI calls (answer-similarity scoring + question generation).
         // Shared by PoCoupleQuiz (answer similarity) and PoFunQuiz (question list).
         // L2 for HybridCache. Registered BEFORE AddHybridCache so the hybrid layer picks it up:
@@ -238,8 +231,7 @@ internal static class GameServicesExtensions
         // durable; against an in-process cache it would warm entries an F1 recycle then discards.
         services.AddOptions<QuizPrebakeOptions>().BindConfiguration(QuizPrebakeOptions.SectionName);
         services.AddHostedService<QuizPrebakeService>();
-        services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.ILeaderboardRepository,
-            PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
+        services.AddSingleton<PoMiniGames.Features.PoFunQuiz.Storage.LeaderboardRepository>();
         services.AddSingleton<MultiplayerLobbyService>();
 
         // PoJoker — demo-only autonomous comedy show. See Features/PoJoker/.
@@ -262,14 +254,14 @@ internal static class GameServicesExtensions
         // Rewrites flagged jokes so the Jester performs a clean version instead of
         // skipping them. Deliberately has no mock stand-in: a fabricated rewrite
         // would report a joke as cleaned when it was not.
-        services.AddSingleton<IJokeRewriteService, JokeRewriteService>();
-        services.AddSingleton<IJokeStorageClient, JokeStorageClient>();
+        services.AddSingleton<JokeRewriteService>();
+        services.AddSingleton<JokeStorageClient>();
 
         // PoEcosystem — cloud world slots + gallery (blob + table), and the chronicle /
         // cloud-thought narrator. The store degrades to empty when storage is unreachable;
         // the narrator follows the shared mock gate (PoEcosystem:Features:UseMockAI).
         services.AddSingleton<EcosystemWorldStore>();
-        services.AddSingleton<IEcosystemChronicleService, EcosystemChronicleService>();
+        services.AddSingleton<EcosystemChronicleService>();
 
         // PoJevArena — Jev (TypeSafe, via OpenRouter) is the arena's only decision source.
         // The client is a typed HttpClient with its own per-call timeout and no retry pipeline
@@ -335,8 +327,8 @@ internal static class GameServicesExtensions
         services.AddSingleton<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchRegistry>();
         services.AddHostedService<PoMiniGames.Features.PoBrawl.Online.PoBrawlMatchPump>();
         // The post-fight press-conference line (one cheap model call per shown result modal).
-        services.AddSingleton<PoMiniGames.Features.PoBrawl.IPoBrawlPresserService, PoMiniGames.Features.PoBrawl.PoBrawlPresserService>();
-        services.AddSingleton<PoMiniGames.Features.PoCabinet.IPoCabinetAiService, PoMiniGames.Features.PoCabinet.PoCabinetAiService>();
+        services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlPresserService>();
+        services.AddSingleton<PoMiniGames.Features.PoCabinet.PoCabinetAiService>();
         services.AddSingleton<PoMiniGames.Features.PoBrawl.PoBrawlProgressStore>();
 
         // ConnectFive + TicTacToe online — turn-based 1v1 over SignalR. One shared

@@ -1,8 +1,8 @@
-// qualityTiers.js — the app's single quality authority (§GFX-21).
+// qualityTiers.js — the app's single quality authority.
 //
 // Every GFX module asks "how heavy may I be?" — postFx reads the `data-gfx`
 // attribute this module writes on <html>, gpuFx/weather/glass read the exports
-// below. Before this module the tier was a static attribute nobody owned.
+// below. This module is the only owner of the tier.
 //
 // Selection order: URL `?fx=high|medium|low` > localStorage `poFx.tier` >
 // computed from the device. `prefers-reduced-motion` caps the tier at medium

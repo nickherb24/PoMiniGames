@@ -1,12 +1,9 @@
 /* ══════════════════════════════════════════════════════════
    Home page
 
-   Rewritten alongside Index.razor's move from four mode-keyed sections to one
-   game-major grid. The previous file had grown to ~865 lines, most of it scoped
-   to markup that no longer existed anywhere in the component — .home-scores-*,
-   .home-demo-*, .home-quick-play, .home-highscores-*, .home-mode-btn--*,
-   .home-section-*. Scoped CSS only ever applies to this one component, so those
-   rules could not have been styling anything.
+   One game-major grid: a card per game, a chip per mode. Scoped CSS only ever
+   applies to this one component, so rules for markup Index.razor does not
+   render style nothing and should not be kept.
 
    Colour comes through the app.css tokens, never raw hex, or the page is
    unthemed in light mode.
@@ -18,23 +15,21 @@
        This is a flex item of `main.gl-content` (a column flex container); with
        no declared width it is sized shrink-to-fit, i.e. to its max-content
        width, and the max-width then only ever clamps a number it never reaches.
-       Measured before this line existed: the container settled at 699px and
-       stayed at 699px whether the viewport was 1440px or 1920px, so the game
-       grid collapsed to 2 columns, half the screen was empty, and the 13 cards
-       stacked into 7 rows that ran 375px past the fold on a 1440×900 laptop.
-       With the width declared it fills to its cap, the grid resolves to
-       4 columns and the page fits. Phone widths are unaffected — there
-       `min(…, 100%)` already resolves to the viewport. 2026-09-11. */
+       Without it the container settles at 699px whether the viewport is 1440px or
+       1920px, so the game grid collapses to 2 columns, half the screen is empty,
+       and the cards stack into rows that run past the fold on a laptop. With the
+       width declared it fills to its cap and the grid resolves to its full column
+       count. Phone widths are unaffected — there `min(…, 100%)` already resolves
+       to the viewport. */
     width: 100%;
     /* 1280, not 1200: three columns need 410px each for the longest row (a title and
        four chips) to stay on one line. */
     max-width: min(1280px, 100%);
     margin: 0 auto;
-    /* Tightened from `--space-6 / --space-8` (32px top, 48px bottom). The home
-       page's job is to show all thirteen games at once; 80px of vertical padding
-       on a 720p laptop is 11% of the viewport spent on empty margin. The ≤640px
-       block near the bottom of this file still sets its own tighter values.
-       2026-09-11 UI audit. */
+    /* Tight padding: the home page's job is to show all the games at once, and
+       generous vertical padding on a 720p laptop is a large share of the viewport
+       spent on empty margin. The ≤640px block near the bottom of this file sets
+       its own tighter values. */
     padding: var(--space-4) var(--space-4) var(--space-4);
     isolation: isolate; /* contain the WebGL canvas stacking context */
     /* This is a flex item of `main.gl-content` (a column flex container), where
@@ -42,25 +37,24 @@
        content's min-content width. A card title that could not wrap pushed this
        to 399px inside a 390px phone, so the whole home page scrolled sideways.
        `min-width: 0` lets it shrink to the viewport and hands the wrapping job
-       to the cards, which now do it. 2026-08-07 browser audit #7. */
+       to the cards. */
     min-width: 0;
     /* Fill the content well (a column flex container) and hand the height on to the
        grid, which is what lets the rows grow into a tall screen instead of stopping
-       at 408 of 768px with the rest of the page empty. 2026-10-01. */
+       at 408 of 768px with the rest of the page empty. */
     flex: 1 1 auto;
     display: flex;
     flex-direction: column;
     justify-content: center;
-    /* 2026-08-08 audit #12: at 375×844 the home grid still reported
-       scrollWidth = 383 (~8 px past viewport) — single sub-pixel overflow from
-       either the WebGL canvas or the fxTilt perspective offset. `overflow-x:
+    /* At 375×844 the home grid would otherwise overflow the viewport by a few px,
+       from either the WebGL canvas or the fxTilt perspective offset. `overflow-x:
        clip` is the only thing that stops it without re-introducing a horizontal
        scrollbar. (overflow: hidden would also clip a sticky descendant's
        shadow.) */
     overflow-x: clip;
 }
 
-/* §4 GPU ambient particle canvas — sits behind the mesh gradient and content.
+/* GPU ambient particle canvas — sits behind the mesh gradient and content.
    pointer-events: none so taps fall through to the content underneath.
    position: absolute so it doesn't affect the layout flow. */
 .home-ambient {
@@ -96,7 +90,7 @@
    Visually hidden, not removed: it is the page's h1 for the outline and the
    element App.razor's FocusOnNavigate lands on. The visible brand is the top
    bar's, one row above; this one and its strapline cost 60px on a phone to say
-   it again. 2026-10-01. */
+   it again. */
 .home-title {
     position: absolute;
     width: 1px;
@@ -210,10 +204,9 @@
     transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1),
                 border-color 0.22s var(--ease-standard),
                 box-shadow 0.22s var(--ease-standard);
-    /* 2026-09-04 UI sweep: containment — each card is a self-contained layout
-       so a hover/focus repaint on one card never reaches the rest of the grid.
-       Pure additive (the existing transform/transition behaviour is unchanged);
-       on a 6-card row this is a noticeable scroll-paint win on low-end phones. */
+    /* Containment — each card is a self-contained layout so a hover/focus
+       repaint on one card never reaches the rest of the grid; a noticeable
+       scroll-paint win on low-end phones. */
     contain: layout paint;
 }
 
@@ -246,12 +239,12 @@
     white-space: nowrap;
 }
 
-/* Audit #10: optional subtitle under the card title — small, muted, single
+/* Optional subtitle under the card title — small, muted, single
    line — used for variants whose product name does not by itself describe the
    rules (e.g. Tic-Tac-Toe is actually 4-in-a-row on a 6×6 grid). */
 .home-card-subtitle {
-    /* 0.75rem floor (a11y sweep 2026-08-30): 0.72rem measured 11.52px — below
-       the 12px legibility line the rest of the app holds. */
+    /* 0.75rem floor: anything smaller (0.72rem is 11.52px) is below the 12px
+       legibility line the rest of the app holds. */
     font-size: 0.75rem;
     font-weight: 500;
     color: var(--color-text-secondary);
@@ -261,10 +254,9 @@
     background: var(--surface-2);
     border: 1px solid var(--color-border);
     white-space: nowrap;
-    /* Spacing comes from `.home-card-head`'s gap; the margin-left this rule used
-       to carry doubled up with it. The chip is also the last thing that should
-       win a width fight — let it shrink and ellipsise rather than overflow the
-       card on a 390px phone (browser audit #7). */
+    /* Spacing comes from `.home-card-head`'s gap, so no margin here. The chip is
+       also the last thing that should win a width fight — let it shrink and
+       ellipsise rather than overflow the card on a 390px phone. */
     min-width: 0;
     max-width: 100%;
     overflow: hidden;
@@ -279,7 +271,7 @@
 }
 
 /* ── Mode chips ────────────────────────────────────────────────────────────
-   One chip per mode. The chip row is now the sole owner of the 1P / 2P /
+   One chip per mode. The chip row is the sole owner of the 1P / 2P /
    Online / Demo labels — the card heading stays a static label so no card
    duplicates its own mode. */
 .home-card-modes {
@@ -337,11 +329,10 @@
     color: var(--color-text-secondary);
 }
 
-/* 2026-08-10 audit #3: cards with only one mode (Couple Quiz) used to render
-   an empty chip row or a duplicate-of-the-card-head link. The empty-state
-   chip now reads "How to play" — visually distinct from a mode pill, points
-   to the same destination, and gives every card the same chip-row weight
-   regardless of how many modes it supports. */
+/* Cards with only one mode (Couple Quiz) get a "How to play" chip —
+   visually distinct from a mode pill, points to the same destination, and
+   gives every card the same chip-row weight regardless of how many modes it
+   supports. */
 .home-mode-chip--info {
     border-style: dashed;
     font-weight: 600;
@@ -361,11 +352,11 @@
 
    The range ends at `entry 100%` — the instant the card is fully inside the
    scrollport — NOT at `cover 40%`, which is much later for a short element.
-   2026-08-07 browser audit #3: with `cover 40%` any card that was already fully
-   on screen at load was still only part-way through the animation, so at
-   1440x900 (where this page scrolls barely 50px) the bottom row was pinned at
-   opacity 0.45 with no scroll left to finish it — two games permanently looked
-   disabled. Anchoring the end to `entry` guarantees anything visible is opaque.
+   With `cover 40%` any card already fully on screen at load would be only
+   part-way through the animation, and where the page barely scrolls the bottom
+   row would stay semi-transparent with no scroll left to finish it, so games
+   would look permanently disabled. Anchoring the end to `entry` guarantees
+   anything visible is opaque.
 
    Wrapped in @supports because browsers without scroll-driven animations would
    otherwise run this as a normal time-based animation and fade every card in at
@@ -443,12 +434,11 @@
    as the row. Fourteen rows and the reel share the screen: on a 390×844 phone a
    row is 44px and a chip 36px tall and 36 to 57px wide, with 12.5px text.
 
-   This was two-up from 2026-09-11 with the chips under the title, which is the
-   layout that fits a short phone and is still used for one (next block). It only
-   fits by shrinking the chips to 26×28px with 10.9px text, on the reasoning that
-   "the card is the 44px target". The card has not been a link since 2026-08-11;
-   the chips are the only targets on it. On a tall phone that layout also stopped
-   616px down an 844px screen. */
+   Two-up with the chips under the title is the layout that fits a short phone
+   (next block), but it only fits by shrinking the chips to 26×28px with 10.9px
+   text. The card is not a link; the chips are the only targets on it, so they
+   must stay large. On a tall phone the two-up layout also stops 616px down an
+   844px screen. */
 @media (max-width: 640px) {
     .home-container {
         justify-content: flex-start;
@@ -484,7 +474,7 @@
 /* ── Short screens ───────────────────────────────────────────────────────────
    Keyed on HEIGHT, because that is the axis that fails: an iPhone SE has an
    iPhone 14's width and 177px less height, and fourteen full rows do not fit it.
-   Here a card is two lines, the title over its chips, the 2026-09-11 layout: two
+   Here a card is two lines, the title over its chips: two
    cards across on a short phone, three on a phone held sideways (where the reel is
    the fifteenth cell again). The chips cannot be large in half a 360px screen,
    four of them share about 150px, so they are as large as that allows: 30px tall

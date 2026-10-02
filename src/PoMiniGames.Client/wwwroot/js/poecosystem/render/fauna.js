@@ -1,4 +1,4 @@
-// fauna.js — ambient birds and fish (feature #8, 2026-09-23). Render-side only, on purpose:
+// fauna.js — ambient birds and fish. Render-side only, on purpose:
 // the sim's four species are wired through fixed-width arrays end to end (counts, the frame
 // encoder, the trait history, every chart and the server's chronicle), so a fifth sim
 // species is a schema change, not a feature. These are life the island is seen to have —

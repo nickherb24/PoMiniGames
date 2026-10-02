@@ -94,7 +94,7 @@ public class PoRacerSimAiTests
         (last - winner).Should().BeGreaterThan(0.2, "racing should produce a spread");
 
         // Verify boost pad triggering on all tracks
-        // Every track has pads since 2026-10-01 (all three shipped with none), a pad lifts top
+        // Every track has pads, a pad lifts top
         // speed as well as push, and a bot must not brake for the extra: the quickest bot's
         // nominal top speed is 325, so anything past 335 was a boost carried at full throttle.
         PoRacerTrackRegistry.GetTrack(trackId).BoostPads.Should().NotBeEmpty();
@@ -154,7 +154,7 @@ public class PoRacerSimAiTests
         VerifyTrialPaintAnalogAndPause();
     }
 
-    // 2026-09-30 rules: a time trial grids humans only, paint off the wire is validated, an
+    // Rules: a time trial grids humans only, paint off the wire is validated, an
     // analog axis is clamped and wins over its key, and a pause stops the race clock.
     private static void VerifyTrialPaintAnalogAndPause()
     {
@@ -209,7 +209,7 @@ public class PoRacerSimAiTests
         VerifyTowDriftAndStandIn();
     }
 
-    // 2026-10-01 rules: a human gets a tow and a non-drafting bot does not, a held drift keeps
+    // Rules: a human gets a tow and a non-drafting bot does not, a held drift keeps
     // its speed and pays out a boost on release, and a seat handed to the stand-in bot is driven
     // but loses its claim to the board. (Called from the helper above: the Unit tier is at its
     // 100-method ceiling.)

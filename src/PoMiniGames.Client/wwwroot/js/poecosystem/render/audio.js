@@ -112,7 +112,7 @@ export function createAudio() {
     const limiter = ctx.createDynamicsCompressor();
     limiter.threshold.value = -8; limiter.knee.value = 6; limiter.ratio.value = 6;
     limiter.attack.value = 0.004; limiter.release.value = 0.18;
-    // Underwater (2026-09-30): one low-pass on the whole mix, wide open above the surface.
+    // Underwater: one low-pass on the whole mix, wide open above the surface.
     // Sitting between the master and the limiter, it muffles the score as well — which is
     // what a head under water hears.
     underFilter = ctx.createBiquadFilter();
@@ -598,7 +598,7 @@ export function createAudio() {
     } catch { /* best effort */ }
   }
 
-  // Sonification (2026-09-30): a population row as a chord, a run of rows as a melody.
+  // Sonification: a population row as a chord, a run of rows as a melody.
   // One voice per species, each in its own octave and timbre (the same four the leitmotif
   // uses), and the pitch is how many of them there were — on a pentatonic scale, so any
   // year of any island is consonant with the one before it.

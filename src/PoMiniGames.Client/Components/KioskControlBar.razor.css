@@ -64,7 +64,7 @@
     text-align: center;
 }
 
-/* 2026-09-04: Demo N of M progress pill. Anchors repeat viewers on where they
+/* Demo N of M progress pill. Anchors repeat viewers on where they
    are in the loop without competing for attention — same colour as the
    countdown, smaller font, no animation. Hidden via the parent component
    (no @if) until the first demo page reports its current index, so we

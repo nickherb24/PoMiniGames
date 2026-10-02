@@ -1,8 +1,8 @@
-// debris.js — dynamic voxel clusters and their attrition chain (PRD §F5):
+// debris.js — dynamic voxel clusters and their attrition chain:
 //   detached cluster → rigidbody → (hit / hard impact) hierarchical split →
 //   below the floor → particle burst → fade → gone.
 //
-// Hard caps, enforced deterministically (PRD §6): MAX_BODIES active rigidbodies —
+// Hard caps, enforced deterministically: MAX_BODIES active rigidbodies —
 // beyond it the frozen/oldest/smallest are demoted to particles — and MAX_PARTICLES in
 // a fixed InstancedMesh ring buffer (overwriting the oldest slot, so overflow can never
 // allocate). Clusters at rest freeze to static after REST_FREEZE_S so a settled ruin
@@ -21,7 +21,7 @@ export const MAX_BODIES = 90;
 const MAX_PARTICLES = 2000;
 const FRAG_FLOOR = 14;        // voxels; smaller clusters burst straight to particles
 const FRAG_IMPACT_SPEED = 8;  // m/s relative velocity that fragments on impact
-// Hierarchical attrition (PRD §F5): a piece survives at most this many impact
+// Hierarchical attrition: a piece survives at most this many impact
 // generations, then a hard impact bursts it to particles. Without the ceiling, every
 // landing re-split every half and the cascade pinned the body cap forever.
 const MAX_FRAG_DEPTH = 3;
@@ -153,7 +153,7 @@ export class DebrisManager {
       mesh, body, cells, dims, palette, scale, voxels, material: mat,
       age: 0, restTime: 0, frozen: false, fragCooldown: 0, fragDepth: fragDepth ?? 0,
     };
-    // Impacts fragment (PRD attrition): queue rather than mutate inside cannon's
+    // Impacts fragment: queue rather than mutate inside cannon's
     // collide callback — the physics step must not see bodies vanish mid-solve.
     body.addEventListener('collide', (e) => {
       const rel = Math.abs(e.contact.getImpactVelocityAlongNormal());
@@ -184,7 +184,7 @@ export class DebrisManager {
     this._removePiece(idx);
 
     // End of the hierarchy: past the depth ceiling or too small to halve, the piece
-    // scales down to transient particles (the PRD's dissolve step).
+    // scales down to transient particles.
     if (piece.voxels < FRAG_FLOOR * 2 || piece.fragDepth >= MAX_FRAG_DEPTH) {
       this._burstFromPiece(piece);
       return;
@@ -263,7 +263,7 @@ export class DebrisManager {
     }
   }
 
-  /** Radial blast: impulse on every piece within radius (alt-fire, PRD §F4). */
+  /** Radial blast: impulse on every piece within radius (alt-fire). */
   /**
    * Radial impulse from a detonation.
    *
@@ -357,7 +357,7 @@ export class DebrisManager {
     piece.mesh.material.dispose();
     if (silent) piece.cells = null;
     // Anything stacked on the removed piece just lost its floor — wake it, or a
-    // frozen chunk above stays nailed to the air (2026-08-18 review finding).
+    // frozen chunk above stays nailed to the air.
     const reach = Math.max(piece.dims[0], piece.dims[1], piece.dims[2]) * piece.scale;
     this.wakeNear(new THREE.Vector3(
       piece.body.position.x, piece.body.position.y, piece.body.position.z), reach + 2);

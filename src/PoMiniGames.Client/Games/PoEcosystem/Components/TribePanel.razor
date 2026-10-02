@@ -1,12 +1,11 @@
 @using PoMiniGames.Shared.Games.PoEcosystem
 @inject UiFeedbackService Feedback
-@* The Tribes tab (2026-09-30): the clans side by side, the ladder, their diplomacy, and the
-   island's written record. The clan cards and the territory map used to be the Analytics
-   tab while the ladder and the web were here — one subject on two tabs.
+@* The Tribes tab: the clans side by side, the ladder, their diplomacy, and the island's
+   written record.
 
    The ladder is read straight from the sim (sim/behavior/tech.js); the chronicle is a
    server-side model call, so it is written on request — one saga per decade at most. Sagas
-   are kept IN the island now (the sim's journal, carried by the snapshot), so a resumed or
+   are kept IN the island (the sim's journal, carried by the snapshot), so a resumed or
    cloud-loaded island still has its chronicle, and the journal can be printed. *@
 <div class="poeco-tribe">
     <div class="poeco-tribe-top">

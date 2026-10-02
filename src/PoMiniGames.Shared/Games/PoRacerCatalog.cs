@@ -2,7 +2,7 @@ namespace PoMiniGames.Shared.Games;
 
 /// <summary>
 /// One track: its copy, its medal laps (seconds, best lap of a race) and the spline knots.
-/// Medals are set against measured laps (a scripted keyboard driver, time trial, 2026-09-30) and
+/// Medals are set against measured laps (a scripted keyboard driver, time trial) and
 /// the floor a car can physically do: the centerline flat out at 320 units/s is 16.0 / 17.5 /
 /// 17.7 s on the three tracks, and an inside line beats that. Gold needs a mostly clean lap on
 /// the inside line, silver is a tidy centerline lap, bronze is getting round with a few hits.
@@ -28,8 +28,8 @@ public static class PoRacerCatalog
     public static readonly IReadOnlyList<string> Liveries = ["stripe", "dual", "carbon", "neon"];
     public static readonly IReadOnlyList<string> Difficulties = ["easy", "medium", "hard"];
 
-    // Medal laps, re-measured 2026-10-01 after boost pads, the drift payout and impact damage went in
-    // (a keyboard-only scripted driver through the real page, time trial): clean laps came out at
+    // Medal laps, measured with boost pads, the drift payout and impact damage in play
+    // (a keyboard-only scripted driver through the real page, time trial): clean laps come out at
     // 14.2-14.8 s on the oval, 17.3 on the figure-8 with four wall touches, 16.6-16.8 on the rally
     // stage. Gold is a mostly clean lap on an inside line, silver a tidy one, bronze a lap with a few hits.
     public static IReadOnlyList<PoRacerTrackInfo> Tracks { get; } = Array.AsReadOnly(new[]

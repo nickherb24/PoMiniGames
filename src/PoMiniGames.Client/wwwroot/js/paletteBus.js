@@ -1,4 +1,4 @@
-// paletteBus.js — the dynamic gradient/atmosphere contract (§GFX-15).
+// paletteBus.js — the dynamic gradient/atmosphere contract.
 //
 // The app's accent colors were static CSS vars (--fx-accent / --fx-accent-2,
 // read by ambientParticles' ray-marched field and gpuFx's particle tint). This

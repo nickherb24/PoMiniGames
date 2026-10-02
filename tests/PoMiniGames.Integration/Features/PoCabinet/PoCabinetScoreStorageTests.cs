@@ -44,7 +44,7 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
     public async Task SubmitAndReadRoundTrips_TrackPartitionsHold_AndOverwriteIsRatcheting()
     {
         if (!_factory.DockerAvailable) return;
-        // §2 CSRF: the POSTs below are state-changing /api/* calls and are refused without
+        // The POSTs below are state-changing /api/* calls and are refused without
         // the synchroniser token. Arm up front so the ratcheting assertions at the end
         // exercise a real 200 rather than collapsing into a blanket 403.
         // A fresh identity per run: this tier writes to the developer's local Azurite, and a
@@ -62,8 +62,8 @@ public sealed class PoCabinetScoreStorageTests : IClassFixture<TestWebApplicatio
         // Laps are server-timed from their input logs (PoCabinetLapVerifier), so each submit
         // carries a real browser-recorded proof and the claim is only logged. The fixtures'
         // own times drive the assertions: clean ≈ 26.62 s, messy ≈ 24.79 s (faster), wild ≈
-        // 29.28 s (slower), all on Capitol; maralago-clean ≈ 29.54 s. (100-car races since
-        // 2026-09-30; the generator checks that ordering before it writes the file.)
+        // 29.28 s (slower), all on Capitol; maralago-clean ≈ 29.54 s. (The generator checks
+        // that ordering before it writes the file.)
         PoCabinetScoreDto Submit(string proofName, int position)
         {
             var proof = PoCabinetLapProofs.Get(proofName);

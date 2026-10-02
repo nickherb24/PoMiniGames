@@ -19,7 +19,7 @@ namespace PoMiniGames.Shared.Games;
 /// subject id (server-canonical, server-supplied — the client never authors it).
 /// </summary>
 // The lobby state and event records live in LobbyShared.cs (LobbyState<PoBrawlLobbyPlayer>,
-// LobbyEvent) since 2026-09-14 — one wire shape for every ready/start lobby. The 1v1 cap
+// LobbyEvent) — one wire shape for every ready/start lobby. The 1v1 cap
 // is PoBrawlLobbyService.Cap and arrives on the wire as LobbyState.MaxPlayers.
 public sealed record PoBrawlLobbyPlayer(
     string ConnectionId,
@@ -48,7 +48,7 @@ public enum PoBrawlOutcome
 
 // ──────────────────────  Post-fight press conference  ──────────────────────
 //
-// POST /api/pobrawl/presser (2026-09-23). One cheap model call per finished local
+// POST /api/pobrawl/presser. One cheap model call per finished local
 // match, and only when the result modal is actually shown: a line in the speaker's
 // voice about the fight that just happened. The request is numbers and roster ids
 // ONLY — the server resolves both names from PoBrawlRoster and never puts a

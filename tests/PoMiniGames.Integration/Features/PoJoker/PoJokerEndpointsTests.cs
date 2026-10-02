@@ -29,7 +29,7 @@ public sealed class PoJokerEndpointsTests : IClassFixture<TestWebApplicationFact
             .CreateClient();
     }
 
-    // §2 CSRF: the analyze/explain POSTs are state-changing /api/* calls and are refused
+    // The analyze/explain POSTs are state-changing /api/* calls and are refused
     // without a synchroniser token. Arming lives in InitializeAsync rather than the
     // constructor because fetching the token is an HTTP round trip.
     public Task InitializeAsync() => _client.ArmAntiforgeryAsync();
@@ -64,42 +64,6 @@ public sealed class PoJokerEndpointsTests : IClassFixture<TestWebApplicationFact
         analysis.OriginalJoke.Id.Should().Be(joke.Id);
         analysis.Rating.Should().NotBeNull("the analyze endpoint always attaches a rating");
         analysis.Rating!.Cleverness.Should().BeInRange(1, 10);
-    }
-
-    [Fact]
-    public async Task Leaderboard_ReturnsOkArray()
-    {
-        var response = await _client.GetAsync("/api/joker/leaderboard?sortBy=Triumph&top=25");
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var entries = await response.Content.ReadFromJsonAsync<List<LeaderboardEntryDto>>();
-        entries.Should().NotBeNull();
-    }
-
-    [Fact]
-    public async Task Analyze_ThenLeaderboard_SurfacesSession_WhenStorageAvailable()
-    {
-        var sessionId = $"itest-{Guid.NewGuid():N}";
-        var request = new HttpRequestMessage(HttpMethod.Post, "/api/joker/analyze")
-        {
-            Content = JsonContent.Create(FakeJokeApiClient.CannedJoke)
-        };
-        request.Headers.Add("X-Session-Id", sessionId);
-
-        var analyzeResponse = await _client.SendAsync(request);
-        analyzeResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-
-        var entries = await _client.GetFromJsonAsync<List<LeaderboardEntryDto>>("/api/joker/leaderboard?top=100");
-        entries.Should().NotBeNull();
-
-        // Storage persistence is best-effort: when Azurite is running (Docker available) the
-        // session is recorded and appears; when it is not, the leaderboard is simply empty.
-        // Either outcome is valid — assert the round-trip only when storage produced rows.
-        if (entries!.Count > 0)
-        {
-            entries.Should().Contain(e => e.SessionId == sessionId,
-                because: "an analyzed joke is persisted under its X-Session-Id and surfaces on the leaderboard");
-        }
     }
 
     /// <summary>Deterministic in-process replacement for the JokeAPI.dev HTTP client.</summary>

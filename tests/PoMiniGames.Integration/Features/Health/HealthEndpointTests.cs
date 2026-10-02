@@ -31,8 +31,8 @@ public sealed class HealthEndpointTests : IClassFixture<TestWebApplicationFactor
     [InlineData("/api/health/ping", null, null, false)]
     // Root health carries both the overall status and the per-check breakdown.
     [InlineData("/health", "status", "checks", false)]
-    // The canonical Kubernetes / App Service liveness probe; same body as /api/health.
-    [InlineData("/api/health/liveness", "status", null, false)]
+    // The JSON health report the deploy smoke step reads.
+    [InlineData("/api/health", "status", "checks", false)]
     public async Task DiagnosticRoutes_ReturnOk_WithExpectedJsonShape(
         string route, string? statusKey, string? checksKey, bool expectJsonArray)
     {

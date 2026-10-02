@@ -1,6 +1,6 @@
 // pojevarena/creatures.js — procedural creature art and the per-unit animation state machine.
 //
-// Everything is drawn from the creature's own data (SPEC §4.8), so a spectator can tell creatures
+// Everything is drawn from the creature's own data, so a spectator can tell creatures
 // apart without the inspector:
 //   body     ← mass and speed (heavy = wide and plated, fast = sleek teardrop with a tail)
 //   features ← abilities (throat sac, forelimbs, antennae, shield plate, back plates, fins)

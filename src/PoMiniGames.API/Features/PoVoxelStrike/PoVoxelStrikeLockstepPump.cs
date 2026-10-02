@@ -5,16 +5,13 @@ namespace PoMiniGames.Features.PoVoxelStrike;
 
 /// <summary>
 /// Drains every active lockstep session once per <see cref="PoVoxelStrikeLockstepService.TickIntervalMs"/>
-/// and broadcasts the resulting frame to the session's SignalR group. Replaces the
-/// earlier "host polls <c>PumpFrame</c>" model, which silently stalled when the host's
-/// websocket reconnected (the 60s client timeout path cleared the lobby before the
-/// race sim hit its safety cap; same recovery bug that PoRacer fixed in 2026-07-18).
+/// and broadcasts the resulting frame to the session's SignalR group.
 /// </summary>
 /// <remarks>
-/// <para><b>2026-08-18 — host-independent pump:</b> the original hub method depended on
-/// the host's SignalR connection to fire the timer; a transient host disconnect
-/// silently froze every peer's input application. Moving the pump to a hosted service
-/// means the timer survives a host reconnect — peers see a brief gap in frames, not
+/// <para><b>Host-independent pump:</b> a hub method that depends on the host's SignalR
+/// connection to fire the timer would silently freeze every peer's input application on a
+/// transient host disconnect (the 60s client timeout path clears the lobby). As a hosted
+/// service the timer survives a host reconnect — peers see a brief gap in frames, not
 /// a dead simulation.</para>
 /// </remarks>
 public sealed class PoVoxelStrikeLockstepPump : BackgroundService
@@ -60,7 +57,7 @@ public sealed class PoVoxelStrikeLockstepPump : BackgroundService
             {
                 if (_lockstep.IsIdle)
                 {
-                    // Idle backoff (audit 2026-08-30 #7): the pump starts at process boot
+                    // Idle backoff: the pump starts at process boot
                     // but the co-op game is rarely in play, and a 50ms PeriodicTimer wake
                     // with no session to drain is 20 pointless wakes/sec for the entire
                     // process lifetime. With no session, sleep at 1/10th the tick rate;

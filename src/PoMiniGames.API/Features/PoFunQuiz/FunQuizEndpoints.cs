@@ -18,19 +18,16 @@ public static class FunQuizEndpoints
         var group = app.MapGroup("/funquiz").WithTags("PoFunQuiz");
 
         // ── Question generation ──────────────────────────────────────────
-        // 2026-09-12: the 60-second HybridCache that used to wrap this call is GONE.
-        // It memoized the finished, already-dealt list of questions under
-        // `funquiz:q:{category}:{count}`, so every game started inside the same minute
-        // received a byte-identical quiz — same questions, same order, same option order.
-        // That defeated the per-game shuffling in AiQuizGeneratorService.SelectVariedSet
-        // and was a large part of why the quiz felt canned.
+        // This call is deliberately not cached here. Memoizing the finished, already-dealt
+        // list of questions would give every game started inside the same window a
+        // byte-identical quiz — same questions, same order, same option order — defeating
+        // the per-game shuffling in AiQuizGeneratorService.SelectVariedSet.
         //
-        // Removing it costs nothing upstream, which is the point: the generator has its
-        // OWN HybridCache over the question POOL (6 h, stampede-protected), so concurrent
-        // requests still collapse into a single model call. The difference is that the
-        // layer which is allowed to cache now caches the raw material, and the dealing —
-        // which subset, in which order, with options shuffled — happens per request.
-        // Cache the pool, not the hand.
+        // That costs nothing upstream: the generator has its OWN HybridCache over the
+        // question POOL (6 h, stampede-protected), so concurrent requests still collapse
+        // into a single model call. The layer which is allowed to cache caches the raw
+        // material, and the dealing — which subset, in which order, with options
+        // shuffled — happens per request. Cache the pool, not the hand.
 
         group.MapGet("/quiz/questions", async (
             [FromQuery] int count,
@@ -39,10 +36,10 @@ public static class FunQuizEndpoints
             CancellationToken cancellationToken) =>
         {
             if (count <= 0) count = 10;
-            // A too-large count is a malformed request, not a rate-limit hit. This returned 429
-            // until 2026-09-12, which put a second, unrelated meaning on the one status code
-            // the rate limiter owns — and the client surfaces 429 as "wait and retry", advice
-            // that would never make count=500 succeed.
+            // A too-large count is a malformed request, not a rate-limit hit. Returning 429
+            // would put a second, unrelated meaning on the one status code the rate limiter
+            // owns — and the client surfaces 429 as "wait and retry", advice that would never
+            // make count=500 succeed.
             if (count > 50) return Results.BadRequest(new { error = "count must be between 1 and 50." });
             if (string.Equals(category, "BrowserAI", StringComparison.OrdinalIgnoreCase))
             {
@@ -69,7 +66,7 @@ public static class FunQuizEndpoints
         group.MapGet("/leaderboard", async (
             [FromQuery] string? category,
             [FromQuery] int? top,
-            ILeaderboardRepository repo,
+            LeaderboardRepository repo,
             CancellationToken cancellationToken) =>
         {
             var cat = Enum.TryParse<QuestionCategory>(category, ignoreCase: true, out var c) ? c : QuestionCategory.General;
@@ -82,7 +79,7 @@ public static class FunQuizEndpoints
         group.MapPost("/leaderboard", async (
             [FromBody] LeaderboardEntry body,
             HttpContext ctx,
-            ILeaderboardRepository repo,
+            LeaderboardRepository repo,
             CancellationToken cancellationToken) =>
         {
             // Anti-spoof: override any client-supplied PlayerName with the email claim
@@ -104,11 +101,6 @@ public static class FunQuizEndpoints
         })
         .RequireAuthorization()
         .WithName("FunQuiz_SubmitLeaderboard");
-
-        // GET /runtime/status and GET /lobby/open were removed 2026-08-31: neither had a client
-        // or test consumer. The mock-data banner reads AuthState.UsingMockData (server-injected),
-        // not a per-game probe, and the lobby browser surfaces open games through the SignalR
-        // hub rather than this REST list.
 
         return app;
     }

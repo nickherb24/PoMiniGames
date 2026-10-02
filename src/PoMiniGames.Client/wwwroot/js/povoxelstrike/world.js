@@ -33,7 +33,7 @@ import {
 export { ARENA_HALF };
 export { SPAWN_Z };
 
-/** Deterministic PRNG so the same seed reproduces the same world (PRD §F3). */
+/** Deterministic PRNG so the same seed reproduces the same world. */
 export function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {

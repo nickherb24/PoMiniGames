@@ -28,12 +28,10 @@
                    Mode="@_introMode"
                    OnStart="DismissIntro" />
     }
-    @* 2026-07-16: the GameLanding setup card (Player 1 / Player 2 name inputs +
-       category picker behind a "Start" button) was removed — it was an intro page
-       between the home page and the quiz. The player's name now comes from their
-       stored profile, Player 2 keeps its default label, and the category defaults
-       to General; the quiz loads and starts on navigation (see OnInitializedAsync).
-       This block is now only the load / load-failed state. *@
+    @* No setup card: the player's name comes from their stored profile, Player 2
+       keeps its default label, and the category defaults to General; the quiz loads
+       and starts on navigation (see OnInitializedAsync). This block is only the
+       load / load-failed state. *@
     @if (_isLoading)
     {
         <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Loading questions…</span></div>
@@ -53,7 +51,7 @@
         var pickIdx = showReveal ? _selected[_currentIndex].selected : -1;
         var correctIdx = showReveal ? q.CorrectOptionIndex : -1;
         <div class="fq-question gps-game-card">
-            <h2 class="gps-phase-h">Question @(_currentIndex + 1) of @_questions.Count@(_playMode == "2p" ? $" · {_currentPlayerLabel}'s turn" : "")</h2>
+            <h2 class="gps-phase-h">Question @(_currentIndex + 1) of @_questions.Count</h2>
             <p class="fq-text">@q.Text</p>
             @* Solo/2P-shared-screen options now share the same numbered-key
                affordance as the split-screen board so the two modes look like
@@ -84,14 +82,7 @@
                     </button>
                 }
             </div>
-            @if (_playMode == "2p")
-            {
-                <p class="fq-2p-scores">@_playerName: <strong>@_score1</strong> · @_player2Name: <strong>@_score2</strong></p>
-            }
-            else
-            {
-                <p>Score: <strong>@_score</strong> · Streak: @_streak</p>
-            }
+            <p>Score: <strong>@_score</strong> · Streak: @_streak</p>
             @* Solo-mode reveal line: shows the correct option and your pick
                after a wrong answer. The line fades out on the advance timer so
                the quiz never stops moving. *@
@@ -115,7 +106,7 @@
     }
     else if (_currentIndex < _questions.Count && _splitScreen)
     {
-        // §Best-practice: split-screen local 2P — one question, two players
+        // Split-screen local 2P — one question, two players
         // answer simultaneously on a shared display. Each side has its own
         // 4 option buttons (1/2/3/4 on left, 6/7/8/9 on right) plus a per-player
         // status badge (locked / waiting). Hotkeys register via JS interop
@@ -215,9 +206,7 @@
     /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
     /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
-    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
-    // §Best-practice (2026-07-07): split-screen local 2P. Two players share
+    // Split-screen local 2P. Two players share
     // one keyboard + one display. Left side keys 1/2/3/4, right side keys
     // 6/7/8/9 (the 5 is unused — it's where a USB keyboard's gap sits, so
     // leaving it free avoids accidental cross-side hits). Both players see
@@ -258,7 +247,7 @@
 
     private RenderFragment GameSummaryContent => _playMode switch
     {
-        "2ps" or "2p" => @<div>
+        "2ps" => @<div>
             <div class="fq-2p-finale">
                 @if (_score1 == _score2)
                 {
@@ -302,30 +291,24 @@
     private int _streak2;
     private int _maxStreak1;
     private int _maxStreak2;
-    // Player 1 takes even questions, Player 2 takes odd (0-indexed). Solo ignores this.
-    private int _currentPlayer => _playMode == "2p" ? (_currentIndex % 2 == 0 ? 1 : 2) : 1;
-    private string _currentPlayerLabel => _currentPlayer == 1 ? _playerName : _player2Name;
     private bool _scoreSubmitted;
-    // §Best-practice (2026-07-07): split-screen local 2P state. _splitPicks
+    // Split-screen local 2P state. _splitPicks
     // holds the picked option index (-1 = none) for each player. The reveal
     // overlay fires when both >= 0; a short timer advances to the next
     // question. State is per-question (reset in ResetSplitState()).
     private readonly int[] _splitPicks = { -1, -1, -1 };
     private readonly bool[] _splitResults = { false, false, false };
     private string _playMode = "solo";
-    // _landingTitle / _landingSubtext / _landingCta went with the setup card
-    // (2026-07-16) — nothing renders a landing screen any more.
     private readonly Dictionary<int, (int selected, bool correct)> _selected = new();
     private List<StatItem>? _statItems;
-    // Bug fix (2026-08-07): demo auto-pick loop sets this on Dispose so a
-    // late callback doesn't touch disposed state.
+    // Set on Dispose so a late demo auto-pick callback doesn't touch disposed state.
     private bool _disposed;
 
     private bool IsGameOver => _questions.Count > 0
         && _currentIndex >= _questions.Count
         && _playMode != "demo"; // demo mode replays forever; never surface GameOver modal
 
-    // §Best-practice (2026-07-07): split-screen simultaneous-answer logic.
+    // Split-screen simultaneous-answer logic.
     // Each player can lock in their pick independently; once both are locked,
     // score them against the correct answer, flash the reveal overlay, and
     // advance on a short delay. Per-question state lives in _splitPicks /
@@ -402,19 +385,12 @@
     protected override void OnInitialized()
     {
         // Demo runs forever (GameOver stays suppressed), so it is resolved first and
-        // overrides whatever ?mode= the user supplied. Split-screen is a sub-variant
-        // of two-player, not a mode of its own — see GameModes.IsSplitScreen.
-        // The canonical /funquiz/2player route means SPLIT-screen; only the legacy
-        // ?mode=2p form selects the shared-screen, alternating-turns variant. That
-        // asymmetry predates the uniform mode scheme and is preserved deliberately —
-        // flipping it would silently change what an existing bookmark opens.
-        var routeMode = GameModes.Parse(Mode, ModeQuery, DemoQuery);
-        var sharedScreen = string.Equals(ModeQuery, "2p", StringComparison.OrdinalIgnoreCase)
-                           && !GameModes.IsSplitScreen(Mode, ModeQuery);
+        // wins. /funquiz/2player is the split-screen board.
+        var routeMode = GameModes.Parse(Mode);
         _playMode = routeMode switch
         {
             GameMode.Demo => "demo",
-            GameMode.TwoPlayer => sharedScreen ? "2p" : "2ps",
+            GameMode.TwoPlayer => "2ps",
             _ => "solo",
         };
         _splitScreen = _playMode == "2ps";
@@ -430,24 +406,20 @@
         if (!firstRender) return;
         if (_splitScreen)
         {
-            // §Best-practice: register a window-level keydown listener via a tiny
-            // JS interop. We can't do this purely in Blazor because Razor can't
-            // subscribe to global keyboard events without a DOM hook.
-            // Imported here rather than loaded eagerly from index.html. The old
-            // comment in poFunQuizSplitHotkeys.js explained it had to be a
-            // non-deferred global script precisely because this call runs on first
-            // render — awaiting the import removes that constraint, and the other
-            // ~25 pages in the app stop fetching a split-screen quiz hotkey handler.
+            // Register a window-level keydown listener via a tiny JS interop. We
+            // can't do this purely in Blazor because Razor can't subscribe to
+            // global keyboard events without a DOM hook.
+            // Imported here rather than loaded eagerly from index.html, so the
+            // other ~25 pages in the app do not fetch a split-screen quiz hotkey
+            // handler.
             await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
             await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.register", DotNetObjectReference.Create(this));
         }
-        // 2026-08-10 audit: solo mode had no keyboard handling at all — the
-        // hotkey JS only registered for _splitScreen, so a player on a laptop
-        // had to aim with the mouse. Reuse the same bridge by registering with
-        // side="S" (solo); the script already routes 1-4 to whatever side is
-        // registered and ignores inputs/textareas. A second DotNetObjectReference
-        // would be wasted — the same instance handles both invocations.
-        else if (_playMode is "solo" or "2p")
+        // Solo mode reuses the same hotkey bridge by registering with side="S"
+        // (solo); the script already routes 1-4 to whatever side is registered and
+        // ignores inputs/textareas. A second DotNetObjectReference would be
+        // wasted — the same instance handles both invocations.
+        else if (_playMode == "solo")
         {
             await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
             await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.registerSolo", DotNetObjectReference.Create(this));
@@ -483,7 +455,7 @@
     public Task OnSoloHotkeyAsync(string side, int optionIndex)
     {
         if (_splitScreen) return Task.CompletedTask;
-        if (_playMode != "solo" && _playMode != "2p") return Task.CompletedTask;
+        if (_playMode != "solo") return Task.CompletedTask;
         if (_currentIndex >= _questions.Count) return Task.CompletedTask;
         if (_selected.ContainsKey(_currentIndex)) return Task.CompletedTask; // already revealed
         var q = _questions[_currentIndex];
@@ -517,13 +489,12 @@
             var url = $"/api/funquiz/quiz/questions?count=10&category={Uri.EscapeDataString(_category)}";
             using var response = await Http.GetAsync(url);
 
-            // 2026-09-12: this was GetFromJsonAsync, so every non-2xx became an
-            // HttpRequestException whose Message is the framework's resource string —
-            // the player was shown "net_http_message_not_success_statuscode_reason, 429,
-            // Too Many Requests" on a card that offered only a Retry button, which at that
-            // moment was the one action guaranteed to fail again. 429 is the one status here
-            // that is purely a matter of waiting, so it gets a countdown and an automatic
-            // second attempt instead of a stack-trace fragment.
+            // The status is checked by hand instead of GetFromJsonAsync: that turns every
+            // non-2xx into an HttpRequestException whose Message is the framework's
+            // resource string ("net_http_message_not_success_statuscode_reason, 429, ..."),
+            // shown on a card whose only action is a Retry that would fail again. 429 is
+            // the one status here that is purely a matter of waiting, so it gets a
+            // countdown and an automatic second attempt.
             if ((int)response.StatusCode == 429)
             {
                 var wait = RetryAfterSeconds(response);
@@ -575,12 +546,11 @@
             _selected.Clear();
             _scoreSubmitted = false;
             _statItems = null;
-            // Bug fix (2026-08-07): /funquiz/demo used to load Q1 and then
-            // freeze, because SelectAnswer only fires on a real click and the
-            // kiosk has no one to click. Spawn a detached loop that auto-picks
+            // /funquiz/demo: SelectAnswer only fires on a real click and the
+            // kiosk has no one to click, so spawn a detached loop that auto-picks
             // an answer every few seconds and rolls through all 10 questions,
             // so the attract reel shows question variety instead of a stuck
-            // "What is the capital of France?".
+            // first question.
             if (_playMode == "demo" && _demoTimer is null)
             {
                 _demoTimer = new System.Threading.Timer(
@@ -621,7 +591,7 @@
         return (int)Math.Clamp(Math.Ceiling(delta ?? 5), 3, 60);
     }
 
-    // Demo auto-pick loop (2026-08-07). Picks a random option, reveals, advances.
+    // Demo auto-pick loop. Picks a random option, reveals, advances.
     private System.Threading.Timer? _demoTimer;
     private const int DemoAutoPickDelayMs = 2800;
     private async Task DemoAdvanceAsync()
@@ -649,10 +619,9 @@
             await InvokeAsync(StateHasChanged);
             return;
         }
-        // 2026-08-10: SelectAnswer now schedules its own reveal-timer advance
+        // SelectAnswer schedules its own reveal-timer advance
         // (AdvanceAfterSoloRevealAsync) for every play mode including demo,
-        // so the demo timer just has to wait for that to land. The previous
-        // synchronous _currentIndex++ path in here was dead and is gone.
+        // so the demo timer just has to wait for that to land.
     }
 
     private void SelectAnswer(int option)
@@ -663,60 +632,32 @@
         var correct = option == q.CorrectOptionIndex;
         _selected[_currentIndex] = (option, correct);
 
-        if (_playMode == "2p")
+        if (correct)
         {
-            var bonus = StreakBonusFor(_currentPlayer == 1 ? _streak1 : _streak2);
-            if (correct)
+            _score += q.BasePoints + StreakBonus();
+            _streak++;
+            if (_streak > _maxStreak) _maxStreak = _streak;
+            if (_streak >= 3)
             {
-                if (_currentPlayer == 1)
-                {
-                    _score1 += q.BasePoints + bonus;
-                    _streak1++;
-                    if (_streak1 > _maxStreak1) _maxStreak1 = _streak1;
-                }
-                else
-                {
-                    _score2 += q.BasePoints + bonus;
-                    _streak2++;
-                    if (_streak2 > _maxStreak2) _maxStreak2 = _streak2;
-                }
+                _ = Feedback.CueAsync("quiz", "streakChime");
             }
             else
             {
-                if (_currentPlayer == 1) _streak1 = 0;
-                else _streak2 = 0;
+                _ = Feedback.CueAsync("quiz", "correct");
             }
         }
         else
         {
-            if (correct)
-            {
-                _score += q.BasePoints + StreakBonus();
-                _streak++;
-                if (_streak > _maxStreak) _maxStreak = _streak;
-                if (_streak >= 3)
-                {
-                    _ = Feedback.CueAsync("quiz", "streakChime");
-                }
-                else
-                {
-                    _ = Feedback.CueAsync("quiz", "correct");
-                }
-            }
-            else
-            {
-                _streak = 0;
-                _ = Feedback.CueAsync("quiz", "wrong");
-            }
+            _streak = 0;
+            _ = Feedback.CueAsync("quiz", "wrong");
         }
 
-        // 2026-08-10 audit: solo/2p-shared-screen used to increment
-        // _currentIndex synchronously here, so the reveal highlight and the
-        // "Not quite / correct was X" line flashed for zero frames before the
-        // page re-rendered Q2. Schedule the advance on a short timer instead
-        // — long enough for the player to read the highlight, short enough
-        // that the quiz never feels stuck. Demo mode also routes through the
-        // timer so its auto-pick loop can pick up the revealed state on the
+        // The advance runs on a short timer, not synchronously: advancing
+        // _currentIndex here would show the reveal highlight and the "Not quite /
+        // correct was X" line for zero frames before the page re-rendered Q2.
+        // The timer is long enough for the player to read the highlight, short
+        // enough that the quiz never feels stuck. Demo mode also routes through
+        // the timer so its auto-pick loop can pick up the revealed state on the
         // next tick.
         _ = AdvanceAfterSoloRevealAsync();
     }
@@ -736,19 +677,6 @@
         {
             _scoreSubmitted = true;
             _ = SubmitSoloOutcomeAsync();
-        }
-        else if (IsGameOver && _playMode == "2p")
-        {
-            // Record a head-to-head match so the recent-activity feed + /profile
-            // reflect the 2P result, even though there's no server leaderboard.
-            _ = RecordLocalTwoPlayerAsync();
-            _statItems = new()
-            {
-                new StatItem { Label = "P1 score", Value = _score1.ToString() },
-                new StatItem { Label = "P1 streak", Value = _maxStreak1.ToString() },
-                new StatItem { Label = "P2 score", Value = _score2.ToString() },
-                new StatItem { Label = "P2 streak", Value = _maxStreak2.ToString() },
-            };
         }
         await InvokeAsync(StateHasChanged);
     }
@@ -774,9 +702,6 @@
         if (_currentIndex >= _questions.Count) return true;
         return _selected.ContainsKey(_currentIndex);
     }
-
-    // Reset() went with the modal's Play Again button (2026-07-16) — StartGame
-    // already clears the same state, and OK now returns the player to the menu.
 
     // Submit the final solo score to the server leaderboard. Best-effort:
     // never throws to the UI; a failed POST just means the run won't show up

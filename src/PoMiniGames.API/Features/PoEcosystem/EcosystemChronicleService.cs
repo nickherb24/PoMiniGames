@@ -10,25 +10,12 @@ using PoMiniGames.Shared.Games.PoEcosystem;
 
 namespace PoMiniGames.Features.PoEcosystem;
 
-/// <summary>The island's model-backed capabilities: sagas, micro-thoughts, treaties and lore.</summary>
-public interface IEcosystemChronicleService
-{
-    Task<EcoChronicle> WriteAsync(EcoChronicleRequest request, CancellationToken ct = default);
-    Task<EcoThoughtReply> ThinkAsync(EcoThoughtRequest request, CancellationToken ct = default);
-    Task<EcoThoughtBatchReply> ThinkBatchAsync(EcoThoughtBatchRequest request, CancellationToken ct = default);
-    Task<EcoTreatyReply> NegotiateTreatyAsync(EcoTreatyRequest request, CancellationToken ct = default);
-    Task<EcoMilestoneLoreReply> GenerateMilestoneLoreAsync(EcoMilestoneLoreRequest request, CancellationToken ct = default);
-    IReadOnlyList<EcoCultureProfile> GenerateTribeCultures(int seed);
-    Task PrewarmChronicleAsync(EcoChronicleRequest request, CancellationToken ct = default);
-}
-
 /// <summary>
 /// Server-side narrator and diplomat for PoEcosystem.
 /// Handles decade sagas, batched creature thoughts, tribal chieftain treaties and milestone lore.
-/// There is no decree interpreter: the island is observed, never steered, and the endpoint that
-/// turned a typed wish into a spawn or a storm went on 2026-09-30 with the console that called it.
+/// There is no decree interpreter: the island is observed, never steered.
 /// </summary>
-public sealed class EcosystemChronicleService : IEcosystemChronicleService
+public sealed class EcosystemChronicleService
 {
     public const int MaxLogLines = 120;
     public const int MaxLogLineChars = 240;
@@ -71,7 +58,7 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
     private readonly ILogger<EcosystemChronicleService> _logger;
     private readonly GameChatClientFactory _clients;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundry;
-    private readonly IAiDecisionOptionsCache _options;
+    private readonly AiDecisionOptionsCache _options;
     private readonly HybridCache _cache;
 
     public EcosystemChronicleService(
@@ -80,7 +67,7 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
         ILogger<EcosystemChronicleService> logger,
         GameChatClientFactory clients,
         IOptionsMonitor<AIFoundryOptions> foundry,
-        IAiDecisionOptionsCache options,
+        AiDecisionOptionsCache options,
         HybridCache cache)
     {
         _configuration = configuration;
@@ -124,9 +111,6 @@ public sealed class EcosystemChronicleService : IEcosystemChronicleService
             new HybridCacheEntryOptions { Expiration = TimeSpan.FromHours(24), LocalCacheExpiration = TimeSpan.FromHours(1) },
             cancellationToken: ct);
     }
-
-    public Task PrewarmChronicleAsync(EcoChronicleRequest request, CancellationToken ct = default)
-        => WriteAsync(request, ct);
 
     private async Task<EcoChronicle> WriteUncachedAsync(EcoChronicleRequest request, string deployment, CancellationToken ct)
     {

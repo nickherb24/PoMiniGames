@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
-         §1.7 Trimming Safeguards. All HttpClient JSON call sites now go through
+         Trimming safeguards. All HttpClient JSON call sites go through
          ApiJsonContext (source-generated). IL2026/IL2091 in user code are fixed.
          IL2110/IL2111 are suppressed for Blazor framework code only: LayoutView.Layout
          and Router.NotFoundPage setters in App_razor.g.cs use reflection-based
@@ -42,15 +42,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- §GFX Sprite payload. wwwroot/images/ is now runtime-only: 32 atlas.json +
+    <!-- Sprite payload. wwwroot/images/ is runtime-only: 32 atlas.json +
          32 spritesheet.webp pairs, ~8 MB, all of it fetched by js/posports/sprites.js.
-         The export intermediates that used to live here (frames/**, spritesheet.png,
-         and the capitalized *-spritesheet/ source trees, ~160 MB) were deleted on
-         2026-09-11 along with the orphaned Mom character. They were retained "for
-         re-export" by scripts/posports-assets.ps1, which was itself deleted in b42fad4,
-         so nothing could consume them. Every file under wwwroot/images/ is now
-         published and precached deliberately — do not reintroduce a Content Remove
-         rule here; delete the unused asset instead. -->
+         Every file under wwwroot/images/ is published and precached deliberately —
+         do not reintroduce a Content Remove rule here; delete the unused asset
+         instead. -->
   </ItemGroup>
 
   <ItemGroup>

@@ -32,11 +32,10 @@ export function isChronicleEvent(ev) {
   return true;
 }
 
-// THE TICKER (2026-09-30). Everything smaller than a landmark — a field note, a legend the
-// Herald wrote, a decade turning, a pact — used to be a toast in the corner, on top of the
-// card above for the same moment. Those lines now queue here: one quiet line under the
-// status chip at a time, a few seconds each. Toasts are kept for what the viewer asked to
-// be told about (a watched creature, an alert of their own, something they just did).
+// THE TICKER. Everything smaller than a landmark — a field note, a legend the Herald
+// wrote, a decade turning, a pact — queues here rather than becoming a toast on top of the
+// card above for the same moment: one quiet line under the status chip at a time, a few
+// seconds each. Toasts are kept for what the viewer asked to be told about (a watched creature, an alert of their own, something they just did).
 const TICK_MS = 4600;
 const TICK_GAP_MS = 350;
 const TICK_QUEUE = 6;

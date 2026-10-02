@@ -13,15 +13,12 @@
    scoped class names and so rendered unstyled. A game supplies its start label, its
    gate, and optionally a picker section and per-player badges — nothing else.
 
-   The hub readout is ConnectionStateStrip (review #7): the status pill here and the
-   old "Connecting to the lobby hub…" line at the bottom of the card both answered
-   "is the hub up?" and could disagree while doing it. The strip plus the roster's
-   "Loading players…" spinner say it once.
+   The hub readout is ConnectionStateStrip: a separate status pill and a
+   "Connecting to the lobby hub…" line would both answer "is the hub up?" and could
+   disagree. The strip plus the roster's "Loading players…" spinner say it once.
 
-   2026-10-01: Couple Quiz and Fun Quiz are on this card too (they were bare lists
-   that asked a signed-in player for their name and had no Leave or Invite), which
-   is what ShowReady / ShowStart are for. The card also lost a row: the status pill
-   rides the roster's heading line, and the "Last update" clock is gone. *@
+   Couple Quiz and Fun Quiz use this card too, which is what ShowReady / ShowStart
+   are for. The status strip rides the roster's heading line. *@
 <div class="sp-page">
     <div class="sp-card lobby">
         <section class="lobby__section">
@@ -185,11 +182,11 @@
         && State.Players.Count > 0
         && State.Players.All(p => p.ConnectionId == State.HostConnectionId || p.IsReady));
 
-    // ── Lobby moments (2026-10-01) ───────────────────────────────────────────────
-    // The card used to be silent: a second player arriving, readying up or leaving changed
-    // one row of text and nothing else, so a host with the tab in the corner of their eye
-    // missed all three. Each state is diffed against the last one; the first state that
-    // lands is only remembered, so walking into a full room is not a burst of chimes.
+    // ── Lobby moments ────────────────────────────────────────────────────────────
+    // A second player arriving, readying up or leaving changes one row of text, which a
+    // host with the tab in the corner of their eye would miss, so each gets a cue. Each
+    // state is diffed against the last one; the first state that lands is only
+    // remembered, so walking into a full room is not a burst of chimes.
     private HashSet<string>? _seats;
     private HashSet<string> _ready = [];
     private readonly List<string> _arrived = [];

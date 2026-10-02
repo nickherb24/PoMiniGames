@@ -54,7 +54,7 @@ public class PoVoxelStrikeUiTests
         };
         page.PageError += (_, err) => Console.WriteLine($"[pageerror] {err}");
 
-        await page.GotoAsync($"{_fixture.ServerAddress.TrimEnd('/')}/povoxelstrike/1?autoGuest=1", new PageGotoOptions
+        await page.GotoAsync($"{_fixture.ServerAddress.TrimEnd('/')}/povoxelstrike/demo?autoGuest=1", new PageGotoOptions
         {
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 60_000,

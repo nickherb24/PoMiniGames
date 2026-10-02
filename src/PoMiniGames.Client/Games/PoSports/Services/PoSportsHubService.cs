@@ -29,7 +29,7 @@ public sealed class PoSportsHubService : IAsyncDisposable
     public event Action<PoSportsSnapshot>? SnapshotReceived;
     public event Action<PoSportsSnapshot>? RaceFinished;
 
-    /// <summary>The lobby half: the shared ready/start client (2026-09-14). Pages subscribe to its events directly.</summary>
+    /// <summary>The lobby half: the shared ready/start client. Pages subscribe to its events directly.</summary>
     public LobbyClient<PoSportsLobbyMember> Lobby { get; }
 
     public string LobbyConnectionId => Lobby.ConnectionId;

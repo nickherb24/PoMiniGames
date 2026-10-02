@@ -25,9 +25,8 @@
         <canvas id="racerCanvas" class="racer-canvas" role="img" tabindex="0" aria-label="Race track. Your car is marked YOU. Arrow keys or W A S D drive; Space drifts."></canvas>
         @if (_phase == RacePhase.Start && !_introDone)
         {
-            @* The shared opening card, like every other game (2026-10-02): the name, what the
+            @* The shared opening card, like every other game: the name, what the
                race is, the controls, and for a solo race the track, the field and the paint.
-               It replaced a start card of Racer's own that named neither the game nor a key.
                .racer-intro is display:contents; it is only there so this page's scoped CSS can
                reach the shared card and give the three track cards room. *@
             <div class="racer-intro">

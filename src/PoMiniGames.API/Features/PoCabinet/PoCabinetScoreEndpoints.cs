@@ -11,10 +11,10 @@ namespace PoMiniGames.Features.PoCabinet;
 /// <summary>
 /// PoCabinet score endpoints. Anonymous reads (per-track leaderboards);
 /// authenticated best-lap submissions guarded by the <c>pocabinet</c> rate-limit
-/// policy (added 2026-09-17 alongside this slice).
+/// policy.
 ///
 /// <para>
-/// <b>Every stored lap is server-computed (2026-09-29).</b> A solo submission carries its
+/// <b>Every stored lap is server-computed.</b> A solo submission carries its
 /// input log and <see cref="PoCabinetLapVerifier"/> re-runs the race; a multiplayer one is
 /// looked up from the result the server's own sim produced
 /// (<see cref="PoCabinetRaceRegistry.TakeVerifiedLap"/>). The claimed
@@ -29,7 +29,7 @@ public static class PoCabinetScoreEndpoints
         // Mounted under gameApi (which has the /api prefix) — paths below are RELATIVE.
         // Anonymous reads — bounded by leaderboard-read (60/min). RequireAuthorization is
         // skipped here because gameApi has it; an anonymous read on /api/{game}/scores
-        // would otherwise 401, which the §10 contract says it must not.
+        // would otherwise 401, which anonymous reads must not do.
         app.MapGet("/pocabinet/scores", GetScoresAsync)
             .AllowAnonymous()
             .RequireRateLimiting("leaderboard-read");
@@ -54,7 +54,7 @@ public static class PoCabinetScoreEndpoints
         HttpContext http,
         StorageService storage,
         PoCabinetRaceRegistry races,
-        IScoreIntegrityGuard integrity,
+        ScoreIntegrityGuard integrity,
         ILoggerFactory loggerFactory,
         CancellationToken ct)
     {

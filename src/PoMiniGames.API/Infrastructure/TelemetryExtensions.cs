@@ -101,7 +101,7 @@ internal static class TelemetryExtensions
                 {
                     ProcessTimeout = TimeSpan.FromSeconds(10),
                 })
-                // §4 chaos-engineering hardening: pin a 3-attempt / 3-second-per-attempt budget
+                // Pin a 3-attempt / 3-second-per-attempt budget
                 // on the DefaultAzureCredential chain. Without this, a hung network during
                 // cold start (a flaky VPN, the AAD STS being slow) means AddAzureKeyVault
                 // blocks forever waiting for the first GetPropertiesOfSecrets enumeration —

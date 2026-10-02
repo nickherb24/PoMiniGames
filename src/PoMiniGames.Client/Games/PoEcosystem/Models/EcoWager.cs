@@ -4,7 +4,7 @@ using PoMiniGamesClient.Services.Play;
 namespace PoMiniGamesClient.Games.PoEcosystem.Models;
 
 /// <summary>
-/// The naturalist's wager (2026-09-30): three predictions about an island, made in its first
+/// The naturalist's wager: three predictions about an island, made in its first
 /// two years and settled by the island's own history. Observation only — a wager changes
 /// nothing on the island; it is a guess about what the sim will do by itself.
 /// </summary>

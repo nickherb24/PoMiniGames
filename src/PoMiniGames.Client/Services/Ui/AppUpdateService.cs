@@ -83,9 +83,8 @@ public sealed class AppUpdateService : IAsyncDisposable
             // the toast on a dead page is invisible anyway.
         }
 
-        // Bug fix (2026-08-07): the update toast was surfacing to kiosk
-        // spectators, where it competes for attention with the attract reel.
-        // The reel cycles every 12-24s and never has a visitor who would
+        // Never show the update toast to kiosk spectators, where it competes for
+        // attention with the attract reel. The reel cycles every 12-24s and never has a visitor who would
         // press "Update now" — leaving the toast on screen until the next
         // page change is just visual noise. Detection is path-based: any
         // /{game}/demo or ?kiosk=N segment, which is the same shape
@@ -96,7 +95,7 @@ public sealed class AppUpdateService : IAsyncDisposable
             return;
         }
 
-        // 2026-08-10: silence the update nag during local dev. Every `dotnet build`
+        // Silence the update nag during local dev. Every `dotnet build`
         // ships a fresh boot.json that the SW sees as "new", and a developer who
         // rebuilds twice in an hour gets the toast twice in an hour. Production
         // users still see it — only the localhost/lan hosts are gated.

@@ -1,4 +1,4 @@
-// utility.js — goal selection (SPEC §7.5). Every goal is scored from drives × traits ×
+// utility.js — goal selection. Every goal is scored from drives × traits ×
 // what the creature perceives (`ctx`, built by world.js each re-score); the best wins
 // unless the current goal is within the hysteresis margin, which stops dithering.
 // Traits are read through effectiveTrait so LLM nudges act here and only here.

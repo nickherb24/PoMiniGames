@@ -10,9 +10,8 @@ namespace PoMiniGames.Unit.Features.PoJoker;
 /// fallback when PoJoker:AzureOpenAI is unconfigured (mirrors the PoCoupleQuiz mock pattern).
 /// </summary>
 /// <remarks>
-/// <b>§1 100/50/25/25 Rule.</b> Originally 3 <c>[Fact]</c>s; unchanged structurally
-/// because each tests a distinct public-surface behaviour (analyse, explain,
-/// cancellation). All 3 methods retained for clarity.
+/// Three facts, each testing a distinct public-surface behaviour (analyse, explain,
+/// cancellation).
 /// </remarks>
 public sealed class MockAnalysisServiceTests
 {

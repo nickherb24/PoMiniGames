@@ -19,10 +19,9 @@ namespace PoMiniGames.Infrastructure.Services;
 /// plus the single generic read/write flow every one of them shares.
 /// </summary>
 /// <remarks>
-/// Split out of StorageService.cs on 2026-09-12, which had grown to 1,240 lines and was the
-/// largest file in the solution. The seam is the one the class already had: these boards are
-/// best-result ratchets expressible as a descriptor, whereas the PoBrawl ladder and fighter
-/// Elo in StorageService.PoBrawl.cs are accumulators that a descriptor cannot describe.
+/// These boards are best-result ratchets expressible as a descriptor, whereas the PoBrawl
+/// ladder and fighter Elo in StorageService.PoBrawl.cs are accumulators that a descriptor
+/// cannot describe.
 /// To add a leaderboard, add a descriptor here — declare RowKeyFields as immutable identity
 /// fields only (usually the player, not the score) and use ShouldOverwrite so a worse later
 /// run cannot clobber a better one.
@@ -375,8 +374,8 @@ public partial class StorageService
         {
             PlayerName = DisplayName24(e.PlayerName),
             UserId = string.IsNullOrWhiteSpace(e.UserId) ? "" : e.UserId,
-            // T5 (2026-09-17): an unknown track id defaults to "capitol" per the spec —
-            // the OpenAPI contract pins this fallback. Future tracks added to the catalog
+            // An unknown track id defaults to "capitol"; the OpenAPI contract pins this
+            // fallback. Future tracks added to the catalog
             // will fall through to default as well until the descriptor is updated.
             TrackId = string.IsNullOrWhiteSpace(e.TrackId) ? "capitol" : e.TrackId.Trim().ToLowerInvariant(),
             BestLapSeconds = double.IsFinite(e.BestLapSeconds) ? Math.Clamp(e.BestLapSeconds, 0.001, 3600) : 0,
@@ -488,7 +487,7 @@ public partial class StorageService
 
         var fields = descriptor.ToFields(sanitized);
 
-        // §9.1 chaos-engineering hardening: hash the row's identity fields only (submitter,
+        // Hash the row's identity fields only (submitter,
         // score, game-specific measurements). Including timestamps here would mean two
         // near-simultaneous submissions of the same score produce two distinct rows — a
         // duplicate the leaderboard then has to dedupe at read time, and a vector for cheap

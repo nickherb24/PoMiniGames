@@ -34,18 +34,3 @@ export function capillaryCohesion(saturation) {
     const s = Math.min(1, Math.max(0, saturation));
     return Math.min(1, s * Math.pow(1 - s, 4) * 12.207);
 }
-
-export function effectiveStress(overburden, saturation, pressureHead) {
-    const porePressure = Math.max(0, saturation) * Math.max(0, pressureHead);
-    return Math.max(0, overburden - porePressure);
-}
-
-export function shieldsMobility(flowSpeed, saturation, packing, grainScale = 1) {
-    const c = SAND_PLAYGROUND_CALIBRATION;
-    const relativeDensity = c.quartzDensityKgM3 / c.waterDensityKgM3 - 1;
-    const drive = flowSpeed * flowSpeed /
-        Math.max(1e-6, relativeDensity * c.gravityMetersPerSecond2 * c.medianGrainMeters * grainScale);
-    const resistance = c.criticalShields * (1 + Math.max(0, packing) * 1.8) +
-        capillaryCohesion(saturation) * 0.08;
-    return Math.max(0, drive - resistance);
-}

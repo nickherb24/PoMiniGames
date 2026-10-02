@@ -89,8 +89,7 @@
             </div>
         }
 
-        @* One exit, in every game and every mode (user call, 2026-10-02). The second
-           "Play again" button six games had is gone: playing again is the hub's chip. *@
+        @* One exit, in every game and every mode: playing again is the hub's chip. *@
         <footer class="gps-play-again-actions">
             <button class="app-btn app-btn--primary"
                     @onclick="Back"
@@ -144,7 +143,7 @@
     [Inject] private Services.Ui.UiFeedbackService Feedback { get; set; } = null!;
     [Inject] private IJSRuntime JS { get; set; } = null!;
 
-    private Models.GameLeaderboardDto? _board;
+    private GameLeaderboardDto? _board;
 
     /// <summary>The player's own rank on this board, when they have a row on it.</summary>
     private int? _myRank;
@@ -292,8 +291,7 @@
         ResolveMyRank(ranked);
 
         // The board the modal renders is only ever the top 3.
-        board.Entries = ranked.Take(3).ToList();
-        _board = board;
+        _board = board with { Entries = ranked.Take(3).ToList() };
 
         // Celebrate a climb with the existing personal-best cue. Fired here
         // rather than on save so it lands with the rank appearing on screen.
@@ -311,7 +309,7 @@
     /// alternative is no rank line at all, and the unified DTO would have to
     /// grow a field to do better.
     /// </remarks>
-    private void ResolveMyRank(List<Models.LeaderboardEntryDto> ranked)
+    private void ResolveMyRank(List<LeaderboardEntryDto> ranked)
     {
         if (string.IsNullOrWhiteSpace(Player)) return;
 
@@ -339,7 +337,7 @@
         }
     }
 
-    private bool IsMe(Models.LeaderboardEntryDto e) =>
+    private bool IsMe(LeaderboardEntryDto e) =>
         !string.IsNullOrEmpty(Player) && string.Equals(e.Name, Player, StringComparison.OrdinalIgnoreCase);
 
     private async Task Ok()
@@ -349,12 +347,10 @@
     }
 
     /// <summary>
-    /// Browser audit #10 (2026-08-10): a single "Back" action used by both
-    /// modal CTAs (Back to all games / Back to X). Fires <see cref="OnOk"/>
-    /// first so a game holding end-of-match state outside the page still
-    /// gets a clean teardown before the navigation. Renamed from <c>Ok</c>
-    /// because the button label is no longer "OK" — calling a method <c>Ok</c>
-    /// that navigates was a relic of the old label.
+    /// A single "Back" action used by both modal CTAs (Back to all games /
+    /// Back to X). Fires <see cref="OnOk"/> first so a game holding
+    /// end-of-match state outside the page still gets a clean teardown
+    /// before the navigation.
     /// </summary>
     private async Task Back()
     {

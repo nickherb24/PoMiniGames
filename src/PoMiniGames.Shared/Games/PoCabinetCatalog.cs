@@ -18,7 +18,7 @@ public static class PoCabinetCatalog
     /// budgeted for this many cars, which is why online did not grow with the solo field.</summary>
     public const int CarCount = 8;
 
-    /// <summary>Cars in a solo or demo race: 99 rivals and the player (2026-09-30). The whole
+    /// <summary>Cars in a solo or demo race: 99 rivals and the player. The whole
     /// race runs in the browser, so only the lap verifier pays for it server-side.</summary>
     public const int SoloCarCount = 100;
 

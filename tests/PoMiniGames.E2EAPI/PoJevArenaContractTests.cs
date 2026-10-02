@@ -5,7 +5,7 @@ using PoMiniGames.TestUtilities;
 namespace PoMiniGames.E2EAPI;
 
 /// <summary>
-/// §PoJevArena (2026-09-25): the HTTP contract of the arena's server surface. Anonymous callers get
+/// The HTTP contract of the arena's server surface. Anonymous callers get
 /// 401 (never 403 — a route's existence must not leak); a signed-in caller without the antiforgery
 /// token gets 403; with it, malformed input is refused with the documented status before any Jev
 /// call or storage write. The host runs under "Test", so Jev is the deterministic stub and

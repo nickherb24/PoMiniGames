@@ -41,14 +41,12 @@ public record FunQuizLobbyPlayerJoinedDto(string GameId, string PlayerName, List
 
 public record FunQuizLobbyErrorDto(string GameCode, string Message);
 
-public record FunQuizLobbySummaryDto(string GameId, string HostName, List<string> Players, int PlayerCount, string State, string Category);
-
 /// <summary>
 /// Client-side wrapper over <c>/funquiz/gamehub</c>. Two-player SignalR trivia:
 /// JoinLobby → StartGame → UpdateScore loop → PlayerFinished → GameFinished.
 /// </summary>
 /// <remarks>
-/// There are no game codes (2026-08-10): <c>JoinLobby</c> seats you in the one open lobby
+/// There are no game codes: <c>JoinLobby</c> seats you in the one open lobby
 /// and the server tracks which game you are in by connection, so nothing downstream needs
 /// a game id. <c>GameId</c> stays on the payload records purely as the server's correlation
 /// value — the UI does not show it and never sends it back.
@@ -97,15 +95,15 @@ public sealed class FunQuizHubService : IAsyncDisposable
     public async Task ConnectAsync()
     {
         if (_connection is not null && _connection.State != HubConnectionState.Disconnected) return;
-        // §Absolute URL: SignalR ignores the DI HttpClient BaseAddress, so we
+        // Absolute URL: SignalR ignores the DI HttpClient BaseAddress, so we
         // compose against ApiEndpoints.ApiBase — the API host (:5000), not the
         // WASM host (:5261). Without this, the standalone client hits
         // /funquiz/gamehub/negotiate on :5261 and gets a 405.
         var url = _endpoints.Hub("funquiz/gamehub");
         // Credentials handler + auto-reconnect come baked into the shared
-        // factory (see HubConnectionFactory for the §2026-07-16 cookie contract).
+        // factory (see HubConnectionFactory for the cookie contract).
         //
-        // §Dev-box quirk (2026-07-07): on this dev machine the WebSocket upgrade
+        // Dev-box quirk: on this dev machine the WebSocket upgrade
         // through `UseResponseCompression` takes 30-60s to complete (one full
         // reload cycle per handshake), which makes 2-player testing brittle —
         // the host's connection can drop before the second player finishes

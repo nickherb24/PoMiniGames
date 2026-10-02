@@ -1,4 +1,4 @@
-// kin.js — kin threads (GFX pass 3, 2026-09-30).
+// kin.js — kin threads.
 //
 // While the camera is on one creature — inspected, followed, or the director's subject —
 // a faint arc runs from it to each of its LIVING relatives: elders in blue, young in green,

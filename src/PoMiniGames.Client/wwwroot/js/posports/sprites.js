@@ -6,10 +6,9 @@
 // requested — a full character is ~1-2 MB, so eager-loading the whole roster would
 // triple first-paint time for nothing.
 //
-// 2026-07-29: sheets are WebP, not PNG (36.9 MB -> 24.4 MB across the roster).
-// Dimensions are byte-for-byte identical to the old PNGs, which is what keeps
-// the atlas.json frame rectangles valid — if you ever re-export, preserve the
-// sheet dimensions or every frame coordinate below shifts.
+// Sheets are WebP, not PNG (about a third smaller across the roster). The sheet
+// dimensions are what keep the atlas.json frame rectangles valid — if you ever
+// re-export, preserve them or every frame coordinate below shifts.
 // The `frames/` directories beside each sheet are export intermediates that
 // nothing here reads; they are excluded from publish in PoMiniGamesClient.csproj.
 //
@@ -70,15 +69,6 @@ export async function loadCharacter(char, anims) {
     perChar.set(anim, pending);          // cache the promise → concurrent callers coalesce
     perChar.set(anim, await pending);    // then swap in the settled value
   }));
-}
-
-/** True once every requested anim for the character has settled (loaded or failed). */
-export function isReady(char, anims) {
-  const perChar = cache.get(char);
-  return !!perChar && anims.every((a) => {
-    const e = perChar.get(a);
-    return e && typeof e.then !== 'function';
-  });
 }
 
 /**

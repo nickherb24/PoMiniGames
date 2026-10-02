@@ -22,38 +22,3 @@ public interface IAnalysisService
         JokeDto joke,
         CancellationToken cancellationToken = default);
 }
-
-/// <summary>
-/// Turns a flagged joke into a clean one that keeps its comic shape, so it can be
-/// performed rather than skipped.
-/// </summary>
-public interface IJokeRewriteService
-{
-    /// <summary>
-    /// Returns a rewritten joke, or <c>null</c> when no rewrite could be produced —
-    /// model unavailable, timed out, content-filtered, refused, or unparseable. The
-    /// caller is expected to fall back rather than treat null as an error.
-    /// </summary>
-    Task<JokeDto?> TryRewriteAsync(JokeDto joke, CancellationToken cancellationToken = default);
-}
-
-/// <summary>
-/// Repository contract for persisting and querying joke performance data.
-/// Repository pattern (GoF/DDD): abstracts storage so the feature is decoupled from
-/// Azure Table Storage implementation details.
-/// </summary>
-public interface IJokeStorageClient
-{
-    Task SavePerformanceAsync(JokePerformanceDto performance, CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<JokePerformanceDto>> GetSessionPerformancesAsync(string sessionId, CancellationToken cancellationToken = default);
-
-    Task<IReadOnlyList<LeaderboardEntryDto>> GetLeaderboardAsync(int top = 10, CancellationToken cancellationToken = default);
-
-    /// <summary>
-    /// The best-rated jokes across every session, one row per joke id, highest score first.
-    /// Feeds the unified <c>/api/leaderboards/pojoker</c> board — see <see cref="TopJokeDto"/>
-    /// for what "best" means and why it is not the stored rating average.
-    /// </summary>
-    Task<IReadOnlyList<TopJokeDto>> GetTopJokesAsync(int top = 10, CancellationToken cancellationToken = default);
-}

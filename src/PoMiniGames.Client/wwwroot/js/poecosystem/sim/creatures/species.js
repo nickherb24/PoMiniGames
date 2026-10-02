@@ -1,4 +1,4 @@
-// species.js — the four species (SPEC §7.2). Rates are per real second at 1× speed.
+// species.js — the four species. Rates are per real second at 1× speed.
 // Ages are in years (YEAR_SECONDS); speeds in metres per second on the 1 m tile grid.
 
 export const SPECIES_ID = Object.freeze({ RABBIT: 0, DEER: 1, WOLF: 2, HUMAN: 3 });
@@ -62,12 +62,9 @@ export const SPECIES = Object.freeze([
     eats: Object.freeze({ berries: true, rabbit: true, deer: true, carcass: true }),
     gestationSeconds: 40, litter: Object.freeze([1, 1]), mateCooldownSeconds: 60,
     radius: 0.4, mass: 70, perception: 22, mealValue: 0.5, foodValue: 0, sprintSeconds: 6,
-    // flees: threat species id → distance at which it triggers a flee (SPEC §7.5). Slow humans
+    // flees: threat species id → distance at which it triggers a flee. Slow humans
     // only scare prey up close; huntReach is the extra kill distance (humans throw spears).
     foodScanTiles: 20, huntReach: 5.5, flees: Object.freeze({ 2: 8 }),
     builds: true,
   }),
 ]);
-
-export const speciesOf = (id) => SPECIES[id];
-export const SPECIES_COUNT = SPECIES.length;

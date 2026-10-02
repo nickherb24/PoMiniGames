@@ -1,5 +1,4 @@
-/* An explicit width: the wrapper used to be exactly as wide as the sentence in the status
-   line under the canvas, and with that line gone it shrank to the canvas's intrinsic 800px. */
+/* An explicit width: without one the wrapper shrinks to the canvas's intrinsic 800px. */
 .pvs-wrap {
     display: flex;
     flex-direction: column;
@@ -7,9 +6,7 @@
     margin-inline: auto;
 }
 
-/* The canvas gets the height the status line under it used to take (2026-09-30): that line
-   was developer chrome ("N imported assets · N fortress pieces") plus a fourth copy of the
-   controls. */
+/* The canvas takes the full height: there is no status line under it. */
 .pvs-canvas-host {
     position: relative;
     width: 100%;
@@ -146,8 +143,7 @@
 
 /* Over-canvas text is ALWAYS light-on-dark: the 3D scene behind it is dark in both
    site themes, so theme tokens are wrong here — in light mode they resolve to dark
-   text and the labels vanished against the arena (found in the 2026-08-18 runtime
-   review). Fixed colors, not tokens, for everything drawn on top of the canvas. */
+   text and the labels vanish against the arena. Fixed colors, not tokens, for everything drawn on top of the canvas. */
 .pvs-hud {
     position: absolute;
     /* safe-area: notched phones in landscape put a camera housing where the HUD sits */
@@ -161,7 +157,7 @@
     z-index: 1;
 }
 
-/* Glassmorphism (2026-08-19 UI pass). backdrop-filter is the whole effect and it is NOT
+/* Glassmorphism. backdrop-filter is the whole effect and it is NOT
    universally cheap: it forces the compositor to sample the layer beneath, so it is
    confined to this one strip and never applied to a full-screen element. @supports keeps
    the fallback honest -- where the filter is unavailable the strip falls back to a

@@ -12,21 +12,11 @@
    stay non-scoped so every layout that renders the `gl-top-bar` header inherits
    identical chrome.
 
-   ── 2026-08-07 de-duplication ──────────────────────────────────────────────
-   MainLayout.razor.css used to carry a SECOND copy of every selector below,
-   with a header instructing that the two be "kept byte-identical … edit BOTH
-   together". They were not identical by the time anyone checked: this file had
-   been migrated to design tokens (--radius-sm, --elevation-1,
-   --accent-warning-soft, --toast-error-text) while the scoped copy still held
-   the pre-token literals (8px, `0 8px 24px rgba(0,0,0,.3)`,
-   `rgba(245,158,11,.14)`, #fecaca). Which one a user saw depended on which
-   layout rendered the bar, because scoped CSS only ever applied to MainLayout's
-   own markup — EmptyLayout always reads this file.
-
-   So the rule is now structural rather than clerical: anything rendered by more
-   than one layout lives HERE, and MainLayout.razor.css keeps only what is
-   unique to MainLayout's markup (the offline banner, .gl-content, the toast
-   stack). Nothing needs to be edited in two places.
+   Anything rendered by more than one layout lives HERE, and
+   MainLayout.razor.css keeps only what is unique to MainLayout's markup (the
+   offline banner, .gl-content, the toast stack). A second scoped copy of these
+   selectors would drift, and which one a user saw would depend on which layout
+   rendered the bar.
    ───────────────────────────────────────────────────────────────────────── */
 
 /* ── Page shell ──────────────────────────────────────────────────────────────
@@ -35,7 +25,7 @@
     display: flex;
     flex-direction: column;
     min-height: 100svh;
-    /* 2026-08-08 audit #12: stop any sub-pixel overflow from any descendant from
+    /* Stop any sub-pixel overflow from any descendant from
        promoting a horizontal scrollbar on the page. Per-component `overflow-x:
        clip` rules (Index.razor.css) still win where they exist; this is the
        last-resort guard so a 390 px phone never lands on a sideways scroll.
@@ -43,7 +33,7 @@
     overflow-x: clip;
 }
 
-/* §7 Page-entry animation — GPU-only transform/opacity, runs on the compositor.
+/* Page-entry animation — GPU-only transform/opacity, runs on the compositor.
    Pairs with the @view-transition block in css/app.css for browsers that
    support the cross-document navigation API. */
 @media (prefers-reduced-motion: no-preference) {
@@ -71,7 +61,7 @@
    reading as a warning. The colours are named tokens rather than inline literals
    so the two banner variants below cannot drift apart.
 
-   §10 GPU-only shimmer: a linear-gradient with a background-position shift runs
+   GPU-only shimmer: a linear-gradient with a background-position shift runs
    on the compositor thread (no JS, no per-frame layout work). */
 .gl-mock-banner,
 .gl-mock-banner--dot[open] {
@@ -81,14 +71,10 @@
 }
 
 .gl-mock-banner {
-    /* Browser audit #5 (2026-08-10): a full-width hazard-stripe banner that
-       shimmers reads as an error to the first-time visitor who hit "Continue as
-       Guest" on a sign-in page that was already gated on auth being disabled.
-       The mock-data flag is a server-side concern (Storage is in dev or a CI
-       stub), not a user concern. Container now hosts a quiet pill + an
-       unobtrusive secondary label; the banner is no longer the loud element
-       it used to be. The shimmer animation is gone, the warning yellow is
-       gone, and the pill matches the chrome palette. */
+    /* A full-width hazard-stripe banner would read as an error to a first-time
+       visitor. The mock-data flag is a server-side concern (Storage is in dev or
+       a CI stub), not a user concern, so the container hosts a quiet pill + an
+       unobtrusive secondary label in the chrome palette. */
     width: 100%;
     display: flex;
     align-items: center;
@@ -136,7 +122,7 @@
     .gl-mock-banner { animation: none; }
 }
 
-/* §9 mobile mock-banner: on portrait phones the banner eats ~36px of permanent
+/* Mobile mock-banner: on portrait phones the banner eats ~36px of permanent
    chrome above the top bar. Collapse to a tiny indicator dot in the top-bar left
    rail so the game list isn't pushed off the fold. Tap-to-expand is handled by
    the <details> wrapping the dot in the layout markup. */
@@ -394,12 +380,6 @@
     padding-top: 0.7rem;
 }
 
-/* 2026-08-12: the Browse nav menu (.gl-nav-trigger / .gl-nav-popover /
-   .gl-nav-item) added in audit #4 was removed per user request on the same
-   day. The CSS block is intentionally empty so anyone grepping the stylesheet
-   finds a note explaining where the rules used to live, rather than the
-   dead selectors themselves — keeps the change auditable. */
-
 /* ── Mobile portrait: mirror MainLayout's top-bar compaction ── */
 @media (max-width: 640px) {
     .gl-top-bar {
@@ -422,9 +402,6 @@
     .gl-account-trigger { max-width: 9rem; padding: 0.3rem 0.6rem; font-size: 0.75rem; }
 }
 
-/* The top-bar quick switcher (.gl-games-switcher*) was removed on 2026-08-10 along
-   with its markup in MainLayout — see the comment there. Its rules lived here. */
-
 /* ── FPS pill (top-bar FpsCounter, on every route).
    Lives here rather than in FpsCounter.razor.css because the three layouts that
    render the counter (MainLayout, BareLayout) style the rail
@@ -435,13 +412,11 @@
     align-items: center;
     padding: 0.25rem 0.6rem;
     border-radius: var(--radius-pill);
-    /* Scheme-aware, and it has to be. The pill used a fixed translucent-dark
-       fill with a fixed neon `#6bff6b` on top. In light mode the fill composited
-       to ~#76777f and the pair measured 3.42:1 — under the 4.5:1 floor for
-       11.5px text, and it was the ONLY axe violation on 12 of the 14 routes
-       scanned in light theme, because this pill renders on every route.
-       Scheme-invariance is right for a canvas accent and wrong for small text on
-       chrome. The dark-mode appearance is unchanged. 2026-09-11 UI audit. */
+    /* Scheme-aware, and it has to be: a fixed translucent-dark fill with a fixed
+       neon `#6bff6b` composites to ~#76777f in light mode, 3.42:1 — under the
+       4.5:1 floor for 11.5px text, on every route since this pill renders on all
+       of them. Scheme-invariance is right for a canvas accent and wrong for
+       small text on chrome. */
     background: light-dark(rgba(255, 255, 255, 0.78), rgba(10, 12, 24, 0.55));
     border: 1px solid var(--color-border);
     color: light-dark(#116634, #6bff6b);
@@ -471,16 +446,15 @@
 }
 
 /* Narrow phones: the centre rail cannot fit the FPS pill AND the game title —
-   the title was truncating to a couple of glyphs beside the pill (seen live at
-   390 px). The pill is diagnostics, the game name is identity: diagnostics
+   the title would truncate to a couple of glyphs beside the pill. The pill is diagnostics, the game name is identity: diagnostics
    yields. */
 @media (max-width: 480px) {
     .gl-fps { display: none; }
 }
 
-/* ≤420 px with a game title in the centre rail the name ellipsised to one glyph
-   ("t…", 2026-09-29 audit): below that width the trigger is a round initial. The
-   name stays in the button's aria-label. */
+/* ≤420 px with a game title in the centre rail the name would ellipsise to one
+   glyph ("t…"): below that width the trigger is a round initial. The name stays
+   in the button's aria-label. */
 @media (max-width: 420px) {
     .gl-account-trigger {
         display: inline-grid;
@@ -498,13 +472,8 @@
     .gl-account-caret { display: none; }
 }
 
-/* The .gl-fps--preview chip belonged to the settings page's FPS-badge row and
-   went with that page on 2026-08-11. Since 2026-08-30 the live chip renders
-   only in Development or with `?debug=1` — see FpsCounter.razor. */
-
 /* ── Footer landmark ────────────────────────────────────────────────────────
-   2026-08-10 audit: every page rendered <header>, <nav>, and <main> but no
-   <footer>, so screen-reader users had no site-info landmark to jump to.
+   The <footer> gives screen-reader users a site-info landmark to jump to.
    Below-content strip with build label + two outbound links. Visual contract:
    small, low contrast, non-interactive chrome — never competes with the
    sticky top bar for attention. */
@@ -521,12 +490,10 @@
     flex-wrap: wrap;
 }
 
-/* The footer is persistent chrome on every route and cost a flat 53px. On a
-   short phone that is 8% of the viewport spent on a build stamp and two links,
-   and it was part of why the catalog did not fit on an iPhone SE. Tightened
+/* The footer is persistent chrome on every route. On a short phone a flat 53px
+   is 8% of the viewport spent on a build stamp and two links, so it is tightened
    here rather than hidden — the build number is genuinely useful when someone
-   reports a bug — and the links keep their 24px hit area via their own padding.
-   2026-09-11 UI audit. */
+   reports a bug — and the links keep their 24px hit area via their own padding. */
 @media (max-height: 780px), (max-width: 640px) {
     .gl-footer {
         padding: 0.35rem var(--space-3);
@@ -551,9 +518,8 @@
     color: var(--color-text-secondary);
     text-decoration: none;
     border-radius: var(--radius-sm);
-    /* 2026-08-30 a11y sweep: measured 45×21 — under the 24px touch-target
-       floor. The vertical padding brings the hit area to 24px without making
-       the footer chrome any louder. */
+    /* Vertical padding keeps the hit area at the 24px touch-target floor without
+       making the footer chrome any louder. */
     padding: 0.3rem 0.5rem;
     min-height: 24px;
     box-sizing: border-box;

@@ -36,20 +36,12 @@ else if (!AuthState.IsAuthenticated && !_silentDevLoginInFlight)
     }
     else
     {
-        @* 2026-08-09, by request: the app is gated again. Everyone signs in —
-           Guest or Microsoft in dev, Microsoft in production — before any route
-           renders.
-
-           This deliberately reverses two earlier decisions, so if you are here
-           to "restore" one of them, read this first:
-             · "§10 Guest-first" made the app open and offered sign-in on demand.
-             · 2026-08-08 audit #15 replaced a hard gate with a banner over the
-               real page, because a bare login screen made /leaderboards and
-               friends look broken to a first-time visitor.
-           Audit #15's concern is real and is now handled inside LoginScreen's
-           copy rather than by letting the page through. Deep links still work:
-           the requested URL is untouched, so completing sign-in lands the user
-           exactly where they were headed. *@
+        @* The app is gated: everyone signs in — Guest or Microsoft in dev,
+           Microsoft in production — before any route renders. A bare login
+           screen can make /leaderboards and friends look broken to a first-time
+           visitor, so LoginScreen's copy explains it rather than letting the
+           page through. Deep links still work: the requested URL is untouched,
+           so completing sign-in lands the user exactly where they were headed. *@
         <LoginScreen />
     }
 }
@@ -59,13 +51,11 @@ else
 }
 
 @code {
-    // §10 The app renders for everyone once the auth handshake settles. We still run
-    // InitializeAsync (below) so an existing cookie/MSAL session is restored — a
-    // returning signed-in player keeps their identity — but a brand-new visitor is
-    // never blocked: they browse and play as a guest until they choose to sign in.
+    // InitializeAsync (below) restores an existing cookie/MSAL session so a
+    // returning signed-in player keeps their identity.
     [Parameter] public RenderFragment ChildContent { get; set; } = default!;
 
-    // §Demo-route silent dev-login: gate flips to true only while we're
+    // Demo-route silent dev-login: gate flips to true only while we're
     // background-minting a guest session on a demo URL. Prevents the
     // LoginScreen from flashing on top of the spinner during the ~50ms
     // between dev-login kicking off and the cookie landing.
@@ -111,51 +101,9 @@ else
 
     private void OnLocationChanged(object? sender, LocationChangedEventArgs e) => InvokeAsync(StateHasChanged);
 
-    /// <summary>
-    /// Demo URL patterns the app treats as zero-friction: any path ending in
-    /// <c>/demo</c> or <c>/1</c> (the canonical demo flag for routes like
-    /// <c>/pobrawl/{Demo:int}</c>, <c>/connectfive/{Demo:int}</c>, etc.),
-    /// plus the explicit <c>?demo=1</c> query string for routes that don't
-    /// use the typed route parameter.
-    /// </summary>
-    private bool IsDemoRoute()
-    {
-        var path = new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/').ToLowerInvariant();
-        if (path.EndsWith("/demo", StringComparison.Ordinal)) return true;
-        // /pobrawl/1, /connectfive/1, /tictactoe/1, /funquiz/1 — all the
-        // {Demo:int} route templates take a trailing 1 to mean "demo".
-        if (path.Length >= 2 && path[^1] == '1' && char.IsDigit(path[^1]))
-        {
-            var prev = path.Length >= 3 ? path[^2] : '\0';
-            if (prev == '/') return true;
-        }
-        // Fallback query-string form. Inline mini-parser so we don't take a
-        // dependency on System.Web.HttpUtility, which isn't part of the
-        // Blazor WASM BCL by default.
-        var query = new Uri(Navigation.Uri).Query;
-        if (QueryStringHasTrueFlag(query, "demo"))
-        {
-            return true;
-        }
-        return false;
-    }
-
-    private static bool QueryStringHasTrueFlag(string query, string key)
-    {
-        if (string.IsNullOrEmpty(query)) return false;
-        // query is "foo=1&bar=2" or "?foo=1&bar=2" — strip the leading ?.
-        var s = query.StartsWith('?') ? query[1..] : query;
-        foreach (var pair in s.Split('&', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var eq = pair.IndexOf('=');
-            if (eq <= 0) continue;
-            var k = pair[..eq];
-            if (!string.Equals(k, key, StringComparison.OrdinalIgnoreCase)) continue;
-            var v = pair[(eq + 1)..];
-            return v == "1" || string.Equals(v, "true", StringComparison.OrdinalIgnoreCase);
-        }
-        return false;
-    }
+    /// <summary>Demo routes are zero-friction: any path ending in <c>/demo</c>.</summary>
+    private bool IsDemoRoute() =>
+        new Uri(Navigation.Uri).AbsolutePath.TrimEnd('/').EndsWith("/demo", StringComparison.OrdinalIgnoreCase);
 
     private async Task EnsureDemoGuestAsync()
     {

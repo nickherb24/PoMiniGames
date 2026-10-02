@@ -8,12 +8,10 @@
         {
             <p class="retry-count">Attempting to reconnect... (@RetryCount)</p>
         }
-        @* §Retry affordance: when a 401/403/etc. surfaces, the operator was
-           previously trapped — the overlay covered the whole viewport AND
-           intercepted every pointer event, so the underlying "Begin comedy
-           show" button couldn't be re-clicked. The modal now exposes a
-           manual retry (calls OnRetry.InvokeAsync) so the user can
-           re-attempt the network call without a page reload. *@
+        @* Retry affordance: when a 401/403/etc. surfaces, the overlay covers the
+           whole viewport, so the underlying "Begin comedy show" button cannot be
+           re-clicked. The modal exposes a manual retry (calls OnRetry.InvokeAsync)
+           so the user can re-attempt the network call without a page reload. *@
         @if (OnRetry.HasDelegate)
         {
             <button class="network-retry" @onclick="OnRetryClick"

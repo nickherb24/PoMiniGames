@@ -48,10 +48,10 @@ export function createRng(seed) {
       spare = r * Math.sin(2 * Math.PI * v);
       return r * Math.cos(2 * Math.PI * v);
     },
-    // The Box–Muller spare is state too. It was dropped on save, so a world snapshotted
-    // between the two halves of a pair drew different traits for its next newborn after a
-    // restore while consuming exactly as many draws — the silent divergence a resumed island
-    // showed (2026-09-23). A pending spare saves as [a, spare]; a bare number is still read.
+    // The Box–Muller spare is state too. Dropping it on save would make a world snapshotted
+    // between the two halves of a pair draw different traits for its next newborn after a
+    // restore while consuming exactly as many draws — a silent divergence. A pending spare
+    // saves as [a, spare]; a bare number is still read.
     getState() { return spare === null ? a : [a, spare]; },
     setState(s) {
       if (Array.isArray(s)) { a = s[0] >>> 0; spare = Number.isFinite(s[1]) ? s[1] : null; } else { a = s >>> 0; spare = null; }

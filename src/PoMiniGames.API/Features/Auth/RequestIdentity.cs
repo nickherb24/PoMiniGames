@@ -13,9 +13,8 @@ namespace PoMiniGames.Features.Auth;
 /// both <c>oid</c> (stable per user) and <c>sub</c> (pairwise per application) with DIFFERENT
 /// values, and <c>MapInboundClaims</c> is off (see AuthExtensions), so the raw claims arrive
 /// unrenamed and the order genuinely decides what gets stored. <c>oid</c> is the one to prefer.
-/// PoRacer resolved <c>sub</c> first until this replaced its inline copy, so PoRacer rows
-/// written between 2026-07-09 and that change carry sub-derived ids that will not match the
-/// same player today — worth a migration if anything ever starts reading rows by UserId.
+/// Any PoRacer rows written when it resolved <c>sub</c> first carry sub-derived ids that will
+/// not match the same player — worth a migration if anything ever starts reading rows by UserId.
 /// </remarks>
 public static class RequestIdentity
 {

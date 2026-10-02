@@ -1,4 +1,4 @@
-// spatialAudio.js — HRTF/stereo positioning for game sounds (§GFX-20).
+// spatialAudio.js — HRTF/stereo positioning for game sounds.
 //
 // acoustics.js already does doppler; this adds the missing half: positional
 // panning. Two levels:
@@ -57,14 +57,14 @@
 
     /**
      * Fire a cue from a position on the plane, with stereo placement and doppler
-     * applied — the 2D game entry point (§GFX).
+     * applied — the 2D game entry point.
      *
-     * This is the call that was missing. panX and dopplerRatio2D were both written
-     * for PoRacer and PoSports (acoustics.js names them in its own docs), and
-     * neither game ever called either: every cue in the app landed dead centre at
-     * the pitch it was written at. Combining them here rather than in the games
-     * keeps one interop call per event instead of three, and means a caller cannot
-     * apply pan without also applying the doppler that makes it convincing.
+     * panX and dopplerRatio2D are written for PoRacer and PoSports (acoustics.js
+     * names them in its own docs); called separately, a cue lands dead centre at
+     * the pitch it was written at unless the game remembers both. Combining them
+     * here rather than in the games keeps one interop call per event instead of
+     * three, and means a caller cannot apply pan without also applying the doppler
+     * that makes it convincing.
      *
      * @param {string} scope cue scope ('poracer', 'posports', …)
      * @param {string} name  cue name within that scope
@@ -107,7 +107,7 @@
 
     window.PoSpatial = { panX: panX, panner3d: panner3d, playAt: playAt, cue2D: cue2D };
 
-    // Consolidated PoMaterialAudio (§GFX-18)
+    // PoMaterialAudio
     (function () {
         const VOICES = {
             wood: { thump: 95, partials: [], noiseHz: 420, noiseQ: 1.2, noiseMs: 70, decay: 0.14 },

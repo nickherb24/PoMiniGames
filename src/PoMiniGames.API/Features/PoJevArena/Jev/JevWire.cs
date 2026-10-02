@@ -2,7 +2,7 @@ using System.Text.Json.Serialization;
 
 namespace PoMiniGames.Features.PoJevArena.Jev;
 
-// Wire shapes for POST {Endpoint}{Path} (OpenRouter System One), verified 2026-09-24 against the
+// Wire shapes for POST {Endpoint}{Path} (OpenRouter System One), per the
 // OpenRouter API reference. Property names are Jev's contract (snake_case where it uses it) and
 // must not be renamed by a naming policy.
 

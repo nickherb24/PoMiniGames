@@ -109,7 +109,7 @@ self.onmessage = (e) => {
             inViewport = m.inViewport;
             break;
         case 'quality':
-            // Driven by visualRuntime.js's adaptive tier (§10). One authority for
+            // Driven by visualRuntime.js's adaptive tier. One authority for
             // quality beats two that can disagree.
             quality = Math.max(0.05, Math.min(1, m.scale));
             break;

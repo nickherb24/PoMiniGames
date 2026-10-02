@@ -6,7 +6,6 @@ namespace PoMiniGames.Features.Health;
 /// Minimal API health endpoints, all under a single <c>/api/health/*</c> prefix.
 /// <list type="bullet">
 ///   <item><c>GET /api/health</c> — structured health report (the legacy contract)</item>
-///   <item><c>GET /api/health/liveness</c> — process-is-up liveness probe (alias of <c>/api/health</c>)</item>
 ///   <item><c>GET /api/health/ping</c> — zero-dependency <c>pong</c> (no health-check service)</item>
 ///   <item><c>GET /health</c> — non-prefixed alias kept only for App Service probe compatibility;
 ///         new callers must use <c>/api/health</c>.</item>
@@ -32,7 +31,7 @@ public static class HealthEndpoints
                 : Results.Json(response, statusCode: StatusCodes.Status503ServiceUnavailable);
         }
 
-        // §1 MapGroup() per slice: every /api/health/* route lives under the same
+        // Every /api/health/* route lives under the same
         // group so the OpenAPI tag, auth gate (none — probes must stay anonymous),
         // and route prefix are declared once.
         var health = app.MapGroup("/api/health").WithTags("Health");
@@ -41,23 +40,16 @@ public static class HealthEndpoints
         .WithName("HealthCheck")
         .WithSummary("Structured health report for all dependencies");
 
-        // Liveness is the standard Kubernetes / App Service probe shape:
-        // "is the process alive?" — answered by the same health-check service but
-        // named so the route table is self-documenting.
-        health.MapGet("/liveness", healthHandler)
-        .WithName("HealthLiveness")
-        .WithSummary("Liveness probe (process alive). Alias of /api/health.");
-
         health.MapGet("/ping", () => Results.Ok("pong"))
             .WithName("HealthPing")
             .WithSummary("Simple liveness probe (no health-check service)");
 
         // Root <c>/health</c> serves two different audiences from one URL, chosen by Accept:
         //
-        //   • A browser (Accept: text/html) gets the Blazor status page — §2 requires
-        //     /health to be the human-facing view of external connections.
+        //   • A browser (Accept: text/html) gets the Blazor status page —
+        //     /health is the human-facing view of external connections.
         //   • Anything else (monitors, curl, the deploy smoke tests — all of which send
-        //     */* or application/json) keeps the exact JSON contract it had before.
+        //     */* or application/json) gets the JSON contract.
         //
         // Content negotiation rather than a second route because the server route table is
         // matched ahead of MapFallbackToFile, so a Blazor `@page "/health"` would otherwise

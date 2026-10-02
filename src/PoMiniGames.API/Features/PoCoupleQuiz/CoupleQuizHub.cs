@@ -9,15 +9,11 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// transition to <see cref="CoupleQuizRoundDirector"/>.
 /// </summary>
 /// <remarks>
-/// <para>Authoritative state lives in <see cref="IGameSessionManager"/> (singleton). Clients are
+/// <para>Authoritative state lives in <see cref="GameSessionManager"/> (singleton). Clients are
 /// pure views driven by <see cref="IGameClient"/> events.</para>
 ///
-/// <para><b>2026-08-10 simplification.</b> This hub had eleven methods; five of them were dead.
-/// <c>SubmitHighScore</c> was an empty <c>await Task.CompletedTask</c>; <c>RequestRestart</c>,
-/// <c>SetAiMode</c> and <c>CreateLobby</c> had no callers anywhere in the client;
-/// <c>RequestNextRound</c> existed only because the host had to drive the round clock by hand.
-/// Game codes are gone too, so <c>JoinLobby(code, name)</c> and <c>JoinOrCreate(name, …)</c>
-/// collapse into one <see cref="Join"/>.</para>
+/// <para>The hub has no game codes, so joining is one <see cref="Join"/> call; the round clock is
+/// driven by the server, not the host.</para>
 ///
 /// <para>There is exactly one lobby per process, so every broadcast targets
 /// <c>Clients.All</c> and no SignalR group is needed.</para>
@@ -25,12 +21,12 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 [AllowAnonymous]
 public class CoupleQuizHub : Hub<IGameClient>
 {
-    private readonly IGameSessionManager _sessions;
+    private readonly GameSessionManager _sessions;
     private readonly CoupleQuizRoundDirector _director;
     private readonly ILogger<CoupleQuizHub> _logger;
 
     public CoupleQuizHub(
-        IGameSessionManager sessions,
+        GameSessionManager sessions,
         CoupleQuizRoundDirector director,
         ILogger<CoupleQuizHub> logger)
     {

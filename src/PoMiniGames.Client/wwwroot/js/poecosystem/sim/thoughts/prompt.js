@@ -1,4 +1,4 @@
-// prompt.js — what the LLM is told about a creature (SPEC §7.8: ≤ 600 chars). The model is
+// prompt.js — what the LLM is told about a creature (≤ 600 chars). The model is
 // asked for one bounded JSON object; nudges.js re-validates whatever comes back.
 import { THOUGHTS, TRAITS } from '../core/config.js';
 import { LIFE_STAGE } from '../creatures/lifecycle.js';

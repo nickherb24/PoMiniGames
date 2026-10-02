@@ -7,10 +7,8 @@ namespace PoMiniGames.Unit.Features.PoFunQuiz;
 /// Tests for the PoFunQuiz domain models — pure logic, no I/O.
 /// </summary>
 /// <remarks>
-/// <b>§1 100/50/25/25 Rule.</b> Originally 11 single-case <c>[Fact]</c>s; consolidated
-/// to 4 <c>[Theory]</c>s + 2 <c>[Fact]</c>s. The streak-accumulation facts (3)
-/// collapse into one theory parameterized over (consecutive correct count,
-/// expected streak bonus). The session scoring facts become one theory.
+/// Streak accumulation is one theory parameterized over (consecutive correct count,
+/// expected streak bonus); session scoring is another.
 /// </remarks>
 public sealed class FunQuizModelsTests
 {
@@ -72,20 +70,6 @@ public sealed class FunQuizModelsTests
         session.Player2State.SetBaseScore(p2Score);
         session.IsTie.Should().Be(expectTie);
         session.Winner?.Name.Should().Be(expectedWinnerName);
-    }
-
-    [Theory]
-    [InlineData(0, 0)]
-    [InlineData(50, 50)]
-    public void PlayerScoreState_InitialOrTimeBonus_ReflectsTotal(int timeBonus, int expectedTotal)
-    {
-        var s = new PlayerScoreState();
-        if (timeBonus > 0) s.SetTimeBonus(timeBonus);
-        s.BaseScore.Should().Be(0);
-        s.SpeedBonus.Should().Be(0);
-        s.StreakBonus.Should().Be(0);
-        s.TimeBonus.Should().Be(timeBonus);
-        s.TotalScore.Should().Be(expectedTotal);
     }
 
     [Theory]

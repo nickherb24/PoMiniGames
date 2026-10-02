@@ -66,7 +66,7 @@ public sealed class PoSportsRaceServiceTests
             string winnerFighterId, string loserFighterId, bool isDraw) =>
             Task.CompletedTask;
 
-        // §PoBrawlOnline (2026-09-14): inert stubs for the new interface members.
+        // Inert stubs for the online player-Elo interface members.
         // PoSports never touches the online player-Elo board, so these exist
         // purely to keep the interface contract satisfied.
         public Task<List<PoBrawlPlayerRating>> GetPoBrawlPlayerRatingsAsync(int limit = 10) =>

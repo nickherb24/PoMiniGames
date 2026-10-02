@@ -2,11 +2,7 @@
    Deliberately the plainest block in the sheet: no gradient, no accent fill.
    It is an account control, and dressing it up invites the tap it must not get
    by accident. Buttons are the shared .app-btn; colour is carried entirely
-   through the theme tokens so it re-points correctly in light mode.
-
-   These rules sat in ProfilePage.razor.css until 2026-10-01, scoped to the page
-   rather than to this component, so they never reached its markup and the block
-   rendered as bare browser buttons. */
+   through the theme tokens so it re-points correctly in light mode. */
 .acct-data {
     padding: 0 var(--space-3);
 }

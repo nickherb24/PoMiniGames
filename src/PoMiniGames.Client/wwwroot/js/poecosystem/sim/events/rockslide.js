@@ -1,4 +1,4 @@
-// rockslide.js — SPEC §7.7 (deterministic form): rocks launch from a ridge tile. Kills are
+// rockslide.js — the deterministic form: rocks launch from a ridge tile. Kills are
 // decided by an ANALYTIC plan — each rock's impact point comes from marching its parabola
 // against the heightmap, then a downhill corridor from the impact tile — so the outcome
 // depends only on sim state and the events stream. The cannon-es rocks get the same launch

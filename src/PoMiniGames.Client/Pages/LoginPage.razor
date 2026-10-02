@@ -7,7 +7,7 @@
 @inject ToastService ToastService
 
 @* ─────────────────────────────────────────────────────────────────────────
-   Addressable sign-in page (2026-08-09, by request).
+   Addressable sign-in page.
 
    The gate itself lives in AuthGate, which renders <LoginScreen /> in place of
    any route until a session exists — so in normal use a visitor never has to
@@ -47,10 +47,9 @@ else
         // any earlier would bounce a signed-in user straight back to /login in a
         // loop. `replace: true` keeps /login out of the back-button history.
         //
-        // 2026-08-12 audit #9: a previously-silent redirect was misleading for
-        // any visitor who clicked "Sign in" from an article link, an email, or
-        // a bookmark while already signed in. The bounce happens with no
-        // acknowledgement, so they assume the link was broken. Toast once
+        // A silent redirect would mislead any visitor who clicked "Sign in" from
+        // an article link, an email, or a bookmark while already signed in: with
+        // no acknowledgement they assume the link was broken. Toast once
         // (guarded by a flag so the OnAfterRender re-render after the redirect
         // navigation doesn't fire a second time).
         if (!AuthState.IsLoading && AuthState.IsAuthenticated)

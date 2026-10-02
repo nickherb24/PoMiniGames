@@ -14,7 +14,7 @@ using PoMiniGamesClient.Services.Ui;
 namespace PoMiniGamesClient.Services.Http;
 
 /// <summary>
-/// §Client resilience: a dependency-free retry/backoff <see cref="DelegatingHandler"/> for
+/// Client resilience: a dependency-free retry/backoff <see cref="DelegatingHandler"/> for
 /// transient failures. Blazor WASM cannot use the full transport handler stack (no
 /// SocketsHttpHandler / Polly transport pipeline), so this is a hand-rolled equivalent
 /// wired directly into the client <see cref="HttpClient"/> pipeline in <c>Program.cs</c>.

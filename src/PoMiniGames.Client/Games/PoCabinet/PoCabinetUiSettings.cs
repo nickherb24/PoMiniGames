@@ -9,12 +9,11 @@ namespace PoMiniGamesClient.Games.PoCabinet;
 /// format (localStorage + sanitisation); this class is the Blazor-side view
 /// model the settings panel binds to. Both directions go through the
 /// source-generated <see cref="PoCabinetJsonContext"/> (camelCase), so a property
-/// here IS its JS key: no hand-written key list left to drift (2026-09-29; it was a
-/// GetDouble/GetBool mapper plus an anonymous projection, each spelling every key).
+/// here IS its JS key: there is no hand-written key list to drift.
 /// </summary>
 public sealed class PoCabinetUiSettings
 {
-    // No volume, mute, reduced-motion or colour-safe here (2026-10-01): those are the app's
+    // No volume, mute, reduced-motion or colour-safe here: those are the app's
     // settings, not Cabinet's. settings.js ignores any value an older build stored for them.
     public bool Music { get; set; } = true;
     public double HudScale { get; set; } = 1;

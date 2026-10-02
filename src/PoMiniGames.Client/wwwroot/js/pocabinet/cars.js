@@ -453,9 +453,9 @@ export function unmountCar(handle) {
 }
 
 /**
- * Every car that is not drawn in full, as one instanced mesh per body style (2026-09-30,
- * the 100-car field). A full car is fourteen draw calls and as many again in the shadow
- * pass; a hundred of them took a 29 fps frame to 3. A crowd mesh is the plain body, glass,
+ * Every car that is not drawn in full, as one instanced mesh per body style (for the
+ * 100-car field). A full car is fourteen draw calls and as many again in the shadow
+ * pass; a hundred of them would take a 29 fps frame to 3. A crowd mesh is the plain body, glass,
  * trim and tyres of its style merged into one geometry: the paint is the instance colour,
  * the rest is baked dark in vertex colour, and it casts its shadow in one call too. race.js
  * fills them each frame from the handles it is not showing (CarHandle.update has already

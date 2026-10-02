@@ -38,7 +38,7 @@
   });
 
   // ----- 2. WebGL2 + device capability probe (callable from Blazor) -----
-  // §2: gates the home page ambient particle field. Skips WebGL entirely on
+  // Gates the home page ambient particle field. Skips WebGL entirely on
   // low-memory devices, when prefers-reduced-motion is set, or when WebGL2
   // is unavailable. Returns a boolean — caller falls back to the CSS gradient.
   window.probeWebGL2 = function () {
@@ -46,7 +46,7 @@
       if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
         return false;
       }
-      // §9 mobile-portrait battery guard: the ambient particle field is purely
+      // Mobile-portrait battery guard: the ambient particle field is purely
       // decorative chrome behind the game list. On portrait phones it's GPU/battery
       // cost with little payoff, so fall back to the (already frozen <=768px) CSS
       // gradient there instead of waking the GPU render loop.

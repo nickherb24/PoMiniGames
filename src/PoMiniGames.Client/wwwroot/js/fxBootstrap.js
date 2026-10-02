@@ -1,4 +1,4 @@
-// fxBootstrap.js — the always-on GFX/Sound bootstrap (§GFX-12…21).
+// fxBootstrap.js — the always-on GFX/Sound bootstrap.
 //
 // Loaded as a classic module script from index.html BEFORE Blazor boots, so
 // the quality tier is decided before the first game asks for it, the palette
@@ -48,10 +48,9 @@
         .then(function () { return load('js/paletteBus.js'); });
     if (!reduceMotion) {
         // ambientMusic.js is the score the director conducts (window.PoAmbientMusic). It
-        // lost its <script> tag on 2026-08-07 and nothing loaded it afterwards, so the
-        // director, and every game that drives its tension, was conducting silence. An ES
-        // module (it imports the audio bus), hence the flag; it only makes sound once the
-        // director starts it on the first gesture.
+        // must be loaded here: without it the director, and every game that drives its
+        // tension, conducts silence. An ES module (it imports the audio bus), hence the
+        // flag; it only makes sound once the director starts it on the first gesture.
         chain = chain.then(function () { return load('js/spatialAudio.js'); })
                      .then(function () { return load('js/ambientMusic.js', true); })
                      .then(function () { return load('js/musicDirector.js'); });

@@ -4,7 +4,7 @@
 @implements IAsyncDisposable
 
 @*
-    §6 SwipeBack gesture wrapper. Listens for a horizontal swipe ≥ 60 px in the
+    SwipeBack gesture wrapper. Listens for a horizontal swipe ≥ 60 px in the
     leftward direction and navigates to BackTo. Pure native pointer events — no
     JS bundle change. Works on touch (pointerdown/move/up) and mouse.
 *@
@@ -55,7 +55,7 @@
         var dy = Math.Abs(e.ClientY - _startY);
         if (dx <= -Threshold && dy <= VerticalTolerance)
         {
-            // §10 native Web Audio swipe-back whoosh — a downsweep reinforces
+            // Native Web Audio swipe-back whoosh — a downsweep reinforces
             // the directional gesture so the user gets a tactile confirmation
             // before the page changes under their finger.
             _ = Feedback.SwipeBackAsync();

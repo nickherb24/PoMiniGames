@@ -9,11 +9,10 @@ namespace PoMiniGames.E2EUI;
 /// exercise the production render path, not the desktop fallback.
 /// </summary>
 /// <remarks>
-/// <b>§9 Mobile-First Rule.</b> The original tests called
-/// <c>browser.NewPageAsync()</c> without a viewport override, which left Chromium
-/// at its default 1280×720 desktop layout. That layout differs from the production
-/// mobile render tree in CSS-grid order, top-bar density, and chip wrap behaviour
-/// — so a "mobile-first smoke" was actually a desktop test in disguise. Pinning the
+/// <b>Mobile-first rule.</b> <c>browser.NewPageAsync()</c> without a viewport override
+/// leaves Chromium at its default 1280×720 desktop layout. That layout differs from the
+/// production mobile render tree in CSS-grid order, top-bar density, and chip wrap behaviour
+/// — so a "mobile-first smoke" would really be a desktop test. Pinning the
 /// viewport at the canonical phone dimensions (iPhone 14 logical resolution) makes
 /// the suite honest about what it covers.
 /// </remarks>

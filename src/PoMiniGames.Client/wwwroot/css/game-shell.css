@@ -16,16 +16,12 @@
 
 /* ── Overlay ──
    A genuinely centered, blocking dialog: dimmed + blurred backdrop, clicks
-   captured (no backdrop-dismiss — OK is the only exit). This replaces the
-   pre-2026-07-16 behaviour where the overlay was docked to the top with
-   `pointer-events: none` and no backdrop, which left every game's "modal"
-   floating over a still-interactive board.
-   Option #9: this is now a native <dialog>, not a <div>. The dialog places
-   itself in the top layer (above fx overlays, particles, toasts) and traps
-   focus inside — properties Blazor's previous <div role="dialog"> wrapper
-   had to hand-roll. The dim layer is the browser-provided `::backdrop`
-   pseudo-element below, no longer a sibling <div>. The .gps-modal selector
-   still owns the visible card itself (size, surface, padding, animation). */
+   captured (no backdrop-dismiss — OK is the only exit), so the board behind it
+   is not interactive.
+   It is a native <dialog>: the dialog places itself in the top layer (above fx
+   overlays, particles, toasts) and traps focus inside. The dim layer is the
+   browser-provided `::backdrop` pseudo-element below. The .gps-modal selector
+   owns the visible card itself (size, surface, padding, animation). */
 dialog.gps-modal {
   pointer-events: auto;
   width: min(94vw, 440px);
@@ -361,7 +357,7 @@ dialog.gps-modal {
    ───────────────────────────────────────────────────────────────────────── */
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Contract: --gps-area-h (2026-09-04 UI sweep, Option 1 + 5).
+   Contract: --gps-area-h.
 
    The CSS variable `--gps-area-h` is published by `.gps-shell` (in games.css)
    as `min(100dvh, max(18rem, 100dvh - var(--gps-topbar-h) - var(--gps-bar-h, 0px)))`.
@@ -374,10 +370,9 @@ dialog.gps-modal {
    `--gps-bar-h` token from their own CSS so the subtraction stays accurate
    without each game having to know which layout it sits under.
 
-   The earlier approach (each game independently computing `min(86vh, 820px)`
-   or `min(calc(100vh - 96px), 92vh)`) gave 7 different answers across the
-   tree. Centralising the arithmetic means a future chrome change (a new
-   top-bar row, a layout-specific drawer) only has to update one token.
+   Each game computing its own `min(86vh, 820px)` would give a different answer
+   per game. Centralising the arithmetic means a chrome change (a new top-bar
+   row, a layout-specific drawer) only has to update one token.
    ───────────────────────────────────────────────────────────────────────── */
 .gps-intro-overlay {
   position: fixed;
@@ -489,10 +484,10 @@ dialog.gps-modal {
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  /* audit #3: `opacity: 0.75` on top of the secondary token computed to #75808f
-     on white = 4.0:1, under the AA floor — and this label ships on EVERY game's
-     intro card, so it was the single most-repeated contrast failure in the app.
-     The token alone is 7.5:1; the uppercase tracking already de-emphasises it. */
+  /* No `opacity` on top of the secondary token: that computes to #75808f on
+     white = 4.0:1, under the AA floor, and this label ships on EVERY game's
+     intro card. The token alone is 7.5:1; the uppercase tracking already
+     de-emphasises it. */
   color: var(--color-text-secondary);
   margin-bottom: 0.4rem;
 }
@@ -564,11 +559,9 @@ dialog.gps-modal {
   color: var(--color-text-secondary);
 }
 
-/* .gps-intro-skip returned 2026-08-30 (audit #5). It was removed on 2026-08-11
-   along with the /settings toggle that was the only way to undo it, which made
-   every 1-player visit re-show the identical card. The opt-out is now a per-game
-   localStorage flag with no settings page: the tick-box itself is the switch,
-   and `?intro=1` on any game URL forces the card back and hides the box. */
+/* The opt-out is a per-game localStorage flag with no settings page: the
+   tick-box itself is the switch, and `?intro=1` on any game URL forces the card
+   back and hides the box. */
 .gps-intro-skip {
   display: inline-flex;
   align-items: center;
@@ -786,9 +779,6 @@ button.gps-intro-roster-item:focus-visible {
     max-height: 20vh;
   }
 }
-
-/* .gps-intro-ready removed 2026-08-10 — PoSports was its last consumer and now
-   uses the interactive .gps-intro-lock button, same as PoBrawl. */
 
 @keyframes gps-intro-spin {
   to { transform: rotate(360deg); }

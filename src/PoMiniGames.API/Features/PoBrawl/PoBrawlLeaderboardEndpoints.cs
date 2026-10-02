@@ -10,17 +10,11 @@ namespace PoMiniGames.Features.PoBrawl;
 /// Minimal API endpoints for PoBrawl's three leaderboards: fastest-KO high scores
 /// (lower time is better), the presidents ladder, and the demo-mode fighter Elo board.
 /// </summary>
-/// <remarks>
-/// Moved out of <c>Features/HighScores</c> 2026-08-11 so the namespace matches the folder
-/// and the slice matches the game — the same correction PoMarbleRace already had. It was
-/// also named <c>PoBrawlHighScoresEndpoints</c> while mapping three unrelated boards, only
-/// one of which is a high-score table.
-/// </remarks>
 public static class PoBrawlLeaderboardEndpoints
 {
     public static IEndpointRouteBuilder MapPoBrawlLeaderboardEndpoints(this IEndpointRouteBuilder app)
     {
-        // §1 MapGroup() per slice: PoBrawl high scores share /api/pobrawl/highscores.
+        // PoBrawl high scores share /api/pobrawl/highscores.
         var brawl = app.MapGroup("/pobrawl/highscores").WithTags("HighScores");
 
         brawl.MapGet("",
@@ -35,12 +29,12 @@ public static class PoBrawlLeaderboardEndpoints
 
         brawl.MapPost("",
             async (PoBrawlHighScore entry, HttpContext http, IStorageService storage,
-                   IScoreIntegrityGuard integrity) =>
+                   ScoreIntegrityGuard integrity) =>
             {
                 // The typed name is only a fallback (the claim name wins below), so it is only
                 // validated when it is the one that will be stored. Checked unconditionally, a
-                // signed-in player whose display name ran past 24 characters had every KO refused
-                // for a name the board was about to discard (2026-09-29).
+                // signed-in player whose display name ran past 24 characters would have every KO
+                // refused for a name the board is about to discard.
                 var claimName = ClaimName(http);
                 if (claimName is null && string.IsNullOrWhiteSpace(entry.PlayerInitials))
                     return Results.BadRequest(new { error = "Player name is required" });
@@ -82,16 +76,16 @@ public static class PoBrawlLeaderboardEndpoints
         // standings are already served by the unified board:
         // UnifiedLeaderboardEndpoints.BuildPoBrawlAsync reads the same PoBrawlLadder
         // table through IStorageService and exposes it at /api/leaderboards/pobrawl,
-        // which the /leaderboards page renders. A dedicated GET here existed for months
-        // with no caller in the client at all; it was removed 2026-08-11. If you need to
+        // which the /leaderboards page renders. A dedicated GET here would
+        // have no caller in the client. If you need to
         // read the ladder, use the unified route — do not add a second one.
         //
-        // The 1P end-of-match modal no longer shows this board: it moved to the
-        // fastest-KO view at /api/leaderboards/pobrawlko (BuildPoBrawlKoAsync), which
+        // The 1P end-of-match modal shows the fastest-KO view at
+        // /api/leaderboards/pobrawlko (BuildPoBrawlKoAsync), which
         // ranks the GET above's data rather than the ladder's.
         ladder.MapPost("",
             async (PoBrawlLadderEntry entry, HttpContext http, IStorageService storage,
-                   IScoreIntegrityGuard integrity) =>
+                   ScoreIntegrityGuard integrity) =>
             {
                 // Same rule as the KO board: the typed name is validated only when it is stored.
                 var claimName = ClaimName(http);
@@ -168,7 +162,7 @@ public static class PoBrawlLeaderboardEndpoints
     /// The name a board row stores: the claim name, else the typed one — moderated either way, and
     /// held to the boards' 24 characters (the sanitizer caps it; this covers moderation switched off).
     /// </summary>
-    private static string StoredName(HttpContext http, IScoreIntegrityGuard integrity, string? claimName, string typed)
+    private static string StoredName(HttpContext http, ScoreIntegrityGuard integrity, string? claimName, string typed)
     {
         var name = integrity.ResolveDisplayName(claimName ?? typed,
             RequestIdentity.Resolve(http.User).IsGuest ? "Guest" : "Player").Trim();

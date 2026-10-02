@@ -6,8 +6,7 @@ namespace PoMiniGames.E2EUI.Features.SandPlayground;
 /// E2E-UI smoke for SandPlayground: the engine must actually boot. Its eleven-plus
 /// GLSL programs are compiled in the browser, so a slip in a shader string is
 /// invisible to <c>dotnet build</c>; one such slip (a dropped line in the composite
-/// pass) left the page on the error boundary from 2026-09-16 to 2026-09-30 with
-/// nothing red anywhere. The demo route is used because it skips the intro card.
+/// pass) leaves the page on the error boundary with nothing red anywhere. The demo route is used because it skips the intro card.
 /// </summary>
 [Collection(KestrelServerCollection.Name)]
 public class SandPlaygroundUiTests

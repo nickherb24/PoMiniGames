@@ -2,13 +2,13 @@
    weather, controls and driver aids. Bound two-way via Value + ValueChanged;
    persistence and JS-side application are the page's job — this component only edits
    the view model and raises the change. Native Blazor + design tokens, no Radzen.
-   Render quality and FOV are gone (2026-09-29): scene.js picks the quality tier from
+   Render quality and FOV are not settings: scene.js picks the quality tier from
    the measured frame rate.
 
-   Volume, mute, reduced motion and colour-blind colours are gone too (2026-10-01).
-   They are the app's settings (the sheet in the top bar's account menu) and Cabinet
-   kept a second switch for each. Either source turned the option on, so with the
-   app's switch on, turning Cabinet's off did nothing. One button opens the sheet.
+   Volume, mute, reduced motion and colour-blind colours are the app's settings (the
+   sheet in the top bar's account menu), not Cabinet's. A second switch here would not
+   work: either source turns the option on, so with the app's switch on, turning
+   Cabinet's off would do nothing. One button opens the sheet.
 
    Compact (the pause overlay): music and the app-settings button up front, everything
    else folded under "More settings", so pausing doesn't open a 12-row form. *@

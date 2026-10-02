@@ -4,15 +4,15 @@
    wwwroot/js/sand-playground/sand-playground-engine.js, which reports back
    through OnEngine so the dock never shows a stale tool.
 
-   2026-09-30 consolidation: the dock floats over the sim's sky instead of
-   sitting above it (the canvas now takes the whole game area), tools are icon
-   chips, and everything that is not a tool — worlds, challenges, saves, speed,
-   weather, sharing — lives in one "⋯" menu. Eight tools are five chips: Pour and
-   Sling each open a small tray for what they carry (sand / water / fire; TNT /
-   balloon, plus the fuse and the charge), so a new material costs no dock space. The toolbar title, the hint bar,
-   the mute button and both sliders are gone: the shell already names the game,
-   a tool's hint shows briefly when it is picked, sound follows the app's own
-   volume, and brush size is the chip / the wheel / [ ]. *@
+   The dock floats over the sim's sky instead of sitting above it (the canvas takes
+   the whole game area), tools are icon chips, and everything that is not a tool —
+   worlds, challenges, saves, speed, weather, sharing — lives in one "⋯" menu. Eight
+   tools are five chips: Pour and Sling each open a small tray for what they carry
+   (sand / water / fire; TNT / balloon, plus the fuse and the charge), so a new
+   material costs no dock space. There is no toolbar title, hint bar, mute button or
+   slider: the shell already names the game, a tool's hint shows briefly when it is
+   picked, sound follows the app's own volume, and brush size is the chip / the
+   wheel / [ ]. *@
 
 <div class="sand-playground-root" @onpointerdown="WakeDock">
     <div class="sand-playground-viewport">

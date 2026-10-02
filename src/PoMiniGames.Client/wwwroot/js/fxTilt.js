@@ -1,4 +1,4 @@
-// fxTilt.js — pointer-tracked 3D tilt for glass surfaces (§GFX-6).
+// fxTilt.js — pointer-tracked 3D tilt for glass surfaces.
 //
 // Opt in from markup with `data-fx-tilt` (optionally `data-fx-tilt="10"` for a
 // maximum angle in degrees). No per-element registration, no cleanup for

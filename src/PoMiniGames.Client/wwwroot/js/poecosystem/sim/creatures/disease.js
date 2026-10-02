@@ -1,5 +1,5 @@
-// disease.js — contagion (feature #8, 2026-09-23). The island had predators and famine
-// but nothing that answered overcrowding, so a rabbit boom only ended when the grass did.
+// disease.js — contagion. Predators and famine alone do not answer
+// overcrowding, so a rabbit boom would only end when the grass did.
 // A species over its DISEASE.outbreakDensity can catch a sickness; it spreads by contact
 // to the same species, drains health while it lasts, and survivors are immune for a while.
 //

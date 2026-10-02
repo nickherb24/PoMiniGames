@@ -5,7 +5,7 @@ using FluentAssertions;
 namespace PoMiniGames.Integration;
 
 /// <summary>
-/// §2 CSRF regression suite for the antiforgery gate.
+/// CSRF regression suite for the antiforgery gate.
 ///
 /// The gate is easy to disable by accident — reordering middleware past
 /// <c>UseAuthorization</c>, dropping the <c>MapAntiforgeryEndpoints()</c> registration, or

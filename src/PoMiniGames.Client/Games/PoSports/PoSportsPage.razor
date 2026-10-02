@@ -22,11 +22,10 @@
 
 <PageTitle>Sports · PoMiniGames</PageTitle>
 
-@* The meet ends on the shared end-of-game modal again (2026-10-02, user call: every game
-   ends the same way). It left it on 2026-09-30 for a card docked beside the podium with
-   Again / Change runner / Leaderboard; that card's content is the modal's summary now, and
-   the delay gives the podium ceremony its moment before the modal covers it. The board is
-   the two-leg meet's, so a field event (a local best, no board row) passes no key. *@
+@* The meet ends on the shared end-of-game modal (every game ends the same way): the
+   results are its summary, and the delay gives the podium ceremony its moment before
+   the modal covers it. The board is the two-leg meet's, so a field event (a local best,
+   no board row) passes no key. *@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
@@ -37,7 +36,7 @@
            Announcement="@_announcement">
     @if (!_introDone)
     {
-        @* 2026-09-11 UI sweep: the runner picker is a player choice; a demo
+        @* The runner picker is a player choice; a demo
            picks its lanes itself, so render no Options slot. NOTE: this comment
            sits OUTSIDE the tag — a Razor comment inside an attribute list is
            parsed as an attribute NAME and takes the page down (see the note on
@@ -58,7 +57,7 @@
         @* The renderer appends its <canvas> here. Labelling the host (rather than
            the canvas, which this component never sees) presents the whole race
            view to a screen reader as one described image instead of an anonymous
-           "canvas" node — 2026-08-07 browser audit #6. What happens in the race is
+           "canvas" node. What happens in the race is
            announced through the shell's live region (Announcement), not this label. *@
         <div id="posports-container" class="ps-canvas-host"
              role="img" aria-label="Track meet — the race renders here"></div>
@@ -102,8 +101,6 @@
     [Parameter] public string? Mode { get; set; }
     /// <summary>Race code from the lobby's gameStarted broadcast — presence selects online mode.</summary>
     [Parameter] public string? Code { get; set; }
-    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
     /// <summary>Online: 1 joins the meet as a spectator (the lobby's Watch link).</summary>
     [SupplyParameterFromQuery(Name = "watch")] public int WatchQuery { get; set; }
 
@@ -302,12 +299,10 @@
 
     private string IntroObjective => _mode switch
     {
-        // 2026-09-11: word budget — the intro card is capped at 100 words. The
-        // 2P card previously carried the objective + BOTH keymaps + three tips
-        // and measured 139 words.
+        // Word budget: the intro card is capped at 100 words, which the 2P card
+        // would exceed with the objective + BOTH keymaps + three tips.
         "2p" => "Sprint then hurdles — lowest combined time wins.",
-        // 2026-09-11 UI sweep: the demo told a spectator to type Q/W/A/S —
-        // describe the meet instead of instructing someone who isn't racing.
+        // The demo describes the meet instead of telling a spectator to type Q/W/A/S.
         _ when _demo => "Four CPU runners, two legs: 100m sprint then 110m hurdles. Lowest combined time tops the board.",
         _ => Array.Find(Events, e => e.Id == _event)?.Hint ?? "",
     };
@@ -319,8 +314,8 @@
         new(who, [.. _keys.Take(4).Select(KeyLabel)], KeyLabel(_keys[4]));
 
     @* One how-to for every surface (PoSportsHowTo). 1P and online show only the
-       player's own keys — the card used to teach "Player 2: IOKL" to someone racing
-       alone (2026-08-10) — and they are the keys actually bound, not the defaults. *@
+       player's own keys (not "Player 2: IOKL" to someone racing alone) — and they are
+       the keys actually bound, not the defaults. *@
     private RenderFragment HowToPlayContent => IsFieldEvent ? FieldHowTo : MeetHowTo;
 
     private IReadOnlyList<PoSportsHowTo.Keys> HowToKeys => _mode == "2p"
@@ -348,10 +343,9 @@
 
     private string KeysInline() => string.Join(" ", _keys.Take(4).Select(KeyLabel));
 
-    // 2026-09-11 UI sweep: demo previously rendered HowToPlayContent AND the
-    // OnePlayerSelect picker — a spectator was offered a runner they cannot
-    // control and keys nobody is typing. TicTacToe/Joker/FunQuiz demos already
-    // carry their own copy; this matches them.
+    // The demo renders this instead of HowToPlayContent and the OnePlayerSelect
+    // picker: a spectator should not be offered a runner they cannot control or
+    // keys nobody is typing. TicTacToe/Joker/FunQuiz demos carry their own copy too.
     private RenderFragment DemoQuickControls => @<div>
         <p>All four runners are CPU-driven — no controls, just watch the meet.</p>
         <ul>
@@ -367,7 +361,7 @@
     private static string SelectHint(int layout)
     {
         var l = PoSportsLayouts.For(layout);
-        // 2026-09-11: word budget — this hint renders twice on the 2P intro
+        // Word budget: this hint renders twice on the 2P intro
         // card, so it reads as compactly as it teaches: keys only.
         return $"{l.Sequence[0]}{l.Sequence[1]} cycle · {l.Sequence[3]} locks";
     }
@@ -424,10 +418,9 @@
         }
     </div>;
 
-    @* 2026-08-10: the roster was inert <li> elements and the only way to pick or
-       lock in was the keyboard, so a pointer user saw a disabled RACE button with
-       no reachable way to enable it. Both sides now use the shared picker; the
-       keyboard path (OnIntroKey) is untouched and the two agree on when a meet starts. *@
+    @* Both sides use the shared picker so a pointer user can pick and lock in (a
+       keyboard-only roster would leave the RACE button disabled with no reachable way
+       to enable it); the keyboard path (OnIntroKey) agrees with it on when a meet starts. *@
     private RenderFragment TwoPlayerSelect => @<div class="gps-intro-versus">
         <div>
             <div class="gps-intro-side-title">Player 1</div>
@@ -494,7 +487,7 @@
 
     protected override void OnInitialized()
     {
-        var routeMode = GameModes.Parse(Mode, ModeQuery, DemoQuery);
+        var routeMode = GameModes.Parse(Mode);
         _demo = routeMode == GameMode.Demo;
         // A race code always wins: it means the lobby already handed this page a
         // live match, whatever the mode segment says.
@@ -863,7 +856,7 @@
         _phase = "podium";
         _ghostGap = null;
         _announcement = ResultHeadline;
-        // 2026-09-04: signal the kiosk reel that the demo meet is over. The podium
+        // Signal the kiosk reel that the demo meet is over. The podium
         // otherwise lingers for the full 20s dwell — the demo attract loop sees a
         // frozen results screen between meets.
         if (_demo) Kiosk.MarkFinished();

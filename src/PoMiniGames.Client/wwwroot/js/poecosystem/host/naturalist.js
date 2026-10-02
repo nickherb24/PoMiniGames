@@ -1,4 +1,4 @@
-// naturalist.js — real-world field-guide cards for the Almanac (feature #8, 2026-09-23).
+// naturalist.js — real-world field-guide cards for the Almanac.
 // iNaturalist's public taxa API gives each of the island's four species a photo, its
 // licence and attribution, and a link to the taxon page; Wikipedia's REST summary gives a
 // short description. Both are anonymous, CORS-enabled, and called from the browser with

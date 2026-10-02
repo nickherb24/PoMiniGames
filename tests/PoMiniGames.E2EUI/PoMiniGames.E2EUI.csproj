@@ -4,7 +4,7 @@
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- §5 E2E-UI: real-browser tests driven by Microsoft.Playwright (C#).
+    <!-- E2E-UI: real-browser tests driven by Microsoft.Playwright (C#).
          The host is started on a real Kestrel port (see KestrelServerFixture)
          so Playwright can navigate to it over HTTP, then assert the rendered
          Blazor WASM UI. Pure HTTP-contract checks live in PoMiniGames.E2EAPI. -->
@@ -36,7 +36,7 @@
   </ItemGroup>
 
   <!--
-    §5: zero-waste E2E-UI preflight. The Playwright Chromium binary must be
+    Zero-waste E2E-UI preflight. The Playwright Chromium binary must be
     present before VSTest runs, otherwise every test fails in <2s with
     "Executable doesn't exist at …\chrome-win\headless_shell.exe".
     scripts/test-all.ps1 has a try/catch preflight that warns on install

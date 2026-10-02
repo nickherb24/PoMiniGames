@@ -1,14 +1,13 @@
 // audioBus.js — the platform's single AudioContext and mix graph.
 //
 // WHY THIS EXISTS
-// Before 2026-07-29 five modules each called `new AudioContext()` of their own:
-// uiAudio.js, pojoker-audio-interop.js,
-// pobrawl/audio.js and pomarblerace/audio.js. That cost us three real things:
+// Modules that each call `new AudioContext()` of their own (uiAudio.js,
+// pojoker-audio-interop.js, pobrawl/audio.js, pomarblerace/audio.js) cost three real things:
 //   1. Browsers cap concurrent hardware AudioContexts (Chrome historically ~6).
-//      Five was uncomfortably close, and each one holds a hardware output.
+//      Five is uncomfortably close, and each one holds a hardware output.
 //   2. There was no global mix. Nothing could duck music under a cue, because
 //      "music" and "cue" lived in different graphs that never met.
-//   3. Mute was enforced five times over by each module independently
+//   3. Mute would be enforced separately by each module
 //      string-matching `localStorage['pomini_muted']` at the call site. Miss one
 //      call path and a muted player still hears it.
 //
@@ -266,7 +265,7 @@ export async function duck(amount, holdMs) {
 }
 
 /**
- * Swap the convolver's impulse response — the app's "acoustic space" (§GFX-10).
+ * Swap the convolver's impulse response — the app's "acoustic space".
  *
  * The default IR built above is a generic small room, which is the wrong answer
  * everywhere: PoBrawl happens in a hard-walled arena, PoRacer outdoors where
@@ -375,7 +374,7 @@ if (typeof window !== 'undefined') {
         }
     }, { passive: true });
 
-    // 2026-09-04: listen for the po-audio-mute CustomEvent the kiosk control bar
+    // Listen for the po-audio-mute CustomEvent the kiosk control bar
     // fires. The bar is the only place this lives because audio is part of the
     // watch experience and the rest of the app already has its own SettingsService
     // toggle. Routing through this DOM event keeps the C# side free of a hard

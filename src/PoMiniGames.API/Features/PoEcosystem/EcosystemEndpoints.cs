@@ -36,7 +36,7 @@ public static class EcosystemEndpoints
             .Produces<EcoWorldMeta[]>();
 
         group.MapPut("/worlds/{slot}", async (
-                string slot, HttpContext http, EcosystemWorldStore store, IScoreIntegrityGuard integrity, CancellationToken ct,
+                string slot, HttpContext http, EcosystemWorldStore store, ScoreIntegrityGuard integrity, CancellationToken ct,
                 [FromQuery] string? name, [FromQuery] int seed = 0, [FromQuery] int year = 0, [FromQuery] int tick = 0, [FromQuery] string? counts = null) =>
             {
                 var who = Owner(http);
@@ -95,7 +95,7 @@ public static class EcosystemEndpoints
             .Produces<EcoWorldMeta>()
             .RequireRateLimiting("highscores");
 
-        group.MapPost("/chronicle", async (EcoChronicleRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+        group.MapPost("/chronicle", async (EcoChronicleRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
             {
                 if (request.Log is { Length: > EcosystemChronicleService.MaxLogLines * 2 }) return Results.BadRequest(new { error = "too many log lines" });
                 try { return Results.Ok(await chronicler.WriteAsync(request, ct)); }
@@ -106,7 +106,7 @@ public static class EcosystemEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting("ai-generation");
 
-        group.MapPost("/thought", async (EcoThoughtRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+        group.MapPost("/thought", async (EcoThoughtRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
             {
                 if (string.IsNullOrWhiteSpace(request.Prompt) || request.Prompt.Length > 2_000) return Results.BadRequest(new { error = "prompt is required and bounded" });
                 try { return Results.Ok(await chronicler.ThinkAsync(request, ct)); }
@@ -117,7 +117,7 @@ public static class EcosystemEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting("ai-generation");
 
-        group.MapPost("/thoughts/batch", async (EcoThoughtBatchRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+        group.MapPost("/thoughts/batch", async (EcoThoughtBatchRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
             {
                 if (request.Items is null || request.Items.Count == 0 || request.Items.Count > 16) return Results.BadRequest(new { error = "items required (1-16)" });
                 try { return Results.Ok(await chronicler.ThinkBatchAsync(request, ct)); }
@@ -128,7 +128,7 @@ public static class EcosystemEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting("ai-generation");
 
-        group.MapPost("/treaty", async (EcoTreatyRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+        group.MapPost("/treaty", async (EcoTreatyRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
             {
                 if (request.TribeA is null || request.TribeB is null) return Results.BadRequest(new { error = "both tribes required" });
                 try { return Results.Ok(await chronicler.NegotiateTreatyAsync(request, ct)); }
@@ -139,7 +139,7 @@ public static class EcosystemEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting("ai-generation");
 
-        group.MapPost("/milestone-lore", async (EcoMilestoneLoreRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
+        group.MapPost("/milestone-lore", async (EcoMilestoneLoreRequest request, EcosystemChronicleService chronicler, CancellationToken ct) =>
             {
                 if (string.IsNullOrWhiteSpace(request.MilestoneType)) return Results.BadRequest(new { error = "milestone type required" });
                 try { return Results.Ok(await chronicler.GenerateMilestoneLoreAsync(request, ct)); }
@@ -150,20 +150,12 @@ public static class EcosystemEndpoints
             .ProducesProblem(StatusCodes.Status503ServiceUnavailable)
             .RequireRateLimiting("ai-generation");
 
-        group.MapGet("/culture/{seed:int}", (int seed, IEcosystemChronicleService chronicler) =>
+        group.MapGet("/culture/{seed:int}", (int seed, EcosystemChronicleService chronicler) =>
             {
                 return Results.Ok(chronicler.GenerateTribeCultures(seed));
             })
             .WithName("PoEcosystemCulture")
             .Produces<EcoCultureProfile[]>();
-
-        group.MapPost("/chronicle/prewarm", async (EcoChronicleRequest request, IEcosystemChronicleService chronicler, CancellationToken ct) =>
-            {
-                await chronicler.PrewarmChronicleAsync(request, ct);
-                return Results.Accepted();
-            })
-            .WithName("PoEcosystemPrewarmChronicle")
-            .RequireRateLimiting("ai-generation");
 
         return app;
     }

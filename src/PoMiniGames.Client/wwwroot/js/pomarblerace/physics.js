@@ -4,14 +4,14 @@ import * as CANNON from 'cannon-es';
 
 // Real-marble physics. The world is scaled at 1 unit = 1 cm, so a radius-1 marble is a 20 mm
 // glass "shooter" (see marbles.js for the ~10.5 g mass that implies). Gravity is a weighty,
-// natural fall — stronger than the old floaty arcade value but deliberately short of a literal
+// natural fall — stronger than a floaty arcade value but deliberately short of a literal
 // 9.8 m/s² (which at this scale would be 981 u/s² and run the race ~8× faster). The floor has
 // real friction, so marbles ROLL down the course (angular velocity coupling to linear) the way
 // real marbles do, instead of sliding.
 //
-// GRAVITY survived the move to the authored course (2026-08-10) on purpose, even though the
-// course is much shallower than the old chute (average slope 0.27 against 0.42). The reason is
-// that raising or lowering it changes nothing about whether marbles hold the banked turns: the
+// GRAVITY is not retuned for the authored course's shallow slope (average 0.27, against 0.42 for
+// the procedural chute). Raising or lowering it changes nothing about whether marbles hold the
+// banked turns: the
 // speed a marble reaches on a ramp and the speed a banked turn is designed for BOTH scale as
 // sqrt(g), so the ratio between them — which is what decides how high a marble rides — is
 // gravity-independent. What holds the pack in is the authored geometry: 24° of bank on the
@@ -19,8 +19,7 @@ import * as CANNON from 'cannon-es';
 // tall (four marble diameters) at every channel edge.
 export const GRAVITY = 72;        // world gravity magnitude (down -Y) — weighty, and enough to
                                   // keep pace once rolling friction scrubs speed on the turns
-// 1/60, halved from 1/120 when the procedural chute was replaced by the authored course
-// (2026-08-10). Not a preference — a budget. Colliding 101 marbles against a trimesh course costs
+// 1/60, not 1/120. Not a preference — a budget. Colliding 101 marbles against a trimesh course costs
 // ~16.5 ms per step at the start line (the worst case, with the whole field still bunched), so at
 // 1/120 the physics alone wanted ~33 ms per rendered frame and the race would have run in slow
 // motion. One step per frame at 60 Hz fits.
@@ -28,7 +27,7 @@ export const GRAVITY = 72;        // world gravity magnitude (down -Y) — weigh
 // The trade is integration accuracy, and the margin that matters is tunnelling: the fastest
 // marbles observed on this course run ~55 u/s, which is 0.92 units per step here, against a
 // marble 2 units across. The surface catches it with better than 2x to spare, and would keep
-// doing so up to ~120 u/s. Raising this back to 1/120 is safe for physics and NOT safe for the
+// doing so up to ~120 u/s. Raising this to 1/120 is safe for physics and NOT safe for the
 // frame budget — check the step cost before considering it.
 export const FIXED_DT = 1 / 60;   // fixed physics step
 export const MAX_SUBSTEPS = 4;
@@ -53,8 +52,8 @@ export function createWorld() {
   const spinner = new CANNON.Material('spinner');    // motorised paddles — the one surface that hits back
   const ice = new CANNON.Material('ice');            // near-frictionless plates — marbles skid instead of rolling
 
-  // Floor + walls. This coefficient is bracketed from both sides and the bracket MOVED when the
-  // procedural chute was replaced by the authored course (2026-08-10), so it is not a free knob:
+  // Floor + walls. This coefficient is bracketed from both sides by the authored course's
+  // slopes, so it is not a free knob:
   //
   //   lower bound — rolling without slipping needs friction ≥ (2/7)·tan(slope). The course's
   //     average slope is 0.27, so ≥ 0.077 keeps marbles rolling rather than skidding.
@@ -62,7 +61,7 @@ export function createWorld() {
   //     stretch, or gravity stops winning and the pack can settle. The shallowest sustained
   //     slope on the course is Track-LowerC's run to the line at 0.11, with Track-Upper at 0.14.
   //
-  // 0.18 (tuned for the old 0.42 ramp) sat ABOVE that new ceiling and would have stalled the
+  // 0.18 (right for a 0.42 ramp) sits ABOVE that ceiling and would stall the
   // field on the final straight. 0.09 clears the rolling bound and stays under the shallowest
   // descent. Re-run scripts/bake-marble-track.mjs for the current per-segment slope table — it
   // flags any segment that has dropped below this value.

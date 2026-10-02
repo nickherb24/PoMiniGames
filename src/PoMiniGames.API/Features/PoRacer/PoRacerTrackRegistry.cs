@@ -106,8 +106,7 @@ public static class PoRacerTrackRegistry
 
     /// <summary>
     /// A boost pad on the centerline at a fraction of the lap, pointing the way the track runs
-    /// there. Every track shipped with an empty pad list until 2026-10-01, while the start card
-    /// told drivers to aim for them.
+    /// there. Every track needs pads, because the start card tells drivers to aim for them.
     /// </summary>
     private static PoRacerBoostPadDefinition PadAt(IReadOnlyList<Vec2> line, double lapFraction)
     {

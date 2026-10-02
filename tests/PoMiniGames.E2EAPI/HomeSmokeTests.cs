@@ -1,11 +1,10 @@
 namespace PoMiniGames.E2EAPI;
 
 /// <summary>
-/// §5 Home page smoke tests. C# port of the top-of-funnel tests from
-/// <c>home.spec.js</c> (deleted during the JS → C# e2e migration).
+/// Home page smoke tests.
 ///
 /// These tests assert the HTML shape of the home route because the Blazor
-/// WASM client is now BFF-served (no separate Vite/Node). The deeper
+/// WASM client is BFF-served (no separate Vite/Node). The deeper
 /// component-level coverage (button clicks, navigation, game-specific
 /// selectors) lives in the unit tests under tests/PoMiniGames.Unit/Features
 /// via bUnit-style assertions; the e2e project only asserts the

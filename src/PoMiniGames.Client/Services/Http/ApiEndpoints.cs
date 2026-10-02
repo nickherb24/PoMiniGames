@@ -9,7 +9,7 @@ using PoMiniGamesClient.Services.Ui;
 namespace PoMiniGamesClient.Services.Http;
 
 /// <summary>
-/// §Absolute API endpoints — single source of truth for the base URL every
+/// Absolute API endpoints — single source of truth for the base URL every
 /// cross-origin transport (HttpClient, SignalR, fetch, third-party SDKs)
 /// should target.
 ///

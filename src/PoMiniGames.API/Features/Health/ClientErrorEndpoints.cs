@@ -12,9 +12,9 @@ public sealed record ClientErrorReport(string? Kind, string? Message, string? So
 /// </summary>
 /// <remarks>
 /// <para>
-/// It exists because nothing reported these. SandPlayground sat on the error boundary from
-/// 2026-09-16 to 2026-09-30 behind a shader typo <c>dotnet build</c> cannot see, and the boundary's
-/// own copy said "the team has been notified" while notifying nobody.
+/// It exists because otherwise nothing reports these: a shader typo that <c>dotnet build</c>
+/// cannot see leaves a page on the error boundary, whose own copy says "the team has been
+/// notified".
 /// </para>
 /// <para>
 /// <b>Outside <c>/api</c> on purpose.</b> The reporter uses <c>navigator.sendBeacon</c>, which

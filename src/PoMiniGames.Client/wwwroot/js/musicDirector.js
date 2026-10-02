@@ -1,4 +1,4 @@
-// musicDirector.js — one reactive soundtrack brain (§GFX-19).
+// musicDirector.js — one reactive soundtrack brain.
 //
 // ambientMusic.js already synthesises layered music with an intensity-driven
 // layer mixer — but nothing ever STARTED it, and nothing moved its intensity.
@@ -12,8 +12,8 @@
 // States arrive from PoPalette (route change → menu/game) and PoPalette.pulse
 // (win/lose). Games can call PoMusicDirector.match(true/false) directly for
 // finer control. Audio starts lazily on the first user gesture — browsers lock
-// the AudioContext before one, and the §GFX-10 engine already treats that as a
-// hard contract.
+// the AudioContext before one, and the audio engine treats that as a hard
+// contract.
 //
 // Exposed as window.PoMusicDirector.
 (function () {
@@ -40,11 +40,11 @@
     let _verdictUntil = 0;
 
     // Continuous tension, 0..1, riding on top of the current state's base
-    // intensity (§GFX). The three states are a coarse instrument: a match is
-    // 'match' whether it is the first lap or the last corner, which means the
-    // soundtrack said the same thing for the whole of every game. ambientMusic
-    // has had a live intensity mixer the entire time — nothing drove it, and
-    // anything that tried was overwritten by the next apply().
+    // intensity. The three states are a coarse instrument: a match is
+    // 'match' whether it is the first lap or the last corner, so on their own
+    // they would say the same thing for the whole of every game. ambientMusic
+    // has a live intensity mixer, and anything that drives it directly is
+    // overwritten by the next apply(), hence this separate term.
     let _tension = 0;
 
     // How much of the remaining headroom tension can claim. Capped well under 1

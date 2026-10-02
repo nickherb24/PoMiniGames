@@ -20,7 +20,7 @@ public static class PoRacerScoreEndpoints
             HttpContext http,
             StorageService storage,
             PoRacerRaceRegistry races,
-            IScoreIntegrityGuard integrity,
+            ScoreIntegrityGuard integrity,
             ILoggerFactory loggerFactory) =>
         {
             var errors = new Dictionary<string, string[]>();

@@ -210,7 +210,7 @@ class CombinePass extends Pass {
         tShaft: { value: null },
         aoEnabled: { value: 0 },
         shaftEnabled: { value: 0 },
-        // 2026-09-30: four screen-feel terms folded into this pass rather than given
+        // Four screen-feel terms folded into this pass rather than given
         // passes of their own — each is a few instructions on a fetch that already happens.
         uTime: { value: 0 },
         heat: { value: 0 },    // 0..1 gun heat above 70%: shimmer off the barrel

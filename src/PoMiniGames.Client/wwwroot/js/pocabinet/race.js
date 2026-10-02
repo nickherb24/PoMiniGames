@@ -5,7 +5,7 @@
 //   solo      — the whole race simulates here (physics.js, the same model the
 //               server runs), fixed 30 Hz ticks, rendered interpolated at the
 //               display rate. A HUD snapshot goes to Blazor every tick. The field
-//               is 100 cars (2026-09-30): the player in grid slot 50 and the 99
+//               is 100 cars: the player in grid slot 50 and the 99
 //               rivals of physics.soloField(). Everything per-car below is sized
 //               for that: only the nearest cars are drawn in full (the rest are one
 //               instanced mesh, cars.js CarCrowd) or heard, and the HUD snapshot
@@ -13,7 +13,7 @@
 //   demo      — as solo, with the local car on autopilot and the camera
 //               cycling chase → far chase → TV.
 //
-// The camera is third person at all times (2026-09-23): 'chase', 'far' (the
+// The camera is third person at all times: 'chase', 'far' (the
 // camera button toggles them) and, in the demo and replays, 'tv'.
 //   net       — the server is authoritative. The local car is PREDICTED here:
 //               each tick samples input, steps the car, sends the numbered
@@ -39,7 +39,7 @@
 // scales how much sim time each frame feeds the fixed-tick accumulator, so lap
 // times (sim clock) are unaffected; online the server owns time and it never runs.
 //
-// 2026-09-29 additions, same rule (render + audio only): every exhaust pop audio.js
+// More of the same rule (render + audio only): every exhaust pop audio.js
 // reports becomes a flame on that car; barrier hits and contacts dent the cars
 // involved and throw debris; the grandstand crowd murmurs, cheers a pass-by, an
 // overtake, a PB and the finish (confetti on a podium); music.js follows the battle
@@ -156,7 +156,7 @@ class Race {
         this.minimapAt = 0;
         this.replay = null;
         this.rec = null;
-        // Lap proof (2026-09-29): the player's quantized controls, one [thr, brk, str] triple
+        // Lap proof: the player's quantized controls, one [thr, brk, str] triple
         // per race tick, for PoCabinetLapVerifier to re-run server-side. Solo only — online
         // laps are timed by the server's own sim.
         this.proof = this.mode === 'solo' ? [] : null;

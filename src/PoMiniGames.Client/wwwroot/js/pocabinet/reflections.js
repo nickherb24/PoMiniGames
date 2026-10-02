@@ -1,14 +1,14 @@
 // pocabinet/reflections.js
 //
-// Wet-road light reflections (2026-09-29). The wet asphalt in environment.js only
+// Wet-road light reflections. The wet asphalt in environment.js only
 // mirrors the sky (its env map is a sky capture), so a lamp or a tail light never
 // showed in it. This draws what a camera actually sees on wet tarmac: each light
 // smeared into a long streak running from under it toward the viewer, broken into
 // shimmering bands by the rain.
 //
 // One instanced quad per light, aimed in the vertex shader (no per-frame matrix
-// work): every car's tail lights, brighter under braking (the game is always day
-// since 2026-09-29, so the lamp and headlight sources went with the night mode).
+// work): every car's tail lights, brighter under braking (the game is always day,
+// so there are no lamp or headlight sources).
 // Additive over the road, depth-tested so cars occlude it. Render-only: it reads the
 // poses race.js already drew.
 

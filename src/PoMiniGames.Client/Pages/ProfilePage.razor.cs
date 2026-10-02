@@ -13,12 +13,10 @@ namespace PoMiniGamesClient.Pages;
 /// Code-behind for <c>ProfilePage.razor</c>.
 /// </summary>
 /// <remarks>
-/// Split out of the <c>@code</c> block on 2026-09-11. ProfilePage.razor was the largest
-/// file in the client and longer than any actual game page — ~500 lines of markup with
-/// ~770 lines of C# underneath, so neither half could be read without scrolling through
-/// the other. Behaviour is unchanged: the Razor generator already compiles the page into
-/// this same partial class, which is why the split needed no wiring.
-/// <c>RenderOpponentTable</c> stayed behind in the .razor because inline Razor markup
+/// Holds the page's C# so neither the markup nor the code has to be read through the
+/// other. The Razor generator compiles the page into this same partial class, which is
+/// why the split needs no wiring.
+/// <c>RenderOpponentTable</c> stays in the .razor because inline Razor markup
 /// inside a <see cref="RenderFragment"/> is compiled by the Razor generator rather than
 /// by csc, and does not compile in a .cs file.
 /// </remarks>
@@ -81,10 +79,8 @@ public partial class ProfilePage
     // they were listed — the data existed, the page just never read it, so a player
     // with prior history sees it appear on the first load after this ships.
     //
-    // The list itself is GameCatalog's (2026-10-01). It was a second, hand-kept table of
-    // key, name and icon, and it had drifted the way the catalogue was written to stop:
-    // Cabinet and Jev Arena were missing from the profile altogether, and Tic-Tac-Toe and
-    // Connect Five wore different icons here than on the hub. All this page owns is the
+    // The list itself is GameCatalog's: a second, hand-kept table of key, name and icon
+    // would drift out of step with the hub. All this page owns is the
     // kind of record each game keeps; a game with no entry below still gets its row, as a
     // session count, which is the only stat that is honest for a game with no win
     // condition and no score (Joker, PoEcosystem, SandPlayground).
@@ -116,8 +112,7 @@ public partial class ProfilePage
     private string _playerName = "Player";
     private int _totalGames, _totalWins, _totalLosses, _totalDraws;
     private int _bestStreak, _topElo;
-    // Browser audit #6 (2026-08-10): the friendlier partial-session count
-    // shown under the "Saved Matches" chip. Built from GameStatsService's
+    // The friendlier partial-session count shown under the "Saved Matches" chip. Built from GameStatsService's
     // per-game local counts in LoadStats so it picks up the visitor's
     // in-session play activity without conflating it with the saved W/L.
     private int _unsyncedSessions;
@@ -128,7 +123,7 @@ public partial class ProfilePage
     private sealed record HighScoreEntry(string Game, string Icon, string Value, string Sub, bool HasValue);
     private List<HighScoreEntry> _highScores = new();
 
-    // 2026-08-12 audit #5: the Game Breakdown card needs to know whether
+    // The Game Breakdown card needs to know whether
     // a score-based game has a row on the leaderboard, so it can show a
     // link to /leaderboards instead of the static "see leaderboard" copy.
     // The HsDefs keys (e.g. "pomarblerace") line up with the GameDefs keys,
@@ -174,7 +169,7 @@ public partial class ProfilePage
     protected override void OnInitialized()
     {
         PlayerNameService.StateChanged += OnNameChanged;
-        // §7 UX: _loading starts true (declared on the state field). The
+        // _loading starts true (declared on the state field). The
         // skeleton renders on the first paint, and we let OnInitializedAsync
         // hydrate the stats + name. We deliberately do NOT call
         // PlayerNameService.GetPlayerName() or LoadStats() here — those would
@@ -190,7 +185,7 @@ public partial class ProfilePage
         // HighScore + MatchHistory are independent (disjoint fields), so run them
         // concurrently — the same way OnNameChanged already fires them.
         await Task.WhenAll(LoadHighScoresAsync(), LoadMatchesAsync());
-        // §7 UX: dismiss the skeleton once the slowest data source has resolved.
+        // Dismiss the skeleton once the slowest data source has resolved.
         // HighScore + MatchHistory fire in parallel; flipping _loading here means
         // the user sees a skeleton for the network round-trip (typically <300ms
         // on warm-cache) and never a stale identity flash if a previous user's
@@ -275,23 +270,23 @@ public partial class ProfilePage
 
     private async Task LoadHighScoresAsync()
     {
-        // 2026-07-26 browser audit #7: the leaderboards endpoint returns the GLOBAL top-N,
-        // not the current player's own best, so treating the top row as "yours" surfaced a
-        // previous session's high score as if it belonged to the current guest.
+        // The leaderboards endpoint returns the GLOBAL top-N, not the current player's own
+        // best, so treating the top row as "yours" would surface a previous session's high
+        // score as if it belonged to the current guest.
         //
         // Match on the row's UserId, which the server stamps from the auth cookie. Matching
-        // on the display name (the first fix) could not find rows it should have: legacy
-        // rows store 3-letter initials, guest rows store the literal "Guest", and the server
-        // truncates names to 24 chars — none of which equal the local player name. A wider
-        // page also keeps a personal best visible when it sits outside the global top ten.
-        // The three boards are independent reads — fetch them concurrently rather than
-        // serially stacking three round-trips behind the profile skeleton.
+        // on the display name alone cannot find rows it should: legacy rows store 3-letter
+        // initials, guest rows store the literal "Guest", and the server truncates names to
+        // 24 chars — none of which equal the local player name. A wider page also keeps a
+        // personal best visible when it sits outside the global top ten.
+        // The boards are independent reads — fetch them concurrently rather than
+        // serially stacking round-trips behind the profile skeleton.
         //
-        // 2026-08-12 audit #3: a swallowed HTTP error here silently showed "Not played
-        // yet" even for players who DID have a saved row on the public leaderboard.
-        // Detect the failure path explicitly so the user sees a banner that names the
-        // failed endpoint and offers a retry — without it, the page is indistinguishable
-        // from a profile of someone who has never played.
+        // A swallowed HTTP error must not silently show "Not played yet" for players who
+        // DO have a saved row on the public leaderboard. The failure path is detected
+        // explicitly so the user sees a banner that names the failed endpoint and offers
+        // a retry — otherwise the page is indistinguishable from a profile of someone who
+        // has never played.
         var marbleTask = ApiService.GetMarbleRaceHighScoresAsync(100);
         var voxelTask = ApiService.GetPoVoxelStrikeHighScoresAsync(100);
         var sportsTask = ApiService.GetPoSportsHighScoresAsync(100);
@@ -333,7 +328,7 @@ public partial class ProfilePage
         StateHasChanged();
     }
 
-    // 2026-08-12 audit #3: a banner explaining a failed leaderboard fetch.
+    // Drives a banner explaining a failed leaderboard fetch.
     // The fetch can fail (network offline, API down, antiforgery 403) and we
     // cannot tell from a null result alone. The user sees this banner above
     // the high-scores grid instead of an unexplained "Not played yet" list.
@@ -343,12 +338,12 @@ public partial class ProfilePage
     /// Resolve the current player's own best row out of a board response.
     /// </summary>
     /// <remarks>
-    /// 2026-07-26 browser audit #7: the leaderboards endpoints return the GLOBAL top-N,
-    /// not the caller's own best, so treating the top row as "yours" surfaced a previous
-    /// session's high score as if it belonged to the current guest.
+    /// The leaderboards endpoints return the GLOBAL top-N, not the caller's own best, so
+    /// treating the top row as "yours" would surface a previous session's high score as if
+    /// it belonged to the current guest.
     ///
     /// Match on the row's UserId, which the server stamps from the auth cookie. Matching
-    /// on the display name alone could not find rows it should have: legacy rows store
+    /// on the display name alone cannot find rows it should: legacy rows store
     /// 3-letter initials, guest rows store the literal "Guest", and the server truncates
     /// names to 24 chars — none of which equal the local player name. A wide page also
     /// keeps a personal best visible when it sits outside the global top ten.
@@ -459,10 +454,10 @@ public partial class ProfilePage
         _totalGames = _totalWins = _totalLosses = _totalDraws = 0;
         _bestStreak = 0;
         _unsyncedSessions = 0;
-        // 2026-07-26 browser audit #8: seed _topElo at the AdaptiveRating
-        // starting value (1200 — see GameModels.cs) so a fresh guest sees
-        // "— not played —" via the chip's `> 1200` gate. Anything above this
-        // requires the user to have actually played at least one game.
+        // Seed _topElo at the AdaptiveRating starting value (1200 — see
+        // GameModels.cs) so a fresh guest sees "— not played —" via the chip's
+        // `> 1200` gate. Anything above this requires the user to have actually
+        // played at least one game.
         _topElo = 1200;
 
         foreach (var (key, label, icon, kind) in GameDefs)
@@ -486,12 +481,10 @@ public partial class ProfilePage
 
             _entries.Add(entry);
 
-            // Browser audit #6 (2026-08-10): the "session" count shown under
-            // the "Saved Matches" chip. PlayCountOnly games (Joker today)
-            // contribute their full local play count; rated games contribute
-            // only the un-PERMANENTED remainder above what's saved server-side
-            // so the chip doesn't double-count. Best-effort: if the server
-            // snapshot is missing, count the local value as "all unsynced".
+            // The "session" count shown under the "Saved Matches" chip. Only
+            // PlayCountOnly games (Joker today) contribute, with their full local
+            // play count; rated games are already counted in the saved W/L, so
+            // adding them would double-count.
             if (entry.Kind == RatingKind.PlayCountOnly)
             {
                 _unsyncedSessions += entry.PlayCount;
@@ -507,7 +500,7 @@ public partial class ProfilePage
             _totalLosses += entry.TotalLosses;
             _totalDraws += entry.TotalDraws;
 
-            // §2026-07-18: only factor a rating into Top ELO / Best Streak once the
+            // Only factor a rating into Top ELO / Best Streak once the
             // player has actually played this game. Otherwise the StartingElo floor
             // dominates the headline chips for games they have never touched.
             if (entry.TotalGames > 0)
@@ -542,10 +535,10 @@ public partial class ProfilePage
             ? hs.Value
             : null;
 
-    // 2026-08-12 audit #5: every PlayCountOnly game (Joker today) is
-    // a demo-only experience — the only entry point on the catalog is its
-    // /demo route, so a "Watch again" link from the profile card takes the
-    // user straight to it without bouncing through the home page first.
+    // Every PlayCountOnly game (Joker today) is a demo-only experience — the only
+    // entry point on the catalog is its /demo route, so a "Watch again" link from
+    // the profile card takes the user straight to it without bouncing through the
+    // home page first.
     private static string DemoUrl(string gameKey) => $"/{gameKey}/demo";
 
     /// <summary>

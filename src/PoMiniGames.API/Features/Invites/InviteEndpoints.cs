@@ -69,7 +69,7 @@ public static class InviteEndpoints
             .WithSummary("The public key a browser subscribes to push with");
 
         push.MapPost("/subscriptions", async (PushSubscriptionRequest request, HttpContext http, InviteStore store,
-                IScoreIntegrityGuard integrity, CancellationToken ct) =>
+                ScoreIntegrityGuard integrity, CancellationToken ct) =>
             {
                 if (!WebPushSender.IsAllowedEndpoint(request.Endpoint))
                     return Results.BadRequest(new { error = "Not a push service endpoint" });
@@ -85,7 +85,7 @@ public static class InviteEndpoints
             .RequireRateLimiting("invites");
 
         push.MapPost("/unsubscribe", async (PushSubscriptionRequest request, HttpContext http, InviteStore store,
-                IScoreIntegrityGuard integrity, CancellationToken ct) =>
+                ScoreIntegrityGuard integrity, CancellationToken ct) =>
             {
                 if (Addressee(http, integrity) is { } me && !string.IsNullOrEmpty(request.Endpoint))
                     await store.UnsubscribeAsync(me, request.Endpoint, ct);
@@ -98,7 +98,7 @@ public static class InviteEndpoints
         var invites = app.MapGroup("/invites").WithTags("Invites");
 
         invites.MapPost("", async (InviteRequest request, HttpContext http, InviteStore store, WebPushSender sender,
-                MatchHistoryRepository matches, IScoreIntegrityGuard integrity, CancellationToken ct) =>
+                MatchHistoryRepository matches, ScoreIntegrityGuard integrity, CancellationToken ct) =>
             {
                 if (!OnlineGames.TryGetValue(request.Game ?? "", out var title))
                     return Results.BadRequest(new { error = "Unknown game" });
@@ -143,7 +143,7 @@ public static class InviteEndpoints
             .RequireRateLimiting("invites");
 
         // Read by the service worker when a wake-up push arrives, on the player's own cookie.
-        invites.MapGet("/pending", async (HttpContext http, InviteStore store, IScoreIntegrityGuard integrity, CancellationToken ct) =>
+        invites.MapGet("/pending", async (HttpContext http, InviteStore store, ScoreIntegrityGuard integrity, CancellationToken ct) =>
                 Results.Ok(Addressee(http, integrity) is { } me ? await store.GetPendingAsync(me, ct) : []))
             .WithName("GetPendingInvites")
             .WithSummary("Invites sent to the caller in the last ten minutes")
@@ -167,7 +167,7 @@ public static class InviteEndpoints
     /// a lobby shows it, because that is what an opponent's head-to-head row recorded. Null when
     /// the caller has no name to be addressed by.
     /// </summary>
-    private static string? Addressee(HttpContext http, IScoreIntegrityGuard integrity)
+    private static string? Addressee(HttpContext http, ScoreIntegrityGuard integrity)
     {
         var name = RequestIdentity.Resolve(http.User).DisplayName;
         return string.IsNullOrWhiteSpace(name) ? null : integrity.ResolveDisplayName(name, "Player");

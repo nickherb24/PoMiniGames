@@ -1,4 +1,4 @@
-// volcano.js — the eruption (SPEC §7.7): a blast at the crater, ballistic projectiles that
+// volcano.js — the eruption: a blast at the crater, ballistic projectiles that
 // reuse the rockslide's analytic impact/corridor rule (cause: eruption), lava that creeps
 // downhill for EVENTS.volcano.lavaSeconds then cools to rock, and a wide fear radius.
 import { EVENTS, TICK_SECONDS } from '../core/config.js';

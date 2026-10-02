@@ -16,11 +16,11 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Everything the result depends on is server-derived (2026-09-29).</b> The request body
+/// <b>Everything the result depends on is server-derived.</b> The request body
 /// is only consulted for the match id; outcome, opponent and duration come from the still-held
 /// <see cref="PoBrawlMatchService"/> via <see cref="PoBrawlMatchService.BuildResultForPrincipal"/>.
-/// An earlier revision priced Elo off the client's own claim of who won — a hand-crafted POST
-/// could mint arbitrary rating swings for, or against, any principal.
+/// Pricing Elo off the client's own claim of who won would let a hand-crafted POST
+/// mint arbitrary rating swings for, or against, any principal.
 /// </para>
 /// <para>
 /// <b>Both corners POST the same match, so the Elo increment is claimed once per MATCH</b>
@@ -40,7 +40,7 @@ public static class PoBrawlOnlineMatchEndpoints
                 [FromBody] PoBrawlMatchResultDto dto,
                 HttpContext http,
                 IStorageService storage,
-                IScoreIntegrityGuard integrity,
+                ScoreIntegrityGuard integrity,
                 MatchHistoryRepository matchHistory,
                 PoBrawlMatchRegistry registry,
                 ILoggerFactory loggerFactory,

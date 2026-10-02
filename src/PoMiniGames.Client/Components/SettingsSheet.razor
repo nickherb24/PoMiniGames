@@ -10,12 +10,9 @@
    The one settings sheet: theme, sound, haptics, motion, colour-blind palettes,
    game invites and the account's data (export / erase), for every game at once.
 
-   History: this was SettingsPanel on a /settings page, removed on 2026-08-11 by
-   request and brought back on 2026-10-01 by request, as a <dialog> rather than
-   a page. The ⚙️ gear stays out of the top bar (the 2026-07-13 call); the sheet
-   is opened through SettingsService.RequestOpen() from the footer and the hub's
-   action row. The FPS-badge and game-intro rows did not come back: both of
-   those are unconditional now.
+   It is a <dialog>, not a page. There is no gear in the top bar; the sheet is
+   opened through SettingsService.RequestOpen() from the footer and the hub's
+   action row.
 
    What a game does with these: sound is the shared audio bus, so mute and
    volume reach every engine. Motion and colour ride <html data-motion> and

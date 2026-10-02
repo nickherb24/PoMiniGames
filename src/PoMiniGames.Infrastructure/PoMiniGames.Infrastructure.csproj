@@ -5,7 +5,7 @@
     <PackageReference Include="Azure.Data.Tables" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
-    <!-- §3 Resilience pipelines (retry + circuit breaker + timeout) used by AI Foundry calls. -->
+    <!-- Resilience pipelines (retry + circuit breaker + timeout) used by AI Foundry calls. -->
     <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
     <PackageReference Include="Microsoft.Extensions.AI" />
     <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />

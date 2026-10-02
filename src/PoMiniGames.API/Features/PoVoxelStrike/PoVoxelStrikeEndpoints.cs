@@ -9,9 +9,9 @@ using PoMiniGames.Features.Integrity;
 namespace PoMiniGames.Features.PoVoxelStrike;
 
 /// <summary>
-/// Read-only asset delivery for PoVoxelStrike (PRD §F2). Mapped in the anonymous section
+/// Read-only asset delivery for PoVoxelStrike. Mapped in the anonymous section
 /// of <c>MapPoMiniGamesEndpoints</c>: assets are game content, and the platform contract
-/// is anonymous reads / authenticated writes — the M4 run-submission POST will join the
+/// is anonymous reads / authenticated writes — the run-submission POST joins the
 /// authenticated <c>gameApi</c> group instead.
 /// </summary>
 internal static class PoVoxelStrikeEndpoints
@@ -99,7 +99,7 @@ internal static class PoVoxelStrikeEndpoints
             async (PoVoxelStrikeRunRequest request,
                    HttpContext http,
                    IStorageService storage,
-                   IScoreIntegrityGuard integrity,
+                   ScoreIntegrityGuard integrity,
                    ILoggerFactory loggerFactory) =>
             {
                 var log = loggerFactory.CreateLogger("PoVoxelStrikeHighScores");
@@ -114,11 +114,11 @@ internal static class PoVoxelStrikeEndpoints
                     });
                 }
 
-                // Plausibility, not anti-cheat (PRD §3.3): the stats must be able to produce
+                // Plausibility, not anti-cheat: the stats must be able to produce
                 // the score. Formula ceiling: seconds×10 + kills×(25+50+40 worst case) +
-                // voxels÷20, plus rounding slack — and, for a win, the chalice bonus. That last
-                // term was missing until 2026-09-30, so with the roaming enemies switched off
-                // (kills = 0, no slack) every won siege was rejected here and never reached the
+                // voxels÷20, plus rounding slack — and, for a win, the chalice bonus. Without that
+                // last term, with the roaming enemies switched off (kills = 0, no slack) every won
+                // siege would be rejected here and never reach the
                 // board. A submission that exceeds its own stats' ceiling is tampered or corrupt
                 // either way — rejecting is not a retry case.
                 var errors = new Dictionary<string, string[]>();

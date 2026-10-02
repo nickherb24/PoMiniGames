@@ -10,11 +10,11 @@ during the 2026-06-23 §5 migration to satisfy the "Unit & Integration: C# only"
 ## What runs here
 
 - **`ApiContractSmokeTests`** — verifies the public HTTP shape of the BFF
-  (`/api/health/ping`, `/api/auth/config`, `/auth/me`, fake-auth header flow).
+  (`/api/health/ping`, `/api/auth/handshake`, fake-auth header flow).
 - **`HomeSmokeTests`** — verifies that the root path and deep links return the
   WASM shell `index.html` (SPA fallback contract).
 - **`DeploymentSmokeTests`** — verifies the routes the Azure availability
-  test pings in production (`/health`, `/api/auth/config`, `/openapi/v1.json`).
+  test pings in production (`/health`, `/api/auth/handshake`, `/openapi/v1.json`).
 
 Each test follows the `PoMiniGamesE2EFixture` pattern: spin the host in-process
 via `WebApplicationFactory<Program>`, force `Auth:EnableFakeAuth=true` so

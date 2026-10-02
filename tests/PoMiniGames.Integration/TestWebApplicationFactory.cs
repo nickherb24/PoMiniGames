@@ -52,7 +52,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // §CI/CD policy (2026-06-27): E2E + integration tests run under the "Test"
+        // E2E + integration tests run under the "Test"
         // environment so StartupSecretValidator's Test-skip branch activates and
         // AuthExtensions' FakeAuth/DevCookie schemes are registered. Production
         // guards (FakeAuth-in-Prod, AutoGuestLogin-in-Prod) are still enforced when
@@ -67,7 +67,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
 
             if (_azuriteConnectionString is not null)
             {
-                // §6 + §3: mirror the Azurite connection string into BOTH the
+                // Mirror the Azurite connection string into BOTH the
                 // TableService and BlobService sections so per-game blob repositories
                 // bind to the emulator rather than falling through to DefaultAzureCredential.
                 foreach (var (k, v) in TestBudgetGuard.StorageOverrides(_azuriteConnectionString, "pominigames"))
@@ -80,7 +80,7 @@ public class TestWebApplicationFactory : WebApplicationFactory<Program>, IAsyncL
         });
         builder.ConfigureTestServices(services =>
         {
-            // Rule §2: register the FakeAuth scheme additively in the test host. Tests assert
+            // Register the FakeAuth scheme additively in the test host. Tests assert
             // identity variations by injecting X-Fake-User / X-Fake-Roles per request.
             // Never register it when a test simulates Production — the runtime production guard
             // (Program.cs) forbids fake auth there, and a faithful harness must honour that.

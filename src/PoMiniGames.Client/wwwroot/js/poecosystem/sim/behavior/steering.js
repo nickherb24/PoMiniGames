@@ -30,8 +30,8 @@ export function wander(e, i, rng, speed) {
 
 export function stop(e, i) { e.vx[i] = 0; e.vz[i] = 0; }
 
-// A palisade (behavior/tech.js) is solid for everyone, its builders included: until
-// 2026-10-01 humans walked through their own fence. The gates are the way in and out.
+// A palisade (behavior/tech.js) is solid for everyone, its builders included. The gates
+// are the way in and out.
 const blocked = (s) => isSolidState(s) || s === TILE_STATE.FENCE;
 
 export function isPassable(terrain, tileState, x, z) {

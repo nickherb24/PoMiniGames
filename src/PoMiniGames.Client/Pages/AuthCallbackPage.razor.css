@@ -1,4 +1,4 @@
-/* §8 AuthCallbackPage — vertical/horizontal centering, zero inline styles. */
+/* AuthCallbackPage — vertical/horizontal centering, zero inline styles. */
 .auth-callback-page {
     min-height: 60vh;
     display: grid;

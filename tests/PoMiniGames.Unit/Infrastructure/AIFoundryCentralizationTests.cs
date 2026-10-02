@@ -94,7 +94,7 @@ public sealed class AIFoundryCentralizationTests
     }
 
     /// <summary>
-    /// Stops a regression of the 2026-06-13 mock-data bug: any future change
+    /// Stops a mock-data regression: any future change
     /// that registers the mock implementation as the production default would
     /// serve fabricated data to real players. This is the static check that
     /// catches the wiring without needing to spin up the host.

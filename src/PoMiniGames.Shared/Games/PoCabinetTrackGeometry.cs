@@ -3,9 +3,8 @@ namespace PoMiniGames.Shared.Games;
 /// <summary>
 /// Knots, road width and atmosphere for one PoCabinet track. <see cref="PoCabinetTrackGeometry"/>
 /// is the ONE place these live: the server sim, the solo in-browser race and the client
-/// scene/minimap all derive their centerline from here. Until 2026-09-23 the client drew
-/// hand-made ellipses while the server simulated these splines, so the road a player saw
-/// was never the road any race was run on.
+/// scene/minimap all derive their centerline from here, so the road a player sees is the
+/// road the race is run on.
 /// </summary>
 public sealed record PoCabinetTrackDefinition(
     string Id,
@@ -69,7 +68,7 @@ public static class PoCabinetTrackGeometry
                 StepsPerSegment: 12,
                 Atmosphere: new PoCabinetAtmosphereWire
                 {
-                    // Daytime (2026-09-29; was a dark dusk that made the race hard to read).
+                    // Daytime: a dark dusk makes the race hard to read.
                     SkyHex = "#8fb8e0",
                     FogStart = 260,
                     FogEnd = 1100,
@@ -107,16 +106,16 @@ public static class PoCabinetTrackGeometry
                 [
                     (0, 0), (300, 50), (600, 120), (900, 240), (1100, 380), (1180, 540), (1100, 700),
                     (900, 820), (600, 860), (300, 820), (50, 720), (-130, 580), (-180, 400),
-                    // The last knot was (50, 100) until 2026-09-30: with the line at the origin
-                    // that folded the centerline into a 130° hook of radius 8 on a road 105
-                    // wide. A lone car cut across it (its lap is unchanged to 0.03 s); a
-                    // hundred cars jammed in it for the whole race.
+                    // The last knot must stay clear of the start: a knot near (50, 100) with the
+                    // line at the origin folds the centerline into a 130° hook of radius 8 on a
+                    // road 105 wide. A lone car cuts across it; a hundred cars jam in it for
+                    // the whole race.
                     (-100, 240), (-90, 80),
                 ]),
                 StepsPerSegment: 12,
                 Atmosphere: new PoCabinetAtmosphereWire
                 {
-                    // Daytime (2026-09-29; was a night scene) — a sunlit stone plaza.
+                    // Daytime: a sunlit stone plaza.
                     SkyHex = "#9cc0e4",
                     FogStart = 240,
                     FogEnd = 1000,
@@ -194,7 +193,7 @@ public static class PoCabinetTrackGeometry
                 FinishKnot = 107,
                 HiddenFromKnot = 110,
                 // 122, not 126: the last four knots of the return link are a straight, level
-                // approach to the line, and the 100-car grid (2026-09-30) stands 1,700 units
+                // approach to the line, and the 100-car grid stands 1,700 units
                 // back along it. Drawn, it is the chute's launch ramp.
                 HiddenToKnot = 122,
                 RoadFromKnot = 99,

@@ -16,20 +16,6 @@ public readonly record struct IntegrityVerdict(bool Allowed, string? Code, strin
     public IResult ToProblem() => Results.BadRequest(new { error = Code, detail = Message });
 }
 
-/// <summary>The single call a score-submitting endpoint makes to vet a submission.</summary>
-public interface IScoreIntegrityGuard
-{
-    /// <param name="score">The ranked value: points on a point board, seconds on a time board.</param>
-    IntegrityVerdict Inspect(HttpContext http, GameKey game, double score);
-
-    /// <summary>
-    /// Cleans a client-supplied display name for a public board. Returns the name to store —
-    /// never null, never empty — falling back to <paramref name="fallback"/> when the submitted
-    /// one is unpublishable.
-    /// </summary>
-    string ResolveDisplayName(string? submitted, string fallback);
-}
-
 /// <summary>
 /// Applies both plausibility tiers to one submission and reports what it found.
 /// </summary>
@@ -47,7 +33,7 @@ public interface IScoreIntegrityGuard
 /// turn on for this deployment.
 /// </para>
 /// </remarks>
-public sealed class ScoreIntegrityGuard : IScoreIntegrityGuard
+public sealed class ScoreIntegrityGuard
 {
     /// <summary>
     /// Header the client returns its play session on. A header rather than a body field so the
@@ -55,12 +41,12 @@ public sealed class ScoreIntegrityGuard : IScoreIntegrityGuard
     /// </summary>
     public const string SessionHeader = "X-Play-Session";
 
-    private readonly IPlaySessionService _sessions;
+    private readonly PlaySessionService _sessions;
     private readonly IOptionsMonitor<IntegrityOptions> _options;
     private readonly ILogger<ScoreIntegrityGuard> _log;
 
     public ScoreIntegrityGuard(
-        IPlaySessionService sessions,
+        PlaySessionService sessions,
         IOptionsMonitor<IntegrityOptions> options,
         ILogger<ScoreIntegrityGuard> log)
     {
@@ -69,6 +55,7 @@ public sealed class ScoreIntegrityGuard : IScoreIntegrityGuard
         _log = log;
     }
 
+    /// <param name="score">The ranked value: points on a point board, seconds on a time board.</param>
     public IntegrityVerdict Inspect(HttpContext http, GameKey game, double score)
     {
         var options = _options.CurrentValue;
@@ -117,6 +104,11 @@ public sealed class ScoreIntegrityGuard : IScoreIntegrityGuard
             : IntegrityVerdict.Allow;
     }
 
+    /// <summary>
+    /// Cleans a client-supplied display name for a public board. Returns the name to store —
+    /// never null, never empty — falling back to <paramref name="fallback"/> when the submitted
+    /// one is unpublishable.
+    /// </summary>
     public string ResolveDisplayName(string? submitted, string fallback)
     {
         if (!_options.CurrentValue.ModerateDisplayNames)

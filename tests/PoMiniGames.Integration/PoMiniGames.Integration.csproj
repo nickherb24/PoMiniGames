@@ -31,7 +31,7 @@
   <ItemGroup>
     <Using Include="Xunit" />
     <!-- ArmAntiforgeryAsync is needed by every test that writes; a global using keeps
-         the §2 CSRF plumbing out of each file's header. -->
+         the CSRF plumbing out of each file's header. -->
     <Using Include="PoMiniGames.TestUtilities" />
   </ItemGroup>
 

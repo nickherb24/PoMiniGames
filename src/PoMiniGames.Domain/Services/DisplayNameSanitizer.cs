@@ -143,6 +143,7 @@ public static class DisplayNameSanitizer
         }
 
         var folded = Fold(normalized);
+        var unsqueezed = Fold(normalized, squeeze: false);
         if (folded.Length == 0)
         {
             // Nothing but punctuation and digits survived folding ("---", "12345"). Not a name,
@@ -150,7 +151,7 @@ public static class DisplayNameSanitizer
             return new DisplayNameResult(DisplayNameVerdict.Rejected, fallback, "no-letters");
         }
 
-        if (IsBlocked(folded, normalized, out var reason))
+        if (IsBlocked(folded, unsqueezed, normalized, out var reason))
         {
             return new DisplayNameResult(DisplayNameVerdict.Rejected, fallback, reason);
         }
@@ -220,7 +221,7 @@ public static class DisplayNameSanitizer
     /// Stage two: the comparison-only form. Lowercased, leet undone, every non-letter dropped,
     /// and runs of a repeated letter squeezed so "fuuuuuck" folds onto "fuck".
     /// </summary>
-    private static string Fold(string normalized)
+    private static string Fold(string normalized, bool squeeze = true)
     {
         var sb = new StringBuilder(normalized.Length);
         var previous = '\0';
@@ -240,7 +241,7 @@ public static class DisplayNameSanitizer
             // Squeezing is aggressive, but this string is never stored — only compared — so the
             // cost of over-folding is a false positive on a name like "Aaron" ("aron"), which
             // no blocklist entry matches anyway.
-            if (ch == previous)
+            if (squeeze && ch == previous)
             {
                 continue;
             }
@@ -252,7 +253,7 @@ public static class DisplayNameSanitizer
         return sb.ToString();
     }
 
-    private static bool IsBlocked(string folded, string normalized, out string reason)
+    private static bool IsBlocked(string folded, string unsqueezed, string normalized, out string reason)
     {
         foreach (var root in SubstringRoots)
         {
@@ -265,13 +266,13 @@ public static class DisplayNameSanitizer
 
         // Whole-name match catches the single-token case ("cunt") plus spaced-out evasions
         // ("c u n t"), which fold down to one token.
-        if (ReservedTokens.Contains(folded))
+        if (MatchesToken(ReservedTokens, unsqueezed))
         {
             reason = "reserved";
             return true;
         }
 
-        if (ExactTokens.Contains(folded))
+        if (MatchesToken(ExactTokens, unsqueezed))
         {
             reason = "blocked";
             return true;
@@ -279,19 +280,19 @@ public static class DisplayNameSanitizer
 
         foreach (var token in normalized.Split(' ', StringSplitOptions.RemoveEmptyEntries))
         {
-            var foldedToken = Fold(token);
+            var foldedToken = Fold(token, squeeze: false);
             if (foldedToken.Length == 0)
             {
                 continue;
             }
 
-            if (ReservedTokens.Contains(foldedToken))
+            if (MatchesToken(ReservedTokens, foldedToken))
             {
                 reason = "reserved";
                 return true;
             }
 
-            if (ExactTokens.Contains(foldedToken))
+            if (MatchesToken(ExactTokens, foldedToken))
             {
                 reason = "blocked";
                 return true;
@@ -299,6 +300,25 @@ public static class DisplayNameSanitizer
         }
 
         reason = string.Empty;
+        return false;
+    }
+
+    /// <summary>
+    /// Whole-token match that also catches a stretched spelling ("asss", "rooot"). Both sides
+    /// are squeezed, but the candidate must be at least as long as the listed word: "as"
+    /// squeezes to the same letters as "ass" and is an ordinary word, not an evasion.
+    /// </summary>
+    private static bool MatchesToken(HashSet<string> tokens, string candidate)
+    {
+        var squeezed = SqueezeRepeats(candidate);
+        foreach (var token in tokens)
+        {
+            if (candidate.Length >= token.Length && SqueezeRepeats(token) == squeezed)
+            {
+                return true;
+            }
+        }
+
         return false;
     }
 

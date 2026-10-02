@@ -1,7 +1,6 @@
 /* Settings sheet. Every colour reads through a design token so the sheet is
    themed in both schemes — including, necessarily, the control that switches
-   between them. The row/switch/segment rules are the SettingsPanel ones from
-   before 2026-08-11; the dialog chrome around them is new. */
+   between them. */
 
 .prefs-sheet {
     /* The app's global reset zeroes every margin, including the `margin: auto` the
@@ -194,9 +193,9 @@
 }
 
 /* Portrait phones: only the two wide controls go under their label (the theme
-   switch and the volume slider). A switch stays on its label's row. Until
-   2026-10-01 every row stacked, so each of the five switches sat alone on a line
-   under its label and the sheet was 1120px of content in a 670px box. */
+   switch and the volume slider). A switch stays on its label's row: stacking every
+   row would put each of the five switches alone on a line under its label and make
+   the sheet far taller than the screen. */
 @media (max-width: 480px) {
     /* Nearly the whole screen: with the rows tightened below, all five groups are on
        it at once on a 390x844 phone (803px of content). */

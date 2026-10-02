@@ -8,7 +8,7 @@ namespace PoMiniGames.E2EUI.Features.PoJevArena;
 /// offered option, i.e. melee_charge on the nearest threat, so matches genuinely finish):
 /// guest sign-in → Factory preview per ability → draft 10 + 10 → deploy → the match plays to a
 /// result → the Black Box scrubs and the inspector follows the scrubbed frame.
-/// Screenshots land in artifacts/pojevarena/ for the readability review (SPEC §13, 15–16).
+/// Screenshots land in artifacts/pojevarena/ for the readability review.
 /// One method: this tier holds 25 in total.
 /// </summary>
 [Collection(KestrelServerCollection.Name)]

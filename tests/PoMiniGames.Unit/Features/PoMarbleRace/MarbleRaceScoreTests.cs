@@ -11,8 +11,8 @@ namespace PoMiniGames.Unit;
 /// <see cref="MarbleRaceRunVerifier"/>, which recomputes a run total from its races.
 /// </summary>
 /// <remarks>
-/// TryCreate and Clamp share one theory (2026-09-30, to free the Unit slot the verifier uses):
-/// same rows, with the clamp result as a column.
+/// TryCreate and Clamp share one theory (to save a Unit-tier method slot): same rows, with the
+/// clamp result as a column.
 /// </remarks>
 public sealed class MarbleRaceScoreTests
 {

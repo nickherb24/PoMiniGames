@@ -53,7 +53,7 @@ public sealed class AiJesterService : IAnalysisService
     private readonly GameChatClientFactory _clients;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundryOptions;
     private readonly HybridCache _cache;
-    private readonly IAiDecisionOptionsCache _optionsCache;
+    private readonly AiDecisionOptionsCache _optionsCache;
     private readonly int _timeoutSeconds;
 
     /// <summary>
@@ -94,7 +94,7 @@ public sealed class AiJesterService : IAnalysisService
         GameChatClientFactory clients,
         IOptionsMonitor<AIFoundryOptions> foundryOptions,
         HybridCache cache,
-        IAiDecisionOptionsCache optionsCache)
+        AiDecisionOptionsCache optionsCache)
     {
         _logger = logger;
         _environment = environment;

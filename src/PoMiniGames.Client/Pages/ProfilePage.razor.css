@@ -1,9 +1,7 @@
 /* ── Profile skeleton loader ───────────────────────────────────────────────
-   Moved here from the global wwwroot/css/games.css on 2026-09-11. These rules
-   only ever matched markup this component renders (the `aria-busy` block at the
-   top of ProfilePage.razor), so they were being shipped and parsed on every game
-   route to style an element that exists on exactly one page. Scoped now, like
-   the .prf-* rules below. */
+   These rules only match markup this component renders (the `aria-busy` block at
+   the top of ProfilePage.razor), so they are scoped here rather than shipped and
+   parsed on every game route, like the .prf-* rules below. */
 /* ── Profile skeleton loader (used by ProfilePage) ── */
 .profile-skel {
   margin: 16px auto;
@@ -66,18 +64,16 @@
 .prf-page {
     /* width + min-width are load-bearing. This is a flex item of `main.gl-content`
        (a column flex container): with no declared width it is sized to its
-       max-content, and `min-width: auto` then stops it shrinking back. Until
-       2026-10-01 that made the page 722px wide inside a 390px phone, with the
-       right-hand third (two stat chips, three of five tabs) clipped off-screen. */
+       max-content, and `min-width: auto` then stops it shrinking back, which
+       would make the page 722px wide inside a 390px phone with the right-hand
+       third clipped off-screen. */
     width: 100%;
     min-width: 0;
     max-width: var(--content-max, 960px);
     margin: 0 auto;
-    /* The 5rem bottom padding was reserving room for the bottom tab bar deleted
-       on 2026-07-05 — the same stale reservation `.gl-content` carried until the
-       2026-08 pass. It is 80px of nothing at the end of every profile, and on a
-       720p laptop it was more than half this page's overflow. The real
-       safe-area inset is handled by .gl-content. 2026-09-11 UI audit. */
+    /* Small bottom padding: there is no bottom tab bar to reserve room for, and
+       extra space is wasted on a 720p laptop. The real safe-area inset is handled
+       by .gl-content. */
     padding: 1.25rem 1rem 1.5rem;
     display: flex;
     flex-direction: column;
@@ -131,8 +127,8 @@
     white-space: nowrap;
 }
 
-/* 0.75rem (12px) is the floor for every label class on this page (2026-08-07
-   browser audit #9): anything smaller is decoration that happens to contain words. */
+/* 0.75rem (12px) is the floor for every label class on this page:
+   anything smaller is decoration that happens to contain words. */
 .prf-chip-lbl {
     font-size: 0.75rem;
     color: var(--color-text-secondary);
@@ -220,8 +216,8 @@
 .prf-legend-draw { background: var(--accent-warning); }
 .prf-legend-loss { background: var(--accent-danger); }
 
-/* ── Unplayed strip (2026-09-11 UI sweep, back in use 2026-10-01) ──
-   Replaces the wall of "Not played yet" cards: one wrapped row of small chips
+/* ── Unplayed strip ──
+   Instead of a wall of "Not played yet" cards: one wrapped row of small chips
    under the played-games grid, each a link into its game. Colours come from the
    theme tokens so the strip follows light/dark like the rest of the page. */
 .prf-unplayed {
@@ -276,9 +272,8 @@
     margin-bottom: 0.875rem;
 }
 
-/* Browser audit #9 (2026-08-10): a heading row that pairs the section title
-   with a small inline legend. Used by the H2H section to explain the G / MS
-   chips, which previously had only a hover tooltip. */
+/* A heading row that pairs the section title with a small inline legend. Used
+   by the H2H section to explain the G / MS chips. */
 .prf-section-head {
     display: flex;
     align-items: center;
@@ -480,7 +475,7 @@
 }
 .prf-h2h-table td { padding: 0.4rem 0.5rem; border-bottom: 1px solid var(--hairline); }
 
-/* §2 Virtualizer wrapper for the opponent table: bounded height + overscroll
+/* Virtualizer wrapper for the opponent table: bounded height + overscroll
    containment so a long head-to-head history doesn't push the page down on
    mobile portrait. The Virtualize component recycles rows in 48 px slots. */
 .prf-h2h-vwrap {

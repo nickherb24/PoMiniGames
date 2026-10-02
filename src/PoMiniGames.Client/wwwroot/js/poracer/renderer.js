@@ -1,11 +1,5 @@
 // Canvas scene renderer for PoRacer: a flat top-down drawing of the race the server is
 // running. Lifecycle is owned by index.js; nothing in here listens, schedules or fetches.
-//
-// 2026-09-30: this file lost about three hundred lines. effectsReduced() had returned true since
-// 2026-09-17, so screen shake, sparks, weather, speed lines, fog and bloom were unreachable,
-// and the smoke/skid/trail pools were fed by a client-side sim that no longer exists (the
-// snapshot path always handed them empty arrays). They are deleted, not gated; the WebGL
-// post pass that sat beside them in compositor.js went the same way. What is here draws.
 
 let centerXY = null;
 let centerN = 0, wallsXY = null, wallsM = 0, trackWidth = 0;
@@ -44,11 +38,10 @@ let specCamX = null, specCamY = null;
 // whole circuit, and where it was looking at that moment. 0 = live camera.
 let finishAt = 0, finishFrom = null;
 
-// ── Track-side effects (2026-10-01) ─────────────────────────────────────────
+// ── Track-side effects ──────────────────────────────────────────────────────
 // Skid marks, impact sparks and sand dust, all in world space and all derived from the cars
-// this module is already handed: no extra wire field, no pool fed from elsewhere. (The pools
-// deleted on 2026-09-30 were fed by a client sim that no longer existed, and the bursts removed
-// on 2026-09-17 fired at the middle of the screen; these are drawn where the thing happened.)
+// this module is already handed: no extra wire field, no pool fed from elsewhere. They are
+// drawn where the thing happened, not at the middle of the screen.
 const SKID_MAX = 900;
 const skids = new Float32Array(SKID_MAX * 5);   // x1, y1, x2, y2, alpha
 let skidHead = 0;
@@ -174,18 +167,18 @@ function createOffscreen(w, h) {
     const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
 }
 
-// 2026-08-10: full-screen layers (grass, both parallax planes, fog, vignette)
+// Full-screen layers (grass, both parallax planes, fog, vignette)
 // are cached as offscreen bitmaps and blitted with drawImage(tex, 0, 0, w, h).
 // `w`/`h` are CSS pixels — draw() takes them from PoRacer.getSize(), which
 // returns clientWidth/clientHeight — while the destination context carries a
-// setTransform(dpr, ...). So a bitmap built at the CSS size was stretched over
-// w*dpr x h*dpr device pixels and the browser upscaled it. Those layers cover
-// essentially the whole frame, so on any HiDPI screen the picture read as out
+// setTransform(dpr, ...). A bitmap built at the CSS size would be stretched over
+// w*dpr x h*dpr device pixels and the browser would upscale it. Those layers cover
+// essentially the whole frame, so on any HiDPI screen the picture would read as out
 // of focus even though the track and cars (vector-drawn straight into the
-// scaled context) stayed sharp. It was worst where it was most visible: the
+// scaled context) stay sharp. It would be worst where it is most visible: the
 // spectator camera frames mostly background.
 //
-// Build them at the BACKING-STORE size and pre-apply the same dpr transform,
+// So build them at the BACKING-STORE size and pre-apply the same dpr transform,
 // so every drawing call below still works in CSS units and the blit lands 1:1
 // on device pixels. dpr belongs in each layer's cache key too — a window
 // dragged between monitors of different scaling changes it without changing
@@ -413,10 +406,9 @@ function buildTrackBitmap(scale, dpr) {
     const wpx = trackWidth * scale;
 
     // The road is the centerline stroked at track width; its edges are the kerbs peeking out
-    // from under it. Until 2026-09-30 the "base asphalt" step FILLED the centerline polygon, so
-    // the infield was asphalt and the road itself was nothing but the kerb strokes: white and
-    // red, which read as a pink track around a grey lake. The gradient is built here and laid
-    // down after the kerbs below.
+    // from under it. Filling the centerline polygon instead would make the infield asphalt
+    // and the road nothing but the kerb strokes: white and red, which reads as a pink track
+    // around a grey lake. The gradient is built here and laid down after the kerbs below.
     const grad = g.createLinearGradient(0, 0, texW, texH);
     if (currentTheme === 'neonskyline') {
         grad.addColorStop(0, '#161922'); grad.addColorStop(0.5, '#10121a'); grad.addColorStop(1, '#090b10');
@@ -694,9 +686,8 @@ function paintCar(g, car) {
     }
 
     // Lamps. Tail lights are always there and flare while the car is slowing; headlight beams
-    // are drawn on the night track only. 2026-09-17 removed every glow on request ("flat
-    // shapes, not light sources"); 2026-09-30 brought these two back on request, and this
-    // block is the whole of it.
+    // are drawn on the night track only. Cars are flat shapes, not light sources, so
+    // this block is the only glow.
     const braking = !!car.braking;
     g.fillStyle = braking ? '#ff2a2a' : '#7a1414';
     if (braking) { g.shadowColor = '#ff2a2a'; g.shadowBlur = 10; }
@@ -725,8 +716,8 @@ function drawCar(g, car, camX, camY, scale, w, h) {
 function drawPlayerMarker(g, c, camX, camY, scale, w, h) {
     const [x, y] = project(c.x, c.y, camX, camY, scale, w, h);
     g.save();
-    // Decorative ellipse ring removed 2026-09-17 (user request). The label
-    // stays: it is the only thing that identifies your car in a full grid.
+    // No decorative ring: the label is the only thing that identifies your car in a
+    // full grid.
     g.fillStyle = '#06111f'; g.beginPath(); g.roundRect(x - 25, y - 53, 50, 24, 7); g.fill();
     g.fillStyle = '#ffffff'; g.font = 'bold 13px system-ui'; g.textAlign = 'center';
     g.fillText('YOU', x, y - 36);

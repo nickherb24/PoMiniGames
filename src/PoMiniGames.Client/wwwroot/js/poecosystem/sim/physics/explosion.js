@@ -1,4 +1,4 @@
-// explosion.js — radial impulse ∝ 1/r (SPEC §7.7 lightning / eruption).
+// explosion.js — radial impulse ∝ 1/r (lightning / eruption).
 
 /** Impulse magnitude at distance d from the centre; 0 beyond the radius, capped near 0. */
 export function explosionImpulse(d, radius, strength) {

@@ -8,12 +8,11 @@ window.poPwa = (() => {
     let updateListener = null;   // DotNetObjectReference -> OnUpdateAvailable()
     let onlineListener = null;   // DotNetObjectReference -> OnConnectivityChanged(bool)
 
-    // Install-prompt state (2026-09-11 fix): these MUST live at IIFE scope.
-    // They were first written as `let` statements inside the returned object
-    // literal, which is a SyntaxError — the whole file failed to parse, so
-    // window.poPwa never existed and service-worker registration, the offline
-    // banner, the update prompt and the install prompt were all silently dead
-    // on every route.
+    // Install-prompt state: these MUST live at IIFE scope. A `let` statement
+    // inside the returned object literal is a SyntaxError — the whole file would
+    // fail to parse, so window.poPwa would never exist and service-worker
+    // registration, the offline banner, the update prompt and the install prompt
+    // would all be silently dead on every route.
     let deferredInstallPrompt = null;
     let installed = false;
 
@@ -64,13 +63,13 @@ window.poPwa = (() => {
 
         setUpdateListener(dotNetRef) { updateListener = dotNetRef; },
 
-        // ── Update-toast routing (2026-09-29) ────────────────────────────
+        // ── Update-toast routing ─────────────────────────────────────────
         // One call handing .NET everything it needs to decide whether the "new
         // version" toast may show: demo/kiosk pages stay silent (a reel has
         // nobody to press Update) and localhost/lan dev hosts stay silent (a
         // developer who rebuilds twice in an hour would be nagged twice an
-        // hour). This used to be probed from C# with `eval` interop, which
-        // failed open — dev hosts got the nag the code exists to prevent.
+        // hour). Probing from C# with `eval` interop would fail open and nag
+        // dev hosts, which is what this exists to prevent.
         pageContext() {
             return {
                 path: location.pathname,
@@ -112,14 +111,14 @@ window.poPwa = (() => {
             return navigator.onLine;
         },
 
-        // ── Install prompt (2026-09-04 UI sweep, Option 9) ─────────────────
+        // ── Install prompt ─────────────────────────────────────────────────
         // The browser fires `beforeinstallprompt` once per page load when the app
         // meets PWA installability criteria (manifest, SW, HTTPS, engagement). We
         // capture it here so a future install button can request it on demand via
         // `promptInstall()`; the user only sees the browser's native sheet, never a
         // custom modal that would feel like an ad. The `appinstalled` event clears
         // the deferred prompt — a second tap is meaningless once the app is on the
-        // home screen. State + listeners live at IIFE scope above (2026-09-11 fix).
+        // home screen. State + listeners live at IIFE scope above.
 
         // True iff the browser has offered an install. Returns false on browsers
         // without PWA support (Firefox desktop, in-app browsers) — callers should

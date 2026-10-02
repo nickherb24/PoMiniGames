@@ -3,11 +3,11 @@ using PoMiniGamesClient.Models;
 namespace PoMiniGamesClient.Models;
 
 /// <summary>
-/// Audit #6: domain-driven wrapper for the "two-player" turn concept. The raw
+/// Domain-driven wrapper for the "two-player" turn concept. The raw
 /// <see cref="Piece"/> enum is a 3-state value (None/Red/Yellow); we use the
 /// empty state as the board's "cell is empty" sentinel. Passing a raw
 /// <see cref="Piece.None"/> into a player-shaped API (AI turn, win check,
-/// match ownership) used to compile silently and silently misbehave (zero
+/// match ownership) would compile silently and silently misbehave (zero
 /// ownership = zero score = false positive). <see cref="Player"/> is a
 /// strongly-typed record struct that REJECTS <see cref="Piece.None"/> at the
 /// construction boundary so the wrong shape can't escape the call site.

@@ -1,18 +1,18 @@
 /*
- * fx.css — platform visual-effects layer (2026-07-29).
+ * fx.css — platform visual-effects layer.
  *
  * Three jobs, all keyed off variables that visualRuntime.js publishes on <html>:
  *
- *   §5  glassmorphism + animatable gradients
- *   §6  compositor-only motion primitives
- *   §10 adaptive degradation (data-gfx="high|medium|low", --gfx-blur, --gfx-particles)
+ *   glassmorphism + animatable gradients
+ *   compositor-only motion primitives
+ *   adaptive degradation (data-gfx="high|medium|low", --gfx-blur, --gfx-particles)
  *
  * Effects here are OPT-IN via utility classes. Nothing below restyles an
  * existing element, so adding this stylesheet cannot regress a game's look —
  * it only makes the primitives available.
  */
 
-/* ===== §5 Animatable gradient angle ========================================
+/* ===== Animatable gradient angle ========================================
  * A plain `background: conic-gradient(from 0deg, …)` cannot be transitioned or
  * animated, because the browser has no idea the token inside the function is an
  * angle. Registering it with @property gives it a type, and it becomes
@@ -44,10 +44,9 @@
     --audio-mid: 0;
     --audio-treble: 0;
     --audio-peak: 0;
-    /* The beat, 0..1: how far the low band is above the soundtrack's resting bed. Measured
-       on the menu mix (2026-10-01): the pad alone holds --audio-bass near 0.34 and a kick
-       lifts it to about 0.53, so reading the raw band gives a glow that is simply always
-       on. Silent or muted, the band is 0 and so is this. */
+    /* The beat, 0..1: how far the low band is above the soundtrack's resting bed. On the
+       menu mix the pad alone holds --audio-bass near 0.34 and a kick lifts it to about
+       0.53, so reading the raw band gives a glow that is simply always on. Silent or muted, the band is 0 and so is this. */
     --audio-pulse: clamp(0, calc((var(--audio-bass) - 0.33) * 4.5), 1);
 
     /* Tension & biometric heartbeat variables */
@@ -64,14 +63,14 @@
     --fx-glass-highlight: rgba(255, 255, 255, 0.22);
 }
 
-/* ===== §5 Glassmorphism ====================================================
+/* ===== Glassmorphism ====================================================
  * COST WARNING: `backdrop-filter` forces the element onto its own compositor
  * layer and makes the browser re-sample everything painted beneath it. Two or
  * three of these on screen is fine; twenty will halve your frame rate on
  * integrated graphics. Use it on chrome surfaces (bars, modals, rails) — never
  * on list items or anything that repeats.
  *
- * The `--gfx-blur` indirection lets §10 drop the radius to 0 on weak hardware,
+ * The `--gfx-blur` indirection lets adaptive degradation drop the radius to 0 on weak hardware,
  * at which point the surface degrades to a flat translucent fill that still
  * looks deliberate.
  */
@@ -112,7 +111,7 @@
 @keyframes fx-rotate-angle {
     to { --fx-angle: 360deg; }}
 
-/* ===== §GFX-6 Advanced surface primitives ==================================
+/* ===== Advanced surface primitives ==================================
  * The four below are what separate "translucent panel" from "pane of glass".
  * All are opt-in utilities; the applied layer that puts them on real chrome is
  * glass.css, kept separate so this file stays free of side effects.
@@ -121,13 +120,7 @@
 /* The sheen sweep glass.css runs across a game card on hover. Animated with a
  * transform on a pseudo-element, not `background-position`: a moving gradient
  * position repaints the element every frame, a transform stays on the compositor.
- *
- * 2026-10-01: `.fx-sheen`, `.fx-iridescent`, `.fx-tilt`, `.fx-tilt-glare` and
- * `.fx-frost` stood here as half-deleted blocks (the 2026-08-07 prune cut each
- * selector out together with the end of the comment above it), and the open
- * comments swallowed these keyframes with them. Nothing references those
- * classes, so the deletion is completed. The live tilt is the `[data-fx-tilt]`
- * rule further down. scripts/css-lint.ps1 now fails CI on this kind of damage. */
+ * The live tilt is the `[data-fx-tilt]` rule further down. */
 @keyframes fx-sheen-sweep {
     from { transform: translateX(0) skewX(-18deg); }
     to   { transform: translateX(420%) skewX(-18deg); }}
@@ -176,11 +169,10 @@
     to   { opacity: 1.0; transform: scale(calc(1 + var(--fx-tension, 0) * 0.02)); }
 }
 
-/* ===== §6 Compositor-only motion ===========================================
+/* ===== Compositor-only motion ===============================================
  * Animates ONLY transform. In Blazor WASM the main thread runs the .NET runtime,
  * so anything that needs layout or paint per frame competes with the app itself.
- * `.fx-pop` is the toast entry (impactBus.js adds the class). `.fx-rise` and
- * `.fx-shake` went with the prune; nothing references them.
+ * `.fx-pop` is the toast entry (impactBus.js adds the class).
  */
 .fx-pop {
     animation: fx-pop 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both;
@@ -192,7 +184,7 @@
     100% { transform: scale(1); }}
 
 
-/* ===== §8 Impact / game feel ===============================================
+/* ===== Impact / game feel ===============================================
  * impactBus.js publishes --po-punch and --po-shake on <html> and drives the
  * flash layer's opacity directly. Everything here is the *declarative* half:
  * what those numbers look like.
@@ -222,7 +214,7 @@
     contain: strict;
 }
 
-/* ===== §7 Shared GPU particle overlay ======================================
+/* ===== Shared GPU particle overlay ======================================
  * gpuFx.js injects this canvas once, lazily, on the first burst. See the
  * --z-fx-* tokens in app.css for why it sits above the modal layer.
  *
@@ -240,17 +232,6 @@
     contain: strict;
 }
 
-/* 2026-08-07 browser audit: `.fx-punch` (a saturation lift on --po-punch) and
- * `.fx-punch-text` (a chromatic-fringe text shadow) stood here as half-deleted
- * blocks: the comment terminator and the selector had both been eaten, leaving
- * a bare declaration list. Deleted rather than restored: neither class is
- * referenced by any .razor, .cs or .js in the project, so the prune that
- * mangled this was right about the intent.
- *
- * 2026-10-01: that note used to quote the terminator itself, which closed the
- * comment in mid-sentence and fed the rest of the paragraph to the parser as a
- * selector. The rule below it (the low-tier opt-out) was dropped with it. */
-
 :root[data-gfx='low'] .po-impact-flash { display: none; }
 
 @media (prefers-reduced-motion: reduce) {
@@ -260,17 +241,7 @@
        haptics, so no feedback is actually lost. */
     .po-impact-flash { opacity: 0 !important; }}
 
-/* ===== §6 Offscreen work skipping ==========================================
- * The `.fx-defer` / `.fx-defer--card` `content-visibility: auto` helpers used to
- * live here and were left in the same half-deleted state as the punch block
- * above: comment terminator and selector gone, an orphan declaration list left
- * behind. That stray block is what put fx.css one closing brace ahead of itself.
- * Deleted rather than restored for the same reason — no .razor, .cs or .js
- * references either class. If offscreen skipping is wanted again, reintroduce it
- * with the markup that uses it.
- */
-
-/* ===== §10 Adaptive degradation ============================================
+/* ===== Adaptive degradation ============================================
  * visualRuntime.js sets data-gfx on <html>. Rules here are what "degrade"
  * actually means, so the policy lives in CSS rather than being scattered
  * through component code.
@@ -292,7 +263,7 @@
 @media (prefers-reduced-motion: reduce) { .fx-pop{
         animation: none !important;
     }}
-/* ===== §GFX-16 scene-composited glass =======================================
+/* ===== Scene-composited glass =======================================
  * glassFx.js captures the live game canvas into a small blurred thumbnail and
  * hands it to the panel as --glass-capture. It paints UNDER the panel's own
  * translucent tint, so the blur reads as refraction of the scene rather than a
@@ -312,7 +283,7 @@
     background-position: center !important;
 }
 
-/* ===== Audio-reactive chrome (2026-10-01) ===================================
+/* ===== Audio-reactive chrome ===================================
  * visualRuntime.js publishes --audio-bass/mid/treble/peak (0..1) on <html> while a
  * page asks for them: the catalog and the lobbies do (Index.razor, LobbyPanel.razor).
  * Everywhere else they stay 0 and these rules are the resting look.
@@ -366,14 +337,14 @@ dialog.gps-modal[data-glass-live] { --glass-capture-tint: color-mix(in srgb, var
     opacity: 1;
 }
 
-/* ===== §GFX-17 weather overlay ==============================================
+/* ===== Weather overlay ==============================================
  * The overlay canvas is positioned inline by weather.js; this only sets the
  * blend so rain/snow read as light in the scene instead of grey scribbles.
  * Fog type keeps its own normal-blend gradient (inline) for the milky look.
  */
 .po-weather-canvas { mix-blend-mode: screen; }
 
-/* ── Route-transition wipe (§GFX) ──────────────────────────────────────────
+/* ── Route-transition wipe ─────────────────────────────────────────────────
    Driven by js/routeFx.js, tinted to the DESTINATION route's accent pair so the
    transition introduces the page it reveals. See that file for why this is a DOM
    overlay rather than a post-process pass.

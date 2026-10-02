@@ -15,7 +15,7 @@ public static class MarbleRaceHighScoresEndpoints
 {
     public static IEndpointRouteBuilder MapMarbleRaceHighScoresEndpoints(this IEndpointRouteBuilder app)
     {
-        // §1 MapGroup() per slice: PoMarbleRace high scores share /api/marblerace/highscores.
+        // PoMarbleRace high scores share /api/marblerace/highscores.
         var marble = app.MapGroup("/marblerace/highscores").WithTags("HighScores");
 
         marble.MapGet("",
@@ -33,7 +33,7 @@ public static class MarbleRaceHighScoresEndpoints
             async (MarbleRaceHighScoreRequest request,
                    HttpContext http,
                    IStorageService storage,
-                   IScoreIntegrityGuard integrity,
+                   ScoreIntegrityGuard integrity,
                    ILoggerFactory loggerFactory) =>
             {
                 var log = loggerFactory.CreateLogger("MarbleRaceHighScores");
@@ -109,7 +109,7 @@ public static class MarbleRaceHighScoresEndpoints
             .Produces<IEnumerable<MarbleRaceMapRecord>>(StatusCodes.Status200OK);
 
         records.MapPost("",
-            async (MarbleRaceRecordRequest request, HttpContext http, IStorageService storage, IScoreIntegrityGuard integrity) =>
+            async (MarbleRaceRecordRequest request, HttpContext http, IStorageService storage, ScoreIntegrityGuard integrity) =>
             {
                 // Same physical bound the run check uses: no finish faster than the course allows.
                 if (!MarbleRaceRunVerifier.IsPlausibleFinish(request.MapId, request.FinishSeconds))

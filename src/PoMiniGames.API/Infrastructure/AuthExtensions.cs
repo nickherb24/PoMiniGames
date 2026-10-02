@@ -80,7 +80,7 @@ internal static class AuthExtensions
             {
                 options.Cookie.Name = "PoMiniGames.DevAuth";
                 options.Cookie.HttpOnly = true;
-                // §4.2: session cookies are SameSite=Strict. The dev/guest cookie is
+                // Session cookies are SameSite=Strict. The dev/guest cookie is
                 // minted and read entirely same-origin (the /auth/login/fake redirect and
                 // /api/auth/dev-* posts all originate from the SPA on the host origin), so
                 // Strict never blocks a legitimate flow while closing the cross-site vector.
@@ -99,7 +99,7 @@ internal static class AuthExtensions
                         return Task.CompletedTask;
                     },
                 };
-                // 2026-07-19 browser audit #3: see /api/auth/handshake — the
+                // See /api/auth/handshake — the
                 // reauth signal is set on the handshake endpoint whenever a
                 // DevCookie was sent but context.User is anonymous (i.e. the
                 // data-protection key ring no longer matches). The handshake
@@ -122,7 +122,7 @@ internal static class AuthExtensions
 
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
-                    // §2.2: ValidateIssuer must be true. A custom IssuerValidator
+                    // ValidateIssuer must be true. A custom IssuerValidator
                     // allow-lists the well-known public authorities (common / organizations /
                     // consumers) plus any tenant IDs configured under
                     // PoMiniGames:MicrosoftAuth:AllowedTenantIds.

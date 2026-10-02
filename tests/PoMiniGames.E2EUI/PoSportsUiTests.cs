@@ -52,7 +52,7 @@ public class PoSportsUiTests
     {
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(BrowserLaunch.Options());
-        var page = await OpenAsync(browser, "/posports/1");
+        var page = await OpenAsync(browser, "/posports/demo");
 
         // The engine creates its canvas inside the host div once the demo intro flash clears.
         try

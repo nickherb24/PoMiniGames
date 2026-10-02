@@ -1,4 +1,4 @@
-// combat.js — the one gun, two fire modes (PRD §F4):
+// combat.js — the one gun, two fire modes:
 //   primary (hold F / left mouse): hitscan carve shots — dig craters into the TERRAIN,
 //     carve structures, split debris, damage enemies. Heat-limited with lockout.
 //   alt     (G / right mouse):     a VISIBLE glowing ball that flies out, arcs slightly,

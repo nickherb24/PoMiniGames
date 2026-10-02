@@ -1,11 +1,10 @@
-// weather.js — the island's weather (feature #3, 2026-09-23). Until now the only sky
-// state was the season, which tinted snow onto the ground and changed nothing a creature
-// could feel. A spell is one of five kinds; it scales grass growth, bush ripening, thirst
+// weather.js — the island's weather. The season only tints snow onto the ground and
+// changes nothing a creature can feel; weather does. A spell is one of five kinds; it scales grass growth, bush ripening, thirst
 // and fire, and a storm throws its own lightning. Nothing outside the sim can set it: the
 // island is observed, never steered.
 //
 // Stepped once a second from world.step. Every draw comes from the dedicated `weather`
-// stream, so adding weather did not shift a single event, birth or name in any world.
+// stream, so weather never shifts an event, birth or name.
 import { TICK_SECONDS, WEATHER } from '../core/config.js';
 
 export const WEATHER_KIND = Object.freeze({ CLEAR: 0, RAIN: 1, STORM: 2, DROUGHT: 3, SNOW: 4 });

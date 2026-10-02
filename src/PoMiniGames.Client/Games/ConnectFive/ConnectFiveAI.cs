@@ -95,19 +95,16 @@ public class ConnectFiveAI
             return (board.GetTargetRow(centerCol), centerCol);
         }
 
-        // Bug fix 2026-07-05: the previous return used a *random* column for the
-        // row lookup but *cols[0]* for the column returned. If the random and the
-        // fixed index differed (e.g. cols=[0,1,2], random picks 2, return col 0),
-        // the row was the bottom of col 2 but the place went into col 0 — a
-        // piece could land above the existing stack in col 0. The fix: pick one
-        // column and use its target row for both halves of the tuple.
+        // Pick one column and use its target row for both halves of the tuple: a row
+        // from one column paired with another column would land a piece above that
+        // column's existing stack.
         var pick = cols[Random.Shared.Next(cols.Count)];
         return (board.GetTargetRow(pick), pick);
     }
 
     private (int, int) HardMove(ConnectFiveBoard board, Player player)
     {
-        // Audit #7: 4-ply negamax with alpha-beta + a small transposition table.
+        // 4-ply negamax with alpha-beta + a small transposition table.
         // Bounded by the existing AiMoveBudgetMs in RunAiTurnAsync (8 s ceiling).
         // Medium difficulty calls the same search at depth=2 to stay sub-100ms.
         var search = new NegamaxSearch(player, maxDepth: 4);

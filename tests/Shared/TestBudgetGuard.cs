@@ -11,12 +11,10 @@ namespace PoMiniGames.TestUtilities;
 /// never spend live tokens, accidentally incur a 429, or leak a deployment name.
 /// </summary>
 /// <remarks>
-/// <para><b>§8 Cost-Waste Guardrails — single source of truth.</b> Earlier drafts of the
-/// fixtures duplicated the override dictionary inline in
+/// <para><b>Single source of truth.</b> The override dictionary is not duplicated inline in
 /// <c>TestWebApplicationFactory.ConfigureWebHost</c>, <c>KestrelServerFixture.ConfigureWebHost</c>,
-/// and <c>PoMiniGamesE2EFixture.ConfigureWebHost</c>. Drift between those copies was the
-/// primary reason <c>IFaceAnalysisService</c> (AzureAIFaceAnalysisService) was missed — only
-/// the PoFunQuiz / PoCoupleQuiz overrides existed.</para>
+/// or <c>PoMiniGamesE2EFixture.ConfigureWebHost</c>: drift between copies would let an AI
+/// boundary (for example <c>IFaceAnalysisService</c>) be missed in one of them.</para>
 /// <para><b>Pattern:</b> Immutable shared dictionary. Adding a new AI boundary requires
 /// exactly one edit here; the next build of any fixture picks it up automatically.</para>
 /// </remarks>

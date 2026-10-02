@@ -12,7 +12,7 @@
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.5s ease, visibility 0.5s ease;
-    /* §Pointer events: the overlay covers the whole viewport with a dim
+    /* Pointer events: the overlay covers the whole viewport with a dim
        backdrop, but the only thing the user can actually click is the
        Retry button inside .network-content. Letting pointer events pass
        through the dark backdrop means an underneath "Begin comedy show"
@@ -43,7 +43,7 @@
     animation: network-appear 0.5s ease-out;
 }
 
-/* §Retry button styling — sits inside the modal panel, no jarring
+/* Retry button styling — sits inside the modal panel, no jarring
    "click here to dismiss" feel, just a calm action the operator can
    tap. */
 .network-retry {

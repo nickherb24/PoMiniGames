@@ -5,8 +5,8 @@ using Microsoft.Extensions.Options;
 namespace PoMiniGames.Features.PoVoxelStrike;
 
 /// <summary>
-/// Startup GLB → .pvx ingestion (PRD §F1). One scan per boot — restart-to-ingest is the
-/// product contract; there is deliberately no folder watcher (PRD §7).
+/// Startup GLB → .pvx ingestion. One scan per boot — restart-to-ingest is the
+/// product contract; there is deliberately no folder watcher.
 ///
 /// Invariants this class owns:
 /// <list type="bullet">
@@ -100,9 +100,9 @@ internal sealed partial class AssetIngestionHostedService(
             }
 
             var name = Path.GetFileNameWithoutExtension(glbPath);
-            // Voxel painter (#9): the optional sidecar <name>.glb.pvx-mat.json sits next
+            // Voxel painter: the optional sidecar <name>.glb.pvx-mat.json sits next
             // to the GLB in the drop folder. A malformed file logs and is skipped — never
-            // blocks ingestion (PRD §F1). Identity is GLB-content hash, not sidecar, so
+            // blocks ingestion. Identity is GLB-content hash, not sidecar, so
             // a stray sidecar edit doesn't invalidate the existing .pvx on a restart.
             var sidecarPath = glbPath + ".pvx-mat.json";
             var sidecar = File.Exists(sidecarPath)

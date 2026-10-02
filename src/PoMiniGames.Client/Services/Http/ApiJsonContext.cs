@@ -32,10 +32,10 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(AuthenticatedUserProfile))]
 [JsonSerializable(typeof(DevLoginRequest))]
 [JsonSerializable(typeof(AuthHandshake))]
-// §2 CSRF: AntiforgeryHandler deserializes the token endpoint's payload through this
+// CSRF: AntiforgeryHandler deserializes the token endpoint's payload through this
 // context so the token fetch stays trim-safe (it runs on the WASM HttpClient pipeline).
 [JsonSerializable(typeof(AntiforgeryTokenDto))]
-// §2 /health status page
+// /health status page
 [JsonSerializable(typeof(HealthReportDto))]
 // Score integrity + account data. Source-generated like everything else on this path:
 // the mint runs on the WASM HttpClient pipeline and the erase result is read back on the
@@ -52,7 +52,7 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(MarbleRaceHighScoreRequest))]
 [JsonSerializable(typeof(MarbleRaceRecordRequest))]
 [JsonSerializable(typeof(PoMiniGames.Domain.Models.MarbleRaceMapRecord[]))]
-// PoCabinet (T11, 2026-09-17): the per-track leaderboard ratchets on lap time;
+// PoCabinet: the per-track leaderboard ratchets on lap time;
 // the request shape carries only the score + the contextual track/position,
 // identity is resolved server-side.
 [JsonSerializable(typeof(PoCabinetHighScore))]
@@ -61,8 +61,7 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(PoBrawlHighScore))]
 [JsonSerializable(typeof(PoBrawlHighScore[]))]
 // Single entry only — the client POSTs ladder progress but never reads the board back
-// (the unified /api/leaderboards/pobrawl route serves it). The array registration went
-// with GetPoBrawlLadderAsync on 2026-08-11.
+// (the unified /api/leaderboards/pobrawl route serves it), so no array registration.
 [JsonSerializable(typeof(PoBrawlLadderEntry))]
 [JsonSerializable(typeof(PoBrawlDemoResultRequest))]
 [JsonSerializable(typeof(PoSportsHighScore))]
@@ -94,20 +93,15 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeDto))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeFlags))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.JokeAnalysisDto))]
-// Disambiguate from client-side LeaderboardEntryDto: name the source-gen
-// metadata property JokerLeaderboardEntryDto so the PoJoker leaderboard page
-// resolves it.
-[JsonSerializable(typeof(PoMiniGames.Shared.Games.PoJoker.LeaderboardEntryDto), TypeInfoPropertyName = "JokerLeaderboardEntryDto")]
-[JsonSerializable(typeof(List<PoMiniGames.Shared.Games.PoJoker.LeaderboardEntryDto>), TypeInfoPropertyName = "ListJokerLeaderboardEntryDto")]
 // PoRacer
 [JsonSerializable(typeof(PoRacerScoreDto))]
 [JsonSerializable(typeof(List<PoRacerScoreDto>))]
-// §PoBrawlOnline: the 1v1 result ingest (write only; it answers 204).
+// PoBrawlOnline: the 1v1 result ingest (write only; it answers 204).
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlMatchResultDto))]
-// PoBrawl post-fight press conference (2026-09-23).
+// PoBrawl post-fight press conference.
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlPresserRequest))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlPresserReply))]
-// PoBrawl ring introduction + cross-device ladder progress (2026-09-29).
+// PoBrawl ring introduction + cross-device ladder progress.
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoBrawlIntroRequest))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetBanterPool))]
 [JsonSerializable(typeof(PoMiniGames.Shared.Games.PoCabinetDebriefRequest))]

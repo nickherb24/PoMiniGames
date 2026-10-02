@@ -5,10 +5,9 @@ namespace PoMiniGames.Features.Shared.Lobby;
 /// <summary>
 /// The single global ready/start room every lobby game uses. First arrival becomes host,
 /// later arrivals join until the cap, everyone but the host readies up, the host starts,
-/// and the room resets when the game ends or the room drains. Until 2026-09-14 this
-/// exact state machine existed four times (Racer, Sports, Voxel Strike, Brawl), each
-/// copy carrying the same stale-start recovery and host-migration rules under a
-/// different game's name.
+/// and the room resets when the game ends or the room drains. Racer, Sports, Voxel Strike
+/// and Brawl share this one state machine, with its stale-start recovery and
+/// host-migration rules.
 /// </summary>
 /// <remarks>
 /// <para>

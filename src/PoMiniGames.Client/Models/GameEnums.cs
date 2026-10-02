@@ -14,10 +14,8 @@ public enum Difficulty
 /// </summary>
 /// <remarks>
 /// <para>
-/// This absorbed <c>GameOutcome</c> on 2026-09-13. The two were the same four-value
-/// concept in two namespaces, and ConnectFive and TicTacToe each carried an identity
-/// switch (<c>GameResult.Win => GameOutcome.Win</c>, …) to cross the seam. One enum,
-/// no mapping.
+/// This is the one enum for the four-value concept, so games need no mapping between
+/// namespaces (no identity switch like <c>GameResult.Win => GameOutcome.Win</c>).
 /// </para>
 /// <para>
 /// <see cref="InProgress"/> doubles as the neutral cue and is not a failure state: a

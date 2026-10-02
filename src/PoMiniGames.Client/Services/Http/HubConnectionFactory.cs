@@ -15,7 +15,7 @@ namespace PoMiniGamesClient.Services.Http;
 /// The single construction path for every SignalR hub connection in the client.
 /// Bakes in the two things every hub connection here must have:
 /// <list type="bullet">
-/// <item>§2026-07-16: SignalR's default HttpClientFactory doesn't flow through
+/// <item>SignalR's default HttpClientFactory doesn't flow through
 /// DI, so the negotiate POST drops the dev cookie and the hub's
 /// RequireAuthorization() returns 401. Every connection forces the credentials
 /// handler (<see cref="SignalRCredentialsHttpClientFactory.CreateHandler"/>) so
@@ -46,7 +46,7 @@ public static class HubConnectionFactory
                 options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
                 if (transports is { } restricted) options.Transports = restricted;
             })
-            // §PoBrawlOnline (2026-09-14): the server-side hub protocol serialises
+            // PoBrawlOnline: the server-side hub protocol serialises
             // enums as camelCase strings via JsonStringEnumConverter (Program.cs
             // AddJsonProtocol). The SignalR client's default JSON uses numbers for
             // enums, so deserialising PoBrawlSide etc. fails with

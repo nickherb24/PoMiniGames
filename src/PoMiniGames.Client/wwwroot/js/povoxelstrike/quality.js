@@ -1,5 +1,5 @@
 // quality.js — renderer creation and the one place that decides how much GPU work the
-// arena is allowed to spend (GFX pass, 2026-08-19).
+// arena is allowed to spend.
 //
 // Two jobs:
 //   1. createRenderer() — WebGPU first, WebGL2 fallback. WebGPU is opt-in per the notes
@@ -93,7 +93,7 @@ export function resolveQuality(tier = detectTier()) {
     // them measured 28 ms of an 81 ms step, on their own. These counts keep the effect —
     // stone visibly leaving the wall — at a price the simulation can pay.
     shrapnel: at('medium') ? (at('ultra') ? 140 : at('high') ? 90 : 48) : 0,
-    // 2026-09-30 pass. All three are fragment/vertex-shader work with no CPU cost per
+    // The next three are fragment/vertex-shader work with no CPU cost per
     // frame; the clip recorder is the exception (a canvas readback while it runs), so it
     // is the only one held back to the tiers that have the headroom.
     hotCarve: at('medium'),          // glowing rim on fresh cuts (materials.js)

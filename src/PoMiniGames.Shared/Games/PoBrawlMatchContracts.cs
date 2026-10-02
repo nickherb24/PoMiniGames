@@ -9,7 +9,7 @@ namespace PoMiniGames.Shared.Games;
 // Scope note: PoBrawl's existing JS engine owns all physics, hitbox math, and
 // animation. Porting that whole pipeline to C# in one shot is out of scope, so
 // the server-authoritative boundary is the *combat outcome*: HP totals, damage
-// applied per landed hit, spacing, and the eventual winner. Since 2026-09-23 the
+// applied per landed hit, spacing, and the eventual winner. The
 // server also owns a one-dimensional ring (each corner's X), because an outcome
 // that ignores distance is not an outcome: attacks land only inside their reach.
 // A client never reports a hit at all — it reports inputs, and the server decides.
@@ -109,9 +109,8 @@ public sealed class PoBrawlMatchState
     /// <summary>Winner side when <see cref="Finished"/> is true; otherwise null. Empty string on a draw.</summary>
     public PoBrawlSide? Winner { get; set; }
 
-    // ── Per-corner detail for the 3D view (2026-09-29) ──────────────────────
-    // The page used to draw two markers on a rail, which needed only HP and X. The arena
-    // engine now plays the fight as a puppet of these snapshots, so it needs what each
+    // ── Per-corner detail for the 3D view ───────────────────────────────────
+    // The arena engine plays the fight as a puppet of these snapshots, so it needs what each
     // corner is holding and what each swing did THIS tick — LastEvent carries one event,
     // and both corners can swing on the same tick.
 

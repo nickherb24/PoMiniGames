@@ -29,21 +29,6 @@ public enum GameState
     Finished
 }
 
-public static class QuestionCategories
-{
-    public static readonly IReadOnlyList<QuestionCategory> All = new[]
-    {
-        QuestionCategory.General,
-        QuestionCategory.Science,
-        QuestionCategory.History,
-        QuestionCategory.Geography,
-        QuestionCategory.Sports,
-        QuestionCategory.Entertainment,
-        QuestionCategory.Technology,
-        QuestionCategory.ArtCulture,
-    };
-}
-
 // ── Question + Player + Session ──────────────────────────────────────────────
 
 public class QuizQuestion

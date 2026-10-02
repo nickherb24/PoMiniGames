@@ -11,7 +11,7 @@ namespace PoMiniGames.Unit.Features.PoEcosystem;
 /// contract the endpoint and the mock-mode E2E path rely on.
 /// </summary>
 /// <remarks>
-/// The last two rows (2026-09-30) are the viewer's own pure logic, kept in this theory for
+/// The last two rows are the viewer's own pure logic, kept in this theory for
 /// the same reason: how a wager is settled from the island's per-year rows, and when a
 /// watch alert fires. Both only ever read what the sim reports — the island is observed,
 /// never steered — so "what the page concludes from the numbers" is all there is to test.

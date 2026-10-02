@@ -52,14 +52,12 @@ public class ApiService
     }
 
     /// <summary>
-    /// §6: Single round-trip that returns the auth client config + (when a session
-    /// cookie exists) the canonical user profile. Replaces the legacy two-call
-    /// (config + me) handshake so AuthGate can hydrate with one RTT.
-    /// 2026-07-19 browser audit #3+#4: the previous implementation wrapped the call
-    /// in a bare try/catch and returned null on every failure, including the
+    /// Single round-trip that returns the auth client config + (when a session
+    /// cookie exists) the canonical user profile, so AuthGate can hydrate with one RTT.
+    /// A bare try/catch returning null on every failure would conflate the
     /// ERR_ABORTED that fires when a navigation tears down the in-flight
-    /// request AND the X-Reauth header that signals a stale-cookie unprotect
-    /// failure. We now surface both as distinct exceptions so the caller can
+    /// request with the X-Reauth header that signals a stale-cookie unprotect
+    /// failure. Both surface as distinct exceptions so the caller can
     /// keep the previous user on a transient abort and force a fresh dev
     /// login on a reauth signal.
     /// </summary>
@@ -510,7 +508,8 @@ public class ApiService
     {
         try
         {
-            // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
+            // The caller stamps Date when it builds the entry, so a parked replay carries the same
+            // deterministic RowKey (no duplicates). This only covers an entry queued without one.
             if (string.IsNullOrEmpty(entry.Date))
                 entry.Date = DateTime.UtcNow.ToString("O");
             var response = await _http.PostAsJsonAsync("/api/posports/highscores", entry, ApiJsonContext.Default.PoSportsHighScore);
@@ -540,7 +539,7 @@ public class ApiService
         {
             // Stamp once; preserve across resync so the deterministic RowKey stays stable (no duplicates).
             if (string.IsNullOrEmpty(entry.Date))
-                entry.Date = DateTime.UtcNow.ToString("O");
+                entry = entry with { Date = DateTime.UtcNow.ToString("O") };
             var response = await _http.PostAsJsonAsync("/api/pobrawl/highscores", entry, ApiJsonContext.Default.PoBrawlHighScore);
             return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlHighScore) : null;
         }
@@ -552,8 +551,7 @@ public class ApiService
 
     // No GetPoBrawlLadderAsync. The ladder standings reach the UI through the unified
     // board (/api/leaderboards/pobrawl), which GameOverModal already renders as its
-    // "Top 3 / Best rung" panel. A dedicated reader here had no callers and was removed
-    // 2026-08-11 along with the GET route it wrapped.
+    // "Top 3 / Best rung" panel, so no dedicated reader exists here.
 
     /// <summary>
     /// Submits ladder progress. The server keeps one row per player with
@@ -565,7 +563,7 @@ public class ApiService
         try
         {
             if (string.IsNullOrEmpty(entry.Date))
-                entry.Date = DateTime.UtcNow.ToString("O");
+                entry = entry with { Date = DateTime.UtcNow.ToString("O") };
             var response = await _http.PostAsJsonAsync("/api/pobrawl/ladder", entry, ApiJsonContext.Default.PoBrawlLadderEntry);
             return response.IsSuccessStatusCode ? await response.Content.ReadFromJsonAsync(ApiJsonContext.Default.PoBrawlLadderEntry) : null;
         }

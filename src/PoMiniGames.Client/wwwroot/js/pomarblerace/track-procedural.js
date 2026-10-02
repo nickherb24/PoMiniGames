@@ -17,7 +17,7 @@ import * as CANNON from 'cannon-es';
 // The Neon Chute recipe. A map may run it with a VARIANT (generateTrack's last argument), which
 // overrides any of these and of ZONES / pinches / curve amplitude — that is how Canyon Run is
 // built. The containment is the part to keep: 44-tall walls on a strictly descending chute
-// lost zero marbles in the 2026-09-30 fall census, where both authored courses lost dozens.
+// lost zero marbles in the fall census, where both authored courses lost dozens.
 export const TRACK = {
   LENGTH: 1800,       // forward (+Z) extent — lengthened for a longer race
   DROP: 760,          // 2× steeper ramp (slope ≈ 0.42) per request
@@ -148,14 +148,13 @@ function boostTexture() {
 // Asphalt road surface: a grey bed flecked with aggregate speckle + faint longitudinal wear,
 // so the ground reads as tarmac rather than a neon grid. Built once.
 //
-// 2026-08-08 (user request: "give the ground a road grey texture so it's not black"). Every
-// colour here used to be a dark blue-black keyed to the cyberpunk palette — a #1a2130 bed with
-// blue-tinted speckle and blue wear lines. Under the old image-based lighting that still read
-// as a surface; with the IBL removed (#17) it collapsed to near-black. These are now neutral
-// greys at genuine asphalt values, so the road reads as road under direct light alone.
-// Resolution for the tiling road maps. 2026-08-08 realism pass #6: was 256. One tile covers
-// CELL (22) world units and the camera sits ~60 units from the marble, so at 256 a single
-// aggregate chip was sub-pixel and the surface averaged out to flat grey under minification.
+// Every colour is a neutral grey at genuine asphalt values (not blue-black keyed to the
+// cyberpunk palette), so the road reads as road under direct light alone rather than collapsing
+// to near-black.
+//
+// Resolution for the tiling road maps. One tile covers CELL (22) world units and the camera
+// sits ~60 units from the marble, so at 256 a single aggregate chip is sub-pixel and the
+// surface averages out to flat grey under minification.
 const ROAD_TEX_N = 512;
 
 // Shared aggregate scatter, so the albedo and the roughness map describe THE SAME stones.
@@ -186,7 +185,7 @@ function roadTexture() {
   c.width = c.height = ROAD_TEX_N;
   const g = c.getContext('2d');
   g.fillStyle = '#57595e'; g.fillRect(0, 0, ROAD_TEX_N, ROAD_TEX_N);
-  // Aggregate. 2026-08-08 realism pass #5: each chip now gets a soft dark rim BEFORE the chip
+  // Aggregate. Each chip gets a soft dark rim BEFORE the chip
   // itself is drawn — micro ambient occlusion in the crevice around the stone. This is what
   // separates "grey noise" from "stones set in tar": the eye reads the contact shadow, not the
   // speckle. Baked into the albedo because GTAO only runs on the high tier, so most machines
@@ -215,12 +214,12 @@ function roadTexture() {
   return t;
 }
 
-// Dedicated roughness map (2026-08-08 realism pass #4).
+// Dedicated roughness map.
 //
-// The floor used `roughnessMap: road` — the ALBEDO — which ties roughness to brightness and so
-// gets asphalt exactly backwards: the bright polished chips came out smooth-ish only by accident,
-// while the dark tar voids between them read as the SMOOTHEST part of the road. Tar is the rough
-// part. This map states it directly: mid-rough bed, rougher voids, genuinely polished stones.
+// Using `roughnessMap: road` — the ALBEDO — would tie roughness to brightness and so get asphalt
+// exactly backwards: the bright polished chips would come out smooth-ish only by accident,
+// while the dark tar voids between them would read as the SMOOTHEST part of the road. Tar is
+// the rough part. This map states it directly: mid-rough bed, rougher voids, genuinely polished stones.
 //
 // Linear colour space, not sRGB — a roughness map is data, and tagging it sRGB would push every
 // value through a gamma curve it is not meant to have.
@@ -247,10 +246,10 @@ function roadRoughnessTexture() {
   return t;
 }
 
-// Road-scale wear + occlusion map (2026-08-08 realism passes #7 and #8).
+// Road-scale wear + occlusion map.
 //
 // Bound as `aoMap`, which in three r165 samples the SECOND uv set (`uv1`) — and buildFloorRibbon
-// now writes a uv1 that runs 0..1 across the road and 0..1 along it. That is the whole point:
+// writes a uv1 that runs 0..1 across the road and 0..1 along it. That is the whole point:
 // the albedo above tiles every 22 world units, so anything painted into it repeats ~3× across a
 // 64-wide road and could never express "the middle of the road" or "the edge". This map is laid
 // over the track ONCE, so it can:
@@ -310,13 +309,9 @@ function roadMacroTexture() {
   return t;
 }
 
-// (The #4b vertical-falloff gradient that fed the boost-pad light shafts lived here. The shafts
-// were removed 2026-08-08 and it had no other consumer, so it went with them.)
-
 // GFX #5 — road normal map. Bumps the aggregate so the key light's highlight BREAKS UP across
-// the surface instead of sweeping it as one smooth sheet. It originally paired with the road
-// clearcoat (removed 2026-08-08) but earns its keep on the matte surface too. Derived from the same speckle logic as roadTexture() and generated on canvas
-// like every other texture here — no asset file.
+// the surface instead of sweeping it as one smooth sheet. Derived from the same speckle logic
+// as roadTexture() and generated on canvas like every other texture here — no asset file.
 //
 // Built by sampling a grey-height field and taking its gradient (a Sobel-lite central
 // difference), then packing the surface normal into RGB the way a tangent-space normal map
@@ -324,8 +319,8 @@ function roadMacroTexture() {
 let _roadNormalTex = null;
 function roadNormalTexture() {
   if (_roadNormalTex) return _roadNormalTex;
-  // 2026-08-08 realism pass #6: 256 → ROAD_TEX_N (512), matching the albedo so the relief and
-  // the colour resolve the same stones instead of one blurring across the other.
+  // Same resolution as the albedo (ROAD_TEX_N) so the relief and the colour resolve the same
+  // stones instead of one blurring across the other.
   const N = ROAD_TEX_N;
   // Height field: mostly flat, with the same density of small round aggregate as the albedo.
   const h = new Float32Array(N * N);
@@ -382,10 +377,10 @@ let _kerbTex = null;
 function kerbTexture() {
   if (_kerbTex) return _kerbTex;
   const c = document.createElement('canvas');
-  // 2026-08-08 realism pass #6: 128 → 512. The kerb runs the entire length of both rails and is
-  // the highest-contrast edge in frame, so it was the most obvious thing aliasing under the
-  // chase cam. Every offset below is derived from K rather than hard-coded, so the band layout
-  // (two red bands, 50% duty) is unchanged.
+  // 512: the kerb runs the entire length of both rails and is the highest-contrast edge in
+  // frame, so it is the most obvious thing to alias under the chase cam. Every offset below is
+  // derived from K rather than hard-coded, so the band layout (two red bands, 50% duty) holds
+  // at any resolution.
   const K = 512;
   c.width = c.height = K;
   const g = c.getContext('2d');
@@ -495,10 +490,10 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
   // Frame (position, tangent, right, up, bank quaternion) at parameter s.
   const frameAt = (s) => {
     const p = sample(s);
-    // The heading samples stay INSIDE the track. They used to be clamped at the ends, so at s = 1
-    // `ahead` collapsed onto `p`, the heading came out of atan2(0, 0), and the last floor box got
-    // a garbage bank: it tilted up into a lip across the chute just past the finish line, and the
-    // 2026-09-30 census found a dozen marbles parked against it until the race timed out.
+    // The heading samples stay INSIDE the track. Unclamped at the ends, at s = 1 `ahead` would
+    // collapse onto `p`, the heading would come out of atan2(0, 0), and the last floor box would
+    // get a garbage bank: it tilts up into a lip across the chute just past the finish line,
+    // where marbles park against it until the race times out.
     const sf = Math.min(Math.max(s, 0.004), 0.996);
     const pc = sample(sf);
     const ahead = sample(sf + 0.004);
@@ -529,12 +524,10 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
   // rumble/kicker bands.
   const grid = gridTexture();
   const road = roadTexture();
-  // Road sheen (#19) removed 2026-08-08 (user request). The floor carried a clearcoat 0.55 /
-  // clearcoatRoughness 0.25 "wet sheen" plus a lifted envMapIntensity, which turned the matte
-  // tarmac into a rain-slick surface. Both are gone: MeshStandardMaterial has no clearcoat lobe
-  // at all, and with the image-based lighting removed (#17) there is no environment left to
-  // sample, so metalness drops to 0 with it — a metal with nothing to reflect renders black.
-  // The normal map stays; that is surface relief, not a reflection.
+  // No road sheen: MeshStandardMaterial has no clearcoat lobe, and a "wet sheen" would turn the
+  // matte tarmac into a rain-slick surface. With no environment to sample, metalness is 0 — a
+  // metal with nothing to reflect renders black. The normal map is surface relief, not a
+  // reflection.
   const roadNormal = roadNormalTexture();
   const floorMat = new THREE.MeshStandardMaterial({
     // `color` MULTIPLIES the map, so a dark blue tint here (was 0x2a3446) dragged the road
@@ -652,8 +645,7 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
         const P = f.p.clone().addScaledVector(f.rb, u * w / 2).addScaledVector(f.up, lift);
         pos.push(P.x, P.y, P.z);
         uv.push((u * w / 2) / cell, v);
-        // Second UV set — ROAD-SCALE, laid over the whole ribbon exactly once (2026-08-08
-        // realism passes #7/#8). uv above tiles every `cell` world units in both directions, so
+        // Second UV set — ROAD-SCALE, laid over the whole ribbon exactly once. uv above tiles every `cell` world units in both directions, so
         // it can never say "centre of the road" or "near the rail"; this one can. three r165
         // feeds `uv1` to aoMap, which is what roadMacroTexture() is bound to.
         uv1.push((u + 1) * 0.5, s);
@@ -751,11 +743,6 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     bm.receiveShadow = true;
     group.add(bm);
   }
-
-  // Boost light shafts (#18) removed 2026-08-08 (user request). Four additive 30-unit cones
-  // stood on each boost band as a long-range read for where to steer. Note the trade-off: the
-  // pads are still marked, but only by the flat cyan chevron ribbon on the road, which does not
-  // become visible until you are much closer to it.
 
   // #6 telegraphed KICKER band: push-only (no collider, like the boost pads) but it fires on a
   // cycle — charging up (brightening magenta) for a beat as a TELL, then flashing and shoving
@@ -985,9 +972,9 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
   // can be flung sideways or knocked backwards, and a race can genuinely turn here.
   // This is the one place the pack gets wrecked on purpose.
   //
-  // Non-trapping: each rotor is KINEMATIC (2026-09-30), not a motor on a hinge. The motor had a
-  // max force of 90, and a pile of marbles against an arm stalled it — the arm then stood across
-  // the chute as a dam and the census found 25 marbles parked behind it until the timeout. A
+  // Non-trapping: each rotor is KINEMATIC, not a motor on a hinge. A motor has a max force, and
+  // a pile of marbles against an arm stalls it — the arm then stands across the chute as a dam
+  // and marbles park behind it until the timeout (a census found 25 of them). A
   // kinematic body has infinite mass, so nothing in the pack can stop it and it always sweeps
   // clear; the authored courses' paddles are built the same way for the same reason. Arms are
   // 0.42 of the channel (vs 0.30 for turnstiles) — long enough to sweep most of it, short
@@ -1110,10 +1097,6 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
     },
     // Cannon zeroes a motor's target the moment something stalls it hard; re-arming
     // every frame keeps the Gauntlet turning instead of seizing on a wedged marble.
-    //
-    // This also used to breathe the boost-pad light shafts' shared opacity; the shafts were
-    // removed 2026-08-08, so `t` is now unused. It is kept in the signature because game.js
-    // calls driveMotors(clock) once per racing frame and an arity change buys nothing.
     driveMotors() {
       // Two kinds: the pendulum bobs are hinge motors (re-armed, since cannon-es zeroes a motor
       // that stalls); the Gauntlet rotors are kinematic (spin re-asserted).
@@ -1137,9 +1120,8 @@ export function generateTrack(world, materials, seed, marbleCount = 8, variant =
         // those allocated.
         if (o.isInstancedMesh) o.dispose();
       });
-      // The per-track shaft material was disposed here; the shafts were removed 2026-08-08.
-      // Every material still in use is a module-level singleton shared across tracks, so there
-      // is nothing left for this to free beyond the traversal above.
+      // Every material in use is a module-level singleton shared across tracks, so there
+      // is nothing for this to free beyond the traversal above.
     },
   };
 }

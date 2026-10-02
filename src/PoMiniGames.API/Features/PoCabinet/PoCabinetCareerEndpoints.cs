@@ -15,9 +15,8 @@ public static class PoCabinetCareerEndpoints
 
     public static void MapPoCabinetCareerEndpoints(this IEndpointRouteBuilder routes)
     {
-        // §1 endpoint group: PoCabinet writes are authed (per CLAUDE.md §3 — all
-        // game-data writes require auth; anti-forgery token on top per
-        // AntiforgeryExtensions). Reads are anonymous so the UI can render a
+        // PoCabinet writes are authed (all game-data writes require auth; anti-forgery
+        // token on top per AntiforgeryExtensions). Reads are anonymous so the UI can render a
         // guest's local-only state without an auth roundtrip.
         var authed = routes.MapGroup("/api/pocabinet").RequireAuthorization();
 

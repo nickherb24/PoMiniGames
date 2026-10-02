@@ -12,8 +12,8 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// code, with the roster captured.
 /// </summary>
 /// <remarks>
-/// 2026-09-29: back from rooms-by-code (quick match, private rooms, a room browser) to the one
-/// shared room, like PoRacer. The lobby resets the moment a fight starts, so the next two
+/// There is one shared room (like PoRacer), not rooms-by-code. The lobby resets the moment a
+/// fight starts, so the next two
 /// arrivals can pair up while the first pair is still fighting.
 /// </remarks>
 public sealed class PoBrawlLobbyHub : LobbyHub<PoBrawlLobbyPlayer, PoBrawlLobbyService>

@@ -9,8 +9,7 @@
 //   • rivals  — the three nearest other cars, one saw each, panned by where they are on screen
 //     and pitch-shifted for Doppler, so a pass is heard before it is seen.
 //   • events  — crash, skid, sand, turbo and pass cues, read off consecutive server snapshots
-//     at 20 Hz. The voices were written into gameCues.js long ago; until 2026-09-30 nothing
-//     fired them. Each also rumbles a gamepad (phones buzz through the cue's own haptic).
+//     at 20 Hz. The voices live in gameCues.js. Each also rumbles a gamepad (phones buzz through the cue's own haptic).
 //   • music   — PoMusicDirector.tension, lifted on the final lap and when a rival is close.
 import { rumble } from './input.js';
 

@@ -18,8 +18,8 @@ namespace PoMiniGamesClient.Games.PoJoker;
 public sealed class PerformanceOrchestrator : IAsyncDisposable
 {
     private readonly HttpClient _http;
-    private readonly IJokerSpeechService _speechService;
-    private readonly IJokerAudioService _audioService;
+    private readonly JokerSpeechService _speechService;
+    private readonly JokerAudioService _audioService;
     private readonly PerformanceSettings _settings;
     private CancellationTokenSource? _cts;
     private Task? _performanceLoopTask;
@@ -78,8 +78,8 @@ public sealed class PerformanceOrchestrator : IAsyncDisposable
 
     public PerformanceOrchestrator(
         HttpClient http,
-        IJokerSpeechService speechService,
-        IJokerAudioService audioService,
+        JokerSpeechService speechService,
+        JokerAudioService audioService,
         PerformanceSettings? settings = null)
     {
         _http = http;

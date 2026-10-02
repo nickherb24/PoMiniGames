@@ -14,8 +14,7 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// <para><b>Mock fallback</b>: gated on <c>IsDevelopment() || IsEnvironment("Test")</c>
 /// AND the explicit <c>UseMockAI</c> flag. In Production, missing config causes an
 /// <see cref="InvalidOperationException"/> on first call rather than silently serving
-/// fabricated data — see the 2026-06-13 mock-data fix (user memory
-/// <c>pofunquiz-mock-data-fix.md</c>).</para>
+/// fabricated data.</para>
 /// </summary>
 /// <remarks>
 /// <para>
@@ -54,7 +53,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
     private readonly ILogger<AiQuizGeneratorService> _logger;
     private readonly GameChatClientFactory _clients;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundryOptions;
-    private readonly IAiDecisionOptionsCache _optionsCache;
+    private readonly AiDecisionOptionsCache _optionsCache;
     private readonly Microsoft.Extensions.Caching.Hybrid.HybridCache _hybridCache;
 
     public AiQuizGeneratorService(
@@ -63,7 +62,7 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         ILogger<AiQuizGeneratorService> logger,
         GameChatClientFactory clients,
         IOptionsMonitor<AIFoundryOptions> foundryOptions,
-        IAiDecisionOptionsCache optionsCache,
+        AiDecisionOptionsCache optionsCache,
         Microsoft.Extensions.Caching.Hybrid.HybridCache hybridCache)
     {
         _configuration = configuration;
@@ -85,11 +84,11 @@ public sealed class AiQuizGeneratorService : IOpenAIService
 
         // Fast path: check warm semantic question cache pool.
         //
-        // 2026-09-12: this is the path most games actually take once the process is warm, so it
-        // has to deal the same way the cold path does. It used to shuffle only WHICH questions
-        // came back and hand out the pool's own QuizQuestion instances untouched — leaving each
-        // question's options in the order the model emitted them, correct answer included. See
-        // SelectVariedSet: it re-randomises the option order too, and copies, so the shared pool
+        // This is the path most games actually take once the process is warm, so it
+        // has to deal the same way the cold path does. Shuffling only WHICH questions
+        // come back and handing out the pool's own QuizQuestion instances untouched would leave
+        // each question's options in the order the model emitted them, correct answer included.
+        // SelectVariedSet re-randomises the option order too, and copies, so the shared pool
         // is never mutated.
         if (QuestionPoolCache.TryGetValue(category, out var pool) && pool.Count >= count)
         {
@@ -129,11 +128,11 @@ public sealed class AiQuizGeneratorService : IOpenAIService
 
         // Batch pre-generation to minimize total cloud calls.
         //
-        // 2026-09-12: raised from 12 to QuestionPoolSize. The cache below is keyed on
-        // (category, batchCount) with a 6 h TTL and a durable L2, and the caller then took
-        // the FIRST `count` — so with a 10-question game and a 12-question batch, every
-        // player in a six-hour window got the same ten questions in the same order. The
-        // first one was always the same, which is what makes the game feel canned.
+        // The batch is QuestionPoolSize, well above any game's count. The cache below is
+        // keyed on (category, batchCount) with a 6 h TTL and a durable L2, and the caller
+        // takes the FIRST `count` — so with a 10-question game and a 12-question batch, every
+        // player in a six-hour window would get the same ten questions in the same order. The
+        // first one would always be the same, which is what makes the game feel canned.
         //
         // A bigger pool fixes that WITHOUT spending more: it is still exactly one model
         // call per category per 6 h — only the output token count of that single call goes
@@ -181,10 +180,10 @@ public sealed class AiQuizGeneratorService : IOpenAIService
     /// Fold a freshly-dealt batch into the warm pool, keeping the pool a SET of distinct questions.
     /// </summary>
     /// <remarks>
-    /// 2026-09-12: this was an <c>AddRange</c>. The batch it appends is almost always the SAME
+    /// This must not be a plain <c>AddRange</c>. The batch it appends is almost always the SAME
     /// 24 questions every time — the HybridCache above holds them for six hours and hands back
-    /// the identical list to every caller — so the pool grew by 24 copies of itself per request,
-    /// without bound, for the life of the process. The fast path at the top of
+    /// the identical list to every caller — so the pool would grow by 24 copies of itself per
+    /// request, without bound, for the life of the process. The fast path at the top of
     /// GenerateQuizQuestionsAsync then deals a random subset of pool POSITIONS out of that, which
     /// is how a ten-question quiz can ask the same question twice: after N requests each question
     /// occupies N positions, so a "distinct positions" draw is not a distinct-questions draw.
@@ -299,14 +298,12 @@ public sealed class AiQuizGeneratorService : IOpenAIService
         }
 
         // ── Distractor quality is the whole game ──────────────────────────
-        // 2026-09-12 (user request: "make sure the multiple choices are close
-        // enough to be difficult to guess"). The old prompt asked only for "4
-        // options and exactly one correct answer" and said nothing about what
-        // the other three should be, so the model produced the laziest possible
-        // set — "What is the capital of France?" with Berlin / Madrid / Paris /
-        // Rome, where three options are eliminable by anyone who has heard of
-        // Europe. A four-option question whose distractors are obvious is a
-        // one-option question.
+        // The choices must be close enough to be difficult to guess. A prompt asking only
+        // for "4 options and exactly one correct answer" says nothing about what the other
+        // three should be, so the model produces the laziest possible set — "What is the
+        // capital of France?" with Berlin / Madrid / Paris / Rome, where three options are
+        // eliminable by anyone who has heard of Europe. A four-option question whose
+        // distractors are obvious is a one-option question.
         //
         // The rules below target the specific ways a distractor gives itself
         // away: wrong CATEGORY of thing, wrong order of magnitude, giveaway

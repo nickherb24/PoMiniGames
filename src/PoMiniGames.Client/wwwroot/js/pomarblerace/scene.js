@@ -2,9 +2,6 @@
 // post-processing pipeline: ACES tone mapping, dynamic shadows, GTAO, a transient rack focus,
 // a colour grade, SMAA, a speed-reactive FOV, GPU sparks, pooled impact light pulses and a
 // per-map lighting theme (setTheme).
-//
-// 2026-08-08 (user request) removed from this file: bloom (#2), the vignette (#6), chromatic
-// aberration (#7), image-based lighting (#17) and the graded background (#20).
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -20,25 +17,20 @@ const BG = 0x0f172a;            // cyberpunk dark slate
 // High, pulled-back overview: a positive default pitch orbits the camera UP and
 // behind the leader so it looks down into the channel over the tall walls,
 // showing a complete view of the pack and the track ahead.
-// Raised and pulled back with the road: at CHANNEL_WIDTH 64 the old 26/46 vantage framed
-// about a third of the chute's width, so marbles kept fighting off-screen.
-// The camera now locks to the PLAYER'S marble (see _pickShot), which is a marble you steer —
-// so the framing is a chase cam, not a pack overview: closer and a touch lower than the old
-// broadcast vantage, tilted enough to read the road ahead so you can steer toward boost pads
-// and away from the fall-off edge.
+// The camera locks to the PLAYER'S marble (see _pickShot), which is a marble you steer —
+// so the framing is a chase cam, not a pack overview: close and a touch low, tilted enough
+// to read the road ahead so you can steer toward boost pads and away from the fall-off edge.
 //
-// CHASE, FLATTENED: the previous 52/38 vantage sat almost on top of the marble (≈58° down),
-// so the frame was floor-plus-berms and the road ahead was a thin sliver at the top — the ramp
-// was unreadable. Pulling BACK rather than UP flattens the look angle to ≈40° and lets the
-// chute recede into frame, which is what makes the ramp legible.
-// RESCALED for the authored course (2026-08-10). The old 46/62 vantage was sized against the
-// procedural chute: a 64-wide road with 44-tall berms, straight enough that a 62-unit lookback
-// still saw down it. The authored course is a different size in both directions — the channel
-// is 24-30 units across for most of its length (17 through Lane2) and the walls are 8.3 tall —
-// and, more importantly, the start helix turns on a 56-unit radius. A camera 62 units back from
-// a marble on that helix sits outside the spiral entirely and shoots through the track above it.
-// Pulled in to roughly the same fraction of the channel width the old framing had. The berm
-// clearance that pinned CAM_HEIGHT above ~50 no longer applies at all.
+// CHASE, FLATTENED: a vantage almost on top of the marble (≈58° down) frames floor-plus-berms
+// with the road ahead a thin sliver at the top, and the ramp is unreadable. Pulling BACK
+// rather than UP flattens the look angle to ≈40° and lets the chute recede into frame, which
+// is what makes the ramp legible.
+//
+// Sized for the authored course: the channel is 24-30 units across for most of its length
+// (17 through Lane2), the walls are 8.3 tall, and the start helix turns on a 56-unit radius.
+// A camera 62 units back from a marble on that helix would sit outside the spiral entirely
+// and shoot through the track above it, so the lookback is a modest fraction of the channel
+// width.
 const CAM_HEIGHT = 20;          // base vantage height above the followed marble
 const CAM_BACK = 28;            // behind the marble; the depth that lets the course recede and read
 const CAM_LOOKAHEAD = 12;       // aims down-track so the road ahead owns the frame, not the floor underfoot
@@ -62,12 +54,8 @@ const FOV_SPEED_HI = 90;        // speed at which it saturates
 
 // Colour-grade post pass (#3). Runs in linear HDR before OutputPass.
 //
-// 2026-08-08 (user request): this pass used to also do a vignette (#6) and a
-// chromatic aberration (#7). Both are gone, along with the radial blur (#2)
-// removed earlier, so what remains is purely the colour grade (#3) — a straight
-// 1:1 texture read with saturation/contrast/tint applied. No multi-tap sampling
-// of any kind, which is why the split-sample helper and the blur branch are gone
-// rather than merely switched off.
+// Purely the colour grade (#3) — a straight 1:1 texture read with
+// saturation/contrast/tint applied. No multi-tap sampling of any kind.
 const PostShader = {
   uniforms: {
     tDiffuse: { value: null },
@@ -97,7 +85,6 @@ const PostShader = {
 };
 
 // #3 grade presets. Eased toward, never snapped — see the grade easing in followTarget.
-// The per-preset `vignette` field went with the vignette itself (2026-08-08).
 const GRADES = {
   // Pre-race on the grid: cool, desaturated, flat. Clinical — nothing has happened yet.
   pick: { tint: [0.88, 0.94, 1.10], contrast: 0.94, saturation: 0.78 },
@@ -134,9 +121,8 @@ export function createScene(container) {
   renderer.domElement.style.display = 'block';
 
   const scene = new THREE.Scene();
-  // Graded background (#20) removed 2026-08-08 (user request). It was a 4x256 canvas
-  // gradient ramping #070b18 -> #0f172a -> #16203c up the sky. A flat BG matches the fog
-  // colour exactly, so the horizon no longer shows a seam where fog meets sky.
+  // A flat BG matches the fog colour exactly, so the horizon shows no seam where fog
+  // meets sky.
   scene.background = new THREE.Color(BG);
   // Fog tracks the camera distance: the haze must start comfortably PAST the followed marble or
   // it greys out the exact stretch of course the framing exists to show. Pulled in with
@@ -145,11 +131,9 @@ export function createScene(container) {
   // costs real depth cues.
   scene.fog = new THREE.Fog(BG, 78, 260);
 
-  // Image-based lighting (#17) removed 2026-08-08 (user request). A RoomEnvironment PMREM
-  // used to sit on scene.environment purely so the glossy marbles and floor had something to
-  // reflect. The ambient + hemisphere + key rig below carries the lighting on its own; the
-  // marble and road materials had their metalness dropped to 0 to suit (a metal with nothing
-  // to reflect renders black, which is what removing the env map alone would have caused).
+  // No scene.environment: the ambient + hemisphere + key rig below carries the lighting on
+  // its own, and the marble and road materials keep metalness at 0 to suit (a metal with
+  // nothing to reflect renders black).
 
   // FLICKER FIX (2/4) — depth precision. near 0.1 / far 2000 is a 20000:1 range, which leaves
   // almost no usable depth resolution out where the track is; the rumble/boost/kicker bands sit
@@ -162,17 +146,11 @@ export function createScene(container) {
 
   // Lighting — soft ambient + a shadow-casting key light; neon comes from emissive materials.
   //
-  // 2026-08-08: these were rebalanced UPWARD when the image-based lighting (#17) came out.
-  // RoomEnvironment was not a subtle reflection layer — it was carrying most of the scene's
-  // actual illumination, and deleting it alone dropped the rendered frame from a mean
-  // luminance of ~138 to ~27 (measured over the demo track), i.e. a barely-visible picture.
-  // The ambient is also re-tinted from a dim blue (0x33405c) toward a neutral slate: the blue
-  // was there to sit under a warm env map that no longer exists, and on its own it drained the
-  // road's colour. Values chosen by measuring the composited frame back to the original range.
-  // Near-neutral on purpose. These were blue (0x8899b8 ambient, 0x88aaff sky) to match the
-  // cyberpunk palette, but a blue fill lands on the largest surface in the scene and made the
-  // asphalt read as blue-grey — measured at a +37 blue bias over the road, which is what the
-  // grey road texture was fighting. A faint cool sky tint is kept so the scene is not sterile.
+  // With no environment map, the ambient and hemisphere carry most of the scene's illumination
+  // (without them the frame is barely visible), so they are set high. The ambient is a neutral
+  // slate rather than a dim blue: a blue fill lands on the largest surface in the scene and
+  // makes the asphalt read as blue-grey, which is what the grey road texture would be fighting.
+  // A faint cool sky tint is kept so the scene is not sterile.
   const ambient = new THREE.AmbientLight(0xb6b8bd, 3.6);
   scene.add(ambient);
   const hemi = new THREE.HemisphereLight(0xc2ccdd, 0x3a3c42, 2.2);
@@ -188,27 +166,20 @@ export function createScene(container) {
   key.shadow.mapSize.set(2048, 2048);
   key.shadow.camera.near = 1;
   key.shadow.camera.far = 220;
-  // 2026-08-08 realism pass #10: frustum tightened 150 -> 96 wide.
+  // A tight frustum matters: shadow-map texels spent on empty space either side of the
+  // channel leave a marble's contact shadow — a ~2-unit feature — with too few texels, so it
+  // resolves as a smudge rather than a contact. A smaller texel is the difference between a
+  // marble looking like it is ON the road and looking like it is over a dark patch.
   //
-  // The road is CHANNEL_WIDTH 64. At ±75 more than half the shadow map was being spent on
-  // empty space either side of the chute, so a marble's contact shadow — a ~2-unit feature —
-  // had barely 27 texels to live in and resolved as a smudge rather than a contact. ±48 still
-  // clears the 64-wide road plus the berms either side (they are ~14 further out and only need
-  // to receive, which the road itself covers), and it more than halves the texel size: 0.073
-  // world units versus 0.073*1.56. That is the difference between a marble looking like it is
-  // ON the road and looking like it is over a dark patch.
-  //
-  // The frustum tracks the followed marble (see followTarget), so a narrower one is not a
-  // coverage risk — it is always centred on the action.
-  // Narrowed with the camera (48→30): the frustum only has to cover what the shot frames, and a
-  // tighter one halves the texel size again on a course whose channel is less than half the
-  // width of the chute this was sized for.
+  // The frustum tracks the followed marble (see followTarget), so a narrow one is not a
+  // coverage risk — it is always centred on the action. It only has to cover what the shot
+  // frames.
   const SHADOW_HALF = 30;
   key.shadow.camera.left = -SHADOW_HALF; key.shadow.camera.right = SHADOW_HALF;
   key.shadow.camera.top = SHADOW_HALF; key.shadow.camera.bottom = -SHADOW_HALF;
   key.shadow.bias = -0.0008;
-  // A tighter frustum means a smaller texel, which means acne appears at a bias that used to be
-  // fine. normalBias offsets along the surface normal and is the right control for curved
+  // A tighter frustum means a smaller texel, which means acne appears at a bias that would be
+  // fine for a larger one. normalBias offsets along the surface normal and is the right control for curved
   // receivers (every marble in the pack is one).
   key.shadow.normalBias = 0.02;
   // frustum width ÷ map size — the world size of one shadow texel; followTarget snaps the
@@ -217,10 +188,10 @@ export function createScene(container) {
   scene.add(key);
   scene.add(key.target);
 
-  // ── Marble-only environment (2026-08-08 realism pass #3) ──────────────
-  // Glass spheres are defined by their highlight. With scene.environment gone (#17) the marbles
-  // had no specular response at all and rendered as matte putty — the one material in the scene
-  // that most needs reflection was the one hurt most by removing it.
+  // ── Marble-only environment ───────────────────────────────────────────
+  // Glass spheres are defined by their highlight. With no scene.environment the marbles would
+  // have no specular response at all and render as matte putty — the one material in the scene
+  // that most needs reflection.
   //
   // This is deliberately NOT scene.environment. It is handed to marbles.js and set as `envMap`
   // on the marble materials alone, so the road, berms and hazards stay matte exactly as asked;
@@ -255,10 +226,10 @@ export function createScene(container) {
   composer.setPixelRatio(renderer.getPixelRatio());
   composer.addPass(new RenderPass(scene, camera));
 
-  // GTAO (§GFX-2). The chute is a big diffuse trough lit by one key light and an
-  // environment map, so before this the marbles read as *hovering over* the road
-  // rather than rolling on it — there was no contact darkening anywhere. Ground
-  // truth ambient occlusion is what puts them back in contact with the floor.
+  // GTAO. The chute is a big diffuse trough lit by one key light, so without it the
+  // marbles read as *hovering over* the road rather than rolling on it — there is no
+  // contact darkening anywhere. Ground truth ambient occlusion is what puts them in
+  // contact with the floor.
   //
   // High tier only, and OFF rather than degraded below it: GTAO costs a depth +
   // normal prepass, which is the wrong thing to be paying for on a machine that
@@ -283,9 +254,7 @@ export function createScene(container) {
     };
   }
 
-  // Bloom (#2) removed 2026-08-08 (user request).
-
-  // Rack focus (§GFX-2). Disabled during the race; the photo finish turns it on
+  // Rack focus. Disabled during the race; the photo finish turns it on
   // for a beat. See postFx.js for why a transient DoF pass is affordable and a
   // permanent one is not.
   const rackFocus = PostFx.createRackFocus(scene, camera, 1, 1);
@@ -298,9 +267,9 @@ export function createScene(container) {
   composer.addPass(smaa);
   composer.addPass(new OutputPass());                     // tone-map + sRGB to screen
 
-  // ── Per-map theme (GFX 2026-09-30) ────────────────────────────────────
+  // ── Per-map theme ─────────────────────────────────────────────────────
   // Each map in maps.js may carry a `theme`: background (which is also the fog colour, so the
-  // horizon never shows the seam the graded background once did), fog range, the three lights and
+  // horizon never shows a seam), fog range, the three lights and
   // exposure. A map without one keeps the rig above. The light COUNT never changes, so switching
   // theme never recompiles a shader.
   function setTheme(t) {
@@ -442,9 +411,6 @@ export function createScene(container) {
   // ── #3 grade state ────────────────────────────────────────────────────
   // Live values are eased toward the targets every frame so a grade change is always a
   // transition and never a cut.
-  //
-  // The radial blur (#2), vignette (#6) and chromatic aberration (#7) that used to be driven
-  // from here are all removed; the grade is the only thing this pass still does.
   let gradeTo = GRADES.racing;
   const gradeNow = {
     tint: new THREE.Vector3(1, 1, 1), contrast: 1, saturation: 1,
@@ -507,7 +473,7 @@ export function createScene(container) {
   window.addEventListener('pointerup', onPointerUp);
 
   function resize() {
-    // 2026-09-11 fix: clamp the measured host to the viewport. If the host
+    // Clamp the measured host to the viewport. If the host
     // chain ever resolves content-driven (flex-basis:auto shell), sizing the
     // buffer to the host makes the canvas attribute itself the host's content
     // and the ResizeObserver doubles it every pass until the browser clamps
@@ -533,7 +499,7 @@ export function createScene(container) {
   // The window resize event only fires for viewport changes — it misses the
   // container growing/shrinking in place, which is exactly what happens when the
   // Blazor layout settles after init (fonts, intro card unmounting, the shell's
-  // flex height). That race once left the canvas sized for a stale first
+  // flex height). That race leaves the canvas sized for a stale first
   // measurement. ResizeObserver covers both sources; the guard is for ancient
   // browsers where the window listener alone still works.
   if (typeof ResizeObserver !== 'undefined') {
@@ -547,7 +513,7 @@ export function createScene(container) {
   // the ground behind) as well as aiming it down-track along travel, so the road ahead reads
   // around curves and down the ramp. `speed` (optional) drives the speed-reactive FOV.
   function followTarget(pos, dt, snap, forward, speed) {
-    // Track-relative framing. The offset used to be a fixed world -Z, which is wrong twice over
+    // Track-relative framing. A fixed world -Z offset would be wrong twice over
     // on this track: the chute TURNS (so "behind in -Z" can put the camera in FRONT of the
     // marble through a hairpin), and it DESCENDS at up to ~0.42 (so a fixed world-Y lift leaves
     // the eye below the 44-unit berms of the stretch behind, which then wall the shot in — the
@@ -616,7 +582,7 @@ export function createScene(container) {
     camera.updateProjectionMatrix();
     fovPunch = Math.abs(fovPunch) > 0.05 ? fovPunch * Math.exp(-6 * dt) : 0;
 
-    // §GFX-8 — camera shake, applied LAST so it offsets the final framing. Put
+    // Camera shake, applied LAST so it offsets the final framing. Put
     // before lookAt it would be cancelled out, because lookAt recomputes the
     // orientation from the (already shaken) position and the shake would only
     // translate the eye without moving the image.
@@ -647,7 +613,7 @@ export function createScene(container) {
     setGrade,         // #3
     punchFov,
     /**
-     * §GFX-2 — rack the focus for the photo finish. `distance` is how far the
+     * Rack the focus for the photo finish. `distance` is how far the
      * winning marble is from the camera; the chase cam holds it at roughly
      * CAM_BACK, so that is the default and callers only need to pass a value if
      * they are framing something else.

@@ -52,7 +52,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
             js.InvokeAsync<IJSObjectReference>("import", "./js/uiAudio.js").AsTask());
     }
 
-    // §7 Haptic vocabulary. Each intent below pairs its audio cue with a short
+    // Haptic vocabulary. Each intent below pairs its audio cue with a short
     // vibration so the same feedback lands on tactile-first mobile players (and
     // in silent/pocket contexts). Patterns are deliberately tiny — a "tick", not
     // a "buzz" — so rapid interactions never fatigue. All are best-effort and
@@ -258,7 +258,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
     }
 
     /// <summary>
-    /// §10 Swipe-back gesture feedback — a 90 ms downsweep from C5 → A3 with
+    /// Swipe-back gesture feedback — a 90 ms downsweep from C5 → A3 with
     /// a soft attack. Matches the navigation gesture direction (low = leaving).
     /// </summary>
     public async ValueTask SwipeBackAsync()
@@ -272,7 +272,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
     }
 
     /// <summary>
-    /// §10 Personal-best celebration — three ascending arpeggio notes (C5 → E5 → G5)
+    /// Personal-best celebration — three ascending arpeggio notes (C5 → E5 → G5)
     /// with a short vibration burst on supporting devices. The audio is the
     /// milestone cue; the haptic reinforces it for tactile-first users.
     /// </summary>
@@ -291,7 +291,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
     }
 
     /// <summary>
-    /// §10 Mock-data environment cue — a single low buzz (140 ms, F3, 14 % gain)
+    /// Mock-data environment cue — a single low buzz (140 ms, F3, 14 % gain)
     /// whenever the USING MOCK DATA banner appears. Best-effort, never blocks.
     /// </summary>
     public ValueTask MockDataAsync() => PlayToneAsync(174.61, 140, 0.14, "square");
@@ -335,7 +335,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
     }
 
     /// <summary>
-    /// §7 Fire a raw haptic pattern (alternating vibrate/pause milliseconds, e.g.
+    /// Fire a raw haptic pattern (alternating vibrate/pause milliseconds, e.g.
     /// <c>[12, 40, 18]</c>). Gated on <c>navigator.vibrate</c> support and the
     /// global master-mute; a no-op on desktop/unsupported devices. Best-effort —
     /// never throws. Games can call this directly for bespoke cues (hit, near-miss,

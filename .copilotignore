@@ -1,7 +1,0 @@
-**/bin/
-**/obj/
-**/node_modules/
-**/.vs/
-**/wwwroot/
-src/PoMiniGames.Client/dist/
-src/PoMiniGames.Client/tsconfig.tsbuildinfo

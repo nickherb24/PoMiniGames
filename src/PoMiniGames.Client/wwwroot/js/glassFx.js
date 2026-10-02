@@ -1,4 +1,4 @@
-// glassFx.js — scene-composited glass for HUD panels (§GFX-16).
+// glassFx.js — scene-composited glass for HUD panels.
 //
 // CSS backdrop-filter blurs whatever is *behind the element in DOM order*,
 // which over a canvas reads as a flat smear. This module composites the actual
@@ -153,14 +153,13 @@
         };
     }
 
-    // Auto-attach (§GFX). attachHud above needs the game to remember to call it
-    // with its own canvas, and for most of the module's life exactly one game did
-    // (PoMarbleRace) — so every other HUD in the app fell back to the plain
-    // backdrop-filter, which over a canvas blurs whatever is behind the element in
-    // DOM order and reads as a flat smear rather than as glass.
+    // Auto-attach. attachHud above needs the game to remember to call it with its
+    // own canvas; a HUD whose game forgets falls back to the plain backdrop-filter,
+    // which over a canvas blurs whatever is behind the element in DOM order and
+    // reads as a flat smear rather than as glass.
     //
-    // This inverts the contract: a panel opts in by carrying data-glass, and the
-    // source canvas is discovered. A new game gets scene-composited glass by
+    // So a panel opts in by carrying data-glass, and the source canvas is
+    // discovered. A new game gets scene-composited glass by
     // adding an attribute, with nothing to wire and nothing to tear down.
     let _autoStop = null;
     let _autoObserver = null;

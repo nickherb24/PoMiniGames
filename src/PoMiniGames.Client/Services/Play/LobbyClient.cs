@@ -10,10 +10,6 @@ namespace PoMiniGamesClient.Services.Play;
 /// reconnect, and the three broadcasts every lobby emits. Game-specific hub calls
 /// (a character or fighter pick) go through <see cref="InvokeAsync{T}"/>.
 /// </summary>
-/// <remarks>
-/// Until 2026-09-14 Racer, Sports, Voxel Strike and Brawl each carried this exact
-/// connect/subscribe/join/re-join sequence — twice in wrappers, twice inline in pages.
-/// </remarks>
 public sealed class LobbyClient<TPlayer> : IAsyncDisposable where TPlayer : ILobbyPlayer
 {
     private readonly ApiEndpoints _endpoints;

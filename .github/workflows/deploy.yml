@@ -22,7 +22,7 @@ env:
 
 jobs:
   build:
-    name: Build (master only — no tests)
+    name: Build and validate
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
@@ -75,7 +75,7 @@ jobs:
             dotnet build PoMiniGames.slnx --no-restore --configuration Release
           fi
 
-      # §7 #NET_CLEAN_10: trim-audit for the WASM client. The host's `dotnet publish`
+      # Trim-audit for the WASM client. The host's `dotnet publish`
       # exercises server-side AOT but never compiles the Blazor client with trimming
       # on, so a regression in PoShared / PoMiniGamesClient trim safety would only
       # surface at the consumer's first deploy. This step runs the same
@@ -91,14 +91,12 @@ jobs:
             -o ./client-trim-audit \
             --no-restore
 
-      # §6.6 mobile-first budget: the trimmed WASM _framework payload gates first
+      # Mobile-first budget: the trimmed WASM _framework payload gates first
       # paint on phones. Fail the build if it regresses past the budget so a new
       # reflection-heavy DTO can't silently bloat the download.
       #
-      # Re-measured 2026-09-13: 20 MB uncompressed (20,156 KB), i.e. unchanged by
-      # PoSurvive's removal — the old note blamed that game's client-side simulation
-      # engine for the baseline and was simply wrong about where the bytes are. They
-      # are the runtime itself: dotnet.native.wasm ~2.9 MB, System.Private.CoreLib
+      # The baseline is about 20 MB uncompressed (20,156 KB), and the bytes are the
+      # runtime itself, not game code: dotnet.native.wasm ~2.9 MB, System.Private.CoreLib
       # ~1.7 MB, the three icudt*.dat globalization bundles ~3 MB combined, and the
       # pre-compressed .gz/.br twin of every one of those. PoMiniGamesClient.wasm is
       # 1.4 MB of that 20 — deleting game code will not move this number much, so a
@@ -118,8 +116,8 @@ jobs:
             exit 1
           fi
 
-      - name: Verify PoRacer formatting
-        run: dotnet format PoMiniGames.slnx --verify-no-changes --no-restore --verbosity minimal --include src/PoMiniGames.API/Features/PoRacer src/PoMiniGames.Client/Games/PoRacer src/PoMiniGames.Shared/Games/PoRacerShared.cs src/PoMiniGames.Shared/Games/PoRacerCatalog.cs
+      - name: Verify formatting
+        run: dotnet format PoMiniGames.slnx --verify-no-changes --no-restore --verbosity minimal
 
       - name: Validate infrastructure
         run: az bicep build --file infra/main.bicep --stdout > /dev/null
@@ -220,21 +218,12 @@ jobs:
             --type zip \
             --track-status true
 
-      - name: Prewarm (absorb F1 cold-start)
-        shell: bash
-        # Probe ping, liveness, health, and diag with a sensible retry backoff
-        # to ensure the instance is active before running validation.
-        run: |
-          for path in "/api/health/ping" "/api/health/liveness" "/api/health" "/api/diag"; do
-            curl -fsS --retry 5 --retry-all-errors --retry-delay 5 \
-              "https://${APP_NAME}.azurewebsites.net${path}" || true
-          done
-
-      - name: Smoke Tests (Health, Liveness, Diag)
+      # One loop both absorbs the F1 cold start (the retries) and is the smoke test (the exit).
+      - name: Smoke tests (health, diag)
         shell: bash
         run: |
-          for path in "/api/health/ping" "/api/health/liveness" "/api/health" "/api/diag"; do
+          for path in "/api/health/ping" "/api/health" "/api/diag"; do
             echo "Smoke testing ${path}..."
-            curl -fsS --retry 5 --retry-all-errors --retry-delay 5 \
+            curl -fsS --retry 10 --retry-all-errors --retry-delay 5 \
               "https://${APP_NAME}.azurewebsites.net${path}" || exit 1
           done

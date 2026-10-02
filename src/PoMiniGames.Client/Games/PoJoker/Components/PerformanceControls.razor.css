@@ -15,13 +15,12 @@
     width: 100%;
 }
 
-/* 2026-08-07 browser audit #10: the Begin/Stop buttons markup lives in THIS
-   component, but `.btn` and `.btn-primary` were only ever declared in
-   JesterStage.razor.css. Blazor scopes each `.razor.css` to its own component's
-   `[b-hash]`, so those rules never matched these buttons — Stop rendered with a
-   dark-red background and otherwise stock browser chrome (no padding, no radius,
-   a default border), which read as a broken control. The base lives here now so
-   the component is self-contained. */
+/* The Begin/Stop buttons markup lives in THIS component, so `.btn` and
+   `.btn-primary` must be declared here: Blazor scopes each `.razor.css` to its
+   own component's `[b-hash]`, so rules declared in JesterStage.razor.css never
+   match these buttons (Stop would render with stock browser chrome: no padding,
+   no radius, a default border). The base lives here so the component is
+   self-contained. */
 .btn {
     padding: 0.7rem 1.5rem;
     font-size: 0.9rem;

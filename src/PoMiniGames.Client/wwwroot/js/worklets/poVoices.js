@@ -1,9 +1,9 @@
 // poVoices.js — the platform's synthesis engine, running on the audio thread.
 //
-// WHY A WORKLET (§GFX-10)
-// Every sound in this app is generated, not sampled. Until now that generation
-// happened by building a small graph of OscillatorNode/GainNode/BiquadFilterNode
-// per cue, from the main thread. Two problems with that in a Blazor WASM app:
+// WHY A WORKLET
+// Every sound in this app is generated, not sampled. Building a small graph of
+// OscillatorNode/GainNode/BiquadFilterNode per cue from the main thread has
+// two problems in a Blazor WASM app:
 //
 //   1. TIMING. Node creation and the `setValueAtTime` calls that shape the
 //      envelope all run on the main thread — the same thread as the .NET

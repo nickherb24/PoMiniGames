@@ -27,7 +27,7 @@ builder
     .AddPoMiniGamesKeyVault()
     .AddPoMiniGamesLogging();
 
-// ─── Data Protection (§2.2 encrypted cookies) ──────────────────────
+// ─── Data Protection (encrypted cookies) ──────────────────────
 // Pinned BEFORE auth so AddCookie picks up the configured IDataProtector.
 var storageAccountName = builder.Configuration["PoMiniGames:Storage:TableService:AccountName"];
 builder.Services.AddPoMiniGamesDataProtection(builder.Environment, storageAccountName);
@@ -36,7 +36,7 @@ builder.Services.AddPoMiniGamesDataProtection(builder.Environment, storageAccoun
 builder.Services
     .Configure<PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions>(
         builder.Configuration.GetSection(PoMiniGames.Features.PoCoupleQuiz.CoupleQuizOptions.SectionName))
-    // §2026-06-26 prod regression fix: MicrosoftAuthOptions.Enabled defaults to true
+    // MicrosoftAuthOptions.Enabled defaults to true
     // whenever ClientId + ApiClientId are present, even without an explicit Enabled=true
     // secret in KV. The post-configure binder only fires when Enabled is absent from
     // configuration; explicit true/false in KV or env var still wins.
@@ -51,7 +51,7 @@ builder.Services.AddPoMiniGamesStorage(builder.Configuration)
     .AddPoMiniGamesAuth(builder.Environment, builder.Configuration)
     .AddPoMiniGamesGameServices()
     .AddPoMiniGamesRateLimiting();
-builder.Services.AddSingleton<IDiagnosticsSnapshotProvider, ConfigurationDiagnosticsSnapshotProvider>();
+builder.Services.AddSingleton<ConfigurationDiagnosticsSnapshotProvider>();
 
 // ─── SignalR (shared by all multiplayer hubs) ─────────────────────────────────
 // Enrich every hub invocation's logs with UserId/ConnectionId — the SignalR
@@ -93,7 +93,7 @@ builder.Services.AddSignalR(options =>
 // ─── Swagger / OpenAPI ───────────────────────────────────────────────
 builder.Services.AddProblemDetails();
 builder.Services.AddAuthorization();
-// §2 CSRF: synchroniser tokens for every state-changing /api/* call. See
+// CSRF: synchroniser tokens for every state-changing /api/* call. See
 // AntiforgeryExtensions for why UseAntiforgery() alone does not cover a JSON API.
 builder.Services.AddPoMiniGamesAntiforgery();
 builder.Services.AddOpenApi();
@@ -204,7 +204,7 @@ catch (Exception ex)
 // streamed with `SendFile` (which honors the compression layer), so this
 // ordering works for the WASM payload too.
 app.UseResponseCompression();
-// §CORS: applies only in Development (see registration above). Must precede
+// CORS: applies only in Development (see registration above). Must precede
 // UseAuthentication / MapPoMiniGamesEndpoints so preflight OPTIONS requests
 // are answered before the auth pipeline tries to validate them.
 if (app.Environment.IsDevelopment())
@@ -262,7 +262,7 @@ if (app.Environment.IsDevelopment())
         // cache header the handler had set — dev silently diverged from production.
         var noCache = !path.StartsWith("/api/", StringComparison.OrdinalIgnoreCase)
             && (path.StartsWith("/_framework", StringComparison.OrdinalIgnoreCase)
-            || !System.IO.Path.HasExtension(path)                       // SPA shell routes ("/", "/connectfive/1")
+            || !System.IO.Path.HasExtension(path)                       // SPA shell routes ("/", "/connectfive/demo")
             || path.EndsWith(".css", StringComparison.OrdinalIgnoreCase)
             || path.EndsWith(".js", StringComparison.OrdinalIgnoreCase));
         if (noCache)
@@ -397,7 +397,7 @@ app.UseAuthorization();
 // the same NAT. After UseRateLimiter too, so a shed request never opens a scope at all.
 app.UseAiUsageScope();
 
-// §2 CSRF gate. Deliberately AFTER UseAuthentication: the antiforgery token is bound to
+// CSRF gate. Deliberately AFTER UseAuthentication: the antiforgery token is bound to
 // the user's identity claims, so validating before the principal is established would
 // reject every token this same user was just issued. After UseRateLimiter too, so a flood
 // of token-less writes is shed by the limiter rather than each one paying for a
@@ -408,7 +408,7 @@ app.UsePoMiniGamesAntiforgery();
 // The whole route table lives in EndpointRouteExtensions.MapPoMiniGamesEndpoints.
 app.MapPoMiniGamesEndpoints();
 
-// ─── Fake /api/* fallback (§4 of QA report) ───────────────────────────
+// ─── Fake /api/* fallback ───────────────────────────
 // The SPA fallback below (`MapFallbackToFile("index.html")`) intercepts every
 // unmatched path and returns the Blazor shell. That is correct for client
 // routes like /leaderboards, but it silently converts undefined /api/* paths

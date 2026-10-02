@@ -28,10 +28,10 @@
 // only laid from track.roadFrom on (track.built; before it, an open chute), and there are
 // no barrier walls.
 //
-// Camera: third person only (2026-09-23). 'chase' (close), 'far' (high and
+// Camera: third person only. 'chase' (close), 'far' (high and
 // long) and 'tv' (trackside cameras handing off along the lap).
 //
-// Quality is automatic (2026-09-29, replacing the Render quality and FOV settings):
+// Quality is automatic (there are no render quality or FOV settings):
 // the loop watches the frame rate and steps the pixel ratio, bloom depth, shadow map
 // and grass down a tier after a sustained dip below 45 fps. It never steps back up
 // mid-race; a remount starts at 'high' again.
@@ -76,8 +76,8 @@ const RENDER_SCALE = { low: 0.6, medium: 0.8, high: 1 };
 // the world origin, so 1 model metre = 50 scene units = 500 sim units — the scale the track's
 // knots in PoCabinetTrackGeometry were baked at, and the one at which the marble gutter's
 // 26 cm floor is as wide as the physics corridor (road + run-off). The track is the marble
-// run, without its walls (the user's call, 2026-09-30: the gutter's sides stood eight units
-// tall around a one-unit car and hid the rest of the scene). So the model's gutter is hidden
+// run, without its walls (the gutter's sides would stand eight units
+// tall around a one-unit car and hide the rest of the scene). So the model's gutter is hidden
 // and, down to track.roadFrom, the scene lays an open chute in its place: the gutter's
 // floor, same width, same bank, on the same supports, with two edge lines. From there on
 // the gutter has ended at the drop well (marbles fall; cars get a ramp) and the scene builds
@@ -497,7 +497,7 @@ class SceneHandle {
         }
         // physics.js stops a car's centre at hw + RUN_OFF - CAR_RADIUS/2; its flank is
         // half a car width further out, so that is where the barrier face belongs.
-        // The Playground run has none (the user's call, 2026-09-30): in its gutter the gutter's
+        // The Playground run has none: in its gutter the gutter's
         // own sides are the wall, and on its ramp and slide the edge of the deck is. The
         // physics still stops a car there.
         const wallLat = hw + RUN_OFF;

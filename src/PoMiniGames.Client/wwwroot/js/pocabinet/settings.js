@@ -17,11 +17,11 @@ const SETTINGS_KEY = 'pocabinet.settings.v1';
 const RECORDS_KEY = 'pocabinet.records.v1';
 
 const DEFAULT_SETTINGS = Object.freeze({
-    // Fixed, not settings (2026-10-01): volume, mute, reduced motion and colour-safe
+    // Fixed, not settings: volume, mute, reduced motion and colour-safe
     // colours are the app's (the settings sheet; PoAudioBus, <html data-motion>,
     // <html data-colorsafe>). They stay in the object because audio.js, scene.js and
-    // minimap.js read these keys, but sanitize() no longer takes them from the store, so
-    // a value an older build saved (a muted Cabinet, say) cannot outlive its switch.
+    // minimap.js read these keys, but sanitize() does not take them from the store, so
+    // a stale saved value (a muted Cabinet, say) cannot outlive the app's switch.
     masterVolume: 0.7,     // Cabinet's mix level under the app's volume
     muted: false,
     reducedMotion: false,

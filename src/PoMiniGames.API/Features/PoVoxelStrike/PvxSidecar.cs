@@ -4,12 +4,12 @@ using System.Text.Json.Serialization;
 namespace PoMiniGames.Features.PoVoxelStrike;
 
 /// <summary>
-/// Author-sidecar schema for voxel-painted assets (PRD §5.4 follow-up, "Voxel painter").
+/// Author-sidecar schema for voxel-painted assets ("Voxel painter").
 /// A drop-folder author writes <c>MyAsset.glb.pvx-mat.json</c> next to the GLB to:
 /// <list type="bullet">
 /// <item>give the palette entries human-readable names ("oak", "ice", "brick") so the
 /// asset picker can show them instead of hex codes;</item>
-/// <item>override the physics constants the M2 stress solver reads — density,
+/// <item>override the physics constants the stress solver reads — density,
 /// compressive strength, tensile strength per material id.</item>
 /// </list>
 /// Without the sidecar the asset is still produced; the voxelizer's default "concrete"
@@ -54,7 +54,7 @@ public sealed class PvxSidecar
 
 /// <summary>
 /// Parses and validates a sidecar JSON file. Bad inputs return null so the caller can
-/// log-and-skip without aborting ingestion (PRD §F1: per-file failures are never fatal).
+/// log-and-skip without aborting ingestion (per-file failures are never fatal).
 /// </summary>
 internal static partial class PvxSidecarLoader
 {

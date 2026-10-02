@@ -1,15 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props.
-         §1.7 Trimming Safeguards. The client references Domain directly (for the
+         Trimming safeguards. The client references Domain directly (for the
          leaderboard row types and GameKey), so a non-trim-safe API in a public type
          here reaches the browser payload. Analyse it at its own source, not at the
          far end of the reference chain where the diagnostic loses its origin.
 
-         PoMiniGames.Application was dissolved into this project on 2026-09-13: it was
-         110 lines in four files (IStorageService, IDiagnosticsSnapshotProvider and two
-         DTO files), and every one of them only ever used Domain types. The interfaces
-         are under Abstractions/, the DTOs under Models/. -->
+         The interfaces (IStorageService, a diagnostics provider interface) are under
+         Abstractions/, the DTOs under Models/. -->
     <IsTrimmable>true</IsTrimmable>
     <EnableTrimAnalyzer>true</EnableTrimAnalyzer>
   </PropertyGroup>

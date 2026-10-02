@@ -82,9 +82,6 @@ const GROUPS = Math.ceil(CHUNKS / GROUP_CHUNKS);
 export const WALL_THICKNESS = 4; // cells; 4 × 0.1 = 0.4 world units
 export const WALL_HEIGHT = 15;    // world units; 75 cells
 
-/** World units of clearance the wall occupies; used by world.js to keep structures out. */
-export const WALL_INSET = WALL_THICKNESS * BLOCK;
-
 export class Terrain {
   constructor(seed) {
     this.seed = seed >>> 0;

@@ -3,10 +3,9 @@ using Microsoft.Extensions.Options;
 namespace PoMiniGames.Features.Auth;
 
 /// <summary>
-/// Post-configuration binder for <see cref="MicrosoftAuthOptions"/>. Closes the
-/// 2026-06-26 prod regression where a deployment with ClientId + ApiClientId
-/// correctly populated still showed "Authentication is not configured" because
-/// the legacy <see cref="MicrosoftAuthOptions.Enabled"/> flag defaulted to false.
+/// Post-configuration binder for <see cref="MicrosoftAuthOptions"/>. Without it, a deployment
+/// with ClientId + ApiClientId correctly populated would still show "Authentication is not
+/// configured" because the <see cref="MicrosoftAuthOptions.Enabled"/> flag defaults to false.
 /// </summary>
 /// <remarks>
 /// <para>

@@ -27,7 +27,7 @@ namespace PoMiniGames.Features.PoJoker;
 /// restate a joke is precisely the signal that it should not be restated. That case
 /// is logged and handed to the caller as <c>null</c>.</para>
 /// </remarks>
-public sealed class JokeRewriteService : IJokeRewriteService
+public sealed class JokeRewriteService
 {
     /// <summary>Output ceiling for a rewrite. Two short lines by contract.</summary>
     private const int RewriteMaxTokens = 250;
@@ -36,7 +36,7 @@ public sealed class JokeRewriteService : IJokeRewriteService
     private readonly IHostEnvironment _environment;
     private readonly GameChatClientFactory _clients;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundryOptions;
-    private readonly IAiDecisionOptionsCache _optionsCache;
+    private readonly AiDecisionOptionsCache _optionsCache;
     private readonly int _timeoutSeconds;
 
     // Asks for a replacement joke rather than a cleaned copy of the original: the
@@ -67,7 +67,7 @@ public sealed class JokeRewriteService : IJokeRewriteService
         ILogger<JokeRewriteService> logger,
         GameChatClientFactory clients,
         IOptionsMonitor<AIFoundryOptions> foundryOptions,
-        IAiDecisionOptionsCache optionsCache)
+        AiDecisionOptionsCache optionsCache)
     {
         _logger = logger;
         _environment = environment;
@@ -85,7 +85,11 @@ public sealed class JokeRewriteService : IJokeRewriteService
         _timeoutSeconds = configuration.GetValue("PoJoker:Rewrite:TimeoutSeconds", 8);
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// Returns a rewritten joke, or <c>null</c> when no rewrite could be produced —
+    /// model unavailable, timed out, content-filtered, refused, or unparseable. The
+    /// caller is expected to fall back rather than treat null as an error.
+    /// </summary>
     public async Task<JokeDto?> TryRewriteAsync(JokeDto joke, CancellationToken cancellationToken = default)
     {
         // Own task key so the rewrite can be pointed at a different deployment from the Jester's

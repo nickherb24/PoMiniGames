@@ -15,10 +15,7 @@ internal static class PopulationSeries
     /// path, so the culture is pinned rather than left to the browser's locale.
     /// </summary>
     /// <remarks>
-    /// Inlined here on 2026-09-12. It used to come from PoSurvive's ChartGeometry, of which
-    /// this was the only piece PoEcosystem ever touched; the game and its chart suite were
-    /// removed and reviving that class for one formatter would have been the tail wagging
-    /// the dog.
+    /// Kept local to PoEcosystem: it is the only chart-geometry helper the game needs.
     /// </remarks>
     private static string N(double value) => value.ToString("F2", CultureInfo.InvariantCulture);
 

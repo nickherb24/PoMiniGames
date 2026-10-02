@@ -4,22 +4,22 @@
 // mix graph (js/audioBus.js) through window.PoAudioBus on the 'sfx' bus, so global
 // mute/volume/ducking apply for free.
 //
-// There is no music in here any more (2026-09-30). The two-saw drone this file used to
-// run played UNDER the platform soundtrack, which every game page already has; the siege
-// now steers that soundtrack instead, through PoMusicDirector.tension (see setTension).
+// There is no music in here: a drone would play UNDER the platform soundtrack, which
+// every game page already has. The siege steers that soundtrack instead, through
+// PoMusicDirector.tension (see setTension).
 //
 // Every public method is throttle-guarded and mute-safe, so the engine can call them
 // from hot paths (collapse spawns, debris collide events) without its own bookkeeping.
 //
-// SOUND pass (2026-08-19), two additions:
-//   * True 3D positional audio. Every cue that used to take a stereo pan scalar now takes
-//     a world position and routes through an HRTF PannerNode, so a brute behind you is
+// Two layers of spatial sound:
+//   * True 3D positional audio. Every cue takes a world position (or a stereo pan scalar
+//     on the low tier) and routes through an HRTF PannerNode, so a brute behind you is
 //     behind you and a tower collapsing overhead is overhead. setListener() feeds the
 //     camera transform to the AudioContext listener once per frame.
 //   * Convolution reverb zones. Two procedurally-generated impulse responses (open field,
 //     stone interior) run in parallel on a send from the SFX bus; setSpace() crossfades
 //     between them, so stepping through a castle gate audibly changes the room.
-// Both are tier-gated by quality.js -- a low-end machine keeps the old stereo path, which
+// Both are tier-gated by quality.js -- a low-end machine keeps the stereo path, which
 // is why _pan() still accepts a plain number.
 
 const NOISE_SECONDS = 2;

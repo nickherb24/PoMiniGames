@@ -4,7 +4,7 @@
 //
 // Single-instance, but *last writer wins*: `start` adopts the newest ref rather
 // than no-op'ing on a second call, and `stop(token)` only tears the loop down if
-// the caller still owns it. The badge is unconditional as of 2026-08-11, and the
+// the caller still owns it. The badge is unconditional, and the
 // app swaps whole layouts (MainLayout ↔ EmptyLayout ↔ BareLayout) on
 // navigation — each carrying its own <FpsCounter />. With a first-writer-wins
 // start and an unconditional stop, an incoming counter that mounted before the

@@ -1,5 +1,5 @@
-// traits.js — the five personality traits (SPEC §7.4) and the bounded LLM nudge
-// (SPEC §7.8): one active nudge per creature, clamped to ±NUDGE.maxDelta, decaying
+// traits.js — the five personality traits and the bounded LLM nudge:
+// one active nudge per creature, clamped to ±NUDGE.maxDelta, decaying
 // linearly to zero over NUDGE.decaySeconds. Every behaviour reads traits through
 // effectiveTrait() so a nudge influences the sim only within those bounds.
 import { NUDGE, TICK_SECONDS, TRAITS } from '../core/config.js';

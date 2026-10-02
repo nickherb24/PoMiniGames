@@ -51,7 +51,7 @@ public sealed class GameResultService
     }
 
     /// <summary>
-    /// §10 A server submit didn't land, so the score was parked in the offline queue.
+    /// A server submit didn't land, so the score was parked in the offline queue.
     /// Why it failed changes what the player should hear:
     /// <list type="bullet">
     /// <item>Guest (not signed in) — this isn't an error, it's the deferred-sign-in
@@ -174,7 +174,7 @@ public sealed class GameResultService
             () => _sync.EnqueueMarbleRace(highScore!));
 
     /// <summary>
-    /// §PoCabinet (T11, 2026-09-17): per-track best-lap ratchet. Ties the
+    /// PoCabinet: per-track best-lap ratchet. Ties the
     /// finished-race flow through the same offline-resilient path as the
     /// other games so a player who finishes a race while offline still gets
     /// the run recorded later.

@@ -49,7 +49,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     /// <summary>One results row: name plus a short detail (finish time, "You", "AI official").</summary>
     protected sealed record StandingRow(string Name, string Detail, bool IsLocal);
 
-    // No 2P mode (removed 2026-09-29): a stale /pocabinet/2player link plays 1P.
+    // There is no 2P mode: a stale /pocabinet/2player link plays 1P.
     protected GameMode Mode => GameModes.Parse(ModeSegment) is var m && m == GameMode.TwoPlayer ? GameMode.OnePlayer : m;
 
     protected string _playerName = "Player";
@@ -223,7 +223,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     /// <summary>
     /// A mode switch mid-race (same component, new route parameter) tears the race down.
-    /// (The <c>?lobby=</c> / <c>?code=</c> invite deep links went with the join codes, 2026-09-29.)
     /// </summary>
     protected override async Task OnParametersSetAsync()
     {

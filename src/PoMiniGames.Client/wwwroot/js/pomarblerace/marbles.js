@@ -30,8 +30,7 @@
 // colour and a per-instance UV offset picks its cell out of the shared texture atlas, so 100
 // visually distinct marbles still cost exactly one draw call.
 //
-// The headroom this frees is what pays for the motion blur, shockwave rings and road sheen added
-// alongside it — see docs/superpowers/specs/2026-07-28-pomarblerace-gfx-audio-design.md.
+// The headroom this frees is what pays for the motion blur, shockwave rings and road sheen.
 import * as THREE from 'three';
 import * as CANNON from 'cannon-es';
 import { newProjection } from './maps.js';
@@ -78,10 +77,9 @@ export function marbleColor(index) {
 // carry realistic rotational momentum and roll true.
 //
 // ANGULAR damping stays near zero — real glass has negligible rolling resistance at this size,
-// so a marble keeps its spin. LINEAR damping does NOT, and was raised from 0.003 to 0.09 for the
-// authored course (2026-08-10). The old chute was short; this one is a single continuous
-// 3644-unit descent, and with negligible drag marbles simply accelerated the whole way, arriving
-// at 100-113 u/s — roughly three times the speed the course's banked turns are shaped for, and
+// so a marble keeps its spin. LINEAR damping does NOT: 0.09, not 0.003. The authored course is a
+// single continuous 3644-unit descent, and with negligible drag marbles simply accelerate the
+// whole way, arriving at 100-113 u/s — roughly three times the speed the course's banked turns are shaped for, and
 // fast enough to step straight through the floor between physics ticks. Drag gives them a
 // terminal velocity instead, which is what a real marble run has and what this track assumes.
 // Half-width of the pack's mass spread, as a fraction of the baseline. 0.25 gives rivals 0.75x to
@@ -124,8 +122,6 @@ export const MARBLE_ROSTER = Array.from({ length: MARBLE_COUNT }, (_, i) => ({
 // that again.
 export const MAX_SPEED = 85;
 
-export const MARBLE_COLORS = MARBLE_ROSTER.map((m) => m.color);
-
 // ── Player choices (intro card) ──
 // Skins change the red marble's finish, never its hue. `need` is the best run score that unlocks
 // one (localStorage pomarblerace_best), so a good run buys a flashier marble and nothing else.
@@ -144,8 +140,8 @@ export const WEIGHTS = [
   { id: 'heavy', name: 'Heavy', mass: 1.25, hint: 'Shrugs off kicks, turns wide' },
 ];
 
-// Ribbon trails (GFX pass 2026-09-30): the player plus the current top three. They replaced a
-// 1-px THREE.Line on the player alone — WebGL ignores linewidth, so it barely showed.
+// Ribbon trails: the player plus the current top three. Ribbons rather than a 1-px THREE.Line,
+// because WebGL ignores linewidth and a line barely shows.
 const TRAIL_LEN = 20;
 const TRAIL_WIDTH = 0.55;
 const LEADERS = 3;
@@ -351,13 +347,11 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   // than from separate materials. The red player marble owns its own geometry/material (and is
   // the only marble with a blob and collision sparks). Low-poly sphere: 100 of them, so
   // the segment count matters.
-  // 2026-08-08 realism pass #2: 12×8 → 20×14. The note this replaces argued 12×8 was "invisible
-  // at the size these render", which held for the old pack-overview camera. The camera is a chase
-  // cam now (scene.js CAM_BACK) and marbles regularly fill a good part of the frame, where an
-  // 8-band sphere reads as a faceted lump rather than a ball — the silhouette gives it away even
-  // when the shading does not. 168 → 504 triangles each; at 100 instances in ONE draw call that
-  // is still a rounding error next to the track ribbon, and it buys a round silhouette in exactly
-  // the shots the player is looking at.
+  // 20×14, not 12×8: the camera is a chase cam (scene.js CAM_BACK) and marbles regularly fill a
+  // good part of the frame, where an 8-band sphere reads as a faceted lump rather than a ball —
+  // the silhouette gives it away even when the shading does not. 504 triangles each; at 100
+  // instances in ONE draw call that is a rounding error next to the track ribbon, and it buys a
+  // round silhouette in exactly the shots the player is looking at.
   const packGeo = new THREE.SphereGeometry(1.0, 20, 14);
   const atlas = marbleAtlas();
   // Realism pass #3: roughness pulled in and a scoped env map attached. Glass reads as glass
@@ -379,11 +373,11 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
   // The pack spans the whole track and is a single draw call, so per-object frustum culling has
   // nothing to win and would only risk popping the whole field out at once.
   pack.frustumCulled = false;
-  // 2026-08-08 realism pass #1: the pack cast NO shadow at all — only the player's marble did —
-  // so 100 of the 101 marbles floated over the road with nothing tying them to it. Contact
-  // shadow is the single strongest cue that an object is resting on a surface, and its absence
-  // is most of why the pack read as sprites laid over the track. An InstancedMesh casts for
-  // every instance from one shadow draw, so this is one extra pass over the pack, not a hundred.
+  // The pack casts a shadow like the player's marble: without one, 100 of the 101 marbles float
+  // over the road with nothing tying them to it. Contact shadow is the single strongest cue that
+  // an object is resting on a surface, and its absence is most of why the pack would read as
+  // sprites laid over the track. An InstancedMesh casts for every instance from one shadow draw,
+  // so this is one extra pass over the pack, not a hundred.
   pack.castShadow = true;
   // Receive too: marbles in a pile-up should darken the ones beneath them.
   pack.receiveShadow = true;
@@ -723,9 +717,9 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
    * Push physics transforms into the render meshes.
    *
    * @param {object} [track] the built track. Optional — without it the contact blob falls back
-   *   to riding under the marble as before. With it the blob is planted on the floor PLANE
+   *   to riding under the marble. With it the blob is planted on the floor PLANE
    *   (which is banked to near-vertical in places, so a world-Y height would not do) and reacts
-   *   to the gap the way the 2026-08-08 realism pass intended.
+   *   to the gap.
    */
   /**
    * @param {THREE.Vector3} [eye] camera position, for the camera-facing trails. Without it the
@@ -749,11 +743,10 @@ export function createMarbles(world, materials, startPositions, chosenIndex, onC
         packDirty = true;
       }
 
-      // Contact blob (#8). 2026-08-08 realism pass #9: this used to be pinned a fixed distance
-      // under the marble, so it flew with it — a "contact" shadow that left the ground the
-      // moment the marble did, always the same size and always the same 50% black. A real one
-      // stays on the floor and reads the gap: tight and dark on contact, wide and faint as the
-      // marble climbs a berm or takes air off a kicker. That gap is the cue the eye uses to
+      // Contact blob. Pinned a fixed distance under the marble it would fly with it — a
+      // "contact" shadow that left the ground the moment the marble did, always the same size
+      // and always the same 50% black. A real one stays on the floor and reads the gap: tight
+      // and dark on contact, wide and faint as the marble climbs a berm or takes air off a kicker. That gap is the cue the eye uses to
       // judge height, and it is free here because the track can report its own floor.
       if (m.blob) {
         if (track && m.pathIndex >= 0) {

@@ -6,7 +6,7 @@
 @inject HttpClient Http
 
 @*
-    §2 /health — the human-facing status page for this app's external connections.
+    /health — the human-facing status page for this app's external connections.
 
     Reachable in a browser because the server's root /health endpoint content-negotiates:
     an Accept containing text/html hands back the Blazor shell and the router lands here,
@@ -37,9 +37,8 @@
     {
         @* An unreachable /api/health is itself the answer, and the most important one this
            page can give — surface it as the result rather than as an empty table. *@
-        @* 2026-09-04 UI sweep: migrated to <ErrorState> with the existing RefreshAsync
-           callback wired to OnRetry. The underlying `_error` message stays in the body
-           so the on-call engineer can read it without expanding a details element. *@
+        @* The `_error` message stays in the body so the on-call engineer can read it
+           without expanding a details element. *@
         <ErrorState Icon="📡"
                     Title="Could not reach the health endpoint"
                     OnRetry="RefreshAsync">
@@ -48,9 +47,8 @@
     }
     else if (_report is null)
     {
-        @* 2026-09-04 UI sweep: shared `.app-loading` primitive — same centered spinner
-           + muted label as the leaderboards / lobbies. The page's own `.hp-muted`
-           text style stays in use elsewhere (the footer line, the empty-checks case). *@
+        @* Shared `.app-loading` primitive — same centered spinner + muted label as the
+           leaderboards / lobbies. *@
         <div class="app-loading" role="status" aria-live="polite">
             <div class="app-loading__spinner" aria-hidden="true"></div>
             <span>Contacting the API…</span>
@@ -58,7 +56,6 @@
     }
     else if (_report.Checks.Count == 0)
     {
-        @* 2026-09-04 UI sweep: shared <EmptyState> primitive. *@
         <EmptyState Icon="🩺"
                     Title="No registered dependency checks">
             The API is reachable but reports no registered dependency checks.
@@ -93,16 +90,9 @@
 
     <p class="hp-muted hp-foot">
         Last checked @(_checkedAt?.ToLocalTime().ToString("HH:mm:ss") ?? "—").
-        @* The /diag Razor page was removed 2026-08-07. It was 505 lines of developer
-           chrome shipped in every player's WASM bundle, and every section of it only
-           rendered JSON that these endpoints already return. Pointing at the JSON
-           directly keeps the capability and drops the payload.
-           2026-08-12 audit #7: the developer endpoints (diag / mockables / logs/tail)
-           were shown to every visitor as plain mono-spaced text, no context. They
-           leak internal infrastructure to anyone who hits /health, and a curious
-           user clicking them gets a JSON dump with no UI. Hide them behind an
-           explicit "show developer details" disclosure — same affordance, but
-           opt-in. *@
+        @* The developer endpoints link to raw JSON rather than a UI, so no diagnostics
+           page ships in the WASM bundle. They leak internal infrastructure to anyone
+           who hits /health, so they sit behind an explicit opt-in disclosure. *@
         Machine-readable report at <code>/api/health</code>.
         @if (_showDeveloperLinks)
         {
@@ -129,9 +119,9 @@
     private DateTimeOffset? _checkedAt;
     private bool _loading;
 
-    // 2026-08-12 audit #7: developer endpoints are hidden behind this toggle
-    // so the user-facing /health page doesn't leak /api/diag and friends to
-    // every visitor. Default off; a click reveals them in place.
+    // Developer endpoints are hidden behind this toggle so the user-facing
+    // /health page doesn't leak /api/diag and friends to every visitor.
+    // Default off; a click reveals them in place.
     private bool _showDeveloperLinks;
     private static readonly string[] _developerEndpoints =
         ["/api/diag", "/api/logs/tail"];

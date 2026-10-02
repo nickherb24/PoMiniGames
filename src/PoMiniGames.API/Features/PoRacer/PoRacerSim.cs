@@ -30,9 +30,8 @@ internal sealed class PoRacerSim
     public const double DefaultBotCaution = 0.58;
     private readonly double _botCaution;
 
-    // What moves a car's top speed (2026-10-01). Until then nothing did: a boost only pushed
-    // harder toward the same ceiling, a tow was two bots' private acceleration bonus, and
-    // Damage was a number the renderer scuffed the paint with.
+    // What moves a car's top speed: a boost pad or drift payout, a tow, and Damage. Each one
+    // changes the ceiling itself, not just how hard the car pushes toward it.
     private const double BoostTopSpeed = 1.10;     // boost pad or drift payout
     private const double DraftTopSpeed = 1.04;     // sitting in another car's tow
     private const double DamageSpeedCost = 0.10;   // share of top speed lost at Damage = 1
@@ -225,7 +224,7 @@ internal sealed class PoRacerSim
 
     /// <summary>
     /// Hand a human's car to the bot driver, or back. A shared race does this for a seat nobody
-    /// is connected to: until 2026-10-01 a driver who closed the tab left a parked car on the
+    /// is connected to: otherwise a driver who closed the tab would leave a parked car on the
     /// racing line for everyone else, for the rest of the race.
     /// </summary>
     public void SetAutopilot(string ownerId, bool on)
@@ -416,9 +415,9 @@ internal sealed class PoRacerSim
         if (Math.Abs(c.Speed) < 0.5 && !accel && !brake) c.Speed = 0;
 
         // The handbrake with the wheel turned, at speed, on tarmac, is a drift: the car rotates
-        // half again as fast and scrubs about a third of what a straight-line pull does. Until
-        // 2026-10-01 "Drift" was only that pull plus MORE understeer, so the one control named
-        // after cornering made every corner worse. Holding a drift charges it; letting go pays
+        // half again as fast and scrubs about a third of what a straight-line pull does. A drift
+        // that was only that pull plus MORE understeer would make the one control named
+        // after cornering make every corner worse. Holding a drift charges it; letting go pays
         // the charge out as a short boost, so it is a way round a tight bend, not a free one
         // down a straight (the scrub costs about what the payout returns).
         bool onSand = c.Surface == "sand";
@@ -674,10 +673,10 @@ internal sealed class PoRacerSim
         c.Speed = Math.Sqrt(vxNew * vxNew + vyNew * vyNew);
         c.Heading = Math.Atan2(vyNew, vxNew);
         // Glance off: turn the nose 0.2 rad toward the track, whichever way the car is travelling
-        // (the sign of heading x inward-normal says which way that is). Until 2026-09-30 this was
-        // `+= sign * 0.2`, which is right for a car driving the wrong way round and turns one
-        // driving the right way INTO the barrier: a single brush became a hit on every tick, the
-        // speed collapsed, the car ground along the wall and Damage ran to 1 in a quarter second.
+        // (the sign of heading x inward-normal says which way that is). A fixed `+= sign * 0.2`
+        // is right for a car driving the wrong way round and turns one driving the right way
+        // INTO the barrier: a single brush becomes a hit on every tick, the speed collapses, the
+        // car grinds along the wall and Damage runs to 1 in a quarter second.
         c.Heading += 0.2 * Math.Sign(Math.Sin(c.Heading) * nx - Math.Cos(c.Heading) * ny);
         c.SkidIntensity = 1.0;
         // By the speed into the barrier: a 5 degree brush at full speed is about 0.02, head-on is 0.12.

@@ -41,8 +41,8 @@ export class TrackRenderer {
   resize() {
     const rect = this.canvas.parentElement?.getBoundingClientRect();
     if (!rect || rect.width === 0) return;
-    // audit #8: shared resolution policy — see js/canvasDpr.js. This also picks
-    // up the backing-store budget, which a bare min(dpr, 2) did not have.
+    // Shared resolution policy — see js/canvasDpr.js. This also picks
+    // up the backing-store budget, which a bare min(dpr, 2) would not have.
     this.dpr = window.PoCanvasDpr ? window.PoCanvasDpr.resolve(rect.width, rect.height) : Math.min(window.devicePixelRatio || 1, 2);
     this.canvas.width = Math.round(rect.width * this.dpr);
     this.canvas.height = Math.round(rect.height * this.dpr);

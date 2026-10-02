@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 namespace PoMiniGames.E2EUI.Features.PoCabinet;
 
 /// <summary>
-/// Two browsers, one lobby: PoCabinet has no join codes (2026-09-29), so two identities that
+/// Two browsers, one lobby: PoCabinet has no join codes, so two identities that
 /// open <c>/pocabinet/multi</c> and press Join lobby must land in the same lobby — the first
 /// as host (start button), the second seated beside them (ready button) — without a JS error.
 ///

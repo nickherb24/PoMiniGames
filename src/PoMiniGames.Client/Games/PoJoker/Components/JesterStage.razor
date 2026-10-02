@@ -1,7 +1,7 @@
 @using System.Net.Http
 @inject HttpClient Http
-@inject IJokerSpeechService SpeechService
-@inject IJokerAudioService AudioService
+@inject JokerSpeechService SpeechService
+@inject JokerAudioService AudioService
 @inject PerformanceSettings PerformanceSettings
 @inject IJSRuntime JS
 @implements IAsyncDisposable
@@ -72,15 +72,12 @@
     {
         if (firstRender)
         {
-            // Browser audit #1 (2026-08-10): the global beforeunload handler used to
-            // be registered unconditionally and gated on a window-scoped flag set to
-            // true the instant StartPerformance ran — so navigating away from /pojoker
-            // before the first joke arrived (or in Demo, at any point — looping shows
-            // never have work to lose) fired the "Leave site?" prompt on every link.
-            // Now the listener function is defined up front, but it is only *attached*
-            // once a 1-player show is mid-flight (see StartPerformance), and removed
-            // the moment it ends, so leaving the page is friction-free before Start,
-            // after Stop, on completion, and in Loop mode.
+            // The beforeunload listener function is defined up front, but it is only
+            // *attached* once a 1-player show is mid-flight (see StartPerformance), and
+            // removed the moment it ends, so leaving the page is friction-free before
+            // Start, after Stop, on completion, and in Loop mode (an always-attached
+            // listener would fire the "Leave site?" prompt on every link, including
+            // in Demo where looping shows never have work to lose).
             await JS.InvokeVoidAsync("eval", @"window.__pojokerBeforeUnload = function(e) {
                 if (window.__pojokerShowRunning) { e.preventDefault(); e.returnValue = ''; }
             };");
@@ -91,8 +88,7 @@
             }
         }
 
-        // Browser audit #1 (2026-08-10): start the show on a false→true
-        // transition of AutoStart. The first-render check above covers the
+        // Start the show on a false→true transition of AutoStart. The first-render check above covers the
         // Demo case (AutoStart=true on first paint); this covers the
         // post-intro case where the page flips AutoStart to true after the
         // player dismisses the controls card. Without it, a 1-player show
@@ -109,9 +105,9 @@
 
     private async Task StartPerformance()
     {
-        // 2026-07-27: deliberately reverses the earlier "NetRun10 audit #2" default of
-        // safeMode=true. The Jester is meant to be edgy, so it now runs unfiltered on
-        // JokeAPI's Dark category — the harshest material the upstream API exposes.
+        // Deliberately not safeMode: the Jester is meant to be edgy, so it runs
+        // unfiltered on JokeAPI's Dark category — the harshest material the upstream
+        // API exposes.
         //
         // Consequences, all intentional:
         //  - safe-mode off means NO flags are stripped. JokeAPI's flag set is nsfw,
@@ -126,10 +122,10 @@
         _orchestrator.SelectedSafeMode = false;
         _orchestrator.SelectedMoodLabel = "Random";
 
-        // Browser audit #1 (2026-08-10): arm the beforeunload guard ONLY for a
-        // non-loop 1-player show that has actually begun delivering jokes. Loop /
-        // demo shows never have work to lose (they auto-restart), and arming
-        // before the first joke arrived fired the prompt on every navigation.
+        // Arm the beforeunload guard ONLY for a non-loop 1-player show that has
+        // actually begun delivering jokes. Loop / demo shows never have work to
+        // lose (they auto-restart), and arming before the first joke arrives would
+        // fire the prompt on every navigation.
         // The listener function is installed once on first render; here we
         // attach it and flip the gate flag. The finally block below detaches
         // it and clears the flag when the show is no longer running.
@@ -180,9 +176,9 @@
 
     private async Task StopPerformance()
     {
-        // Browser audit #1 (2026-08-10): clear the guard flag AND remove the
-        // listener so a manual Stop leaves the page navigable without prompt,
-        // not just "armed but with a flag that would block if anything re-arms".
+        // Clear the guard flag AND remove the listener so a manual Stop leaves the
+        // page navigable without prompt, not just "armed but with a flag that
+        // would block if anything re-arms".
         try
         {
             await JS.InvokeVoidAsync("eval",

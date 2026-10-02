@@ -79,8 +79,8 @@ const SEAT_MAX_SLOPE = 1.2;
 const TINT_LOW = new THREE.Color(0x2563eb);
 const TINT_HIGH = new THREE.Color(0xfbbf24);
 
-// The naturalist lenses (2026-09-30). 0–4 are the five traits (the evolution tint); the rest
-// read what the frame now carries: hunger, health and the sick flag, how fast the creature
+// The naturalist lenses. 0–4 are the five traits (the evolution tint); the rest
+// read what the frame carries: hunger, health and the sick flag, how fast the creature
 // is moving, and — given the kin of whoever the camera is on — who is family.
 export const LENS = Object.freeze({ NONE: -1, HUNGER: 5, HEALTH: 6, THERMAL: 7, KIN: 8, COUNT: 9 });
 // How far the lens colour replaces the lit colour (materials.js materialLens).
@@ -129,10 +129,9 @@ export function createCreatureMeshes(scene, cap) {
     groups[Number(id)] = { rig, parts, material, count: 0 };
   }
 
-  // There is no selection outline. A cyan wireframe box used to track the inspected
-  // creature — and, because the auto-director inspected whatever it was filming, it sat
-  // around the subject of every cinematic shot. Removed 2026-09-16 at the user's request:
-  // the shot itself says what is being watched, and the popover names it.
+  // There is no selection outline: the auto-director inspects whatever it is filming, so an
+  // outline would sit around the subject of every cinematic shot. The shot itself says what
+  // is being watched, and the popover names it.
 
   return {
     /** Colour every creature through a lens: a base trait (0–4), a LENS value, or -1 for species colours. */

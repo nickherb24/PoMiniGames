@@ -51,14 +51,9 @@ const EVENTS = {
 };
 
 export function createEventFx(particles, audio, { tier = 'high' } = {}) {
-  // 2026-09-13: the lightning/eruption flash light lived here. It was one reusable
-  // THREE.PointLight driven to peak intensity 1980 (lightning, near-white) / 450 (eruption,
-  // orange) and decayed over ~180ms — a whole-screen strobe on every weather event, which
-  // reads as the screen flickering rather than as lightning. Removed outright rather than
-  // hidden behind the reduce-flashing preference, because the strobe WAS the effect: a
-  // strike still has its particles, its stinger and its camera trauma, and an eruption
-  // still has its ash column. The light was also this module's only use of the scene
-  // handle, so that parameter went with it.
+  // Deliberately no flash light for lightning or eruptions: a whole-screen strobe on every
+  // weather event reads as the screen flickering rather than as lightning. A strike has its
+  // particles, its stinger and its camera trauma, and an eruption its ash column.
 
   // Previous frame's props, for the impact watcher. Sized to the cap once: the frame can
   // never carry more rows than PROP_CAP, so this never reallocates.

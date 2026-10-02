@@ -11,7 +11,7 @@ namespace PoMiniGamesClient.Services.Ui;
 /// <summary>
 /// Lightweight viewport-width helper used by Razor components that need to
 /// render different amounts of data on phone vs desktop (e.g. leaderboards
-/// show top-3 on mobile, top-10 on desktop). NetRun10 audit #6.
+/// show top-3 on mobile, top-10 on desktop).
 ///
 /// Components inject this scoped service and call <see cref="RefreshAsync"/>
 /// inside OnAfterRenderAsync, then read <see cref="IsNarrow"/> from their

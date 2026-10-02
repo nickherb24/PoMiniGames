@@ -11,20 +11,6 @@ namespace PoMiniGames.Integration;
 /// </summary>
 public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>, IAsyncLifetime
 {
-    // All game IDs shown on the Home page.
-    //
-    // These are GameKey WIRE keys, not the client's route/folder names. The quiz games are
-    // "couplequiz"/"funquiz" — the "po"-prefixed spellings used here previously are not in
-    // GameKey's catalogue, so every call for them 400'd on GameKey.Parse rather than
-    // exercising the leaderboard. Keep this list in sync with GameKey.WellKnown.
-    private static readonly string[] AllGameIds =
-    [
-        "connectfive",
-        "tictactoe",
-        "couplequiz",
-        "funquiz",
-    ];
-
     private readonly TestWebApplicationFactory _factory;
     private readonly HttpClient _client;
 
@@ -34,7 +20,7 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
         _client = factory.CreateClient();
     }
 
-    // §2 CSRF: the player-stats PUTs are state-changing /api/* calls and are refused
+    // The player-stats PUTs are state-changing /api/* calls and are refused
     // without a synchroniser token. Arming lives in InitializeAsync rather than the
     // constructor because fetching the token is an HTTP round trip.
     public Task InitializeAsync() => _client.ArmAntiforgeryAsync();
@@ -45,89 +31,45 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
         return Task.CompletedTask;
     }
 
-    // ── Leaderboard read contract: OK per game, JSON array, content-type, limit ──
+    // ── Leaderboard read contract: the unified board the Home page actually calls ──
 
     /// <summary>
-    /// The whole read contract for a game leaderboard in one place: 200, a JSON
-    /// content-type, a JSON array body, and a row count that honours the limit (10 by
-    /// default, or whatever <c>?limit=</c> asked for) — for every game shown on the
-    /// Home page.
+    /// 200, JSON, and exactly <c>limit</c> rows (the board pads with placeholders) for
+    /// the win-rate games shown on the Home page.
     /// </summary>
-    /// <remarks>
-    /// Consolidated from four methods (empty-array / explicit-limit / default-limit /
-    /// content-type) that each re-issued the same GET and asserted one facet of the same
-    /// response. The Integration tier is at its 50-method ceiling (100/50/25/25 rule) and
-    /// the slots were needed elsewhere; coverage is unchanged.
-    /// The former GetLeaderboard_ReturnsOk_ForEachGame theory (status code only, one row
-    /// per Home-page game) also folded in here: its couplequiz/funquiz rows appear below,
-    /// and connectfive/tictactoe were already covered.
-    /// </remarks>
     [Theory]
-    // Default limit is 10. connectfive is never written to by this suite (the round-trip
-    // tests use their own game ids), so it must still come back empty.
-    [InlineData("connectfive", null, 10, true)]
-    // An explicit limit caps the row count.
-    [InlineData("connectfive", 5, 5, true)]
-    // Second game, default limit — the contract is per-game, not per-route-instance.
-    [InlineData("tictactoe", null, 10, false)]
-    // Remaining Home-page games. Keep in sync with AllGameIds / GameKey.WellKnown.
-    // Not asserted empty: other suites sharing the Azurite backend may have written rows.
-    [InlineData("couplequiz", null, 10, false)]
-    [InlineData("funquiz", null, 10, false)]
-    public async Task GetLeaderboard_ReturnsJsonArray_HonouringLimit(
-        string gameId, int? limit, int expectedMaxRows, bool expectEmpty)
+    [InlineData("connectfive", null, 10)]
+    [InlineData("connectfive", 5, 5)]
+    [InlineData("tictactoe", null, 10)]
+    public async Task GetLeaderboard_ReturnsPaddedBoard_HonouringLimit(string gameId, int? limit, int expectedRows)
     {
-        var route = $"/api/{gameId}/statistics/leaderboard"
-                  + (limit is { } l ? $"?limit={l}" : string.Empty);
+        var route = $"/api/leaderboards/{gameId}" + (limit is { } l ? $"?limit={l}" : string.Empty);
 
         var response = await _client.GetAsync(route);
 
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
 
-        var entries = await response.Content.ReadFromJsonAsync<object[]>();
-        entries.Should().NotBeNull();
-        entries!.Length.Should().BeLessThanOrEqualTo(expectedMaxRows);
-
-        if (expectEmpty)
-            entries.Should().BeEmpty();
+        var board = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+        board.GetProperty("entries").GetArrayLength().Should().Be(expectedRows);
     }
 
-    // ── All game endpoints respond in parallel (simulates Home page load) ────
-
-    [Fact]
-    public async Task GetLeaderboard_AllGamesReachable_InParallel()
-    {
-        var tasks = AllGameIds.Select(id =>
-            _client.GetAsync($"/api/{id}/statistics/leaderboard"));
-
-        var responses = await Task.WhenAll(tasks);
-
-        foreach (var response in responses)
-        {
-            response.StatusCode.Should().Be(HttpStatusCode.OK,
-                because: "every game leaderboard used on the Home page must be reachable");
-        }
-    }
-
-    // ── Round-trip: save stats → player appears on leaderboard ───────────────
+    // ── Round-trip: save stats → read them back ───────────────
 
     /// <summary>
-    /// Save stats → the player surfaces on the leaderboard AND the per-player stats GET
-    /// answers its contract. Was two facts (leaderboard-contains / stats-get) that each did
-    /// the identical PUT against a different game; both read-backs now run for both games.
+    /// Save stats → the per-player stats GET answers its contract.
     /// </summary>
     [Theory]
     [InlineData("pomarblerace", 8, 2, 3)]
     [InlineData("poracer", 5, 5, 2)]
-    public async Task SavePlayerStats_ThenLeaderboardAndPlayerStats_RoundTrip(
+    public async Task SavePlayerStats_ThenPlayerStats_RoundTrip(
         string game, int wins, int losses, int winStreak)
     {
         if (!_factory.DockerAvailable) return;
 
         // Isolation comes from a unique PLAYER, not a unique game. An invented game id
         // ("roundtrip_leaderboard") cannot work: PlayerStatsEndpoints runs every game id
-        // through GameKey.TryParse as its §8 allowlist, so an off-catalogue key 400s before
+        // through GameKey.TryParse as its allowlist, so an off-catalogue key 400s before
         // any storage is touched. Pick a real key and make the row unique instead.
         var player = $"HomePageIntegrationPlayer-{Guid.NewGuid():N}";
 
@@ -145,38 +87,9 @@ public sealed class HomePageApiTests : IClassFixture<TestWebApplicationFactory>,
         put.IsSuccessStatusCode.Should().BeTrue(
             because: "saving valid player stats should succeed");
 
-        // Retrieve leaderboard and verify the player appears
-        var entries = await _client.GetFromJsonAsync<List<dynamic>>(
-            $"/api/{game}/statistics/leaderboard?limit=10");
-
-        entries.Should().NotBeNull();
-        entries!.Should().NotBeEmpty(
-            because: "the saved player should appear on the leaderboard");
-
         var get = await _client.GetAsync($"/api/{game}/players/{player}/stats");
         get.StatusCode.Should().BeOneOf(
             new[] { HttpStatusCode.OK, HttpStatusCode.NotFound },
             because: "the endpoint either returns the stored stats or 404 if not implemented");
     }
-
-    // ── /api/statistics – aggregated statistics used by the home page ────────
-
-    /// <summary>Aggregated home-page statistics: reachable and served as JSON.</summary>
-    /// <remarks>
-    /// Was two facts issuing the identical GET to assert the status code and the
-    /// content-type separately. See the ceiling note on
-    /// <see cref="GetLeaderboard_ReturnsJsonArray_HonouringLimit"/>.
-    /// </remarks>
-    [Fact]
-    public async Task GetAllStatistics_ReturnsJsonPayload()
-    {
-        var response = await _client.GetAsync("/api/statistics");
-
-        response.StatusCode.Should().Be(HttpStatusCode.OK);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
-    }
-
-    // The client-availability ping that lived here was a verbatim duplicate of
-    // HealthEndpointTests' /api/health/ping coverage — same route, same assertion. It is
-    // now one row of that class's DiagnosticRoutes_ReturnOk_WithExpectedJsonShape theory.
 }

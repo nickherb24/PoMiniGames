@@ -1,4 +1,4 @@
-// fire.js — cellular fire (SPEC §7.7): a burning tile spreads to flammable 4-neighbours
+// fire.js — cellular fire: a burning tile spreads to flammable 4-neighbours
 // with a per-second chance (grass scaled by its biomass, so grazed ground is a firebreak),
 // burns for EVENTS.fireSeconds, leaves a burnt tile that recovers later. Water, sand and
 // rock never burn. Draws come from the events stream in tile order, so it is deterministic.

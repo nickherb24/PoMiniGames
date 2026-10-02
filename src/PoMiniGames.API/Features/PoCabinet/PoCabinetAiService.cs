@@ -11,15 +11,8 @@ using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoCabinet;
 
-/// <summary>PoCabinet's two model calls: the officials' radio banter and the post-race debrief.</summary>
-public interface IPoCabinetAiService
-{
-    Task<PoCabinetBanterPool> BanterAsync(string? trackId, CancellationToken ct = default);
-    Task<PoCabinetDebriefReply> DebriefAsync(PoCabinetDebriefRequest request, CancellationToken ct = default);
-}
-
 /// <summary>
-/// The officials' radio lines and the "race engineer" debrief (2026-09-29).
+/// The officials' radio lines and the "race engineer" debrief.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -43,7 +36,7 @@ public interface IPoCabinetAiService
 /// run through <see cref="BannedTerms"/> before it can reach a speech bubble or a voice.
 /// </para>
 /// </remarks>
-public sealed class PoCabinetAiService : IPoCabinetAiService
+public sealed class PoCabinetAiService
 {
     /// <summary>The kinds a pool carries, in the order the client asks for them.</summary>
     public static readonly string[] Kinds = ["preRace", "passed", "lead", "finish"];
@@ -137,7 +130,7 @@ public sealed class PoCabinetAiService : IPoCabinetAiService
     private readonly ILogger<PoCabinetAiService> _logger;
     private readonly GameChatClientFactory _clients;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundry;
-    private readonly IAiDecisionOptionsCache _options;
+    private readonly AiDecisionOptionsCache _options;
     private readonly HybridCache _cache;
 
     public PoCabinetAiService(
@@ -146,7 +139,7 @@ public sealed class PoCabinetAiService : IPoCabinetAiService
         ILogger<PoCabinetAiService> logger,
         GameChatClientFactory clients,
         IOptionsMonitor<AIFoundryOptions> foundry,
-        IAiDecisionOptionsCache options,
+        AiDecisionOptionsCache options,
         HybridCache cache)
     {
         _configuration = configuration;

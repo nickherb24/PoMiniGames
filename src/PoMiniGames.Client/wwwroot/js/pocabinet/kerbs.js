@@ -19,7 +19,7 @@ export const KERB_OUTER = 12;
 /**
  * Smoothed curvature (rad per sim unit) above which a point counts as a corner:
  * a radius of ~220 sim units, about two road widths. Measured on the three tracks
- * (2026-09-23) this kerbs roughly the tightest fifth of each lap. A corner-speed
+ * this kerbs roughly the tightest fifth of each lap. A corner-speed
  * cutoff kerbed a single bend on Capitol, whose corners are nearly flat out.
  */
 const KERB_CURVATURE = 0.0045;

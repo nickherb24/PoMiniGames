@@ -50,10 +50,9 @@ window.PoMarbleRace = {
     game = new Game(containerId, dotnetRef, demo, map.id, asset, online || null, marble || (demo ? null : readMarbleChoice()));
     game.start();
   },
-  // 2026-07-19 browser audit #1: host calls resume() after the intro OK is
-  // clicked. Until then the rAF loop is gated and OnPhase('pick') is
-  // suppressed, so the 3s pick countdown never runs while the intro is
-  // still on screen.
+  // The host calls resume() after the intro OK is clicked. Until then the rAF
+  // loop is gated and OnPhase('pick') is suppressed, so the 3s pick countdown
+  // never runs while the intro is still on screen.
   resume() { if (game) game.resume(); },
   pick(index) { if (game) game.pick(index); },
   // dir: -1 steers left, +1 right (local track frame); active toggles the hold on/off. The

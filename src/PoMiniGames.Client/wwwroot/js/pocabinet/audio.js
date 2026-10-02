@@ -25,7 +25,7 @@
 //     lap chime, fanfare).
 //   • slow motion — one control: pulls the master lowpass down and every engine's
 //     pitch with it (the photo-finish moment in race.js).
-//   • crowd (2026-09-29) — a positional murmur bed at the grandstand that swells
+//   • crowd — a positional murmur bed at the grandstand that swells
 //     with excitement, plus one-shot cheers (formant-filtered noise and "woo"
 //     sweeps). Every exhaust pop (player crackle/shift, rival downshift) is also
 //     queued as an event so race.js can put a flame on that car (takePops).

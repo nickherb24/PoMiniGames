@@ -8,14 +8,11 @@ namespace PoMiniGames.Unit.Features.PoCoupleQuiz;
 /// state holder for the single PoCoupleQuiz lobby (state does NOT survive restarts).
 /// </summary>
 /// <remarks>
-/// <para><b>§1 100/50/25/25 Rule.</b> Held at 11 methods (8 <c>[Fact]</c>s + 3
-/// <c>[Theory]</c>s), the same count as before the 2026-08-10 rewrite — the surfaces
-/// changed, the budget did not. Tests that covered deleted code (game-code uniqueness,
-/// lookup-by-bad-code, AI-mode host enforcement) were replaced rather than added to;
-/// host-only enforcement is now asserted against <c>SetMaxRounds</c>, the one host-gated
-/// setting that survives.</para>
-/// <para>The scoreboard test flipped meaning on purpose: it used to assert the King was
-/// EXCLUDED. See <see cref="Game.CurrentKingPlayerIndex"/> for why that was the bug.</para>
+/// <para>Held at 11 methods (8 <c>[Fact]</c>s + 3 <c>[Theory]</c>s) to stay inside the
+/// test-count cap. Host-only enforcement is asserted against <c>SetMaxRounds</c>, the one
+/// host-gated setting.</para>
+/// <para>The scoreboard test asserts the King is INCLUDED. See
+/// <see cref="Game.CurrentKingPlayerIndex"/> for why excluding the King is wrong.</para>
 /// </remarks>
 public sealed class GameSessionManagerTests
 {

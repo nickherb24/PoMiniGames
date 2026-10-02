@@ -5,18 +5,14 @@
 
 @* Live frame-rate badge in the top nav.
 
-   2026-08-30 (audit #8): the badge is now shown in Development, or in any
-   environment when the page URL carries `?debug=1` (evaluated on load — add the
-   parameter and reload). It used to be unconditional on every route per a
-   2026-08-11 request, but it is developer diagnostics: production players were
-   getting a green number of no use to them in the top bar of every page. The
-   2026-08-11 intent (no settings page needed) is preserved — `?debug=1` IS the
-   switch.
+   The badge is shown in Development, or in any environment when the page URL
+   carries `?debug=1` (evaluated on load — add the parameter and reload). It is
+   developer diagnostics, so production players do not see it; `?debug=1` is the
+   switch, no settings page needed.
 
-   2026-07-19: the "— FPS" em-dash placeholder read like a missing field; we
-   keep the chip itself hidden until the sampler has produced its first real
-   reading, so the first paint of any game page never shows a stale dash that
-   the user can't distinguish from "this game is at zero fps". *@
+   The chip stays hidden until the sampler has produced its first real reading,
+   so the first paint of any game page never shows a placeholder dash that the
+   user can't distinguish from "this game is at zero fps". *@
 @if (_enabled && _hasReading)
 {
     <span class="gl-fps gl-fps--centered" title="Frames per second" data-tier="@_tier">@_label</span>

@@ -9,7 +9,7 @@ namespace PoMiniGames.Features.PoJoker.Storage;
 /// <see cref="TableServiceClient"/> registered by <c>AddPoMiniGamesStorage</c> and resolves the
 /// <see cref="TableName"/> table — same pattern as PoFunQuiz's LeaderboardRepository.
 /// </summary>
-public sealed class JokeStorageClient : IJokeStorageClient
+public sealed class JokeStorageClient
 {
     /// <summary>Table name. Ensured eagerly by <c>StorageInitializer</c>.</summary>
     public const string TableName = "PoJokerPerformances";
@@ -25,7 +25,7 @@ public sealed class JokeStorageClient : IJokeStorageClient
 
     public async Task SavePerformanceAsync(JokePerformanceDto performance, CancellationToken cancellationToken = default)
     {
-        // §1: performances are append-only so an AddEntity is the correct semantic,
+        // Performances are append-only so an AddEntity is the correct semantic,
         // but a duplicate Id (retry-after-OK) would 409 and surface to the caller. Wrap
         // in a tolerant insert-or-noop so the demo orchestrator can safely re-publish.
         var entity = MapToEntity(performance);
@@ -76,67 +76,11 @@ public sealed class JokeStorageClient : IJokeStorageClient
         return performances;
     }
 
-    public async Task<IReadOnlyList<LeaderboardEntryDto>> GetLeaderboardAsync(
-        int top = 10,
-        CancellationToken cancellationToken = default)
-    {
-        var sessionStats = new Dictionary<string, (int Total, int Triumphs, DateTimeOffset LastCompleted)>();
-        try
-        {
-            // §6: this is an unpartitioned table scan that aggregates every performance row per
-            // request — it grows with total history. maxPerPage bounds the per-request memory
-            // spike; a pre-rolled per-session aggregate row is the follow-up if this table gets
-            // large. (Kept as a scan for now to preserve exact aggregate semantics.)
-            await foreach (var entity in _tableClient.QueryAsync<JokePerformanceEntity>(
-                maxPerPage: 1000, cancellationToken: cancellationToken))
-            {
-                if (!sessionStats.TryGetValue(entity.SessionId, out var stats))
-                {
-                    stats = (0, 0, DateTimeOffset.MinValue);
-                }
-
-                sessionStats[entity.SessionId] = (
-                    stats.Total + 1,
-                    stats.Triumphs + (entity.IsTriumph ? 1 : 0),
-                    entity.CompletedAt > stats.LastCompleted ? entity.CompletedAt : stats.LastCompleted
-                );
-            }
-        }
-        // Broadened from RequestFailedException to also catch TaskCanceledException (raised
-        // by the configured 2s network timeout) and any other transport-level failure so a
-        // storage outage never 500s the API.
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to get leaderboard from table storage; returning an empty leaderboard.");
-            return [];
-        }
-
-        return sessionStats
-            .Where(kvp => kvp.Value.Triumphs > 0)  // NetRun10 audit #3: drop zero-triumph
-                                                   // sessions so the leaderboard never shows
-                                                   // a 0/0%/0.0 ghost champion row.
-            .Select(kvp =>
-            {
-                var triumphRate = kvp.Value.Total > 0
-                    ? Math.Round((double)kvp.Value.Triumphs / kvp.Value.Total, 4)
-                    : 0;
-
-                return new LeaderboardEntryDto
-                {
-                    SessionId = kvp.Key,
-                    TotalJokes = kvp.Value.Total,
-                    Triumphs = kvp.Value.Triumphs,
-                    TriumphRate = triumphRate,
-                    Score = (kvp.Value.Triumphs * 100) + (triumphRate * 1000),
-                    CompletedAt = kvp.Value.LastCompleted
-                };
-            })
-            .OrderByDescending(e => e.Score)
-            .Take(top)
-            .Select((e, i) => e with { Rank = i + 1 })
-            .ToList();
-    }
-
+    /// <summary>
+    /// The best-rated jokes across every session, one row per joke id, highest score first.
+    /// Feeds the unified <c>/api/leaderboards/pojoker</c> board — see <see cref="TopJokeDto"/>
+    /// for what "best" means and why it is not the stored rating average.
+    /// </summary>
     public async Task<IReadOnlyList<TopJokeDto>> GetTopJokesAsync(
         int top = 10,
         CancellationToken cancellationToken = default)

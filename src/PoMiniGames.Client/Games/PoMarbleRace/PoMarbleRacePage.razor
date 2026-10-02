@@ -169,9 +169,6 @@
 @code {
     /// <summary>Route mode segment, parsed by <see cref="GameModes.Parse"/>.</summary>
     [Parameter] public string? Mode { get; set; }
-    [SupplyParameterFromQuery(Name = "demo")]
-    public int Demo { get; set; }
-    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
 
     private const int MarbleCount = 101;   // mirrors MARBLE_COUNT in marbles.js
     private const int PlayerIndex = 0;     // the red marble; mirrors PLAYER_INDEX in marbles.js
@@ -395,7 +392,7 @@
 
     protected override void OnInitialized()
     {
-        var mode = GameModes.Parse(Mode, ModeQuery, Demo);
+        var mode = GameModes.Parse(Mode);
         _demo = mode == GameMode.Demo;
         _online = mode == GameMode.Multiplayer;
         _playerName = PlayerNameService.GetPlayerName();

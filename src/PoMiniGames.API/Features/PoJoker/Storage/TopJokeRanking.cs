@@ -24,7 +24,7 @@ public static class TopJokeRanking
     ///   <item>they share the same normalised setup, whether or not the raw text matches
     ///   exactly (the sanitiser-rewrite case AND the same-joke-regenerated case: the model
     ///   re-emits an identical punchline under a fresh id, and a public board showing the
-    ///   same joke at ranks 1 and 3 reads as broken — measured live, 2026-08-30).</item>
+    ///   same joke at ranks 1 and 3 reads as broken).</item>
     /// </list>
     /// <para>Each collapsed slot keeps its highest-scoring telling.
     /// <see cref="TopJokeRankingTests.Rank_CollapsesTheSameJokeArrivingUnderDifferentIds"/>

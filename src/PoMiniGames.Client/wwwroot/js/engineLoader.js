@@ -33,17 +33,17 @@ const REGISTRY = {
     poracer: ['js/poracer/index.js', 'PoRacer'],
     povoxelstrike: ['js/povoxelstrike/index.js', 'PoVoxelStrike'],
     poecosystem: ['js/poecosystem/index.js', 'PoEcosystem'],
-    // §CF-1 ConnectFive physics. matter.js drives the disc drop + chain-reaction
+    // ConnectFive physics. matter.js drives the disc drop + chain-reaction
     // collision with existing discs in the same column; the CSS keyframe drop
     // remains the fallback when matter.js fails to load or reduced-motion /
     // low-quality tier opts the page out.
     connectfive: ['js/connectfive/index.js', 'PoConnectFive'],
-    // §PoCabinet (2026-09-14) — three.js cockpit scene + car/dialogue facades.
+    // PoCabinet — three.js cockpit scene + car/dialogue facades.
     // The engine module registers window.PoCabinet and proxies the named
     // exports of js/pocabinet/scene.js | cockpit.js | cars.js | dialogue.js
     // so Blazor's InvokeAsync stays a single global.
     pocabinet: ['js/pocabinet/index.js', 'PoCabinet'],
-    // §PoJevArena (2026-09-25) — Canvas 2D 10v10 arena: sim, Jev scheduler, Black Box, creature art.
+    // PoJevArena — Canvas 2D 10v10 arena: sim, Jev scheduler, Black Box, creature art.
     pojevarena: ['js/pojevarena/index.js', 'PoJevArena'],
 };
 
@@ -69,7 +69,7 @@ function resolve(path) {
 // as a side effect of executing, so they are injected as <script> and awaited on
 // load rather than imported.
 const CLASSIC_DEPS = {
-    // §CF-1 matter.js (UMD, ~85 KB gz) is injected as a classic script so its
+    // matter.js (UMD, ~85 KB gz) is injected as a classic script so its
     // `window.Matter` global is what the connectfive module reads. Loading via
     // the importmap would require an ESM build; matter-js only ships UMD, and
     // a wrapper shim would just bloat the bundle for no benefit.
@@ -145,13 +145,12 @@ export async function loadEngine(name) {
 /**
  * Is a WebGL context obtainable at all?
  *
- * 2026-08-07 browser audit #5: three of the engines (PoBrawl, PoMarbleRace,
- * PoRacer) are three.js and cannot render without one. When the context could
- * not be created — a blocklisted GPU driver, hardware acceleration switched off,
- * some enterprise policies, a very old device — they threw from inside their
- * constructor and the player got Blazor's raw "An unhandled error has occurred.
- * Reload" bar with no explanation. GameShell probes this first and shows a real
- * message instead.
+ * Three of the engines (PoBrawl, PoMarbleRace, PoRacer) are three.js and cannot
+ * render without one. When the context cannot be created — a blocklisted GPU
+ * driver, hardware acceleration switched off, some enterprise policies, a very
+ * old device — they throw from inside their constructor and the player would get
+ * Blazor's raw "An unhandled error has occurred. Reload" bar with no
+ * explanation. GameShell probes this first and shows a real message instead.
  *
  * Only a POSITIVE result is cached. Creating and discarding contexts is not
  * free, so a "yes" is remembered for the page lifetime — but a "no" is NOT

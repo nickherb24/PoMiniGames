@@ -19,7 +19,7 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
     {
         var client = _factory.CreateClient();
 
-        var response = await client.GetFromJsonAsync<AuthConfigResponse>("/api/auth/config");
+        var response = (await client.GetFromJsonAsync<AuthHandshakeResponse>("/api/auth/handshake"))?.Config;
 
         response.Should().NotBeNull();
         response!.Enabled.Should().BeTrue();
@@ -45,7 +45,7 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
         var profile = await client.GetFromJsonAsync<AuthUserProfile>("/api/auth/me");
         profile.Should().NotBeNull();
         profile!.UserId.Should().Be("dev-user-a");
-        // DevLoginIntake (2026-08-10) appends a random 6-digit suffix to every dev display
+        // DevLoginIntake appends a random 6-digit suffix to every dev display
         // name so two tabs of the same browser produce distinct identities. Assert on the
         // prefix + suffix shape rather than the literal name.
         profile.DisplayName.Should().MatchRegex(@"^Dev User A-\d{6}$",
@@ -137,7 +137,7 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
     // AuthMe_WithCookie_RetainsEmailField was a verbatim subset of the theory above —
     // its scenario survives as the "email-test-user" row.
 
-    // §2 CSRF: /api/auth/dev-login and /dev-logout are POSTs under /api/*, so they now sit
+    // /api/auth/dev-login and /dev-logout are POSTs under /api/*, so they sit
     // behind the antiforgery gate like every other write. HandleCookies is what makes the
     // paired cookie stick between the token fetch and the call it authorises.
     private async Task<HttpClient> CreateCookieClientAsync()
@@ -152,6 +152,8 @@ public class AuthDevLoginEndpointsTests : IClassFixture<LocalAuthWebApplicationF
     }
 
     private sealed record AuthConfigResponse(bool Enabled, bool DevLoginEnabled);
+
+    private sealed record AuthHandshakeResponse(AuthConfigResponse Config);
 
     private sealed record AuthUserProfile(string UserId, string DisplayName, string? Email);
 }

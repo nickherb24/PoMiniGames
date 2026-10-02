@@ -6,11 +6,11 @@ namespace PoMiniGames.Unit;
 
 /// <summary>
 /// Exercises the dev-login intake rules directly — the sanitisation, ANON-suffixing, and claim
-/// shape that previously lived inside an endpoint lambda and could only be reached over HTTP.
+/// shape, reachable here without going over HTTP.
 /// </summary>
 public class DevLoginIntakeTests
 {
-    // The six-digit suffix below is not incidental: since 2026-08-10 EVERY dev
+    // The six-digit suffix below is not incidental: EVERY dev
     // login gets one, so two tabs of the same browser produce distinct identities
     // instead of colliding on one name-keyed session (see DevLoginIntake). These
     // assertions therefore pin the stem and the shape of the suffix, never the

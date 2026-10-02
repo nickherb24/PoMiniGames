@@ -308,7 +308,7 @@ public static class PoJevArenaRules
 
     /// <summary>
     /// Designed HP (50-500: what the budget prices and the library stores) over battle HP. A
-    /// creature fights with one fifth of it (the user's call, 2026-09-30), and everything a player
+    /// creature fights with one fifth of it, and everything a player
     /// or Jev reads shows the battle number. Mirrored by <c>battleHp</c> in js/pojevarena/sim.js.
     /// </summary>
     public const int BattleHpDivisor = 5;

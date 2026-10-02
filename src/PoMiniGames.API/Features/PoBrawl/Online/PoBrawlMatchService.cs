@@ -20,12 +20,11 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// inputs gives the same fight).
 /// </para>
 /// <para>
-/// <b>Spacing is server-authoritative too (2026-09-23).</b> This used to resolve every
-/// attack as a hit unless the defender was blocking: the server never knew where
-/// anyone stood, so a jab thrown from across the ring landed. It also held each side's
-/// LAST action live on every tick, and the client only sends key-downs — one tap of
-/// punch therefore punched ten times a second until another key was pressed, a KO in
-/// under two seconds. Now:
+/// <b>Spacing is server-authoritative too.</b> Resolving every attack as a hit unless the
+/// defender was blocking would mean the server never knew where anyone stood, so a jab
+/// thrown from across the ring would land. Holding each side's LAST action live on every
+/// tick would also be wrong, since the client only sends key-downs — one tap of punch
+/// would punch ten times a second until another key was pressed. So:
 /// </para>
 /// <list type="bullet">
 ///   <item>The ring is one dimension: each corner has an X on [-<see cref="RingHalf"/>,
@@ -46,10 +45,10 @@ namespace PoMiniGames.Features.PoBrawl.Online;
 /// speeds, separation, ring size) that the two feel alike.
 /// </para>
 /// <para>
-/// <b>2026-09-29: the page plays this fight in the 3D arena.</b> The engine runs as a puppet
+/// <b>The page plays this fight in the 3D arena.</b> The engine runs as a puppet
 /// of the snapshots (game.js online mode): it walks each fighter to the server's X, throws the
 /// swing the server fired, and lands the damage the server rolled at the moment the limb
-/// connects. So each tick now reports each corner's held state, swing, outcome and damage.
+/// connects. So each tick reports each corner's held state, swing, outcome and damage.
 /// The fight opens on a <see cref="CountdownSeconds"/> pre-roll (negative elapsed; inputs held
 /// but not applied) so both browsers finish loading and play the same "3, 2, 1, FIGHT!".
 /// </para>

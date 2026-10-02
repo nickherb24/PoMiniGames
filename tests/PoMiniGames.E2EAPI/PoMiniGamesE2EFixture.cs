@@ -41,13 +41,13 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // §CI/CD policy (2026-06-27): E2E tests run under the "Test" environment
+        // E2E tests run under the "Test" environment
         // so AuthExtensions' DevCookie scheme is registered (StartupSecretValidator
         // skips its secrets check) and the FakeAuth header pathway is opt-in via
         // Auth:EnableFakeAuth below.
         builder.UseEnvironment("Test");
 
-        // §2.3: enable the header-driven fake-auth scheme so e2e tests can
+        // Enable the header-driven fake-auth scheme so e2e tests can
         // assert identity variations without performing a real OAuth handshake.
         // AddPoMiniGamesAuth() reads Auth:EnableFakeAuth at registration time,
         // so the override MUST land in host configuration (which runs before
@@ -56,7 +56,7 @@ public sealed class PoMiniGamesE2EFixture : WebApplicationFactory<Program>
         {
             var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides);
             overrides["Auth:EnableFakeAuth"] = "true";
-            // §6 + §3: mirror Azurite to BOTH TableService and BlobService sections.
+            // Mirror Azurite to BOTH TableService and BlobService sections.
             foreach (var (k, v) in TestBudgetGuard.StorageOverrides(AzuriteConnectionString, "pominigames-e2e"))
             {
                 overrides[k] = v;

@@ -13,19 +13,19 @@ public static class MatchHistoryEndpoints
 {
     public static IEndpointRouteBuilder MapMatchHistoryEndpoints(this IEndpointRouteBuilder app)
     {
-        // §1 MapGroup() per slice: match history POST + GET share /api/matches.
+        // Match history POST + GET share /api/matches.
         var matches = app.MapGroup("/matches").WithTags("MatchHistory");
 
         matches.MapPost("",
             async (MatchRecordRequest request, HttpContext http, MatchHistoryRepository repo,
-                   IScoreIntegrityGuard integrity) =>
+                   ScoreIntegrityGuard integrity) =>
             {
                 if (string.IsNullOrWhiteSpace(request.Game))
                     return Results.BadRequest(new { error = "Game is required" });
                 if (string.IsNullOrWhiteSpace(request.OpponentName))
                     return Results.BadRequest(new { error = "OpponentName is required" });
 
-                // §1: a signed-in caller may only write to their OWN partition — the client
+                // A signed-in caller may only write to their OWN partition — the client
                 // Owner is overridden with the claim identity. Guests keep the supplied name.
                 var identity = RequestIdentity.Resolve(http.User);
                 var owner = ResolveOwner(identity, request.Owner, integrity);
@@ -47,10 +47,10 @@ public static class MatchHistoryEndpoints
             .RequireRateLimiting("highscores");
 
         matches.MapGet("",
-            async (HttpContext http, MatchHistoryRepository repo, IScoreIntegrityGuard integrity,
+            async (HttpContext http, MatchHistoryRepository repo, ScoreIntegrityGuard integrity,
                    string? owner = null, int limit = 500) =>
             {
-                // §1: a signed-in caller can only read their OWN history — the owner query
+                // A signed-in caller can only read their OWN history — the owner query
                 // param is ignored and forced to the claim identity (closes the IDOR read).
                 var identity = RequestIdentity.Resolve(http.User);
                 // Resolved through the SAME helper the POST uses. If the read derived the
@@ -78,7 +78,7 @@ public static class MatchHistoryEndpoints
     /// and the name rendered back on the stats page.
     /// </summary>
     internal static string ResolveOwner(
-        RequestIdentity.Identity identity, string? supplied, IScoreIntegrityGuard integrity)
+        RequestIdentity.Identity identity, string? supplied, ScoreIntegrityGuard integrity)
     {
         var claimed = identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)
             ? identity.DisplayName

@@ -48,7 +48,7 @@ public sealed class PoSportsHighScoreTests : IClassFixture<TestWebApplicationFac
     public async Task SaveGetAndRatchet_RoundTrip()
     {
         if (!_factory.DockerAvailable) return;
-        // §2 CSRF: every POST below is a state-changing /api/* call and is refused
+        // Every POST below is a state-changing /api/* call and is refused
         // without the synchroniser token.
         var client = await _factory.CreateClient().ArmAntiforgeryAsync();
 

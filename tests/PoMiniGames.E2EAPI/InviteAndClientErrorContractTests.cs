@@ -9,7 +9,7 @@ using PoMiniGames.TestUtilities;
 namespace PoMiniGames.E2EAPI;
 
 /// <summary>
-/// 2026-10-01: the two surfaces added together, in the one method this tier has room for.
+/// The browser error sink and the invite surface, together in the one method this tier has room for.
 /// <list type="bullet">
 /// <item>The browser error sink (<c>POST /client-errors</c>) is anonymous and sits outside the
 /// antiforgery scope, so what bounds it is asserted here: a small body, a non-empty message.</item>

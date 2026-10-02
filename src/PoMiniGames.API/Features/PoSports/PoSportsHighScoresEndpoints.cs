@@ -11,7 +11,7 @@ namespace PoMiniGames.Features.PoSports;
 /// Identity is stamped server-side from the auth cookie like PoRacer — the
 /// client-supplied UserId/IsGuest are never trusted.
 /// <para>
-/// The stored times are the server's (2026-09-30): a submit carries the run's key log and
+/// The stored times are the server's: a submit carries the run's key log and
 /// <see cref="PoSportsRunVerifier"/> replays it, so the posted times are only a claim that
 /// is compared and logged. A submit with no usable log gets 422, like PoCabinet's laps.
 /// </para>
@@ -20,7 +20,7 @@ public static class PoSportsHighScoresEndpoints
 {
     public static IEndpointRouteBuilder MapPoSportsHighScoresEndpoints(this IEndpointRouteBuilder app)
     {
-        // §1 MapGroup() per slice: PoSports high scores share /api/posports/highscores.
+        // PoSports high scores share /api/posports/highscores.
         var sports = app.MapGroup("/posports/highscores").WithTags("HighScores");
 
         sports.MapGet("",
@@ -42,7 +42,7 @@ public static class PoSportsHighScoresEndpoints
 
         sports.MapPost("",
             async (PoSportsHighScore entry, HttpContext http, IStorageService storage,
-                   IScoreIntegrityGuard integrity, ILoggerFactory loggers) =>
+                   ScoreIntegrityGuard integrity, ILoggerFactory loggers) =>
             {
                 if (string.IsNullOrWhiteSpace(entry.PlayerName))
                     return Results.BadRequest(new { error = "Player name is required" });

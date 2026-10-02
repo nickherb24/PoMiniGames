@@ -31,11 +31,9 @@ public sealed record CatalogMode(GameMode Mode, string Url, bool RequiresNetwork
 /// longer go missing from a mode it supports.
 /// </summary>
 /// <remarks>
-/// There is no <c>ChipPrimary</c> flag any more (2026-10-01). It opted a card into showing
-/// a chip for its primary mode, back when the card's title was itself a link to that mode
-/// and a second link to the same place read as a mistake. The title stopped being a link
-/// on 2026-08-11; from then on the two games that had not set the flag (Joker, Fun Quiz)
-/// had a 1-player mode nothing on the hub led to. Every mode is a chip now.
+/// Every mode is a chip on the hub card. The card's title is not a link, so a primary
+/// mode needs its chip too; leaving it off would strand a 1-player mode (Joker, Fun Quiz)
+/// with nothing on the hub leading to it.
 /// </remarks>
 public sealed record CatalogGame(GameKey Key, string Title, string Icon, IReadOnlyList<CatalogMode> Modes)
 {
@@ -69,8 +67,6 @@ public sealed record CatalogEntry(
 /// <para>
 /// Every URL uses the uniform mode-suffix scheme — /{game}/1player, /{game}/2player,
 /// /{game}/multi, /{game}/demo — so the mode is readable straight off the address bar.
-/// Legacy forms (/{game}/1, ?mode=2p, ?demo=1, /lobby, /multiplayer) still route for old
-/// bookmarks; <see cref="GameModes.Parse"/> is the single place that accepts them.
 /// </para>
 /// </remarks>
 public static class GameCatalog
@@ -87,16 +83,10 @@ public static class GameCatalog
             new(GameMode.Demo, "/connectfive/demo"),
         ]),
 
-        // 2026-07-19 browser audit #8: the grid dimension (6×6 / 4-in-a-row) was
-        // leaking into the product name as "TicTacToe6". Surface the classic product
-        // name; the grid size stays in the in-game "How to play" copy and intro card.
-        // Audit #10: the home card used to just say "Tic-Tac-Toe", which primed
-        // visitors for the 3×3 / 3-in-a-row game they learned as a kid. This
-        // variant is Connect-Four mechanics on a 6×6 grid — line up four in a
-        // Audit #10: the home card used to just say "Tic-Tac-Toe", which primed
-        // visitors for the 3×3 / 3-in-a-row game they learned as a kid. This
-        // variant is Connect-Four mechanics on a 6×6 grid — line up four in a
-        // row, horizontally, vertically or diagonally.
+        // The grid dimension (6×6 / 4-in-a-row) stays out of the product name; it lives
+        // in the in-game "How to play" copy and intro card. Note this variant is
+        // Connect-Four mechanics on a 6×6 grid — line up four in a row, horizontally,
+        // vertically or diagonally — not the 3×3 / 3-in-a-row game of the same name.
         new(GameKeys.TicTacToe, "Tic-Tac-Toe", "❌",
         [
             new(GameMode.OnePlayer, "/tictactoe/1player"),
@@ -133,12 +123,11 @@ public static class GameCatalog
             new(GameMode.Demo, "/poracer/demo"),
         ]),
 
-        // PoCabinet (2026-09-17): third-person arcade racing, four named officials, four
+        // PoCabinet: third-person arcade racing, four named officials, four
         // tracks (Capitol Speedway / Mar-a-Lago GP / Press Briefing 500 / Playground Marble Run).
-        // Three modes: 1P championship, multi SignalR lobby, demo AI showcase. The 2P
-        // mode was dropped on 2026-09-29 (it only ever ran the solo race); old
-        // /pocabinet/2player links land on 1P (PoCabinetPage.Mode). The lobby endpoint at /api/pocabinet is
-        // authed; the leaderboard reads are anonymous.
+        // Three modes: 1P championship, multi SignalR lobby, demo AI showcase. There is no 2P
+        // mode; /pocabinet/2player links land on 1P (PoCabinetPage.Mode). The lobby endpoint
+        // at /api/pocabinet is authed; the leaderboard reads are anonymous.
         new(GameKeys.PoCabinet, "Cabinet", "🏛️",
         [
             new(GameMode.OnePlayer, "/pocabinet/1player"),
@@ -161,8 +150,8 @@ public static class GameCatalog
         new(GameKeys.PoVoxelStrike, "Voxel Strike", "🧱",
         [
             new(GameMode.OnePlayer, "/povoxelstrike/1player"),
-            // The squad run (2026-09-30) is the Online tab of the same page. It was
-            // missing here until 2026-10-01, so the hub offered no way into it.
+            // The squad run is the Online tab of the same page; this entry is the hub's
+            // only way into it.
             new(GameMode.Multiplayer, "/povoxelstrike/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/povoxelstrike/demo"),
         ]),
@@ -183,25 +172,22 @@ public static class GameCatalog
             new(GameMode.Multiplayer, "/funquiz/multi", RequiresNetwork: true),
         ]),
 
-        // Multiplayer only (user decision, 2026-08-10). The 1-player entry here never
-        // started a 1-player game: /couplequiz/1player landed on the multiplayer lobby
-        // card, which merely offered a "Play solo (vs AI partner)" button for a mode whose
-        // "AI partner" was a hardcoded answer index. Both are gone. There is no Demo entry
-        // because this game was never in the kiosk reel below.
+        // Multiplayer only: there is no 1-player mode, and no Demo entry because this game
+        // is not in the kiosk reel below.
         //
-        // Browser audit #2 (2026-08-10): the card head AND its lone "Online" chip both
-        // pointed at /couplequiz, so a screen-reader / mouse user heard "Couple Quiz"
-        // announced twice for the same destination. Use /couplequiz/multi as the chip
-        // target — /couplequiz and /couplequiz/multi both render the same lobby
-        // (PoCoupleQuizLobbyPage routes both), so the URL is functionally a no-op
-        // alias for routing purposes, but it gives the two affordances distinct
-        // destinations so each can be a separate, semantically correct link.
+        // The card head AND its lone "Online" chip would both point at /couplequiz, so a
+        // screen-reader / mouse user would hear "Couple Quiz" announced twice for the same
+        // destination. /couplequiz/multi is the chip target — /couplequiz and
+        // /couplequiz/multi both render the same lobby (PoCoupleQuizLobbyPage routes both),
+        // so the URL is functionally a no-op alias for routing purposes, but it gives the
+        // two affordances distinct destinations so each can be a separate, semantically
+        // correct link.
         new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕",
         [
             new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true),
         ]),
 
-        // PoJevArena (2026-09-25): design creatures, draft 10 v 10, and watch TypeSafe's Jev
+        // PoJevArena: design creatures, draft 10 v 10, and watch TypeSafe's Jev
         // decide every move. Needs sign-in (guests included) and a Jev key on the server;
         // not in the kiosk rotation, because an unattended loop spends Jev calls.
         new(GameKeys.PoJevArena, "Jev Arena", "⚔️",
@@ -212,8 +198,7 @@ public static class GameCatalog
         ]),
 
         // PoEcosystem is an autonomous simulation that is watched, never played. 1P is "your
-        // island": kept in this browser and offered back on the next visit (2026-09-30 — the
-        // card used to offer Demo only, so nothing could ever be resumed). Demo is the kiosk:
+        // island": kept in this browser and offered back on the next visit. Demo is the kiosk:
         // a fresh island every time, never saved.
         new(GameKeys.PoEcosystem, "PoEcosystem", "🌿",
         [

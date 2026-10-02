@@ -4,10 +4,9 @@
 import { TRIBE_DIPLOMACY, CARAVAN_STATUS } from './contracts.js';
 import { TRIBES } from '../core/config.js';
 
-// 2026-09-23: every chance below used Math.random, which sim/core/prng.js forbids — and the
-// caravan timer and id were never saved, so a restored world dispatched its caravans on a
-// different beat than the one it was saved from. Both were part of why a resumed island
-// diverged. Draws now come from the `tribes` stream (passed in by the store).
+// Every chance below draws from the `tribes` stream (passed in by the store), never
+// Math.random, which sim/core/prng.js forbids. The caravan timer and id are saved too, so a
+// restored world dispatches its caravans on the same beat it was saved on.
 export function createDiplomacyManager(rng = null) {
   const caravans = [];
   let nextCaravanId = 1;
@@ -255,7 +254,7 @@ export function createDiplomacyManager(rng = null) {
 
     setState(s) {
       caravans.length = 0;
-      // Saves from before 2026-09-23 stored the bare caravan array.
+      // Older saves stored the bare caravan array.
       const list = Array.isArray(s) ? s : s?.caravans;
       if (Array.isArray(list)) for (const c of list) caravans.push({ ...c });
       if (s && !Array.isArray(s)) {

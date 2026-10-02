@@ -75,7 +75,7 @@ public sealed class PoBrawlMatchPump : BackgroundService
     /// <summary>
     /// Send each seated match-hub connection its own result (each client sees its own side as
     /// "local"). NOT the lobby roster's connection ids: those belong to the lobby hub and this
-    /// context cannot address them (2026-09-23 — every result used to go nowhere). A corner that
+    /// context cannot address them (a result sent there would go nowhere). A corner that
     /// was away at the bell gets its copy from JoinMatch when it comes back.
     /// </summary>
     private async Task BroadcastFinalResultsAsync(PoBrawlMatchService match, CancellationToken ct)

@@ -48,9 +48,9 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
         // Solo only: a time trial is the same race with no bots, and the tier sets how fast the
         // bots are and, mostly, how much they lift for corners. Measured over an all-bot race on
         // the oval: easy laps in about 27 s (the bots as they always were, and what demo and
-        // online races still use), medium in 21, hard in about 16. Hard was (1.07, 0.28) for 17 s
-        // until 2026-10-01; the pads and the drift payout took a second off a clean human lap
-        // (now 14-15 s) and impact damage put a little on the bots', so it lifts less to stay a race.
+        // online races still use), medium in 21, hard in about 16. The pads and the drift payout
+        // take a second off a clean human lap (14-15 s) and impact damage puts a little on the
+        // bots', so hard lifts less to stay a race.
         var (pace, caution) = options?.Difficulty switch
         {
             "easy" => (1.0, PoRacerSim.DefaultBotCaution),
@@ -87,7 +87,7 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
     // laps are kept for an hour so a parked score (PendingScoreStore) can still be backed when the
     // connection returns. The dictionary is the fast path; every lap is also written through to
     // VerifiedResultStore, because on F1 the host recycles when idle and a lap held only in memory
-    // meant a score parked across a recycle was refused for good (2026-10-01).
+    // would mean a score parked across a recycle was refused for good.
     private static readonly TimeSpan VerifiedFor = TimeSpan.FromHours(1);
     private const string StoreGame = "poracer";
     private readonly Dictionary<(string UserId, string Code), PoRacerVerifiedLap> _verified = [];

@@ -30,8 +30,7 @@
     font-feature-settings: "tnum" 1, "lnum" 1;
 }
 
-/* ── Skip link (browser audit #9; moved here from MainLayout.razor.css by the
-   2026-08-08 audit so every layout can use it — see the note left in that file).
+/* ── Skip link (global so every layout can use it).
    Off-screen rather than `display: none` / `visibility: hidden`, both of which
    would take it out of the tab order and defeat the point. It reveals itself on
    :focus-visible only, so a pointer user never sees it. */
@@ -127,22 +126,14 @@
     font-size: 1.1rem;
 }
 
-/* ── Minimum touch target (2026-08-08 audit #5) ────────────────────────────────
-   Every interactive control on every page measured under 44×44 CSS px on a
-   390px viewport — the top bar's chips were 42×26, the game back-link 61×23,
-   a game rail ~22px tall and the intro card's opt-out checkbox 16×16.
-   That is below Apple's 44pt guidance and WCAG 2.5.8's 24px floor.
+/* ── Minimum touch target ─────────────────────────────────────────────────────
+   Interactive controls under 44×44 CSS px on a phone are below Apple's 44pt
+   guidance and WCAG 2.5.8's 24px floor.
 
    The fix is to GROW THE CONTROL (`min-height`) — it is the honest one, because
-   the thing you aim at is the thing you hit.
-
-   A second mechanism used to live here: an invisible `::after` expansion for the
-   two controls whose painted size was part of the design (the settings switch
-   and the intro card's opt-out checkbox). Both were removed on 2026-08-11 with
-   the settings page and the "Don't show this again" tick-box, so the rules went
-   with them. If you ever need it again, note it must stay narrowly scoped — an
-   invisible 44px box on a chip 8px from its neighbour overlaps that neighbour
-   and silently steals its taps, which is a worse bug than the one being fixed.
+   the thing you aim at is the thing you hit. Do not use an invisible `::after`
+   expansion instead: a 44px invisible box on a chip 8px from its neighbour
+   overlaps that neighbour and silently steals its taps.
 
    Scoped to `pointer: coarse` so mouse-driven desktop layouts keep their
    current density. */
@@ -153,13 +144,11 @@
            .app-notfound__link, .app-fallback-link,
            .fq-option,
            .reload,
-           /* 2026-09-04 UI sweep: button classes that landed after the original
-              list was written. Same `.pvs-btn` family is used for every
-              interaction in PoVoxelStrike's lobby + game; `.retry-button` is
-              the one PoJoker's network-awaiting surface renders on a transient
-              disconnect. Without these two the buttons would render at their
-              intrinsic height (~28px) and miss the 44px floor on portrait
-              phones. */
+           /* The `.pvs-btn` family is used for every interaction in
+              PoVoxelStrike's lobby + game; `.retry-button` is the one PoJoker's
+              network-awaiting surface renders on a transient disconnect.
+              Without these the buttons would render at their intrinsic height
+              (~28px) and miss the 44px floor on portrait phones. */
            .pvs-btn, .pvs-btn-primary,
            .retry-button) {
         min-height: 44px;
@@ -188,10 +177,9 @@
 }
 
 :root {
-  /* 2026-08-11: retuned for a more professional, calmer look. Slate surfaces,
-     a darker indigo accent, and grounded status hues — less neon, more studio.
-     Every value still clears WCAG AA on its pair (text on surface, accent text
-     on accent fill). */
+  /* Slate surfaces, a darker indigo accent, and grounded status hues — less
+     neon, more studio. Every value clears WCAG AA on its pair (text on surface,
+     accent text on accent fill). */
   --color-bg: #0f172a;
   --color-surface: #1e293b;
   --color-surface-hover: #334155;
@@ -200,20 +188,16 @@
   --color-text-secondary: #94a3b8;
   --color-accent: #818cf8;
   /* Foreground for anything sitting ON --color-accent. Consumed by
-     `.gps-back-link:hover` (games.css) but never defined, so that hover state
-     resolved to an invalid colour and inherited the surrounding text colour
-     instead — near-black on indigo (2026-08-07 browser audit #2). Scheme-
-     invariant: the accent itself does not change between light and dark, so
-     neither does the text that sits on it. */
+     `.gps-back-link:hover` (games.css). Scheme-invariant: the accent itself
+     does not change between light and dark, so neither does the text that sits
+     on it. */
   --color-accent-contrast: #ffffff;
   /* Accent for SOLID fills that carry --color-accent-contrast text on top.
      --color-accent itself is left alone: it is also the link colour, the
-     focus ring and a border hue, none of which want to shift. 2026-08-11.
+     focus ring and a border hue, none of which want to shift.
 
-     #4f46e5 since 2026-10-01. It was #6366f1, on which white measures 4.47:1,
-     a hair UNDER the 4.5:1 AA floor: the Start button and the selected mode on
-     every intro card failed an axe sweep on 39 of 52 dark-theme page visits.
-     White on #4f46e5 is 6.3:1. Not a TEXT colour on a dark surface (it is
+     White on #4f46e5 is 6.3:1; on #6366f1 it would be 4.47:1, a hair UNDER the
+     4.5:1 AA floor. Not a TEXT colour on a dark surface (it is
      darker than the accent on purpose); that is --color-accent. */
   --color-accent-solid: #4f46e5;
   --color-warning: #f59e0b;
@@ -239,12 +223,10 @@
   --accent-gold: #ca8a04;
   --accent-jester: #4338ca;
 
-  /* ── Player identity (2026-09-12) ──────────────────────────────────────
-     The two sides of any local-versus screen. These exist because the 2P
-     surfaces were each picking their own raw hex — the Fun Quiz split screen
-     used neon cyan (#38bdf8) against hot pink (#f472b6), which together with
-     the amber score and the yellow "VS" put four saturated, unrelated hues on
-     one screen and read as an arcade cabinet rather than a product.
+  /* ── Player identity ───────────────────────────────────────────────────
+     The two sides of any local-versus screen. They exist so the 2P surfaces
+     do not each pick their own raw hex: saturated, unrelated hues on one screen
+     read as an arcade cabinet rather than a product.
 
      Chosen as a muted pair a step off the existing indigo accent: still clearly
      two different people at a glance (and never the ONLY signal — side, name
@@ -263,7 +245,7 @@
   --player-2-ink: var(--player-2);
 
   /* ── "Ink" variants: the same status hues, but safe as TEXT ────────────────
-     2026-08-08 audit #3. The --accent-* values above are tuned as FILLS (chip
+     The --accent-* values above are tuned as FILLS (chip
      backgrounds, glows, borders) against a dark page. Used as a text colour on
      the matching --accent-*-soft tint they collapse: measured in light mode,
      --accent-amber on the ELO badge was 1.38:1 and --accent-success on the
@@ -279,11 +261,11 @@
   --accent-danger-ink: #fca5a5;
   --accent-amber-ink: #fde68a;
 
-  /* ── §GFX FX triad ────────────────────────────────────────────────────────
+  /* ── GFX FX triad ─────────────────────────────────────────────────────────
      fx.css and the ray-marched background (particlesCore.js) both need "the
-     two or three colours this screen is about". They used to hard-code their
-     own fallbacks, which meant a game could retheme its whole UI and the glow
-     behind it stayed indigo.
+     two or three colours this screen is about". Hard-coded fallbacks in each
+     would let a game retheme its whole UI while the glow behind it stayed
+     indigo.
      Declaring the triad here and re-pointing it inside a game's theme root
      (e.g. `.pojoker-root { --fx-accent: var(--accent-gold); }`) retints every
      glass edge, aurora ring, impact flash and background curtain at once.
@@ -361,7 +343,7 @@
   --elevation-2: light-dark(0 8px 30px rgba(99,102,241,0.12), 0 8px 30px rgba(99,102,241,0.12));
   --elevation-3: light-dark(0 20px 60px rgba(15,23,42,0.12), 0 20px 60px rgba(0,0,0,0.4));
 
-  /* Spacing scale (extended — §3 design-token unification) */
+  /* Spacing scale */
   --space-0: 0;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -383,7 +365,7 @@
   --z-banner: 2000;
   --z-toast: 3000;
   --z-toast-stack: 3000;
-  /* §GFX overlays. Above the modal/toast layers on purpose: confetti that
+  /* GFX overlays. Above the modal/toast layers on purpose: confetti that
      stops at the edge of the "You win!" dialog reads as a z-index bug, and the
      impact flash has to cover whatever is on screen or it is not a flash.
      Both are pointer-events:none, so sitting on top costs no interactivity.
@@ -392,7 +374,7 @@
   --z-fx-particles: 9991;
   --z-error-overlay: 9999;
 
-  /* Glassmorphism primitives (§3 — one source of truth for translucent chrome).
+  /* Glassmorphism primitives (one source of truth for translucent chrome).
      The blur strengths are scheme-invariant; only the tint flips per scheme. */
   --glass-1: blur(8px) saturate(140%);
   --glass-2: blur(12px) saturate(160%);
@@ -420,7 +402,7 @@
   --toast-warning-border: #f59e0b;
   --toast-warning-text: #fde68a;
 
-  /* Game-piece tokens (§ Design-token unification — single source of truth for
+  /* Game-piece tokens (single source of truth for
      the disc colours / gloss / win-glow shared by Connect Five's board and any
      future disc game). Discs are lit spheres: a light rim → mid → dark core. */
   --disc-red-lit: #ff8a80;
@@ -448,16 +430,13 @@
        640px  md  phone / small tablet portrait
        960px  lg  tablet landscape / small desktop
 
-     This replaced an ad-hoc spread of 360/480/560/600/640/680/700/720/768/960.
-     The same component reflowed at a different width depending on which page it
-     was on, because each page picked its own number. Everything on the old list
-     was folded into the nearest tier above (560→480; 600/680/700/720/768→640).
-
+     One scale keeps a component from reflowing at a different width depending
+     on which page it is on.
 
      Prefer a container query (`@container`) over any of these for a component
      that should react to its own slot rather than to the viewport. */
 
-  /* §3 Tell the UA which schemes this document supports, so native chrome the
+  /* Tell the UA which schemes this document supports, so native chrome the
      stylesheet cannot reach — scrollbars, <select> popups, date pickers, form
      control borders, the canvas behind an overscroll — is painted to match
      instead of staying stark white against a dark page.
@@ -469,7 +448,7 @@
   color-scheme: light dark;
 }
 
-/* ── §3 Light theme ─────────────────────────────────────────────────────────
+/* ── Light theme ─────────────────────────────────────────────────────────
    Overrides ONLY the surface/text/elevation tokens. Every component in the app
    reads its colour through these variables, so re-pointing them here is the
    whole light theme — no component rule is duplicated, and a new component is
@@ -487,10 +466,10 @@
    reads as dirt rather than depth on a light surface.
 
    ── Why an attribute and not `@media (prefers-color-scheme: light)` ──
-   This block was a media query until Preferences (Profile page) gained a manual
-   Auto/Light/Dark switch. A media query cannot be overridden by a user choice —
-   the OS would always win — and duplicating the palette into a second
-   `[data-theme="light"]` rule would leave two copies to drift apart.
+   Preferences (Profile page) has a manual Auto/Light/Dark switch. A media query
+   cannot be overridden by a user choice — the OS would always win — and
+   duplicating the palette into a second `[data-theme="light"]` rule would leave
+   two copies to drift apart.
    So the OS preference is resolved to a concrete value exactly once, by the
    inline script in index.html, which stamps `<html data-theme="light|dark">`
    before first paint. "auto" still tracks the OS: appPrefs.js re-stamps on
@@ -499,10 +478,8 @@
 :root[data-theme="light"] {
     color-scheme: light;
 
-    /* 2026-08-11: calmer off-white base + softer slate text. The previous
-       values were almost pure white; lowering the surface noise a touch and
-       shifting secondary text to slate keeps the page looking professional
-       rather than crisp-but-cold. */
+    /* Calmer off-white base + softer slate text: keeps the page looking
+       professional rather than crisp-but-cold. */
     --color-bg: #f1f5f9;
     --color-surface: #ffffff;
     --color-surface-hover: #e2e8f0;
@@ -526,9 +503,8 @@
        once it rounds. One step darker gives ~6.3:1 and real headroom. */
     --accent-success-ink: #166534;
     /* Same story as --accent-success-ink above: #a16207 on --accent-warning-soft
-       composites to 4.17:1 over a light surface, which axe reports as a failure
-       (seen live on .hp-badge--degraded at /health). One step darker measures
-       ~5.6:1. 2026-09-11 UI audit. */
+       composites to 4.17:1 over a light surface, which axe reports as a failure.
+       One step darker measures ~5.6:1. */
     --accent-warning-ink: #845104;
     --accent-danger-ink: #b91c1c;
     --accent-amber-ink: #854d0e;
@@ -594,7 +570,7 @@ html, body, #app {
   color: var(--color-text-primary);
 }
 
-/* §7 Cross-document navigation transition — uses the browser's native
+/* Cross-document navigation transition — uses the browser's native
    View Transitions API where supported (Chrome/Edge 111+). */
 @view-transition {
   navigation: auto;
@@ -640,7 +616,7 @@ body:has(#app > :not(.loading-progress, .loading-progress-text)) .po-boot-hero {
   animation: none;
 }
 
-/* §7 a11y: honour reduced-motion for the cross-document transition too — the
+/* a11y: honour reduced-motion for the cross-document transition too — the
    root cross-fade is motion the user opted out of. Skipping the animation makes
    the swap instant (the API still no-ops gracefully where unsupported). */
 @media (prefers-reduced-motion: reduce) {
@@ -671,11 +647,9 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 a { color: var(--color-accent); text-decoration: none; }
-/* audit #7: the font-family was already inherited here, but not the SIZE — any
-   button whose own rule omitted font-size fell back to the UA default, which
-   Chromium computes as 13.3333px. That odd value showed up on 8 buttons across
-   the app and is why a style sweep counted nine distinct button font sizes.
-   A baseline here means an unstyled button is merely plain, never off-scale. */
+/* Set the SIZE as well as the family: a button whose own rule omits font-size
+   would fall back to the UA default (13.3333px in Chromium), an odd off-scale
+   value. A baseline here means an unstyled button is merely plain. */
 button {
   cursor: pointer;
   font-family: var(--font-body);
@@ -687,12 +661,10 @@ button {
    App.razor) so screen readers announce the new page. Sighted users must not see
    that focus.
 
-   `:focus:not(:focus-visible)` does NOT suppress it (2026-08-08 audit #1): the
-   earlier attempt assumed programmatic focus counts as "not focus-visible", but
-   Chromium reports `:focus-visible = true` when script focuses an element the
-   user cannot reach by pointer — verified live, `h1.matches(':focus-visible')`
-   was true on every route — so the ring below kept winning and boxed the title
-   on all 20 pages.
+   `:focus:not(:focus-visible)` does NOT suppress it: Chromium reports
+   `:focus-visible = true` when script focuses an element the user cannot reach
+   by pointer, so a ring keyed on `:focus-visible` would box the title on every
+   route.
 
    FocusOnNavigate stamps `tabindex="-1"`, which by definition means the heading
    is NOT tab-reachable, so a focus ring on it can only ever be this navigation
@@ -834,13 +806,6 @@ h3[tabindex="0"]:focus-visible {
   .sp-page { padding: 1rem; }
   .sp-card { padding: 1.25rem; }}
 
-/* (Removed: dead .gl-bottom-nav block, the dead `.sp-auth-banner-actions` fixed
-   bar and its `.sp-page { padding-bottom: 120px }` spacer. That bar was pinned at
-   `bottom: 70px` to clear a bottom tab bar deleted on 2026-07-05, and the padding
-   reserved 120px of empty space below every lobby for a bar that no longer
-   rendered. Both matched zero markup. The live mobile top-bar tweaks are in the
-   scoped MainLayout.razor.css.) */
-
 /* ── Accessibility: reduced motion ───────────────────────────────────────────
    ONE universal-selector guard, keyed on `<html data-motion="reduce">`, defined
    next to the token collapse in the :root[data-motion] block above.
@@ -860,7 +825,7 @@ h3[tabindex="0"]:focus-visible {
    on their own — they are not universal selectors. */
 
 /* ─────────────────────────────────────────────────────────────────────────
-   Universal primitives (2026-09-04 UI sweep, options 1/2/3/4/7/8).
+   Universal primitives.
 
    Everything below this line is a CONSUMABLE — pages and components should
    prefer these classes/tokens over inventing per-component CSS. Where a page
@@ -896,14 +861,12 @@ h3[tabindex="0"]:focus-visible {
      available space, but will also shrink on a tall narrow phone where the
      keyboard is open. Default: full dynamic viewport. */
   --gps-area-h: 100dvh;
-  /* 2026-09-11: 3.5rem -> 4rem. Measured 64px — the token said 56px, so every
-     fullscreen game area over-reserved by -8px and the page scrolled by
-     exactly that much (PoMarbleRace demo measured scrollHeight = viewport+8). */
+  /* Matches the measured 64px top bar; a smaller token would make every
+     fullscreen game area over-reserve and the page scroll by the difference. */
   --gps-topbar-h: 4rem;
-  /* 2026-09-11 UI sweep: one content-well width for the full-width pages (home
-     catalog, leaderboards, profile, game shells). Was hardcoded per page as
-     900/920/960px — close enough to look unintentional, different enough to
-     read as drift when navigating. Pages may still opt narrower for prose. */
+  /* One content-well width for the full-width pages (home catalog,
+     leaderboards, profile, game shells), so navigating does not read as drift.
+     Pages may still opt narrower for prose. */
   --content-max: 960px;
   /* Bottom safe-area for iOS notch / gesture bar; honoured by the `.gl-page`
      padding and the GameShell's `--gps-area-h` calc. */
@@ -984,25 +947,21 @@ h3[tabindex="0"]:focus-visible {
   align-items: center;
   justify-content: center;
   gap: var(--space-3);
-  /* --space-7 (40px) → --space-5 (24px). An empty state is a placeholder; at
-     40px top and bottom plus the min-height below it measured 288px on a 720p
-     laptop and 267px on an iPhone SE — for one icon, one line of title and two
-     lines of body. It was a third of /profile's overflow on both.
-     2026-09-11 UI audit. */
+  /* An empty state is a placeholder, so the padding stays small: bigger padding
+     plus the min-height below would run to ~280px for one icon, one line of
+     title and two lines of body. */
   padding: var(--space-5) var(--space-4);
   text-align: center;
   color: var(--color-text-secondary);
   /* Keep empty states inside the viewport on a portrait phone — an empty
-     board should never have to scroll to read. The 40dvh middle term was the
-     binding one on short viewports and is now 28dvh for the same reason as the
-     padding above: this is a placeholder, not a hero. */
+     board should never have to scroll to read. The 28dvh middle term is the
+     binding one on short viewports: this is a placeholder, not a hero. */
   min-height: clamp(9rem, 28dvh, 18rem);
 }
 
 /* Short viewports: the placeholder gives up its remaining generosity so the
    page around it fits. The icon is decorative and the min-height is a comfort
-   floor, not content — both yield before anything with words in it does.
-   2026-09-11 UI audit. */
+   floor, not content — both yield before anything with words in it does. */
 @media (max-height: 780px) {
   .app-empty-state {
     padding: var(--space-3) var(--space-4);
@@ -1201,9 +1160,8 @@ h3[tabindex="0"]:focus-visible {
 .app-btn--lg { padding: 0.75rem 1.4rem; font-size: var(--text-base); }
 
 /* Chip: small status / filter pill. Matches the existing `.gl-overflow-item`
-   styling so a chip and a menu item read as the same family. Since 2026-10-01 it
-   is also every lobby's host / guest / ready pill and the hub connection pill
-   (they were .lobby-pill and .conn-pill, two more spellings of this). */
+   styling so a chip and a menu item read as the same family. It is also every
+   lobby's host / guest / ready pill and the hub connection pill. */
 .app-chip {
   display: inline-flex;
   align-items: center;
@@ -1249,10 +1207,7 @@ h3[tabindex="0"]:focus-visible {
    switch, the theme picker, a run type). The selected state is read from the
    ARIA attribute the buttons already have to carry, so there is no "on" class to
    keep in step with it. A themed surface re-points the four --seg-* properties
-   (Racer's start card does).
-
-   2026-10-01: this replaced five hand-rolled copies (.prefs-seg, .pvs-seg,
-   .racer-modes, .pocabinet-modes and the leaderboard's chip row). */
+   (Racer's start card does). */
 .app-seg {
   display: inline-flex;
   gap: 2px;
@@ -1361,15 +1316,12 @@ p, li, dd, blockquote,
    rule below: zero specificity, easy to opt out by setting `text-wrap: wrap`
    in a component rule if a balance wraps the wrong element. */
 
-/* ── Touch target floor — extension (2026-09-04 UI sweep) ──────────────────
-   The 2026-08-08 audit added the first 44px floor with an explicit selector
-   list. Since then several new component primitives have landed (the
-   `.app-btn` family above, the `.app-chip`, the `.app-link`), and they
-   would otherwise have to be appended to the older list. Easier: route
-   them through this `:where()` extension list so the floor applies to every
-   new component without re-editing the older rule. The two rules compose —
-   the older list still sets its selectors to 44px; this list adds the new
-   primitives so they inherit the same behaviour. */
+/* ── Touch target floor — extension ──────────────────────────────────────────
+   The component primitives (the `.app-btn` family, `.app-chip`, `.app-link`)
+   are routed through this `:where()` extension list rather than appended to the
+   explicit selector list above, so the floor applies to every new component
+   without re-editing the older rule. The two rules compose — the older list
+   sets its selectors to 44px; this list adds the primitives. */
 @media (pointer: coarse) {
   /* A chip gets the floor only when it is something to press: most are status
      labels (a lobby's "host" pill), and a 44px-tall label is just a tall label. */
@@ -1383,22 +1335,18 @@ p, li, dd, blockquote,
     min-height: 44px;
   }
 
-  /* ── 2026-09-11 UI audit: the native controls the lists above never covered.
+  /* ── The native controls the lists above never cover.
      Both rules above enumerate CLASSES, so anything rendered as a bare
-     <select>, <input type="range"> or a game-local button class was simply
-     never in the floor. Measured live at 390×844:
-
-       button.toast-close                12 × 18
-       input (TicTacToe)                 15 × 15
-       input#speed-range                229 × 16
+     <select>, <input type="range"> or a game-local button class would
+     otherwise miss the floor (e.g. button.toast-close is 12 × 18).
 
      `min-height` alone is not enough here: .toast-close fails on WIDTH too, so
      both axes are set. Still zero-specificity via `:where()`, so any component
      rule can opt out by stating its own size. */
-  /* 2026-09-29: a checkbox or radio inside a <label> is excluded — the label is
-     its hit target, and stretching the native box to 44×44 painted it as a large
-     EMPTY square (no tick glyph scales with it), which read as a broken text field
-     on every intro card's "Don't show this again". Labels get the floor instead. */
+  /* A checkbox or radio inside a <label> is excluded — the label is its hit
+     target, and stretching the native box to 44×44 paints a large EMPTY square
+     (no tick glyph scales with it) that reads as a broken text field. Labels get
+     the floor instead. */
   :where(select,
          input[type="range"],
          input[type="checkbox"]:not(label *),
@@ -1425,8 +1373,8 @@ p, li, dd, blockquote,
    OUTSIDE the ConnectFivePage scoped-CSS boundary: every disc rule there compiles
    to `.cf-cell .piece[b-<hash>]`, and a body-parented div carries no scope
    attribute, so the clone matched nothing and fell as a fully transparent box.
-   With its cell's static disc hidden for the flight, that is the whole reason the
-   board played the drop sound and showed nothing (2026-09-12). These rules are
+   With its cell's static disc hidden for the flight, the board would play the
+   drop sound and show nothing. These rules are
    global on purpose — the element cannot be scoped. Geometry (size, position,
    transform) stays inline in the JS, which owns it per frame. */
 .cf-physics-clone {

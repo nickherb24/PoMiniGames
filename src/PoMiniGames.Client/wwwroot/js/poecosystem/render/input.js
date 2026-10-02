@@ -6,14 +6,13 @@
 // Mouse look has TWO paths on purpose. Pointer lock is the good one (infinite travel, no
 // cursor), but it only exists after a click the browser accepts as a gesture, and it is
 // dropped by every Esc — closing the dashboard, closing a panel — after
-// which Chrome refuses to re-lock for about a second. Until 2026-09-16 that was the only
-// path, so a player who simply moved the mouse, or clicked during the re-lock cooldown,
-// saw a camera that ignored them entirely (reported as "the mouse is not moving the
-// camera view"). Left-drag now looks as well: it needs no lock, no gesture budget and no
-// permission, and a press that never travels past DRAG_SLOP still falls through to the
-// lock request, so the old click-to-free-look gesture is unchanged.
+// which Chrome refuses to re-lock for about a second. With lock as the only path, a player
+// who simply moved the mouse, or clicked during the re-lock cooldown, would see a camera
+// that ignored them entirely. So left-drag looks as well: it needs no lock, no gesture
+// budget and no permission, and a press that never travels past DRAG_SLOP still falls
+// through to the lock request (click-to-free-look).
 //
-// 2026-09-23: keys are bindings, not literals — every held and one-shot action maps to one
+// Keys are bindings, not literals — every held and one-shot action maps to one
 // or more KeyboardEvent.code values (Settings → Controls rebinds the first of each), and a
 // gamepad is polled in consume() (left stick moves, right stick looks). Tab, Escape
 // and the speed digits stay fixed: they are the HUD's own shortcuts and the page's docs.
@@ -24,8 +23,8 @@ export const DEFAULT_BINDINGS = Object.freeze({
 });
 export const BINDABLE = Object.freeze(Object.keys(DEFAULT_BINDINGS));
 const ONE_SHOT = Object.freeze(['fly', 'inspect', 'follow', 'director', 'pip']);
-// 2026-09-30: three more fixed keys, all the HUD's own — `/` (and Ctrl/Cmd+K) opens the
-// finder, L steps through the lenses, H holds the key legend up.
+// More fixed keys, all the HUD's own — `/` (and Ctrl/Cmd+K) opens the finder, L steps
+// through the lenses, H holds the key legend up.
 const FIXED = new Set(['Tab', 'Escape', 'Digit0', 'Digit1', 'Digit2', 'Digit3', 'Slash', 'KeyL', 'KeyH']);
 
 /** Defaults with the player's overrides laid over them (unknown actions and fixed keys ignored). */

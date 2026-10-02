@@ -12,18 +12,18 @@
             },
             "launchBrowser": {
                 "enabled": true,
-                "args": "https://localhost:5001",
+                "args": "http://localhost:5080",
                 "windows": {
                     "command": "cmd.exe",
-                    "args": "/C start microsoft-edge:https://localhost:5001"
+                    "args": "/C start microsoft-edge:http://localhost:5080"
                 },
                 "linux": {
                     "command": "xdg-open",
-                    "args": "https://localhost:5001"
+                    "args": "http://localhost:5080"
                 },
                 "osx": {
                     "command": "open",
-                    "args": "https://localhost:5001"
+                    "args": "http://localhost:5080"
                 }
             }
         }

@@ -1,4 +1,4 @@
-// playerController.js — the first-person god (SPEC §8.1). Pure maths over the heightmap:
+// playerController.js — the first-person god. Pure maths over the heightmap:
 // no three.js, no DOM, so the walking/flying/swimming rules are unit-tested. The renderer
 // copies the resulting pose onto the camera; input binding lives in input.js.
 //
@@ -68,10 +68,10 @@ const inBounds = (x, z, size) => x > -PLAYER.boundary && z > -PLAYER.boundary &&
 /**
  * Tiles the god must not be dropped onto, as a Uint8Array indexed by tile.
  *
- * The spawn scan used to ask only whether a tile was *walkable*, and a forest floor is: so
- * the god could be placed on a tile carrying a standing tree, putting the camera at eye
+ * The spawn scan asks for more than whether a tile is *walkable*, because a forest floor is:
+ * the god would be placed on a tile carrying a standing tree, putting the camera at eye
  * height (1.7 m) inside the trunk and its canopy — the view fills with a green blob and
- * nothing behind it is visible (reported 2026-09-13). Huts, boulders and lava are included
+ * nothing behind it is visible. Huts, boulders and lava are included
  * because the sim's own passableTile() already treats them as solid; the god should not
  * stand where a creature cannot walk.
  *

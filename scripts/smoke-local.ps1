@@ -34,11 +34,11 @@ Write-Host "`nPoMiniGames smoke test against $BASE`n" -ForegroundColor Cyan
 Test-Endpoint "GET /health"        "$BASE/health"
 Test-Endpoint "GET /api/health"    "$BASE/api/health"
 Test-Endpoint "GET /api/health/ping" "$BASE/api/health/ping"
-# /api/diag, not /diag: the Blazor diag page went on 2026-08-07, so a bare /diag now
+# /api/diag, not /diag: there is no Blazor diag page, so a bare /diag
 # falls through to MapFallbackToFile and returns the WASM shell with a vacuous 200.
 Test-Endpoint "GET /api/diag"      "$BASE/api/diag"
 Test-Endpoint "GET /openapi/v1.json" "$BASE/openapi/v1.json"
-Test-Endpoint "GET /api/auth/config" "$BASE/api/auth/config"
+Test-Endpoint "GET /api/auth/handshake" "$BASE/api/auth/handshake"
 Test-Endpoint "GET /api/auth/me"  "$BASE/api/auth/me" 401
 Test-Endpoint "GET /api/leaderboards" "$BASE/api/leaderboards"
 Test-Endpoint "GET /_framework/blazor.webassembly.js" "$BASE/_framework/blazor.webassembly.js"
@@ -49,7 +49,7 @@ Test-Endpoint "GET /_framework/blazor.webassembly.js" "$BASE/_framework/blazor.w
 # rather than being swallowed by the SPA fallback, which this single probe covers.
 Test-Endpoint "GET /api/<unmapped> 404s (not SPA fallback)" "$BASE/api/definitely-not-a-route" 404
 
-# §1 of QA report: verify the Blazor WASM boot manifest responds 404 with
+# Verify the Blazor WASM boot manifest responds 404 with
 # `UseBlazorFrameworkFiles` synthesizing the live boot.json (the actual served
 # body is generated at request time from the staged _framework/ directory).
 try {

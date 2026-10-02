@@ -4,6 +4,7 @@ using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Features.PoFunQuiz;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 using PoMiniGames.Features.PoJoker;
+using PoMiniGames.Features.PoJoker.Storage;
 using PoMiniGames.Domain.Primitives;
 using PoRacerCatalog = PoMiniGames.Shared.Games.PoRacerCatalog;
 
@@ -23,26 +24,24 @@ public static class UnifiedLeaderboardEndpoints
     private static readonly (string Key, string Title)[] WinRateGames =
     [
         ("connectfive", "Connect Five"),
-        // Couple Quiz joined this list on 2026-08-10. It used to rank named "teams" from
-        // the PoCoupleQuizTeams table — a table nothing ever wrote to, so the board served
-        // ten padded "XXX" rows forever. The game does report a per-match outcome, and with
-        // the King seat now rotating every round both partners genuinely compete, so win
-        // rate over those matches is a real measure with a real write path behind it.
+        // Couple Quiz reports a per-match outcome, and with the King seat rotating every
+        // round both partners genuinely compete, so win rate over those matches is a real
+        // measure with a real write path behind it.
         ("pocouplequiz", "Couple Quiz"),
-        // Titles must match GameCatalog on the client — the product-name authority per the
-        // 2026-07-19 audit, which removed the grid dimension from the name. The storage key
-        // stays "tictactoe"; only the label changed.
+        // Titles must match GameCatalog on the client — the product-name authority, which
+        // has no grid dimension in the name. The storage key is "tictactoe"; only the label
+        // differs.
         ("tictactoe", "Tic-Tac-Toe"),
     ];
 
     public static IEndpointRouteBuilder MapUnifiedLeaderboardEndpoints(this IEndpointRouteBuilder app)
     {
-        // §1 MapGroup() per slice: /api/leaderboards/{game} reuses the parent prefix.
+        // /api/leaderboards/{game} reuses the parent prefix.
         var boards = app.MapGroup("/api/leaderboards").WithTags("Statistics");
 
         boards.MapGet("",
-            async (IStorageService storage, ILeaderboardRepository funQuiz,
-                   IJokeStorageClient joker, int limit = 5) =>
+            async (IStorageService storage, LeaderboardRepository funQuiz,
+                   JokeStorageClient joker, int limit = 5) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
                 var all = await BuildAllAsync(storage, funQuiz, joker, limit);
@@ -53,8 +52,8 @@ public static class UnifiedLeaderboardEndpoints
             .Produces<IEnumerable<GameLeaderboardDto>>(StatusCodes.Status200OK);
 
         boards.MapGet("/{game}",
-            async (string game, IStorageService storage, ILeaderboardRepository funQuiz,
-                   IJokeStorageClient joker, int limit = 10) =>
+            async (string game, IStorageService storage, LeaderboardRepository funQuiz,
+                   JokeStorageClient joker, int limit = 10) =>
             {
                 limit = Math.Clamp(limit, 1, 100);
                 var board = await BuildOneAsync(storage, funQuiz, joker, game, limit);
@@ -70,10 +69,10 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<List<GameLeaderboardDto>> BuildAllAsync(
-        IStorageService storage, ILeaderboardRepository funQuiz,
-        IJokeStorageClient joker, int limit)
+        IStorageService storage, LeaderboardRepository funQuiz,
+        JokeStorageClient joker, int limit)
     {
-        // §6: each board is an independent storage read, so fan them out concurrently instead
+        // Each board is an independent storage read, so fan them out concurrently instead
         // of awaiting one at a time. Wall-clock drops from the SUM of the per-board scans to
         // the slowest single one.
         //
@@ -84,15 +83,15 @@ public static class UnifiedLeaderboardEndpoints
         // yet" rendering the client already uses for empty boards.
         var winRateTasks = WinRateGames.Select(g => SafeBuildWinRateAsync(storage, g.Key, g.Title, limit));
         // One Racer board per track: a lap on the oval and a lap on the figure-8 are different
-        // measures, and until 2026-10-01 only the Grand Prix partition was read at all, so every
-        // Neon Skyline and Desert Dustway lap was stored and then shown nowhere.
+        // measures, and every track's partition has to be read or its laps are stored and
+        // then shown nowhere.
         var racerTasks = PoRacerCatalog.Tracks.Select(t => SafeBuildPoRacerAsync(storage, limit, t.Id));
         var boardTasks = new[]
         {
             SafeBuildMarbleAsync(storage, limit),
             SafeBuildPoSportsAsync(storage, limit),
             SafeBuildPoBrawlAsync(storage, limit),
-            // 2026-08-11: dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
+            // Dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
             // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring.
             // This is the board's only read; POST /api/pobrawl/elo is write only.
             SafeBuildPoBrawlDemoAsync(storage, limit),
@@ -144,12 +143,12 @@ public static class UnifiedLeaderboardEndpoints
         try { return await BuildPoBrawlDemoAsync(storage, limit); }
         catch { return EmptyBoard("Brawl Demo"); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildFunQuizAsync(ILeaderboardRepository repo, int limit)
+    private static async Task<GameLeaderboardDto> SafeBuildFunQuizAsync(LeaderboardRepository repo, int limit)
     {
         try { return await BuildFunQuizAsync(repo, limit); }
         catch { return EmptyBoard("Fun Quiz"); }
     }
-    private static async Task<GameLeaderboardDto> SafeBuildPoJokerAsync(IJokeStorageClient client, int limit)
+    private static async Task<GameLeaderboardDto> SafeBuildPoJokerAsync(JokeStorageClient client, int limit)
     {
         try { return await BuildPoJokerAsync(client, limit); }
         catch { return EmptyBoard("Joker"); }
@@ -166,8 +165,8 @@ public static class UnifiedLeaderboardEndpoints
     }
 
     private static async Task<GameLeaderboardDto?> BuildOneAsync(
-        IStorageService storage, ILeaderboardRepository funQuiz,
-        IJokeStorageClient joker, string game, int limit)
+        IStorageService storage, LeaderboardRepository funQuiz,
+        JokeStorageClient joker, string game, int limit)
     {
         var key = game.ToLowerInvariant();
         if (string.Equals(key, "online-mmr", StringComparison.OrdinalIgnoreCase))
@@ -202,7 +201,7 @@ public static class UnifiedLeaderboardEndpoints
             // By-id only, not in BuildAllAsync — see BuildPoBrawlKoAsync's remarks. This is
             // the board the 1P end-of-match modal renders.
             "pobrawlko" => await BuildPoBrawlKoAsync(storage, limit),
-            // 2026-08-11: dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
+            // Dedicated top-3 board for the PoBrawl demo-mode fighter ELO.
             // Ratings characters, not players — see BuildPoBrawlDemoAsync's docstring.
             // This is the board's only read; POST /api/pobrawl/elo is write only.
             "pobrawldemo" => await BuildPoBrawlDemoAsync(storage, limit),
@@ -252,13 +251,9 @@ public static class UnifiedLeaderboardEndpoints
     // Unit is the label printed on each leaderboard card beside the game title.
     // One label per distinct MEASURE, and no synonyms.
     //
-    // A 2026-08-08 UI audit found nine cards carrying seven labels for five real
-    // measures: Sports said "Best meet" for the same seconds-lower-is-better
-    // value Racer called "Best time", while Marble Race said "Points", Fun Quiz
-    // and Joker said "Score", and Couple Quiz said "High score" — all for a plain
-    // point total. Read as a page, that noise implies the games are scored
-    // differently when they are not. (Couple Quiz has since moved to "Win rate",
-    // which is a genuinely different measure.)
+    // Synonyms (e.g. "Best meet" vs "Best time" for the same seconds-lower-is-better
+    // value, or "Points" vs "High score" for a plain point total) read as a page as if
+    // the games were scored differently when they are not.
     //
     //   ELO        adaptive rating (see AdaptiveEloGames below)
     //   Win rate   a percentage
@@ -368,7 +363,7 @@ public static class UnifiedLeaderboardEndpoints
     /// </summary>
     private static async Task<GameLeaderboardDto> BuildPoBrawlAsync(IStorageService storage, int limit)
     {
-        // Two independent partition scans — fan out concurrently (§6), this builder is
+        // Two independent partition scans — fan out concurrently, this builder is
         // on the critical path of BuildAllAsync's WhenAll.
         var ladderTask = storage.GetPoBrawlLadderAsync(50);
         var kosTask = storage.GetPoBrawlHighScoresAsync(50);
@@ -376,7 +371,7 @@ public static class UnifiedLeaderboardEndpoints
         var ladder = ladderTask.Result;
         var kos = kosTask.Result;
 
-        // KO rows now carry the full player name; legacy rows hold 3-letter
+        // KO rows carry the full player name; legacy rows hold 3-letter
         // initials. Join by exact name first, initials as the legacy fallback.
         var bestKoByName = kos
             .Where(k => k.KoTimeSeconds > 0)
@@ -500,7 +495,7 @@ public static class UnifiedLeaderboardEndpoints
     /// overall board means scanning every category and keeping each player's personal best —
     /// otherwise a player who played three categories would occupy three rows.
     /// </summary>
-    private static async Task<GameLeaderboardDto> BuildFunQuizAsync(ILeaderboardRepository repo, int limit)
+    private static async Task<GameLeaderboardDto> BuildFunQuizAsync(LeaderboardRepository repo, int limit)
     {
         var perCategory = await Task.WhenAll(
             Enum.GetValues<PoFunQuiz.QuestionCategory>()
@@ -535,7 +530,7 @@ public static class UnifiedLeaderboardEndpoints
     /// achievement IS the joke, so the joke is what it shows — ranked by the AI Jester's
     /// own humour/cleverness/originality scores. See <see cref="TopJokeDto"/>.
     /// </remarks>
-    private static async Task<GameLeaderboardDto> BuildPoJokerAsync(IJokeStorageClient client, int limit)
+    private static async Task<GameLeaderboardDto> BuildPoJokerAsync(JokeStorageClient client, int limit)
     {
         var jokes = await client.GetTopJokesAsync(limit);
         var entries = jokes
@@ -565,9 +560,6 @@ public static class UnifiedLeaderboardEndpoints
         if (cut < max / 2) cut = max;
         return string.Concat(clean.AsSpan(0, cut).TrimEnd(), "…");
     }
-
-    // ShortSession() removed 2026-08-11 with the PoJoker session board it existed for —
-    // it truncated a session GUID for display, and no board shows a session id any more.
 
     /// <summary>Mirror of the client's Initials(): first 3 alphanumeric chars, uppercased.</summary>
     private static string InitialsOf(string name)

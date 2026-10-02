@@ -37,8 +37,8 @@
 //   regenerate       true if asking for a new track means anything (procedural maps only)
 //
 // Each entry also says how the map was MADE and how many VERTICES it renders — both shown on the
-// track picker. `vertices` was measured 2026-09-30 by building the map in the engine and summing
-// every geometry in its track group (course, glass containment, arches, props); it is constant
+// track picker. `vertices` was measured by building the map in the engine and summing every
+// geometry in its track group (course, glass containment, arches, props); it is constant
 // per map, seeds included. Re-measure after changing a course or its dressing.
 // A registry entry (MAPS below) may also carry a `theme` — scene.js setTheme(): background/fog
 // colour, fog range, ambient/hemisphere/key lights and exposure. The page reads names and blurbs
@@ -82,7 +82,7 @@ const grandSpiral = createGlbCourse({
   bowlMeshName: 'Track-Bowl2',
 });
 
-// Playground Run (2026-09-30): an imported scene — a marble gutter winding three laps down around a
+// Playground Run: an imported scene — a marble gutter winding three laps down around a
 // real-scale play structure, through a drop well, down the slide and into a tray. Authored in metres
 // for four 10 cm marbles; at SCALE 40 our radius-1 marble is a 5 cm one, so the 28 cm gutter holds
 // the field about five abreast. The export is a plain trimesh with no ring layout, so its centerline
@@ -142,7 +142,7 @@ const PROC_OOB_LATERAL = 26;
 
 function adaptProceduralTrack(t) {
   // The generator's own right vector points the WRONG WAY for this interface, and this is
-  // where that gets corrected (2026-09-12).
+  // where that gets corrected.
   //
   // Every consumer of the interface — steering, the lateral sign, the edge gauge — assumes
   // right = dir x up, which is the same vector a chase camera renders as screen-right, and is
@@ -210,7 +210,7 @@ function adaptProceduralTrack(t) {
   };
 }
 
-// ── checkpoint arches (2026-09-30) ──
+// ── checkpoint arches ──
 // A glowing half-hoop standing over the channel at each checkpoint: where the course branches on
 // the authored maps, at each hazard zone on the procedural ones. Purely visual — game.js reads the
 // same `checkpoints` list for the sector splits. Built from the track interface alone, so every
@@ -348,9 +348,6 @@ const MAPS = [
     build: (world, materials, marbleCount, asset) => addCheckpointArches(playground.buildTrack(world, materials, marbleCount, asset)),
   },
 ];
-
-/** Every registered map, in slot order. */
-export const MAP_LIST = MAPS;
 
 /** The slot the game opens on when nothing has been chosen. */
 export const DEFAULT_MAP_ID = 2;

@@ -4,7 +4,7 @@ using PoMiniGamesClient.Services.Play;
 namespace PoMiniGamesClient.Games.PoEcosystem.Models;
 
 /// <summary>
-/// One alert the viewer asked for (2026-09-30): "tell me when wolves fall below 5". A rule
+/// One alert the viewer asked for: "tell me when wolves fall below 5". A rule
 /// only ever reads the counts the page already receives twice a second — it watches, it
 /// does not act.
 /// </summary>

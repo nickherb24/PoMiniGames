@@ -13,7 +13,7 @@ public class LocalAuthWebApplicationFactory : WebApplicationFactory<Program>
 {
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // §CI/CD policy (2026-06-27): integration tests run under the "Test"
+        // Integration tests run under the "Test"
         // environment so the Test branches of StartupSecretValidator + AuthExtensions
         // activate. The DevBypass flag below enforces real-auth flow in tests that
         // opt into this harness.

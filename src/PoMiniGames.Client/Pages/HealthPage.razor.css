@@ -1,4 +1,4 @@
-/* §3 Scoped CSS only — every colour reads from the root tokens in wwwroot/css/app.css,
+/* Scoped CSS only — every colour reads from the root tokens in wwwroot/css/app.css,
    so this page follows the system light/dark scheme without a second rule set. */
 
 .hp {
@@ -9,8 +9,7 @@
 }
 
 /* The status page is a read-at-a-glance surface — it should not scroll to show
-   whether the app is healthy. It ran 81px past the fold on a 390×844 phone.
-   2026-09-11 UI audit. */
+   whether the app is healthy. */
 @media (max-width: 640px), (max-height: 780px) {
   .hp { padding: var(--space-3) var(--space-4); }
   .hp-head { margin-bottom: var(--space-3) !important; }
@@ -56,9 +55,8 @@
   border: 1px solid currentColor;
 }
 
-/* audit #3: these read the raw fill hues, which measured 1.48:1 (healthy) on
-   their own tint in light mode. The -ink variants are the same hues tuned for
-   text on that tint. */
+/* The raw fill hues measure only 1.48:1 (healthy) on their own tint in light
+   mode. The -ink variants are the same hues tuned for text on that tint. */
 .hp-badge--healthy { color: var(--accent-success-ink); background: var(--accent-success-soft); }
 .hp-badge--degraded { color: var(--accent-warning-ink); background: var(--accent-warning-soft); }
 .hp-badge--unhealthy { color: var(--accent-danger-ink); background: var(--accent-danger-soft); }
@@ -139,11 +137,9 @@
         background: var(--surface-2);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
-        /* --space-3 → --space-2 on both. Three check cards × (16px padding top
-           and bottom + 16px margin) was ~96px of the 604px table. The status
-           page should be readable at a glance without scrolling, and the
-           descriptions themselves are the content worth the space.
-           2026-09-11 UI audit. */
+        /* Tight padding and margin: the status page should be readable at a glance
+           without scrolling, and the descriptions themselves are the content worth
+           the space. */
         padding: var(--space-2);
         margin-bottom: var(--space-2);
     }
@@ -224,17 +220,16 @@
   font-size: var(--text-xs);
 }
 
-/* 2026-08-12 audit #7: the "developer endpoints" disclosure is a tiny
-   text-style button, not a primary action. It should read as a footnote,
-   not compete with the Refresh button above. */
+/* The "developer endpoints" disclosure is a tiny text-style button, not a
+   primary action. It should read as a footnote, not compete with the Refresh
+   button above. */
 .hp-link-btn {
     background: transparent;
     border: 0;
-    /* Measured 358×18 on a touch context — the only control left in the app
-       under the 24px WCAG 2.5.8 floor after the app.css sweep, because it is a
-       bare <button> inside a paragraph and the floor's selector list covers
-       classes, not inline text buttons. Vertical padding gives it the hit area
-       without changing how the sentence reads. 2026-09-11 UI audit. */
+    /* A bare <button> inside a paragraph is outside the app.css touch-target
+       floor's selector list (classes, not inline text buttons), so it would
+       measure 18px tall, under the 24px WCAG 2.5.8 floor. Vertical padding gives
+       it the hit area without changing how the sentence reads. */
     padding: 0.25rem 0;
     min-height: 24px;
     color: var(--color-accent, var(--accent-ink, currentColor));

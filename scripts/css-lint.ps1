@@ -1,11 +1,9 @@
 # Structural check for every stylesheet the client ships. No dependencies, no build.
 #
-# It exists because of commit 16247780 (2026-08-07): a dead-selector prune cut selectors out
-# together with the "*/" in front of them, which left the rule's body attached to the comment
-# and the comment open until the NEXT "*/" in the file. Every live rule in between was
-# swallowed. Fun Quiz's answer buttons, the hub's card tilt, the toast pop and the glass fill
-# on every card sat inside comments for eight weeks, and nothing failed: the browser drops
-# what it cannot parse, and a test suite does not look at paint.
+# It exists because a dead-selector prune can cut selectors out together with the "*/" in
+# front of them, which leaves the rule's body attached to the comment and the comment open
+# until the NEXT "*/" in the file. Every live rule in between is swallowed, and nothing
+# fails: the browser drops what it cannot parse, and a test suite does not look at paint.
 #
 # Four checks, each one a signature of that damage:
 #   1. "/*" inside a comment        - a comment swallowed the comment after it

@@ -19,7 +19,7 @@
 (function () {
     let dotnetRef = null;
     let active = false;
-    // 2026-08-10: solo + alternating-turns 2P reuse the same 1-4 keys as the
+    // Solo + alternating-turns 2P reuse the same 1-4 keys as the
     // split-screen P1 side but route to a different .NET handler. Tracking the
     // mode here means the solo path can call OnSoloHotkeyAsync without the
     // page needing a second JS file or a second interop call.

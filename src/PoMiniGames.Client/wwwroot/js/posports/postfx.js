@@ -6,10 +6,10 @@
 // underneath as the input (made transparent, not hidden), and must stay first in
 // the DOM so anything that samples "the game's canvas" still finds it.
 //
-// Nothing here may move a pixel sideways by where it sits in the frame. A day-meet
-// heat shimmer used to (a sine of y added to x across the band 20-50% down the
-// frame), and that band is the top lane: its hurdles and runner were drawn wavy
-// while every lane below stayed straight. Removed 2026-10-01.
+// Nothing here may move a pixel sideways by where it sits in the frame. A heat
+// shimmer (a sine of y added to x across the band 20-50% down the frame) would hit
+// the top lane: its hurdles and runner would be drawn wavy while every lane below
+// stayed straight.
 //
 // Optional by design: no WebGL2, the low quality tier, reduced motion, or a lost
 // context all return null / false, and the caller simply shows the 2D canvas.

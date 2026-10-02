@@ -1,4 +1,4 @@
-// picking.js — what the crosshair is pointing at (SPEC §8.1). A ray from the camera
+// picking.js — what the crosshair is pointing at. A ray from the camera
 // through the screen centre against each creature's bounding sphere, nearest within 60 m.
 // No three.js raycaster: at 400 creatures this is a few hundred dot products and it works
 // on the interpolated frame data rather than on instanced geometry.

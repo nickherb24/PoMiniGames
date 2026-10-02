@@ -40,14 +40,6 @@ public readonly record struct PlaySessionRedemption(PlaySessionStatus Status, Ti
     public bool IsValid => Status == PlaySessionStatus.Valid;
 }
 
-/// <summary>Mints and redeems the signed play sessions the score guard measures elapsed time from.</summary>
-public interface IPlaySessionService
-{
-    PlaySessionTicket Issue(GameKey game, string identityKey);
-
-    PlaySessionRedemption Redeem(string? token, GameKey game, string identityKey);
-}
-
 /// <summary>
 /// Data Protection-backed play sessions: the server's own record of when a player started, in a
 /// form the client can hold but cannot author or edit.
@@ -84,7 +76,7 @@ public interface IPlaySessionService
 /// board's physics, which removes the entire class of "POST 999999999 once" attacks.
 /// </para>
 /// </remarks>
-public sealed class PlaySessionService : IPlaySessionService
+public sealed class PlaySessionService
 {
     /// <summary>
     /// Purpose string for the protector. Versioned so a future payload change can be introduced

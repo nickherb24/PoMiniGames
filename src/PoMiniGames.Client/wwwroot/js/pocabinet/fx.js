@@ -15,7 +15,7 @@
 // (first touch only, as strong as the car was closing on the wall), which race.js
 // turns into dents on that car (cars.js) and, for the player's, into wear.
 //
-// One-shots race.js fires (2026-09-29): backfire() — a flame out of the tail on
+// One-shots race.js fires: backfire() — a flame out of the tail on
 // every exhaust pop audio.js reports; debris() — chunks and paint flakes off a
 // shunt; confetti() — the podium shower over the line.
 

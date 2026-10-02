@@ -1,6 +1,6 @@
 // scheduler.js — who thinks next. One inference in flight at a time; a plain round-robin
 // over living creatures by index, except that a newly selected creature jumps the queue
-// once (SPEC §7.8: "the selected creature preempts").
+// once (the selected creature preempts).
 import { NONE } from '../core/entities.js';
 
 export function createThoughtScheduler() {

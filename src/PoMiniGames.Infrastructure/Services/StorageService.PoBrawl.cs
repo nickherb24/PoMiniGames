@@ -19,7 +19,7 @@ namespace PoMiniGames.Infrastructure.Services;
 /// the demo-mode fighter Elo.
 /// </summary>
 /// <remarks>
-/// Split out of StorageService.cs on 2026-09-12. These are deliberately not descriptors —
+/// These are deliberately not descriptors —
 /// a descriptor expresses a best-result ratchet, and both of these are accumulators that
 /// move a stored value in either direction. Both go through TableConcurrency.UpdateWithRetryAsync,
 /// and the Elo board applies its change as an <b>increment</b> rather than an absolute computed

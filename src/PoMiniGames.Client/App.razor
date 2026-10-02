@@ -1,5 +1,5 @@
 ﻿@using Microsoft.AspNetCore.Components.Authorization
-@* §2.3: AuthGate gates the whole app. AppErrorBoundary wraps everything so an
+@* AuthGate gates the whole app. AppErrorBoundary wraps everything so an
    unhandled exception in any page surfaces an actionable, environment-aware
    banner instead of the default Blazor error template. *@
 
@@ -8,7 +8,7 @@
     <CascadingAuthenticationState>
     <Router AppAssembly="@typeof(App).Assembly">
         <Found Context="routeData">
-            @* §2.3: AuthorizeRouteView prevents page flashing on routes that opt into
+            @* AuthorizeRouteView prevents page flashing on routes that opt into
                  [Authorize]. Routes that do not opt in render normally (the default
                  for the public games suite). *@
             <AuthorizeRouteView RouteData="@routeData" DefaultLayout="@typeof(Layout.MainLayout)">
@@ -29,10 +29,8 @@
             <FocusOnNavigate RouteData="@routeData" Selector="h1" />
         </Found>
         <NotFound>
-            @* 2026-08-07 browser audit: this was a single bare <p>. No heading —
-               so `<FocusOnNavigate Selector="h1">` above had nothing to focus and
-               the page was the only route in the app with no h1 — and no way out
-               except the brand mark in the top bar. *@
+            @* Has an h1 so `<FocusOnNavigate Selector="h1">` above has something to
+               focus, and a link home so the page is not a dead end. *@
             <PageTitle>Page not found · PoMiniGames</PageTitle>
             <LayoutView Layout="@typeof(Layout.MainLayout)">
                 <div class="app-notfound">

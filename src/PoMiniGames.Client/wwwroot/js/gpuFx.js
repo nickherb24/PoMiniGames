@@ -1,4 +1,4 @@
-// gpuFx.js — one GPU particle system for the whole app (§GFX-7).
+// gpuFx.js — one GPU particle system for the whole app.
 //
 // WHY ONE
 // Confetti on a quiz win, sparks on a PoBrawl hit, dust when a ConnectFive chip

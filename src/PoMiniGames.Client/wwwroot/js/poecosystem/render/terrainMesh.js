@@ -214,7 +214,7 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
           float ripple = sin((vWorldPos.x * 0.9 + vWorldPos.z * 0.35 + tNoise(vWorldPos.xz * 0.5) * 2.0) * 6.0) * 0.5 + 0.5;
           diffuseColor.rgb *= 1.0 - beach * ripple * 0.09;
 
-          // Cloud shadows (2026-09-30): the deck overhead, projected down the sun's ray, so
+          // Cloud shadows: the deck overhead, projected down the sun's ray, so
           // the patches sliding over the hills are the clouds you can see above them. Lava
           // and fire are their own light and stay bright.
           diffuseColor.rgb *= mix(cloudLight(vWorldPos), 1.0, step(0.01, vGlow));
@@ -278,8 +278,8 @@ export function createTerrainMesh(terrain, { tier = 'high' } = {}) {
           float edge = abs(distance(vWorldPos.xz, uTribe[k].xy) - uTribe[k].z);
           float line = exp(-edge * edge * 1.4);
           float pulse = 0.75 + 0.25 * sin(uTerrainTime * 0.9 + float(k) * 2.1 + vWorldPos.x * 0.05);
-          // 0.3 after dark, not the 0.55 it had: seen along the ground through the night
-          // bloom, a border at 0.55 washed a third of the frame out (2026-09-30).
+          // 0.3 after dark: seen along the ground through the night bloom, a stronger
+          // border washes a third of the frame out.
           totalEmissiveRadiance += uTribeCol[k] * line * pulse * (0.05 + uNight * 0.3) * (1.0 - tSteep * 0.5);
         }
       `)

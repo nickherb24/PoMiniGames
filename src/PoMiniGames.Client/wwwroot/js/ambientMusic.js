@@ -2,14 +2,12 @@
 //
 // Every other music system on the web downloads a loop. This one composes one.
 //
-// WHAT CHANGED (§GFX-9)
-// The previous version was a single drone plus occasional random plucks. It was
-// atmospheric but it could not respond to anything: "intensity" only opened a
-// filter, so a game at its most desperate moment sounded like the same pad,
-// brighter. There was also no pulse at all, which is why nothing in the app
-// ever felt like it was building.
+// ARRANGEMENT
+// Intensity changes what plays rather than only opening a filter (a game at its
+// most desperate moment must not sound like the same pad, brighter), and the
+// steady pulse gives the app something to build against.
 //
-// It is now a four-layer arrangement on a shared tempo grid:
+// It is a four-layer arrangement on a shared tempo grid:
 //
 //   PAD    always on. Continuous detuned oscillators through a breathing
 //          lowpass — the old drone, kept, because it is what makes silence
@@ -411,8 +409,8 @@ function pluck() {
  * per-tick chase picks the new value up on its own.
  *
  * There must be exactly one of these. A second `export function setIntensity` further down
- * (2026-10-01: found and removed) made the whole module a SyntaxError, so nothing could
- * import it and the app had no shared soundtrack at all.
+ * makes the whole module a SyntaxError, so nothing could import it and the app would have
+ * no shared soundtrack at all.
  * @param {number} value 0 (calm) .. 1 (tense)
  */
 export async function setIntensity(value) {

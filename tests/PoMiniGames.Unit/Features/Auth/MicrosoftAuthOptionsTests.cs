@@ -13,9 +13,9 @@ namespace PoMiniGames.Unit.Features.Auth;
 /// <see cref="MicrosoftAuthOptions.ApiClientId"/>.
 /// </summary>
 /// <remarks>
-/// <b>§1 100/50/25/25 Rule.</b> Five [Theory] rows cover the placeholder matrix;
+/// Five [Theory] rows cover the placeholder matrix;
 /// one [Fact] validates <see cref="MicrosoftAuthOptions.LooksLikePlaceholder"/> in
-/// isolation. Six product tests, one maintenance surface.
+/// isolation.
 /// </remarks>
 public class MicrosoftAuthOptionsTests
 {

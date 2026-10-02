@@ -16,11 +16,11 @@ public static class IntegrityEndpoints
     /// <summary>Mint: authenticated, because the session is identity-bound.</summary>
     public static IEndpointRouteBuilder MapPlaySessionEndpoints(this IEndpointRouteBuilder app)
     {
-        // §1 MapGroup() per slice: play sessions share /api/play.
+        // Play sessions share /api/play.
         var play = app.MapGroup("/play").WithTags("Integrity");
 
         play.MapPost("/sessions/{game}",
-            (string game, HttpContext http, IPlaySessionService sessions, IOptionsMonitor<IntegrityOptions> options) =>
+            (string game, HttpContext http, PlaySessionService sessions, IOptionsMonitor<IntegrityOptions> options) =>
             {
                 if (options.CurrentValue.Mode == IntegrityMode.Off)
                 {
@@ -29,7 +29,7 @@ public static class IntegrityEndpoints
                     return Results.NoContent();
                 }
 
-                // §8 allow-list: only the well-known catalogue may hold a session, so a typo'd
+                // Allow-list: only the well-known catalogue may hold a session, so a typo'd
                 // key fails here rather than minting a token that can never be redeemed.
                 if (GameKey.TryParse(game) is not { } key)
                 {

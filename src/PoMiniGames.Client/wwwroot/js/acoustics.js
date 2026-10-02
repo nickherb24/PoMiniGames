@@ -1,4 +1,4 @@
-// acoustics.js — per-game reverb spaces and doppler (§GFX-10).
+// acoustics.js — per-game reverb spaces and doppler.
 //
 // THE PROBLEM WITH ONE REVERB
 // audioBus.js shipped with a single synthesised impulse response: 1.9 s of

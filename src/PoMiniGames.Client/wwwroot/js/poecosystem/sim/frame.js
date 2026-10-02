@@ -6,7 +6,7 @@
 // The traits ride the frame so the renderer can tint every creature by one of them (the
 // evolution view) without a second channel; they are the base values, not the nudged ones,
 // because inheritance is what the tint is meant to show. Hunger, health and the flags
-// (2026-09-30) are what the naturalist lenses and the watched-creature marks read: all
+// are what the naturalist lenses and the watched-creature marks read: all
 // observation, none of it ever travels back.
 // Prop stride:     x, y, z, qx, qy, qz, qw, propKind (kind*8 + sizeIndex).
 import { NONE } from './core/entities.js';

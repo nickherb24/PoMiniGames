@@ -1,5 +1,5 @@
 // consoleFilter.js — suppress the harmless but loud "AudioContext closed"
-// warnings that the demo reel produced on every transition (audit #3).
+// warnings that the demo reel produces on every transition.
 //
 // WHY: when the kiosk navigates DemoA → DemoB, any in-flight oscillator / gain
 // node owned by DemoA gets disconnected when the new page's audio bus comes
@@ -43,7 +43,7 @@
         // the particle backend works either way — but it lands as a red console
         // line on every page load for those users. Ours is the warn immediately
         // after it ("gpuFxWebGPU: WebGPU unavailable, staying on WebGL2"), which
-        // is now console.debug. 2026-09-11 UI audit.
+        // is console.debug.
         /No available adapters/i,
     ];
 

@@ -12,7 +12,7 @@ using PoMiniGamesClient.Services.Ui;
 namespace PoMiniGamesClient.Services.Http;
 
 /// <summary>
-/// §Cross-origin credentials: the Blazor WASM <see cref="HttpClient"/> defaults
+/// Cross-origin credentials: the Blazor WASM <see cref="HttpClient"/> defaults
 /// to <c>credentials: 'omit'</c> on the underlying browser fetch, which means
 /// cross-origin requests (e.g. the standalone Blazor client on
 /// <c>http://localhost:5261</c> calling the API on

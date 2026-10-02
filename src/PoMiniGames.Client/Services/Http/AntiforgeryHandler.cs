@@ -14,7 +14,7 @@ using PoMiniGamesClient.Services.Ui;
 namespace PoMiniGamesClient.Services.Http;
 
 /// <summary>
-/// §2 CSRF: attaches the antiforgery request token to every state-changing call.
+/// CSRF: attaches the antiforgery request token to every state-changing call.
 ///
 /// The server refuses POST/PUT/PATCH/DELETE on <c>/api/*</c> without a valid
 /// <c>X-CSRF-TOKEN</c> header (see <c>AntiforgeryExtensions</c> on the host). This handler

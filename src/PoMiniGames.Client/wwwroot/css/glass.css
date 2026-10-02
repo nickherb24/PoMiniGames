@@ -1,5 +1,5 @@
 /* ─────────────────────────────────────────────────────────────────────────
-   glass.css — the APPLIED glassmorphism layer (§GFX-6).
+   glass.css — the APPLIED glassmorphism layer.
 
    fx.css defines primitives and deliberately restyles nothing. This file is the
    other half: it puts those primitives onto the app's real chrome surfaces.
@@ -34,16 +34,15 @@
     --glass-edge-lit: color-mix(in srgb, var(--color-text-primary) 26%, transparent);
     --glass-inner: inset 0 1px 0 var(--glass-edge-lit);
 
-    /* ── Over-canvas glass (2026-08-07 browser audit #2) ──
+    /* ── Over-canvas glass ──
        HUDs that float on a game's own 3D scene rather than on an app surface.
        That scene is dark in every colour scheme, so these tokens are
-       deliberately NOT re-pointed in the light block below — the same rule the
-       theming policy in CLAUDE.md states for per-game/canvas tokens.
+       deliberately NOT re-pointed in the light block below (the rule for
+       per-game/canvas tokens).
 
-       The racer and sports HUDs used to consume the ordinary `--glass-fill`,
-       which light mode re-points to `rgba(255,255,255,0.58)`. The result was a
-       near-white panel carrying the white text it was designed to show against
-       a dark scene: lap, speed and the race clock all measured 1.00:1. */
+       The racer and sports HUDs must not consume the ordinary `--glass-fill`,
+       which light mode re-points to `rgba(255,255,255,0.58)`: a near-white panel
+       carrying white text meant for a dark scene measures 1.00:1. */
     --glass-fill-canvas: rgba(8, 14, 26, 0.72);
     --glass-edge-canvas: rgba(148, 197, 255, 0.22);
     --glass-inner-canvas: inset 0 1px 0 rgba(255, 255, 255, 0.10);
@@ -142,15 +141,14 @@
 /* These sit ON the game canvas, not on an app surface — see the
    `--glass-*-canvas` note above for why they must not follow the scheme.
 
-   2026-08-10: `.racer-hud` was in this group and must not be. Unlike `.ps-hud`
-   (a flex bar with its own padding and background) and `.hud-panel` (PoRacer's
-   actual corner panels), `.racer-hud` is PoRacer's full-screen HUD *container* —
+   `.racer-hud` must not be in this group. Unlike `.ps-hud` (a flex bar with its
+   own padding and background) and `.hud-panel` (PoRacer's actual corner
+   panels), `.racer-hud` is PoRacer's full-screen HUD *container* —
    `position: absolute; inset: 0; pointer-events: none`, a bare positioning layer
-   whose children are the panels. Glassing it painted the 72%-opaque canvas fill
-   over the ENTIRE race and ran an 8.4px backdrop blur across everything behind
-   it, so the track, cars and background were permanently blurred and washed out
-   while the HUD text on top stayed sharp. `.hud-panel` below already covers the
-   panels that were meant to be glass, so nothing is lost by dropping it.
+   whose children are the panels. Glassing it would paint the 72%-opaque canvas
+   fill over the ENTIRE race and run a backdrop blur across everything behind
+   it, permanently blurring the track, cars and background while the HUD text on
+   top stayed sharp. `.hud-panel` already covers the panels meant to be glass.
 
    Rule of thumb for this list: only ever add a selector that names an element
    which paints its own background. A full-bleed overlay does not belong here. */
@@ -171,10 +169,7 @@
    notice on a 90 px tile. They get the lit edge and the sheen, which is where
    the perceived quality actually comes from.
 
-   2026-10-01: this rule sat inside its own comment from 2026-08-07 (the prune
-   that cut `.home-mode-btn` and friends out of the selector list took the end
-   of the comment with them), so for eight weeks none of it applied. Restored
-   narrower than it was written, because the cards grew up without it:
+   This rule is deliberately narrow:
      - No translucent `--glass-fill` and no shadow. These cards carry running
        text (controls, a lobby roster) with no blur behind them, and the lobby
        card's shadow is now its beat glow (LobbyPanel.razor.css). They keep
@@ -245,7 +240,7 @@
 
 /* Same "drop the blur" treatment for the over-canvas HUDs, but landing on an
    opaque DARK panel rather than `--color-surface` — which in light mode is the
-   white that made this HUD text unreadable in the first place (audit #2).
+   white that would make this HUD text unreadable.
 
    `.pb-hud` is deliberately NOT in this group: PoBrawl's health bars sit in
    normal page flow beneath the arena, not on the canvas, and their text follows

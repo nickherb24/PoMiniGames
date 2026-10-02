@@ -1,10 +1,9 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-  Publish the Blazor WASM client and report on bundle size + CSS footprint
-  (2026-09-04 UI sweep, Option 10).
+  Publish the Blazor WASM client and report on bundle size + CSS footprint.
 .DESCRIPTION
-  The 25 MB `_framework` budget documented in CLAUDE.md is enforced inline by
+  The 25 MB `_framework` budget is enforced inline by
   the "WASM bundle-size budget" step in .github/workflows/deploy.yml, with no
   developer-side feedback — a UI sweep can quietly bloat the bundle past the
   limit and only fail master, where it is expensive to track down.

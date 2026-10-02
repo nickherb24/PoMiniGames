@@ -3,9 +3,8 @@ namespace PoMiniGames.Shared.Games;
 // ────────────────────────────  Lobby (shared)  ─────────────────────────────
 //
 // One wire shape for every ready/start lobby (Racer, Sports, Voxel Strike, Brawl).
-// Until 2026-09-14 each game declared its own LobbyState/LobbyEvent pair with the same
-// four fields, which is what let the four lobby pages and four lobby services drift
-// into four copies. A game's player record still carries whatever that game needs
+// Sharing one LobbyState/LobbyEvent pair keeps the lobby pages and lobby services from
+// drifting into per-game copies. A game's player record still carries whatever that game needs
 // (a character, a fighter, a seat number) — it just has to expose the four fields the
 // shared lobby machinery reads.
 

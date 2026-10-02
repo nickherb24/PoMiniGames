@@ -12,8 +12,8 @@ public class TicTacToeBoard
     public const int Size = TicTacToeRules.BoardSize;
     public const int WinLength = TicTacToeRules.BoardWinLength;
 
-    // Flat row-major storage (2026-09-14, online mode) — the jagged CellValue[][]
-    // it replaced could not be viewed as the byte span the shared rules read.
+    // Flat row-major storage: a jagged CellValue[][] could not be viewed as the
+    // byte span the shared rules read.
     private readonly CellValue[] _cells;
 
     public TicTacToeBoard()

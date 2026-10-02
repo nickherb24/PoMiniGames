@@ -60,10 +60,7 @@ internal static class StorageExtensions
         services.AddSingleton(_ => ResolveBlobServiceClient(connectionString, endpoint, accountName));
 
         // Every dependency (IConfiguration, EloCalculator, PairwiseEloCalculator, ILogger)
-        // resolves from the container, so this is a plain registration. It used to go
-        // through ActivatorUtilities.CreateInstance to append an InMemoryStorageService as
-        // a trailing optional argument; that fallback was removed on 2026-09-11 (see the
-        // note at the top of StorageService) and the construction dance went with it.
+        // resolves from the container, so this is a plain registration.
         services.AddSingleton<StorageService>();
         services.AddSingleton<IStorageService>(sp => sp.GetRequiredService<StorageService>());
 

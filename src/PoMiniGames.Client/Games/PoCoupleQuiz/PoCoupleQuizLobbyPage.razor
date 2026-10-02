@@ -1,18 +1,10 @@
-@* The ONE Couple Quiz lobby page.
+@* The ONE Couple Quiz lobby page: /couplequiz, /couplequiz/multi and /couplequiz/lobby
+   are all bound to this single component, so the join buttons' busy-state guards, the
+   retry path when the hub is wedged and the ready tick in the player list live in one
+   place, and the hub is connected only after the player has dismissed the intro.
 
-   Until 2026-08-10 there were two, both hand-maintained and drifted apart:
-   PoCoupleQuizPage (/couplequiz, /couplequiz/{Mode}) and this one
-   (/couplequiz/multi, /couplequiz/lobby). Only this one had busy-state guards on
-   the join buttons, a retry path when the hub was wedged, and a ready tick in the
-   player list; only the other one connected to the hub before the player had
-   dismissed the intro. Everything now lands here, so those routes are all bound to
-   this single component.
-
-   Couple Quiz is multiplayer-only (user decision, 2026-08-10). The solo "vs AI
-   partner" mode was a 16-question hardcoded bank whose "partner" was a fixed
-   answer index — a coin flip with no AI in it and no relation to the real game —
-   and the kiosk demo mode was unreachable dead code, since this game was never in
-   GameCatalog.Demo's reel. Both are gone. *@
+   Couple Quiz is multiplayer-only: there is no solo mode and no kiosk demo (the game
+   is not in GameCatalog.Demo's reel). *@
 @page "/couplequiz"
 @page "/couplequiz/multi"
 @using PoMiniGamesClient.Games.PoCoupleQuiz.Services
@@ -25,10 +17,9 @@
 
 <PageTitle>Couple Quiz · PoMiniGames</PageTitle>
 
-@* 2026-10-01: the lobby is the shared LobbyPanel. It used to be an intro card, then a
-   "Your name" form (for a player who is already signed in under a name), then a bare
-   list with no Leave and no Invite. 2026-10-02 (user call: every way into a game opens
-   on the same card): the opening card is back, and the seat is taken when it is dismissed. *@
+@* The lobby is the shared LobbyPanel, with Leave and Invite. Every way into a game opens
+   on the same card: the opening card comes first, and the seat is taken when it is
+   dismissed. *@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/">
     @if (!_introDone)
     {
@@ -92,8 +83,8 @@
 @code {
     private static readonly int[] RoundChoices = [3, 5, 7];
 
-    // 2026-09-13 UI unification: multiplayer-only route, so it carries the mode like
-    // every other lobby title rather than reading as the game's whole name.
+    // Multiplayer-only route, so the title carries the mode like every other lobby
+    // title rather than reading as the game's whole name.
     private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz</span>;
 
     private RenderFragment HowToPlayContent => @<div>
@@ -184,8 +175,8 @@
     // left the lobby stuck on the join card even after the server created it).
     private void HandleLobbyJoined(CoupleQuizLobbyEventPayload p)
     {
-        // A malformed payload used to overwrite _lobby with null and trigger a
-        // NullReferenceException render loop (audit #5).
+        // A malformed payload would overwrite _lobby with null and trigger a
+        // NullReferenceException render loop.
         if (p is null)
         {
             _error = "The server returned an empty lobby. Please try again.";

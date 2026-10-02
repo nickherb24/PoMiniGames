@@ -4,7 +4,7 @@
 // (understeer past it), grass run-off with extra drag, and a barrier that strips
 // the outward velocity component.
 //
-// Contacts (2026-09-30) are between car-shaped hulls, not circles: a capsule 39 long
+// Contacts are between car-shaped hulls, not circles: a capsule 39 long
 // and 17 wide, the body cars.js draws. A hit is an impulse along the contact normal
 // (equal masses, a little restitution) applied where the hulls touch, so it shoves a
 // car sideways (`slip`) and turns it (`spin`) as well as changing its speed; the tyres

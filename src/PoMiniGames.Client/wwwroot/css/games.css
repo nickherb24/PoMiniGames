@@ -12,14 +12,13 @@
 .gps-shell {
   display: flex;
   flex-direction: column;
-  /* Fill the content well instead of demanding a full viewport. This used to be
-     `min-height: 100dvh`, but the shell renders INSIDE .gl-content — below the
-     ~56px top bar and above the ~42px footer — so every game page carried
-     ~98px of dead vertical scroll on every viewport (measured 2026-08-30:
-     scrollHeight = viewport + 98 on desktop AND mobile). .gl-content is already
-     flex:1 of .gl-page (min-height: 100svh), so stretching to the well keeps the
-     game filling the visible screen minus real chrome, and the page only scrolls
-     when a game's content is genuinely taller than that. */
+  /* Fill the content well instead of demanding a full viewport: the shell
+     renders INSIDE .gl-content — below the ~56px top bar and above the ~42px
+     footer — so `min-height: 100dvh` would add ~98px of dead vertical scroll on
+     every viewport. .gl-content is already flex:1 of .gl-page (min-height:
+     100svh), so stretching to the well keeps the game filling the visible screen
+     minus real chrome, and the page only scrolls when a game's content is
+     genuinely taller than that. */
   flex: 1 0 auto;
   min-height: 0;
   background: var(--color-bg);
@@ -57,16 +56,13 @@
   color: var(--color-text-primary);
   white-space: nowrap;
   min-width: 0;
-  /* The cap USED to be a flat `max-width: 14ch` with no breakpoint, so it fired
-     at every width — "🔴 Connect Five · 1 Player" and "🌿 PoEcosystem · A living
-     island" were ellipsised on a 1440px desktop, and "🏜️ SandPlayground" lost its
-     last five pixels for no reason at all. 14ch is the right answer for a phone
-     and the wrong answer for everything else; it is now scoped to phone widths
-     by the media query below. 2026-09-11 UI audit. */
+  /* 14ch is the right cap for a phone and the wrong one for everything else
+     (titles like "🌿 PoEcosystem · A living island" would ellipsise on a
+     desktop), so it is scoped to phone widths by the media query below. */
   max-width: 34ch;
   overflow: hidden;
   text-overflow: ellipsis;
-  /* Audit #7: this is now a real <h1> in the chrome slot. Strip the
+  /* This is a real <h1> in the chrome slot. Strip the
      browser-default margins so it sits inline next to the back-link without
      re-flowing the bar. */
   margin: 0;
@@ -80,7 +76,7 @@
   .gps-game-title { max-width: 14ch; }
 }
 
-/* Audit #6: explicit "← Home" affordance next to the game title in the
+/* Explicit "← Home" affordance next to the game title in the
    top-bar slot. A 14×14 brand mark is easy to miss on a phone — a labelled
    link is unambiguous and keyboard-reachable. */
 .gps-back-link {
@@ -116,16 +112,6 @@
   }
 }
 
-/* 2026-08-07 browser audit: the `.gps-status-badge` family used to live here and
-   was left corrupted by the same prune that broke `.gps-game-area` above — the
-   rule's comment ran into an empty `@media (max-width: 640px) {}` and the
-   selector decayed into the orphan type-selector list `loss, draw, player, ai,
-   thinking, turn`, which matches no element in any document. It is deleted
-   rather than repaired: GameShell's `Status` parameter (the only thing that ever
-   rendered a `.gps-status-badge`) was removed in the 2026-07-13 top-bar cleanup,
-   so nothing has referenced these rules or the `gps-status-in` keyframes since.
-   Game state now surfaces in the end-of-game modal and the live region. */
-
 /* Live ELO badge shown in the top bar beside the signed-in identity during
    single-player rated games. Projected by GameShell into MainLayout's
    `game-elo` section outlet (so it lands inside `.gl-auth`, not the game
@@ -141,8 +127,8 @@
   letter-spacing: 0.02em;
   white-space: nowrap;
   background: rgba(250, 204, 21, 0.16);
-  /* audit #3: --accent-amber on this tint measured 1.38:1 in light mode — the
-     ELO number was effectively invisible on every rated game's header. */
+  /* --accent-amber on this tint measures 1.38:1 in light mode, so the ink
+     variant is used. */
   color: var(--accent-amber-ink);
   border: 1px solid rgba(250, 204, 21, 0.4);
 }
@@ -151,20 +137,14 @@
 @media (max-width: 480px) {
   .gps-elo-badge { display: none; }}
 
-/* §9 Instant press feedback. :active dips the button; the keyboard focus ring
-   is supplied globally by `.gps-shell :focus-visible` further down this file.
-
-   2026-08-07 browser audit: this comment was left unterminated by an earlier
-   prune, so it swallowed the whole `.gps-game-area` flex rule below it — every
-   game area collapsed to height 0 and stopped centring its content. Keep the
-   terminator on this block (and never quote it inside a comment: this note did,
-   and closed itself one line early). */
+/* Instant press feedback. :active dips the button; the keyboard focus ring
+   is supplied globally by `.gps-shell :focus-visible` further down this file. */
 .gps-controls button:active { transform: scale(0.94); }
 
 @media (prefers-reduced-motion: reduce) {
   .gps-controls button:active { transform: none; }}
 
-/* ── "This game needs 3D graphics" (browser audit #5) ──
+/* ── "This game needs 3D graphics" ──
    Shown in place of the game when a required WebGL context could not be
    created. Reads as a normal empty-state card, not an error dump. */
 .gps-nogl {
@@ -215,7 +195,7 @@
   color: var(--color-accent-contrast);
 }
 
-/* Browser audit #7 (2026-08-10): secondary escape row so a player on a non-WebGL
+/* Secondary escape row so a player on a non-WebGL
    device can pick a 2D game without backing up to the catalog grid first. */
 .gps-nogl-actions {
   display: flex;
@@ -239,7 +219,7 @@
 
 /* Visually hidden but still in the accessibility tree — the clip-rect technique
    rather than `display:none`/`visibility:hidden`, both of which would stop screen
-   readers announcing the live region entirely (browser audit #6). */
+   readers announcing the live region entirely. */
 .gps-sr-only {
   position: absolute;
   width: 1px;
@@ -261,18 +241,17 @@
   /* Containing block for fullscreen game roots. `.racer-shell-wrap` and friends
      are `position: absolute; inset: 0` and expect to fill the *game area*; with
      no positioned ancestor they resolved against the viewport instead and slid
-     under the fixed top bar (the Racer position badge was sheared in half).
-     2026-08-07 browser audit #1. */
+     under the fixed top bar. */
   position: relative;
 }
 
 /* A phone on its side has about 326px under the top bar; 48px of padding is a
-   seventh of it. 2026-10-01. */
+   seventh of it. */
 @media (max-height: 500px) {
   .gps-game-area { padding: 0.5rem 1rem; }
 }
 
-/* Bug fix QA #2: by default the game-area is transparent to pointer events so
+/* By default the game-area is transparent to pointer events so
    that lobby forms / join screens inside the same shell remain clickable.
    Pages that need the area to swallow pointer events (gameplay canvases with
    drag/touch handling) must opt in via .gps-game-area--clickable. */
@@ -288,14 +267,14 @@
   padding: 0;
 }
 
-/* 2026-09-11: Marble Race's canvas is appended by scene.js, so it carries no
-   razor scope attribute and the scoped `.mr-canvas-host canvas { width/height:
-   100% }` twin in PoMarbleRacePage.razor.css never matched it — the element
-   rendered at its ATTRIBUTE size (host height × devicePixelRatio) and the
-   host's overflow:hidden amputated everything past the first DPR-quadrant.
+/* Marble Race's canvas is appended by scene.js, so it carries no razor scope
+   attribute and a scoped `.mr-canvas-host canvas { width/height: 100% }` rule
+   in PoMarbleRacePage.razor.css cannot match it — the element would render at
+   its ATTRIBUTE size (host height × devicePixelRatio) and the host's
+   overflow:hidden would amputate everything past the first DPR-quadrant.
    This unscoped rule sizes the element to its host; the backing store stays
-   at host × dpr (renderer.setSize with updateStyle=false), which is exactly
-   the crisp-DPR pairing the scoped rule was written for. */
+   at host × dpr (renderer.setSize with updateStyle=false), which is the
+   crisp-DPR pairing. */
 .mr-canvas-host > canvas {
   display: block;
   width: 100%;
@@ -309,7 +288,7 @@
   pointer-events: auto;
 }
 
-/* 2026-08-18 mobile-fullscreen: a fullscreen game area on phones needs to
+/* Mobile fullscreen: a fullscreen game area on phones needs to
    stretch its single child to fill the entire shell — the default
    `align-items: center; justify-content: center` would letterbox a tall
    vertical canvas (the Marble Race track) into a small box at the top.
@@ -326,8 +305,6 @@
     justify-content: stretch;
   }
 }
-
-/* `.gps-game-summary` moved to game-shell.css (2026-07-16). */
 
 .cf-result {
   display: inline-flex;
@@ -366,7 +343,7 @@
 .cf-elo-cpu { opacity: 0.85; font-size: 0.82rem; }
 
 /* The whole end-of-game modal (`.gps-modal*`, `.gps-play-again-*`, and its
-   keyframes) moved to game-shell.css (2026-07-16). It is shared chrome owned
+   keyframes) lives in game-shell.css. It is shared chrome owned
    by Components/GameShell.razor — every game inherits it, none override it.
    Connect Five's board rules live in Games/ConnectFive/ConnectFivePage.razor.css;
    the shared badges (.cf-status--*, .cf-result--*) remain global above. */
@@ -423,13 +400,12 @@
   padding: 1rem;
   border-radius: 14px;
   border: 1px solid var(--color-border);
-  /* 2026-09-12 contrast fix: was rgba(15, 23, 42, 0.55) — a hardcoded dark navy.
-     The text on it reads --color-text-primary, which re-points to near-black in
-     light mode, so the panel stayed dark while its text went dark: measured at
-     1.45:1 for the answer options, against a 4.5:1 floor. This is exactly the
-     failure the theming rule exists to prevent ("components must read colour
-     through those variables, never raw hex, or they will be unthemed in light
-     mode"). Surface tokens flip with the scheme, so the pairing holds in both. */
+  /* A surface token, not a hardcoded dark navy: the text on it reads
+     --color-text-primary, which re-points to near-black in light mode, so a
+     fixed dark panel would be dark-on-dark (1.45:1 against a 4.5:1 floor).
+     Components must read colour through the variables, never raw hex, or they
+     are unthemed in light mode. Surface tokens flip with the scheme, so the
+     pairing holds in both. */
   background: var(--color-surface);
 }
 
@@ -522,9 +498,9 @@
 
 .fq-split__opt:active:not([disabled]) { transform: scale(0.98); }
 
-/* 2026-09-12: 0.55 -> 0.78. These options are not decorative — a player reads the
-   other side's choices, and the text measured 3.77:1 against a 4.5:1 floor. Still
-   visibly inactive, now still legible. */
+/* These options are not decorative — a player reads the other side's choices,
+   and at lower opacity the text falls under the 4.5:1 floor. Visibly inactive,
+   still legible. */
 .fq-split__opt[disabled] {
   opacity: 0.78;
   cursor: not-allowed;
@@ -539,13 +515,11 @@
   box-shadow: 0 0 0 2px var(--accent-ring) inset;
 }
 
-/* 2026-08-10: 2P split-screen reveal treatment — the pre-audit code only
-   had --picked (amber for any pick), so a wrong answer looked identical to
-   a correct one until the bottom-of-card text caught up. Now: --correct
-   highlights the right option in green regardless of who picked it;
-   --wrong tints a side's wrong pick red; --muted dims the options neither
-   side touched. The badge inside the wrong pill switches from ✓ to ✗
-   so the player can tell at a glance even without colour vision. */
+/* 2P split-screen reveal treatment: --correct highlights the right option in
+   green regardless of who picked it; --wrong tints a side's wrong pick red;
+   --muted dims the options neither side touched. The badge inside the wrong
+   pill switches from ✓ to ✗ so the player can tell at a glance even without
+   colour vision. */
 .fq-split__opt--correct {
   border-color: rgba(74, 222, 128, 0.6);
   background: rgba(74, 222, 128, 0.18);
@@ -666,9 +640,8 @@
    stale duplicate of the scoped rules in Index.razor.css (which win on the home
    page anyway). Nothing else consumes `.home-activity*`. */
 
-/* ── Unified `.gps-*` game styles (consistency pass 2026-07-01) ──
-   Previously seven games referenced `.cq-*`, `.fq-*`, `.ragdoll-*`, `.racer-*`, `.race-*`, single line).
-   Replaces ad-hoc `<h1>` / `<h2>` in game bodies (Fix #5). */
+/* ── Unified `.gps-*` game styles ──
+   Replaces ad-hoc `<h1>` / `<h2>` in game bodies. */
 .gps-phase-h {
   margin: 0;
   font-size: var(--text-xs);
@@ -720,10 +693,8 @@
 .gps-error { color: #fca5a5; font-weight: 600; }
 
 /* ── PoCoupleQuiz (`.cq-*` aliases) ──
-   The solo, connecting, join-card and lobby-list rules were removed on 2026-08-10
-   with the solo mode, the kiosk demo and the duplicate lobby page. What is left is
-   what the one lobby page and the in-round screens still use; the lobby now renders
-   on the shared `.gps-game-card` chrome. */
+   The lobby page and the in-round screens use these; the lobby renders on the
+   shared `.gps-game-card` chrome. */
 /* Buttons are the shared `.app-btn` (app.css). */
 .cq-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .cq-hint { color: var(--color-text-secondary); font-size: 0.9rem; }
@@ -738,11 +709,10 @@
   font-size: 0.9rem;
 }
 
-/* 2026-08-10: explicit field/label split for the multiplayer lobby. The old
-   markup put label text and field on the same line in a single <label> wrap,
-   which left the screen reader reading "Your name Guest723664" as one
-   phrase and made it hard to scan which label belonged to which field.
-   The new pattern is label-above-field with optional hint + help text. */
+/* Explicit field/label split for the multiplayer lobby. Label text and field in
+   a single <label> wrap would make a screen reader read "Your name Guest723664"
+   as one phrase. The pattern is label-above-field with optional hint + help
+   text. */
 .fq-join__field {
   display: flex;
   flex-direction: column;
@@ -771,9 +741,9 @@
   line-height: 1.4;
 }
 
-/* 2026-08-10: with game codes gone there is nothing to copy and share while you
-   sit in the lobby, so the wait needs its own visible status line — otherwise a
-   player alone in the lobby sees only their own name and assumes it is broken. */
+/* There are no game codes to copy and share while you sit in the lobby, so the
+   wait needs its own visible status line — otherwise a player alone in the lobby
+   sees only their own name and assumes it is broken. */
 .fq-waiting {
   margin: 0.25rem 0 0;
   font-size: 0.85rem;
@@ -854,11 +824,6 @@
 /* ── PoFunQuiz (`.fq-*` aliases) ── */
 .fq-join { display: flex; flex-direction: column; gap: 0.75rem; }
 
-/* 2026-10-01: a comment here lost its terminator in the 2026-08-07 prune (the
-   dead `.fq-setup` selector was cut out with it) and ran on to the next one,
-   fifty lines down. Everything in between was a comment for eight weeks: the
-   question, the option grid and the option buttons, so Fun Quiz showed bare
-   browser buttons in every mode. */
 .fq-error { color: #fca5a5; font-weight: 600; }
 .fq-question {
   display: flex;
@@ -897,11 +862,9 @@
 }
 .fq-option:disabled { opacity: 0.5; cursor: not-allowed; }
 
-/* 2026-08-10: solo/2p-shared-screen answer reveal. The pre-audit code had
-   just --selected (amber for any pick) with no signal for correct vs wrong.
-   Now: --correct = green, --wrong = red, --muted = dim the un-picked
-   options so the eye finds the answer. Demo mode never enters this state
-   (the page sets showReveal=false there). */
+/* Solo/2p-shared-screen answer reveal: --correct = green, --wrong = red,
+   --muted = dim the un-picked options so the eye finds the answer. Demo mode
+   never enters this state (the page sets showReveal=false there). */
 .fq-option--correct {
   background: rgba(74, 222, 128, 0.22);
   border-color: rgba(74, 222, 128, 0.8);
@@ -976,8 +939,7 @@
    js/poracer/index.js `reveal` puts `racer-vt` on <html> for the length of one View
    Transition: the zoomed-out circuit falls back and dims while the results dialog rises
    in over it. Global because ::view-transition-* hang off the root, out of reach of a
-   component's scoped stylesheet. (This block used to style the WebGL post-pass canvas,
-   `.racer-gl`; that pass could not run after 2026-09-17 and was deleted 2026-09-30.) */
+   component's scoped stylesheet. */
 html.racer-vt::view-transition-old(root) {
   animation: racer-vt-out 0.32s ease-in both;
 }

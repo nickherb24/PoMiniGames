@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 namespace PoMiniGames.E2EUI;
 
 /// <summary>
-/// §5 E2E-UI smoke tests. Drives a real Chromium browser via Microsoft.Playwright
+/// E2E-UI smoke tests. Drives a real Chromium browser via Microsoft.Playwright
 /// against the live-Kestrel host, asserting the Blazor WASM client actually
 /// renders (not just that the HTTP shell is served — that is E2E-API's job).
 /// </summary>
@@ -24,7 +24,7 @@ public class HomePageUiTests
         using var playwright = await Playwright.CreateAsync();
         await using var browser = await playwright.Chromium.LaunchAsync(
             BrowserLaunch.Options());
-        // §3 BFF Header Overrides: the FakeAuth scheme authenticates every request
+        // BFF header overrides: the FakeAuth scheme authenticates every request
         // via the X-Fake-User / X-Fake-Roles headers, bypassing the cookie flow
         // entirely. This keeps the E2E-UI suite deterministic across cookie-domain
         // edge cases (loopback vs explicit IP) and matches the integration suite's

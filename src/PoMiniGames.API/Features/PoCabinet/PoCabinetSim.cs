@@ -7,10 +7,8 @@ namespace PoMiniGames.Features.PoCabinet;
 /// <see cref="PoCabinetRaceRegistry"/> ticks it at 30 Hz and broadcasts what it reports.
 ///
 /// <para>
-/// Until 2026-09-23 this class changed each car's speed and heading but never moved it, and
-/// nothing constructed one for a real lobby, so multiplayer could not have run. Movement,
-/// walls and grass are now <see cref="PoCabinetPhysics.Step"/>, the same model the browser runs
-/// for solo races and for predicting its own car online.
+/// Movement, walls and grass are <see cref="PoCabinetPhysics.Step"/>, the same model the
+/// browser runs for solo races and for predicting its own car online.
 /// </para>
 /// <para>
 /// Time is the sum of the <c>dt</c> values passed to <see cref="Tick"/> — no wall clock — so a

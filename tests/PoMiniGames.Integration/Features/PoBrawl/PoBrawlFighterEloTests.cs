@@ -53,7 +53,7 @@ public sealed class PoBrawlFighterEloTests : IClassFixture<TestWebApplicationFac
     public async Task RecordDemoResult_MovesBothRatings_AndRejectsUnrateableFighters()
     {
         if (!_factory.DockerAvailable) return;
-        // §2 CSRF: the POSTs below are state-changing /api/* calls and are refused without
+        // The POSTs below are state-changing /api/* calls and are refused without
         // the synchroniser token. Armed up front so the validation assertions at the end
         // exercise a real 400 rather than collapsing into a blanket 403.
         var client = await _factory.CreateClient().ArmAntiforgeryAsync();

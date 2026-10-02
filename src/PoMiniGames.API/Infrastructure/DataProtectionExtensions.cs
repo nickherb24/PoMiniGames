@@ -11,7 +11,7 @@ namespace PoMiniGames.Infrastructure;
 /// </summary>
 /// <remarks>
 /// <para>
-/// §2.2 requires the BFF cookies to be encrypted. The framework default key ring is
+/// The BFF cookies must be encrypted. The framework default key ring is
 /// ephemeral (in-memory, per-process), which means a redeploy silently invalidates every
 /// signed-in user. This extension pins the key ring to:
 /// </para>

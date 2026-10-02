@@ -9,22 +9,13 @@ export const PREF_DEFAULTS = Object.freeze({
   sound: true,           // procedural ambience (render/audio.js)
   player: null,          // { x, y, z, yaw, pitch, fly }
   keyLegendSeen: false,
-  // Settings panel (2026-09-23). quality: 'auto' | 'high' | 'medium' | 'low'.
+  // Settings panel. quality: 'auto' | 'high' | 'medium' | 'low'.
   quality: 'auto',
   palette: 'default',    // 'default' | 'cb' (colour-blind safe)
   reducedMotion: false,
   bindings: null,        // { action: [codes] } overrides over input.js DEFAULT_BINDINGS
 });
 const PREFIX = 'poeco:';
-
-export function memoryStorage() {
-  const map = new Map();
-  return {
-    getItem: (k) => (map.has(k) ? map.get(k) : null),
-    setItem: (k, v) => { map.set(k, String(v)); },
-    removeItem: (k) => { map.delete(k); },
-  };
-}
 
 export function createPrefs(storage) {
   const safe = storage && typeof storage.getItem === 'function' ? storage : null;

@@ -10,7 +10,7 @@ namespace PoMiniGames.E2EAPI.Features.PoCabinet;
 /// per the 100/50/25/25 rule):
 /// <list type="bullet">
 ///   <item>Each of the four named officials, alone on the track, completes a lap through the
-///         real physics — the sim moved no car at all before 2026-09-23 — and holds its own
+///         real physics and holds its own
 ///         line: every pair's mean lateral offsets over the lap differ by ≥ 8 units.</item>
 ///   <item>A human car obeys its inputs and the barrier: full throttle with full right lock
 ///         ends up pinned at the wall, never through it, and every applied input's

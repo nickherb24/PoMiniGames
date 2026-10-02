@@ -139,7 +139,7 @@ void main() {
   float aboveHorizon = smoothstep(0.02, 0.2, up);
   col += vec3(0.9, 0.95, 1.0) * star * aboveHorizon * smoothstep(0.35, 0.9, uNight) * 0.9;
 
-  // Rainbow (2026-09-30): the primary bow, 42 degrees out from the antisolar point, red on
+  // Rainbow: the primary bow, 42 degrees out from the antisolar point, red on
   // the outside. Only above the horizon, so a high sun (bow centre far below it) shows none —
   // which is why real ones belong to mornings and late afternoons.
   if (uRainbow > 0.01 && up > 0.0) {

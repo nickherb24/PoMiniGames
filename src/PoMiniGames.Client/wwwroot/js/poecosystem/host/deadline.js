@@ -8,10 +8,10 @@
 // neither way, and `await Promise.all([...])` on a never-settling promise wedges the
 // whole world: the renderer keeps painting sky at 60 fps, no terrain ever arrives, and
 // because the camera is only re-seated once terrain exists, nothing moves it — the page
-// looks like a frozen screenshot of an empty sky (reported 2026-09-16, reproduced by
-// holding the cannon-es request open).
+// looks like a frozen screenshot of an empty sky (reproduced by holding the cannon-es
+// request open).
 //
-// So every boot dependency now runs against a clock. A timeout is NOT an error here: it
+// So every boot dependency runs against a clock. A timeout is NOT an error here: it
 // resolves to the same fallback a rejection would, and the sim starts without it.
 export function withDeadline(promise, ms, onTimeout) {
   let timer = null;

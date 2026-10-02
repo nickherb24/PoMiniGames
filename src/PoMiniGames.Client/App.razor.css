@@ -2,10 +2,8 @@
    inline inside App.razor's <AuthorizeRouteView>. Kept scoped so the global
    style-recalc surface shrinks. */
 
-/* 2026-08-07 browser audit #2: these three used hard-coded dark-scheme hexes
-   (#1d2230 panel, #cdd5e0 text, #7eb6ff link). In light mode that left pale grey
-   body text on a near-white page. Routed through the theme tokens so both
-   schemes work — the same rule CLAUDE.md states for every non-canvas surface. */
+/* Colours come from the theme tokens, never hard-coded hexes, so both schemes
+   stay readable (every non-canvas surface follows this rule). */
 .app-fallback {
     max-width: 480px;
     margin: 4rem auto;

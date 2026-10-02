@@ -1,11 +1,10 @@
-// §4 WebGL ambient background. As of §GFX-5 this is a full-screen ray-marched
-// volume (see particlesCore.js) rather than a field of drifting points.
+// WebGL ambient background: a full-screen ray-marched volume (see particlesCore.js)
+// rather than a field of drifting points.
 //
-// §7 (2026-07-29) Rendering moved to a worker + OffscreenCanvas. In Blazor WASM
-// the main thread runs the .NET runtime, so the old main-thread rAF loop shared
-// a thread with game logic and stuttered visibly during GC. The worker path
-// decouples them. Browsers without `transferControlToOffscreen` fall back to the
-// in-thread renderer below — same shader, via particlesCore.js.
+// Rendering runs in a worker + OffscreenCanvas. In Blazor WASM the main thread runs
+// the .NET runtime, so a main-thread rAF loop would share a thread with game logic
+// and stutter visibly during GC. Browsers without `transferControlToOffscreen` fall
+// back to the in-thread renderer below — same shader, via particlesCore.js.
 //
 // This file keeps ownership of everything DOM-shaped (pointer, resize,
 // intersection, visibility, the CSS accent tokens, the analyser read) because a
@@ -38,15 +37,13 @@ let onVisibilityChange = null;
 let onPageHide = null;
 let bandTimer = 0;
 
-// The march costs far more per pixel than the old point field did, so the
+// The march costs far more per pixel than a point field would, so the
 // backing store is deliberately smaller than the display. The volume has no
 // hard edges — there is nothing in it that a human can see aliasing on — which
 // is exactly the case where rendering under-resolution is free quality.
 //
-// 2026-08-30: dropped from 1.25 → 1.0. At 1.25 the high-tier pixel count grew
-// 56% over 1.0 with no visible quality change on the soft volume — the home
-// route sat at ~31 FPS on the dev box until this and the initial-steps change
-// below landed together.
+// Above 1.0 the high-tier pixel count grows (1.25 is +56%) with no visible
+// quality change on the soft volume, and the home route drops to ~31 FPS.
 const MAX_DPR = 1.0;
 
 // Analyser → worker at ~15 Hz. The worker interpolates between messages, so the
@@ -144,14 +141,14 @@ function attachDomObservers(canvas, onResize, onPointer, onVisible, onViewport, 
     document.addEventListener('visibilitychange', onVisibilityChange);
     window.addEventListener('pagehide', onPageHide);
 
-    // §2 battery guard: pause rendering when the canvas leaves the viewport.
+    // Battery guard: pause rendering when the canvas leaves the viewport.
     intersectObs = new IntersectionObserver((entries) => {
         for (const e of entries) onViewport(e.isIntersecting);
     }, { rootMargin: '50px' });
     intersectObs.observe(canvas);
 
-    // §10 adaptive quality: visualRuntime.js is the single authority on how much
-    // the machine can afford. A tier change now also resizes the backing store,
+    // Adaptive quality: visualRuntime.js is the single authority on how much
+    // the machine can afford. A tier change also resizes the backing store,
     // not just the step count — resolution is the bigger lever for a per-pixel
     // shader, and changing only the steps would leave a slow machine rendering
     // 34-step-quality pixel counts at 10-step quality.

@@ -3,8 +3,8 @@
 .SYNOPSIS
   Run the azure-deployment-preflight skill against this repo's infra/ folder.
 .DESCRIPTION
-  §6.3 of the PoMiniGames constitution requires a deployment preflight script
-  (Bicep lint + what-if + permission check) before any `azd provision`. This script
+  A deployment preflight (Bicep lint + what-if + permission check) must run
+  before any `azd provision`. This script
   is a thin wrapper around the global skill — it prints the manifest and a concrete
   next-step command.
 .EXAMPLE

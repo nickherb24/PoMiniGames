@@ -5,7 +5,7 @@ using PoMiniGames.Shared.Identity;
 
 namespace PoMiniGames.Infrastructure;
 
-public sealed class ConfigurationDiagnosticsSnapshotProvider : IDiagnosticsSnapshotProvider
+public sealed class ConfigurationDiagnosticsSnapshotProvider
 {
     private readonly IConfiguration _configuration;
     private readonly IHostEnvironment _environment;

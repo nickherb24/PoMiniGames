@@ -22,8 +22,8 @@ public enum LibraryWrite
 /// The shared public creature library: every saved creature is public on save, credited to its
 /// creator, editable and deletable by that creator only. One partition (<c>lib</c>), so the whole
 /// library is one partition scan. Reads degrade to empty and writes report
-/// <see cref="LibraryWrite.Unavailable"/> when storage is down — no in-memory fallback (CLAUDE.md,
-/// 2026-09-12). Win/loss counters are increments under an ETag, so two matches finishing at once
+/// <see cref="LibraryWrite.Unavailable"/> when storage is down — no in-memory fallback.
+/// Win/loss counters are increments under an ETag, so two matches finishing at once
 /// both land.
 /// </summary>
 public sealed class CreatureLibraryStore(TableServiceClient tables, ILogger<CreatureLibraryStore> logger)

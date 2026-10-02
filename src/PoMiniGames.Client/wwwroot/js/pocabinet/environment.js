@@ -1,8 +1,8 @@
 // pocabinet/environment.js
 //
 // Weather pass for PoCabinet's scene, on top of the static per-track atmosphere.
-// Always daytime (2026-09-29): the night and local-clock dusk modes made the track
-// hard to read, so the time-of-day setting and every night-only effect went.
+// Always daytime: night and dusk would make the track hard to read, so there is no
+// time-of-day setting and no night-only effect.
 //
 //   • rain  — a camera-attached LineSegments streak field (recycled in a small
 //     box ahead of the player), fog pulled in, plus (solo races only) a grip

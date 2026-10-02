@@ -4,7 +4,7 @@
 // about 31 bytes per unit per frame, ~7 MB for a full 10v10 — plus a growable flat buffer for
 // projectiles, the per-frame combat events (so a replay shows the same impacts and popups) and
 // every Jev decision with its full probability distributions. Nothing here is persisted or
-// uploaded: it lives for the finished match only (SPEC §4.7).
+// uploaded: it lives for the finished match only.
 //
 // decode(frame) rebuilds the exact "view" objects render.js draws live, so the scrubber and the
 // live arena are the same picture.

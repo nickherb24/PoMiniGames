@@ -66,7 +66,7 @@ public class PoCabinetRouteUiTests
         appHtml.Should().NotBeNullOrWhiteSpace("the Blazor app shell must render markup after NetworkIdle");
 
         // Every mode opens on the shared intro card. Solo's carries the track selector; Online's
-        // only "Join lobby" (the lobby host picks the track there, 2026-09-29); Demo's times out
+        // only "Join lobby" (the lobby host picks the track there); Demo's times out
         // into the race reel.
         if (path.EndsWith("/multi", StringComparison.OrdinalIgnoreCase))
         {

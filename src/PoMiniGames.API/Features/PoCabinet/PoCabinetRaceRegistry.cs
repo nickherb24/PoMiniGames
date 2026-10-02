@@ -87,8 +87,8 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     /// The best lap this host's own sim timed for <paramref name="playerId"/> in their last
     /// finished race — the proof behind a multiplayer leaderboard submit. One use: taking it
     /// removes it, from memory and from <see cref="VerifiedResultStore"/>. The store is what
-    /// carries it across a host recycle between the finish and the submit (2026-10-01); with
-    /// storage down the lap is in memory only, as it always was, and a recycle then loses it.
+    /// carries it across a host recycle between the finish and the submit; with
+    /// storage down the lap is in memory only, and a recycle then loses it.
     /// </summary>
     public async Task<VerifiedLap?> TakeVerifiedLapAsync(string playerId, CancellationToken ct = default)
     {

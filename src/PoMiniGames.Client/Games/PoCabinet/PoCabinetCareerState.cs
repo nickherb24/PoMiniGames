@@ -28,7 +28,7 @@ public sealed class PoCabinetCareerState
     /// <summary>Current state (loaded from storage, or fresh state if none).</summary>
     public PoCabinetCareerDto Current { get; set; } = PoCabinetCareerDto.New();
 
-    /// <summary>T13 (2026-09-17): raised when <see cref="RecordStageResultAsync"/>
+    /// <summary>Raised when <see cref="RecordStageResultAsync"/>
     /// or <see cref="ResetAsync"/> changes state. The ChampionshipView and
     /// PaintShop subscribe so the gold-livery picker can re-react to a fresh
     /// unlock without a full page reload.</summary>
@@ -44,7 +44,7 @@ public sealed class PoCabinetCareerState
             var raw = await _storage.GetItemAsStringAsync(StorageKey);
             if (string.IsNullOrWhiteSpace(raw)) { StorageAvailable = true; return; }
             // Source-generated serializer (PoCabinetJsonContext) is trim-safe and the
-            // framework requires it — see IL2026 in CLAUDE.md trim-audit notes.
+            // framework requires it (IL2026 otherwise).
             var parsed = JsonSerializer.Deserialize(raw, PoCabinetJsonContext.Default.PoCabinetCareerDto);
             if (parsed is not null) Current = parsed;
             StorageAvailable = true;

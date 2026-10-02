@@ -10,7 +10,7 @@ namespace PoMiniGames.Features.Auth;
 internal static partial class AuthLog
 {
     [LoggerMessage(EventId = 6101, Level = LogLevel.Warning,
-        Message = "Microsoft OAuth is NOT configured (missing ClientId/ApiClientId). The app will boot, but /api/auth/me will report OAuth as unconfigured and real sign-in is unavailable.")]
+        Message = "Microsoft OAuth is NOT configured (missing ClientId/ApiClientId). The app will boot, but /api/auth/handshake will report OAuth as unconfigured and real sign-in is unavailable.")]
     public static partial void MicrosoftOAuthNotConfigured(this ILogger logger);
 
     [LoggerMessage(EventId = 6102, Level = LogLevel.Critical,

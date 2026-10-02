@@ -23,15 +23,14 @@
    shared end-of-game modal so intro + outro read as one system.
    ───────────────────────────────────────────────────────────────────────── *@
 
-@* 2026-08-08 audit #6: this card sits between the player and every 1-player
-   game, so dismissing it must not require aiming. Keyboard users already had
-   Enter/Space/Escape (HandleKey); pointer users had the OK button plus
-   tap-to-dismiss on the BACKDROP — the whole screen outside the card, still a
-   generous target. Card taps stopped dismissing when the card grew its first
-   interactive control (PoBrawl's "Training first" checkbox, 2026-09-23): card
-   clicks bubble to the overlay's handler, so a tap meant to tick the box
-   started the game instead. The card now stops propagation in every mode,
-   which is also what TwoPlayer always did for its character select. *@
+@* This card sits between the player and every 1-player game, so dismissing it
+   must not require aiming. Keyboard users have Enter/Space/Escape (HandleKey);
+   pointer users have the OK button plus tap-to-dismiss on the BACKDROP — the
+   whole screen outside the card, a generous target. Card taps do not dismiss:
+   the card carries interactive controls (PoBrawl's "Training first" checkbox,
+   TwoPlayer's character select) and clicks bubble to the overlay's handler, so
+   a tap meant to tick the box would start the game. The card therefore stops
+   propagation in every mode. *@
 @* _skipDecision: null = the localStorage check has not landed yet (render
    nothing for a beat rather than flash the card and yank it away); false =
    show the card; true = the player opted out — auto-started, render nothing. *@
@@ -48,9 +47,8 @@
             <div class="gps-intro-title">@Title</div>
         }
 
-        @* The game's other modes, one tap away (2026-10-01): before this, changing mode
-           meant going back to the hub. Not on the demo card, which is gone in two
-           seconds. Keydowns stop here so Enter on a mode button picks that mode
+        @* The game's other modes, one tap away, so changing mode does not mean going
+           back to the hub. Not on the demo card, which is gone in two seconds. Keydowns stop here so Enter on a mode button picks that mode
            instead of also reaching HandleKey and starting this one. *@
         @if (Mode != IntroMode.Demo)
         {
@@ -109,13 +107,11 @@
                     </button>
                     @if (_rememberSkip is not null && !_forceShow)
                     {
-                        @* 2026-08-30: the tick-box is back. It was removed on 2026-08-11
-                           along with the /settings toggle that was the only way back
-                           from it; the removal made every 1P visit re-show the same
-                           card, which repeat players read as friction (audit #5).
-                           The flag is per-game localStorage, and `?intro=1` on any
-                           game URL forces the card back AND hides this box — the
-                           controls copy stays one query parameter away. *@
+                        @* Without this box every 1P visit would re-show the same card,
+                           which repeat players read as friction. The flag is per-game
+                           localStorage, and `?intro=1` on any game URL forces the card
+                           back AND hides this box — the controls copy stays one query
+                           parameter away. *@
                         <label class="gps-intro-skip">
                             <input type="checkbox" checked="@_rememberSkip" @onchange="RememberSkipChanged" />
                             Don't show this again
@@ -206,7 +202,7 @@
     private bool _started;
     private Timer? _demoTimer;
 
-    // ── "Don't show this again" (2026-08-30) ──────────────────────────────
+    // ── "Don't show this again" ───────────────────────────────────────────
     // Per-game localStorage opt-out for the OnePlayer card. null = undecided
     // (only for skip-capable modes before the storage read lands); the card
     // renders nothing while undecided so an opted-out player never sees a
@@ -224,12 +220,10 @@
 
     protected override async Task OnInitializedAsync()
     {
-        // 2026-09-04 kiosk reel polish: when the URL carries ?kiosk=N (the "Watch
-        // all demos" attract loop) we skip the intro card entirely. Every demo
-        // page reads the same kiosk query param, so the first 2s × 9 games of a
-        // loop used to be spent on the same dialog flashing back at the viewer.
-        // Also covers repeat viewers: every loop iteration re-enters the page
-        // with the kiosk param set, so the dialog stays suppressed.
+        // When the URL carries ?kiosk=N (the "Watch all demos" attract loop) we skip
+        // the intro card entirely, otherwise the same dialog would flash back at the
+        // viewer on every loop iteration. Every demo page reads the same kiosk query
+        // param, so the dialog stays suppressed across the whole loop.
         // Only applies to Demo mode — OnePlayer / TwoPlayer still want the card.
         if (Mode == IntroMode.Demo &&
             new Uri(Navigation.Uri).Query.Contains("kiosk=", StringComparison.OrdinalIgnoreCase))
@@ -289,11 +283,6 @@
     {
         if (!firstRender) return;
 
-        // 2026-08-30: the per-game "Don't show this again" opt-out returned via
-        // OnInitializedAsync/RememberSkipChanged — see the notes there. Unlike
-        // the 2026-08-11 removal, there is no /settings page to manage it: the
-        // box itself is the only switch, and `?intro=1` forces the card back.
-
         // Focus the overlay so Enter/Space (1P) and the per-player select keys
         // (2P) land here without the player having to click first.
         try { await _root.FocusAsync(); } catch { /* headless / detached — fine */ }
@@ -351,7 +340,7 @@
     }
 
     /// <summary>
-    /// Tap-on-backdrop dismissal for the informational cards (audit #6). The
+    /// Tap-on-backdrop dismissal for the informational cards. The
     /// CARD stops propagation in every mode — it carries interactive controls
     /// in some games (TwoPlayer's character select, PoBrawl's Training-first
     /// checkbox) that a stray tap must not dismiss past — so the dismiss
@@ -370,7 +359,7 @@
             // Escape is the one key the 2P card handles itself: this is a
             // role="dialog" aria-modal="true", and a modal that ignores Escape
             // is a keyboard trap. It still respects StartEnabled, so it cannot
-            // start a match before both players have picked (audit #4).
+            // start a match before both players have picked.
             if (e.Key == "Escape")
             {
                 await StartAsync();

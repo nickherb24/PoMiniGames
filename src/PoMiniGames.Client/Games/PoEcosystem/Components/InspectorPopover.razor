@@ -1,9 +1,7 @@
-@* The creature under the crosshair (SPEC J2). Anchored beside the crosshair, never over it.
+@* The creature under the crosshair. Anchored beside the crosshair, never over it.
 
-   2026-09-30: the family lives here now. It used to open a second floating panel in the
-   bottom-left corner (LineagePanel) holding an SVG tree and a card tree of the same six
-   relatives; the cards are the ones kept, as a section of this panel that Family toggles.
-   Every action sits on one row — follow, watch, family, rename, close. *@
+   The family lives here: a section of this panel, with cards for the six relatives, that
+   Family toggles. Every action sits on one row — follow, watch, family, rename, close. *@
 <aside class="poeco-inspector @(FamilyOpen ? "poeco-inspector--family" : "")" data-testid="poeco-inspector" role="dialog" aria-label="Creature details">
     <header class="poeco-inspector-head">
         <i class="poeco-species-chip" style="background: @Colour" aria-hidden="true"></i>

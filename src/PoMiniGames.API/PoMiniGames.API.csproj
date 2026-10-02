@@ -17,7 +17,7 @@
     <RootNamespace>PoMiniGames</RootNamespace>
     <UserSecretsId>pomini-games-secret-id</UserSecretsId>
     <!--
-      Hosting the Blazor WebAssembly client inside this API project (§ Architecture).
+      Hosting the Blazor WebAssembly client inside this API project.
       The Microsoft.NET.Sdk.Web glue picks up the referenced Client's static web
       assets via the static-web-assets manifest (`obj/.../staticwebassets.build.json`)
       and exposes them through `UseStaticFiles()` / `UseBlazorFrameworkFiles()`.
@@ -29,13 +29,13 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- §1.2 MinVer: brings in the .targets that compute the version at restore/build
+    <!-- MinVer: brings in the .targets that compute the version at restore/build
          time. No actual code reference; the only side effect is version stamping. -->
     <PackageReference Include="MinVer" PrivateAssets="all" />
   </ItemGroup>
 
   <ItemGroup>
-    <!-- PoVoxelStrike author-time voxel assets (PRD §5.4): the drop folder ships INSIDE
+    <!-- PoVoxelStrike author-time voxel assets: the drop folder ships INSIDE
          the deployment package (WEBSITE_RUN_FROM_PACKAGE mounts it read-only; ingestion
          output goes to the writable path from config). Without this include a publish
          carries no GLBs and every deployed arena silently falls back to procedural
@@ -146,10 +146,5 @@
       SkipUnchangedFiles="true"
       Condition=" '$(Configuration)' == 'Debug' " />
   </Target>
-
-  <!-- Husky.Net was retired on 2026-09-11: .husky/, .config/dotnet-tools.json and
-       package.json are gone, so the pre-commit gate no longer exists. The CI
-       format step (deploy.yml, continue-on-error) remains the only format
-       watchdog. Do not reintroduce this target without restoring the hook files. -->
 
 </Project>

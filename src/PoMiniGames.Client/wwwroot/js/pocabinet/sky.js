@@ -1,9 +1,8 @@
 // pocabinet/sky.js
 //
 // Sky dome for PoCabinet: a camera-following inverted sphere with a gradient, sun
-// and drifting fbm clouds (greyed and thickened in rain). Daytime only since
-// 2026-09-29 — the stars, city glow and Press Briefing searchlights went with the
-// night mode. Replaces the flat scene.background colour.
+// and drifting fbm clouds (greyed and thickened in rain). Daytime only: no
+// stars, city glow or searchlights. Replaces the flat scene.background colour.
 //
 // The horizon colour is read from scene.fog every frame, so whatever the fog
 // becomes (environment.js greys it in rain) the ground fades into the sky
@@ -13,8 +12,7 @@ import * as THREE from 'three';
 
 // Per-track look. Directions are world space (y up). The DirectionalLight in
 // scene.js follows `sun`, clamped high enough to keep the road lit.
-// All are daytime (2026-09-29): Capitol was a low-sun dusk and Press Briefing
-// a starless night with searchlights, and both made the race hard to read.
+// All are daytime: a low-sun dusk or a night makes the race hard to read.
 const PRESETS = {
     capitol: {
         zenith: '#3a78c8', sun: [-0.45, 0.66, -0.6], sunColor: '#fff1d6', sunSize: 1.2,

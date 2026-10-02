@@ -3,7 +3,7 @@ using Microsoft.Playwright;
 namespace PoMiniGames.E2EUI;
 
 /// <summary>
-/// §5 E2E-UI coverage for the profile page's game roster and the offline treatment.
+/// E2E-UI coverage for the profile page's game roster and the offline treatment.
 /// </summary>
 /// <remarks>
 /// These live in the browser tier rather than a cheaper one because both surfaces are

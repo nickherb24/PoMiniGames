@@ -20,11 +20,10 @@ internal static class RateLimitingExtensions
         {
             opts.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
 
-            // §9.2 chaos-engineering hardening: every policy now keys on a compound
-            // (IP + identity) partition. The previous IP-only design let a single
-            // attacker behind a corporate NAT — or a single AutoGuest browser on a
-            // shared connection — saturate the bucket for every legitimate user
-            // behind that NAT. The compound partition keeps anonymous bursts from
+            // Every policy keys on a compound (IP + identity) partition. An IP-only
+            // partition would let a single attacker behind a corporate NAT — or a single
+            // AutoGuest browser on a shared connection — saturate the bucket for every
+            // legitimate user behind that NAT. The compound partition keeps anonymous bursts from
             // poisoning authenticated traffic and lets DevCookie / JWT identities
             // get their own bucket on top of an IP-level bucket for anon traffic.
             opts.AddPolicy("highscores", ctx =>
@@ -93,15 +92,14 @@ internal static class RateLimitingExtensions
 
             // AI-backed content generation (currently only PoFunQuiz question fetches).
             //
-            // 2026-09-12: raised 5/min -> 8 per 15 s. The old figure priced this endpoint as if
-            // every call reached a model. It does not: AiQuizGeneratorService wraps the
+            // 8 per 15 s. Not every call reaches a model: AiQuizGeneratorService wraps the
             // question POOL in a stampede-protected HybridCache (6 h, durable L2), so a
             // (category, batchCount) pair costs exactly one generation per six hours and every
-            // other request is a cache read that deals a fresh hand out of it. What 5/min
-            // actually bounded was *starting a quiz* — and a player who opens solo, retries
-            // once, then opens 2-player has spent three of five permits inside one window, on
-            // an endpoint where at most one of those calls could have cost anything. That is
-            // the 429 the funquiz page was surfacing.
+            // other request is a cache read that deals a fresh hand out of it. What this
+            // actually bounds is *starting a quiz* — and a player who opens solo, retries
+            // once, then opens 2-player has spent three permits inside one window, on
+            // an endpoint where at most one of those calls could have cost anything. A tight
+            // limit would surface as a 429 on the funquiz page.
             //
             // Spend stays bounded by the three layers that can actually see cost: the pool
             // cache above (one call per category per 6 h, and QuestionCategory is a small
@@ -111,8 +109,8 @@ internal static class RateLimitingExtensions
             // A SHORT window, unlike every policy above it, because what hurt here was not the
             // rate but the penalty: a one-minute window that trips on the fourth quiz start
             // locks the game for the rest of the minute and can only advertise a 60 s
-            // Retry-After. 8 per 15 s is a higher sustained ceiling (32/min against the old
-            // 5/min) AND a wait short enough for the page to sit through and retry itself.
+            // Retry-After. 8 per 15 s is a higher sustained ceiling (32/min)
+            // AND a wait short enough for the page to sit through and retry itself.
             // A sliding window is not the fix — its permits come back one full window after
             // they were taken, so it smooths the ceiling without shortening the lockout, and
             // .NET's implementation publishes no Retry-After metadata to hand the client.
@@ -128,7 +126,7 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            // PoCabinet (2026-09-17): the score-submission policy for the cockpit-view racing game.
+            // PoCabinet: the score-submission policy for the cockpit-view racing game.
             // A racing session submits one best lap per finish, so 10/min mirrors "highscores"
             // — the cap that worked for the rest of the games. Uses the same (IP + identity)
             // partition so anonymous floods can't poison authed traffic.
@@ -144,7 +142,7 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            // PoJevArena (2026-09-25): library writes, match registration and status share a
+            // PoJevArena: library writes, match registration and status share a
             // modest cap; the decision proxy gets its own because a live match sends a batch
             // every 250 ms (240/min). Spend is bounded separately by the daily Jev allowance —
             // these only shape bursts.
@@ -171,7 +169,7 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            // Browser error reports (2026-10-01). Anonymous and outside the antiforgery scope, so
+            // Browser error reports. Anonymous and outside the antiforgery scope, so
             // this limit is what stops the sink being used to fill the log. The page itself sends
             // at most ten per load, deduplicated; 20/min covers a couple of bad page loads.
             opts.AddPolicy("client-errors", ctx =>
@@ -186,7 +184,7 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
-            // Game invites (2026-10-01). Each one is a write and an outbound push to someone
+            // Game invites. Each one is a write and an outbound push to someone
             // else's device, so it gets the tightest window after account-data: nobody invites
             // more than a handful of people a minute, and the recipient is the one who pays.
             opts.AddPolicy("invites", ctx =>

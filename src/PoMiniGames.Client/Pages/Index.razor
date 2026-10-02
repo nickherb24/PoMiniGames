@@ -31,19 +31,19 @@
 
 <div class="home-container">
     <span class="home-mesh" aria-hidden="true"></span>
-    @* §4 GPU-accelerated ambient particle field. WebGL2-only; falls back to the
+    @* GPU-accelerated ambient particle field. WebGL2-only; falls back to the
        CSS gradient on browsers without WebGL2 (Safari TP, etc.). *@
     <canvas @ref="_ambientCanvas" class="home-ambient" aria-hidden="true"></canvas>
 
     @* The page's heading is for the outline and for FocusOnNavigate only (visually
        hidden): the brand is already in the top bar, one row above, and the strapline
-       under it said what fourteen game cards say by existing. 2026-10-01. *@
+       under it said what fourteen game cards say by existing. *@
     <h1 class="home-title">PoMiniGames</h1>
 
     <div class="home-grid">
-    @* One action. Leaderboards, My Stats and Settings moved into the top bar's account
-       menu (2026-10-01), which is on every route; the demo reel is the only control
-       that belongs to this page.
+    @* One action. Leaderboards, My Stats and Settings live in the top bar's account
+       menu, which is on every route; the demo reel is the only control that
+       belongs to this page.
 
        It is a cell of the grid, not a row above it: fourteen games leave one empty
        cell in a three-column grid, and this fills it (Index.razor.css moves it to the
@@ -53,7 +53,7 @@
         @* aria-pressed below is a literal string, not a bare bool: Blazor renders
            a bool-valued attribute as an HTML boolean attribute, which emits
            aria-pressed="" when true and drops it entirely when false — neither is
-           a valid ARIA state (2026-08-08 audit #4).
+           a valid ARIA state.
 
            Note this comment sits OUTSIDE the tag on purpose. A Razor comment
            block inside an attribute list is not treated as a comment at all —
@@ -80,11 +80,11 @@
         @foreach (var game in GameCatalog.AllSorted)
         {
             <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")">
-                @* 2026-08-11: the card heading is now a non-interactive title
-                   block (icon + title + optional subtitle). The 1P / 2P /
-                   Online / Demo labels live exclusively in the chip row below
-                   so every card advertises the same set of affordances and no
-                   card duplicates its own mode label as a heading chip. *@
+                @* The card heading is a non-interactive title block (icon + title +
+                   optional subtitle). The 1P / 2P / Online / Demo labels live
+                   exclusively in the chip row below so every card advertises the
+                   same set of affordances and no card duplicates its own mode label
+                   as a heading chip. *@
                 <div class="home-card-head @(IsPlayable(game.Primary) ? null : "home-card-head--offline")"
                      data-fx-tilt="@(IsPlayable(game.Primary) ? "9" : null)"
                      aria-disabled="@(IsPlayable(game.Primary) ? null : "true")"
@@ -93,11 +93,9 @@
                     <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
                 </div>
 
-                @* One chip per mode the catalogue declares, no exceptions. Until
-                   2026-10-01 the chip for a game's primary mode was hidden unless the
-                   game opted in (ChipPrimary), a leftover from when the card title
-                   linked there itself. Joker and Fun Quiz had not opted in, so their
-                   1-player mode could not be reached from this page. *@
+                @* One chip per mode the catalogue declares, no exceptions: the card
+                   title is a label, so a hidden chip would leave that mode unreachable
+                   from this page. *@
                 <div class="home-card-modes">
                     @foreach (var m in game.Modes)
                     {
@@ -108,13 +106,7 @@
         }
     </div>
 
-    @* Dev tools section removed 2026-09-11 (user request); PoGallery itself,
-       its API slice and its 1.1 MB of models followed later the same day. There
-       is no non-game surface on this page any more — if one ever returns, it
-       belongs behind a route, not a card on the one page that most needs to fit
-       the fold. Markup and styles live in git history. *@
-
-    @* §9 home page activity feed: surfaces the player's most recent matches
+    @* Home page activity feed: surfaces the player's most recent matches
        so the page never feels empty even on a fresh install. Pulled from the
        existing /api/matches endpoint via ActivityFeedService — no new API. *@
     @if (_activity.Count > 0)
@@ -141,7 +133,7 @@
     private IJSObjectReference? _ambientModule;
     private bool _ambientStarted;
 
-    // §9: activity feed (recent matches).
+    // Activity feed (recent matches).
     private IReadOnlyList<ActivityFeedService.FeedItem> _activity = Array.Empty<ActivityFeedService.FeedItem>();
 
     // Offline, a hub-backed or API-backed mode is not playable: with the service
@@ -201,7 +193,7 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        // §2 Lazy WebGL bootstrap — only on first paint so we don't ship the
+        // Lazy WebGL bootstrap — only on first paint so we don't ship the
         // JS payload during SSR / prerender. Gate on the device-capability
         // probe so low-memory phones and prefers-reduced-motion users skip
         // the GPU wake entirely; the CSS gradient behind the canvas is the

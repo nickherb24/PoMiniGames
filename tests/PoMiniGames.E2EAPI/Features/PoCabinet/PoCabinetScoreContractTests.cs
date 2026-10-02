@@ -13,10 +13,8 @@ namespace PoMiniGames.E2EAPI.Features.PoCabinet;
 /// 100/50/25/25 rule.
 /// <list type="bullet">
 ///   <item>Anonymous GET <c>/api/pocabinet/scores?track=...</c> returns 200 + a
-///         JSON array (possibly empty when storage is offline — see the storage
-///         degradation note in CLAUDE.md).</item>
-///   <item>Missing / bogus track ids normalise to the default ("capitol"),
-///         matching the spec's §10 fallback rule.</item>
+///         JSON array (possibly empty when storage is offline).</item>
+///   <item>Missing / bogus track ids normalise to the default ("capitol").</item>
 ///   <item>Authed POST <c>/api/pocabinet/scores</c> rejects malformed payloads
 ///         with 400 (best lap out of range) — the validation layer is part of
 ///         the wire contract, not just server-side business logic.</item>

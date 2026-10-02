@@ -15,15 +15,14 @@ namespace PoMiniGames.AI;
 /// </summary>
 /// <remarks>
 /// <para>
-/// §3 chaos-engineering hardening: the original implementation set only a per-attempt
-/// network timeout and a flat retry count. With no circuit breaker, a single hung Azure
-/// region could saturate the request pipeline (30s × unbounded concurrent callers) and
-/// starve the rest of the app. The new pipeline adds three guards:
+/// A per-attempt network timeout and a flat retry count are not enough: with no circuit
+/// breaker, a single hung Azure region could saturate the request pipeline (30s × unbounded
+/// concurrent callers) and starve the rest of the app. The pipeline therefore has three guards:
 /// <list type="number">
 ///   <item><b>Outer timeout</b> (per call, including all retries) — the worst case the
 ///         caller ever observes.</item>
-///   <item><b>Retry with exponential backoff + jitter</b> — same transient-fault coverage
-///         as before, but on a backoff that doesn't synchronise storm retries.</item>
+///   <item><b>Retry with exponential backoff + jitter</b> — transient-fault coverage on a
+///         backoff that doesn't synchronise storm retries.</item>
 ///   <item><b>Circuit breaker</b> — after 30 % failures across 10 requests in 30 s, the
 ///         pipeline short-circuits for 15 s and returns <c>BrokenCircuitException</c>
 ///         immediately rather than queuing 30-second timeouts against a dead endpoint.</item>
@@ -32,14 +31,11 @@ namespace PoMiniGames.AI;
 /// <para>
 /// The Azure OpenAI SDK (System.ClientModel) keeps its own <see cref="ClientRetryPolicy"/>
 /// for the underlying transport, but the orchestrating <see cref="ResiliencePipeline"/>
-/// is now the source of truth for total-call budget and circuit state.
+/// is the source of truth for total-call budget and circuit state.
 /// </para>
 /// <para>
-/// <b>Namespace consolidation.</b> Previously lived under
-/// <c>PoMiniGames.Infrastructure.AI</c> alongside the rest of the centralization types.
-/// Moved here as part of the migration-window cleanup so every AI consumer compiles
-/// against a single <c>using PoMiniGames.AI;</c> (wired by the host's
-/// <c>GlobalUsings.cs</c>).
+/// Every AI consumer compiles against a single <c>using PoMiniGames.AI;</c> (wired by the
+/// host's <c>GlobalUsings.cs</c>).
 /// </para>
 /// </remarks>
 public static class AzureOpenAIResilience
@@ -58,13 +54,13 @@ public static class AzureOpenAIResilience
     /// </summary>
     /// <remarks>
     /// <para>
-    /// This class already declares the orchestrating <see cref="ResiliencePipeline"/> to be "the
-    /// source of truth for total-call budget and circuit state", but left the SDK's own
-    /// <see cref="ClientRetryPolicy"/> at 2 retries underneath it, and the two fought:
+    /// The orchestrating <see cref="ResiliencePipeline"/> is the source of truth for total-call
+    /// budget and circuit state, so the SDK's own <see cref="ClientRetryPolicy"/> must not retry
+    /// underneath it; the two would fight:
     /// </para>
     /// <list type="bullet">
-    ///   <item>The original 51.6 s relay failure was 3 SDK attempts × the 15 s network timeout —
-    ///   the outer 20 s budget could not see inside a single "attempt" to stop it.</item>
+    ///   <item>Two SDK retries make 3 SDK attempts × the 15 s network timeout = 45 s or more —
+    ///   the outer 20 s budget cannot see inside a single "attempt" to stop it.</item>
     ///   <item>Worse under throttling: the SDK honours <c>Retry-After</c> internally, so a 429
     ///   carrying <c>retry-after: 30</c> became a 30-second sleep inside one call. Measured, that
     ///   turned an <em>instant</em> 429 (0.2 s by curl) into a 9 s timeout in the app, and made
@@ -81,7 +77,7 @@ public static class AzureOpenAIResilience
     /// Model calls allowed in flight at once, across the whole host.
     /// </summary>
     /// <remarks>
-    /// Measured against the shared foundry account 2026-07-29, calling gpt-5.4-nano directly with
+    /// Measured against the shared foundry account, calling gpt-5.4-nano directly with
     /// an AAD token and bypassing this app entirely: one call at a time returns in 1.0–2.6 s; two
     /// concurrent return in 3.6 s and 9.0 s; three concurrent complete <b>one</b> and drop the
     /// other two; a burst is then followed by immediate <c>429</c> on every subsequent call. The

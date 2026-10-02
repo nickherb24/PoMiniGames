@@ -115,7 +115,7 @@ void main() {
     float ring = exp(-k * k) * s.w;
     bend += (away / max(dist, 1e-4)) * vec2(1.0 / uAspect, 1.0) * ring * 0.028;
   }
-  // Underwater (2026-09-30): the whole frame sways on a slow swell.
+  // Underwater: the whole frame sways on a slow swell.
   if (uUnder > 0.01) {
     bend += vec2(sin(vUv.y * 22.0 + uTime * 2.1), cos(vUv.x * 18.0 + uTime * 1.7)) * 0.0038 * uUnder;
   }

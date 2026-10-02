@@ -14,7 +14,7 @@ namespace PoMiniGames.AI;
 /// <para>
 /// The budget's ledger is a <c>ConcurrentDictionary</c> in the host process, which makes the
 /// 250k/day ceiling only as durable as the process. This app runs on App Service <b>F1</b>, which
-/// cannot enable AlwaysOn (see the deploy workflow's prewarm loop) — so the host is recycled
+/// cannot enable AlwaysOn (see the deploy workflow's smoke-test retries) — so the host is recycled
 /// whenever the site goes idle, and every recycle silently reset every caller's allowance to zero.
 /// The documented "daily ceiling" was in practice a per-uptime ceiling, which is exactly the bound
 /// that does not hold when someone leaves a tab open overnight.

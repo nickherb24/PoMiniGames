@@ -5,7 +5,7 @@
    Every colour reads through the app's tokens so light mode and forced-colors work;
    the world itself is drawn by WebGL and is scheme-invariant by design. */
 
-/* Species and landmark colours (2026-09-23). Components read these, never raw hex, so
+/* Species and landmark colours. Components read these, never raw hex, so
    the colour-blind palette in Settings re-points everything at once. The standard set
    rides the app's accent tokens; the cb set is Okabe–Ito, which stays distinguishable
    under protanopia, deuteranopia and tritanopia. */
@@ -39,9 +39,9 @@
     --poeco-mark-legend: #f0e442;
 }
 
-/* Fills the game area. It was `height: 100%` inside a flex row that centres its children,
-   which resolves to auto, so only the 70vh floor applied and the island sat in a band with
-   dead space above and below it (2026-09-30). Stretching on the cross axis is what fills. */
+/* Fills the game area. `height: 100%` inside a flex row that centres its children
+   resolves to auto, so only the 70vh floor would apply and the island would sit in a band
+   with dead space above and below it. Stretching on the cross axis is what fills. */
 .poeco-root {
     position: relative;
     inset: 0;
@@ -611,7 +611,7 @@
     }
 }
 
-/* ── 2026-09-14: lineage, watch-list, evolution, tribe, chronicle, cloud, director ── */
+/* ── Lineage, watch-list, evolution, tribe, chronicle, cloud, director ── */
 
 .poeco-badge--tech {
     color: var(--accent-success);
@@ -1285,7 +1285,7 @@
     line-height: 1.4;
 }
 
-/* ── 2026-09-23: weather chip, sick badge, timeline, field notes, tour, settings ── */
+/* ── Weather chip, sick badge, timeline, field notes, tour, settings ── */
 .poeco-chip-weather { white-space: nowrap; }
 
 .poeco-badge--sick {
@@ -1483,7 +1483,7 @@
     .poeco-fieldcard img { width: 100%; height: 120px; }
 }
 
-/* ── GFX pass 2 (2026-09-23): mood HUD, chronicle moments, island reel ─────────
+/* ── GFX: mood HUD, chronicle moments, island reel ──────────────────────────────
    All three are driven from the engine (index.js / render/chronicle.js / render/reel.js)
    through custom properties and data attributes on .poeco-root and engine-owned DOM, so
    no Blazor re-render can reset them.
@@ -1780,7 +1780,7 @@
     .poeco-reel { background: Canvas; backdrop-filter: none; -webkit-backdrop-filter: none; box-shadow: none; }
 }
 
-/* ── 2026-09-30: consolidation pass ──────────────────────────────────────────────
+/* ── HUD menus, lenses and dashboard ─────────────────────────────────────────────
    HUD menus and speed, the finder, the ticker, lenses, map layers, ambient mode, the
    four-tab dashboard (Island · Life · Tribes · Worlds), wagers, alerts, worlds.
 
@@ -2096,8 +2096,8 @@
 .poeco-tribe-record > section { display: flex; flex-direction: column; gap: var(--space-2); min-width: 0; }
 .poeco-ladder { margin: 0; }
 .poeco-ladder li { padding: 0.25rem 0.5rem; }
-/* `.poeco-ladder li` out-ranks the bare modifier classes, so until 2026-09-30 a tier the tribe
-   had reached looked exactly like one it had not. */
+/* `.poeco-ladder li` out-ranks the bare modifier classes, so the modifiers are written
+   as `li.` selectors to keep a reached tier distinct from one not yet reached. */
 .poeco-ladder li.poeco-ladder--done { opacity: 1; border-color: var(--accent-success); background: color-mix(in srgb, var(--accent-success) 10%, transparent); }
 .poeco-ladder li.poeco-ladder--next { opacity: 0.85; border-style: dashed; }
 .poeco-diplomacy-web h3 { margin: 0; }

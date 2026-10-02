@@ -5,14 +5,12 @@ using PoMiniGames.Features.Auth;
 namespace PoMiniGames.Unit.Features.Auth;
 
 /// <summary>
-/// Tests the §2.2 tenant allow-list. The validator MUST accept the well-known public
+/// Tests the tenant allow-list. The validator MUST accept the well-known public
 /// Entra authorities and any explicitly-configured tenant ID, and reject everything else.
 /// </summary>
 /// <remarks>
-/// <b>§1 100/50/25/25 Rule.</b> Originally 5 single-case <c>[Fact]</c>s + 1
-/// <c>[Theory]</c>; consolidated to 2 <c>[Theory]</c>s + 1 <c>[Fact]</c>. The
-/// rejection cases (unknown tenant, empty issuer, foreign authority) collapse
-/// into one theory parameterized over (issuer, allowedTenants). Accept and reject rows now
+/// The rejection cases (unknown tenant, empty issuer, foreign authority) are
+/// one theory parameterized over (issuer, allowedTenants). Accept and reject rows
 /// share that one theory; every reject row also asserts the offending issuer is named in the
 /// message (the empty-issuer row degenerates to the always-matching <c>**</c>).
 /// </remarks>

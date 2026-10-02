@@ -2,13 +2,9 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 
 // ── Strongly-typed client interface (compile-time-safe SignalR events) ──────
 //
-// 2026-08-10 simplification: every payload used to carry a GameCode and an
-// AiMode. Both are gone. There is exactly ONE lobby in the process, so a code
-// identifies nothing; and "AI mode" was a string that only ever held "Remote"
-// (no browser-side engine was ever implemented) while being threaded through
-// six payloads, three hub methods and the lobby UI. `Difficulty` went the same
-// way — it only ever selected the round count, so the lobby now says what it
-// means and sends `MaxRounds`.
+// Payloads carry no game code and no AI mode: there is exactly ONE lobby in the
+// process, so a code identifies nothing, and AI always runs remotely on the server.
+// The lobby sends `MaxRounds` (the round count) rather than a difficulty level.
 
 public record GamePlayerState(string Name, bool IsKingPlayer, int Score);
 

@@ -13,14 +13,13 @@ public class ConnectFiveBoard
     public const int Cols = ConnectFiveRules.BoardCols;
     public const int WinLength = ConnectFiveRules.BoardWinLength;
 
-    // Audit #5: flat Piece[Rows * Cols] storage replaces the prior jagged
-    // Piece[Rows][]. 81 contiguous pieces > 9 array headers; one allocation
-    // per Place() vs. the old "allocate 9 inner arrays per copy + a 9x9 loop".
+    // Flat Piece[Rows * Cols] storage rather than a jagged Piece[Rows][]:
+    // 81 contiguous pieces > 9 array headers, and one allocation per Place().
     // Array.Copy is intrinsified by the JIT and runs at memory-bandwidth speed.
     private readonly Piece[] _cells;
 
-    // Audit #10: per-column next-landing-row cache. O(1) GetTargetRow + O(Cols)
-    // GetAvailableCols (was O(Cols * Rows)). Maintained incrementally by Place.
+    // Per-column next-landing-row cache. O(1) GetTargetRow + O(Cols)
+    // GetAvailableCols. Maintained incrementally by Place.
     private readonly int[] _topRow;
 
     public ConnectFiveBoard()
@@ -69,7 +68,7 @@ public class ConnectFiveBoard
 
     /// <summary>
     /// Place a piece using a <see cref="Player"/> (the strongly-typed turn owner).
-    /// Rejects the empty player (Audit #6) so a Piece.None turn can never leak
+    /// Rejects the empty player so a Piece.None turn can never leak
     /// through the AI / placement boundary and silently corrupt win checks.
     /// </summary>
     public ConnectFiveBoard Place(int row, int col, Player player)
@@ -92,13 +91,12 @@ public class ConnectFiveBoard
             throw new ArgumentException("Cannot place Piece.None on the board.", nameof(value));
         }
 
-        // Bug fix 2026-07-05: gravity is enforced by the board, not by the caller.
-        // A previous bug in MediumMove produced mismatched (row, col) tuples where
-        // the row came from one column and the col from another. That placed a
-        // piece above the column's actual stack, producing overlapping discs.
-        // The board now ignores the caller's row and uses the bottom-most empty
-        // cell of the chosen column. The `row` parameter is kept for API stability
-        // but the caller's value is validated and only used as a sanity check.
+        // Gravity is enforced by the board, not by the caller: a mismatched (row, col)
+        // pair would place a piece above the column's actual stack, producing
+        // overlapping discs. The board ignores the caller's row and uses the
+        // bottom-most empty cell of the chosen column. The `row` parameter is kept
+        // for API stability; the caller's value is validated and only used as a
+        // sanity check.
         if (row < 0 || row >= Rows)
         {
             throw new ArgumentOutOfRangeException(nameof(row), $"Row {row} is outside the board.");
@@ -114,7 +112,7 @@ public class ConnectFiveBoard
         }
         // If the caller passed a row that doesn't match the gravity-correct row,
         // fall back to the gravity-correct row. This is a "best effort" recovery
-        // that keeps the demo loop robust to the AI's previous (now-fixed) bug.
+        // that keeps the demo loop robust to a bad caller row.
         var finalRow = actualRow;
 
         var newCells = new Piece[_cells.Length];
@@ -135,15 +133,14 @@ public class ConnectFiveBoard
     {
         if (player == Piece.None)
         {
-            // Audit #6: refuse to "win" for the empty player — a caller passing
+            // Refuse to "win" for the empty player — a caller passing
             // Piece.None here is a bug, not a no-op. Returning "no win" hides
             // the regression; throwing makes it visible.
             throw new ArgumentException("Cannot check win for Piece.None.", nameof(player));
         }
 
-        // Delegated to the shared rules (2026-09-14, online mode). The full-window
-        // scan and its off-by-one history now live there; the byte view of _cells
-        // is free because Piece is byte-backed.
+        // Delegated to the shared rules, which hold the full-window scan; the byte
+        // view of _cells is free because Piece is byte-backed.
         var line = ConnectFiveRules.Instance.FindWin(MemoryMarshal.AsBytes<Piece>(_cells), (byte)player);
         if (line is null) return new WinResult { Won = false, Cells = new List<(int, int)>() };
         var cells = new List<(int, int)>(WinLength);
@@ -156,7 +153,7 @@ public class ConnectFiveBoard
 
     public bool IsFull()
     {
-        // Audit #10: O(Cols) using the top-row cache. A column is full when
+        // O(Cols) using the top-row cache. A column is full when
         // _topRow[col] < 0; the board is full when every column is full.
         for (int c = 0; c < Cols; c++)
         {
@@ -166,10 +163,8 @@ public class ConnectFiveBoard
     }
 
     /// <summary>
-    /// Audit #10: enumerate playable columns in O(Cols). The previous
-    /// implementation called <see cref="GetTargetRow"/> per column which
-    /// itself walked <see cref="Rows"/>; the net was O(Cols * Rows) every AI
-    /// turn. With the cache, this method is linear at most.
+    /// Enumerate playable columns in O(Cols) from the top-row cache, instead of
+    /// walking <see cref="Rows"/> per column on every AI turn.
     /// </summary>
     public List<int> GetAvailableCols()
     {

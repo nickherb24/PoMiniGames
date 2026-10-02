@@ -66,7 +66,6 @@ const WEATHER_MOOD = [null, [0.97, 0.99, 1.02, 0.92], [0.94, 0.97, 1.02, 0.82], 
 const EPIDEMIC_MOOD = [0.95, 1.05, 0.9, 0.9];
 const VOICE_RANGE = 70;           // metres: creatures further than this are not voiced
 const HEAT_RANGE = 85;
-// GFX pass 3 (2026-09-30).
 const THERMAL_MOOD = [0.5, 0.62, 0.95, 0.12];   // the world behind a thermal lens: cold and nearly grey
 const UNDER_FOG = new THREE.Color(0x0b5f73);
 const UNDER_FOG_DENSITY = 0.05;
@@ -337,7 +336,7 @@ export function createRenderer(container, {
     refreshLayer();
     // A pose set before the terrain arrived (Resume reads prefs synchronously at start)
     // must survive the rebuild, or the god is teleported back to the island's centre.
-    // Fresh players float ('fly') until they press F to walk (2026-09-02 user call).
+    // Fresh players float ('fly') until they press F to walk.
     const pending = pendingPose ?? (terrainReady ? player.pose() : null);
     pendingPose = null;
     terrainReady = true;
@@ -483,7 +482,7 @@ export function createRenderer(container, {
   }
 
   /**
-   * The minimap's data layer (2026-09-30). Three come from the sim's heat book (setHeat),
+   * The minimap's data layer. Three come from the sim's heat book (setHeat),
    * two are already on this side of the worker: grazing pressure is the tile sync's grass
    * biomass read backwards, and traffic is the wear grid trails.js keeps for the paths.
    */
@@ -533,7 +532,7 @@ export function createRenderer(container, {
   }
 
   /**
-   * Below the waterline (2026-09-30): the fog closes in and turns teal, the composer sways
+   * Below the waterline: the fog closes in and turns teal, the composer sways
    * and takes the red out, the mix goes through a low-pass, and air rises past the lens.
    * Returns the eased 0..1 factor.
    */
@@ -560,7 +559,7 @@ export function createRenderer(container, {
   }
 
   /**
-   * Life and death marks for the watch-list (2026-09-30). The frame flags every watched
+   * Life and death marks for the watch-list. The frame flags every watched
    * creature, so a watched handle that is in one sim frame and gone from the next has died:
    * a wisp rises from where it last stood and a bell rings from there. No event needed —
    * the position is exactly the one the event would not have carried.

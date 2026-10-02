@@ -34,7 +34,7 @@ public sealed class CoupleQuizRoundDirector : IDisposable
     private const int MatchPoints = 10;
 
     private readonly IHubContext<CoupleQuizHub, IGameClient> _hub;
-    private readonly IGameSessionManager _sessions;
+    private readonly GameSessionManager _sessions;
     private readonly IQuestionService _questions;
     private readonly IOptionsMonitor<CoupleQuizOptions> _options;
     private readonly ILogger<CoupleQuizRoundDirector> _logger;
@@ -42,7 +42,7 @@ public sealed class CoupleQuizRoundDirector : IDisposable
 
     public CoupleQuizRoundDirector(
         IHubContext<CoupleQuizHub, IGameClient> hub,
-        IGameSessionManager sessions,
+        GameSessionManager sessions,
         IQuestionService questions,
         IOptionsMonitor<CoupleQuizOptions> options,
         ILogger<CoupleQuizRoundDirector> logger)

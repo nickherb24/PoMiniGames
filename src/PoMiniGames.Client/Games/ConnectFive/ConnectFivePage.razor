@@ -19,13 +19,13 @@
 
 <PageTitle>Connect Five · PoMiniGames</PageTitle>
 
-@* 2026-08-12 audit #1: hold the modal for 5 s after a win so the cascading
+@* Hold the modal for 5 s after a win so the cascading
    highlight can play out on the board before the dialog covers it. The
    cascade is a 0.45 s keyframe; 5 s leaves generous room for the eye to
    track the line and for the end-of-game ELO change to register. Razor
    block comments placed between attributes of an element are parsed
-   as attribute names and crash the page at runtime (see 2026-08-10 audit).
-   Comment lives OUTSIDE the tag. *@
+   as attribute names and crash the page at runtime, so this comment
+   lives OUTSIDE the tag. *@
 <GameShell
     Title=@TitleContent
     Player="@_playerName"
@@ -60,25 +60,25 @@
             </div>
         }
         @* Online, before there is an opponent (connecting, searching, connection lost),
-           the card above is the whole page. The strip and an empty board used to sit
-           under it: on a laptop that pushed the board's bottom rows 140px below the
-           fold, for a board nobody could play on yet. 2026-10-01. *@
+           the card above is the whole page: the strip and an empty board under it would
+           push the board's bottom rows 140px below the fold on a laptop, for a board
+           nobody can play on yet. *@
         @if (!OnlineWaiting)
         {
         @* Visible turn/status strip: whose turn, the CPU thinking, which colour is
-           whose. It used to exist only as text in GameShell's sr-only live region. *@
+           whose (GameShell's sr-only live region carries the same text for screen readers). *@
         <div class="cf-status-slot">
             <TurnStrip LeftName="@RedName" RightName="@YellowName" Text="@StatusText"
                        LeftActive="@IsRedTurn" RightActive="@IsYellowTurn"
                        LeftColor="var(--disc-red-mid)" RightColor="var(--disc-yellow-mid)"
                        TextClass="cf-status-text" />
         </div>
-        @* §3 Hover-ghost: pointerleave on the board clears the column preview so
+        @* Hover-ghost: pointerleave on the board clears the column preview so
            the ghost disc never sticks when the cursor exits the grid. *@
         <div class="cf-board" role="grid" aria-label="Connect Five game board"
              @onpointerleave="ClearHover">
-            @* role="grid" requires role="row" between it and its gridcells
-               (2026-08-08 audit #2). `display: contents` keeps all 81 cells as
+            @* role="grid" requires role="row" between it and its gridcells.
+               `display: contents` keeps all 81 cells as
                direct grid items of .cf-board, so the 9×9 template, the drop
                animation and the GL overlay alignment are unchanged. *@
             @for (int r = 0; r < ConnectFiveBoard.Rows; r++)
@@ -92,11 +92,11 @@
                     var piece = _board.Get(r, c);
                     var winIndex = _winCells.FindIndex(wc => wc.Row == r && wc.Col == c);
                     var isWinCell = winIndex >= 0;
-                    // Audit #9: once the cascade has played, freeze the visual
-                    // in its final state. Re-renders that happen after the
-                    // 0.45s animation finishes (e.g. ghost clears after game
-                    // over) used to replay the cascade because the same
-                    // .win-cell class triggered the keyframe again.
+                    // Once the cascade has played, freeze the visual in its final
+                    // state. Re-renders after the 0.45s animation finishes (e.g.
+                    // ghost clears after game over) would otherwise replay the
+                    // cascade because the same .win-cell class triggers the
+                    // keyframe again.
                     var winCellClass = !isWinCell ? ""
                         : _winCascadePlayed ? "win-cell-static"
                         : "win-cell";
@@ -114,12 +114,10 @@
                            from above the board. --drop-rows sets how far it falls:
                            from above the board down to its resting row (row index + 1
                            strides). No emoji + cell-fill double-circle. *@
-                        @* Audit #2: --drop-rows is no longer per-cell. The .cf-layout
-                           defines --cf-drop-rows: 9 (board depth), and every disc
-                           drops the full distance from above the board. Each
-                           disc therefore travels the same drop length regardless
-                           of its landing row, eliminating the "short drop near
-                           the top" inconsistency. *@
+                        @* --drop-rows is not per-cell. The .cf-layout defines
+                           --cf-drop-rows: 9 (board depth), and every disc drops the
+                           full distance from above the board, so each disc travels
+                           the same drop length regardless of its landing row. *@
                         @if (piece == Piece.Red)
                         {
                             <span class="piece red-piece" aria-hidden="true"></span>
@@ -148,10 +146,8 @@
     /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
     [SupplyParameterFromQuery(Name = "kiosk")] public int KioskNext { get; set; } = -1;
-    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
 
-    private GameMode RouteMode => GameModes.Parse(Mode, ModeQuery, DemoQuery);
+    private GameMode RouteMode => GameModes.Parse(Mode);
     private bool IsDemo => RouteMode == GameMode.Demo;
 
     private ConnectFiveBoard _board = new();
@@ -172,7 +168,7 @@
     // the modal sounds the neutral round-over instead of celebrating at someone.
     private GameResult OutcomeForCue => PlayMode is "ai" or "online" ? _gameResult : GameResult.InProgress;
 
-    // Spoken by GameShell's shared live region (browser audit #6). The board is a
+    // Spoken by GameShell's shared live region. The board is a
     // role="grid" of labelled cells, so a screen reader can read the position —
     // what it could not tell was whose turn it is or that the game had ended.
     // Demo drives itself with nobody listening, so it announces nothing.
@@ -241,7 +237,7 @@
     // "ai" (vs CPU) or "2p" (local pass-and-play); "demo" is driven by the route param.
     private string _playMode = "ai";
     private string PlayMode => IsDemo ? "demo" : _playMode;
-    // Audit #6: 2-player turn state is now a Player record instead of a raw
+    // 2-player turn state is a Player record, not a raw
     // Piece. The only valid values are Player.Red / Player.Yellow; the empty
     // player can never appear here, so wrong-state bugs (e.g. styling a "ghost"
     // disc with no current player) fail at construction time, not at render.
@@ -252,7 +248,7 @@
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
     private string P1Name => string.IsNullOrWhiteSpace(_playerName) ? "Player 1" : _playerName;
     private List<(int Row, int Col)> _winCells = new();
-    // §CF-1 §GFX matter.js physics drop. True once engineLoader has fetched
+    // matter.js physics drop. True once engineLoader has fetched
     // matter-js (CDN classic script) and our connectfive/index.js has set up
     // the engine + measured the live grid. Until then, the existing CSS
     // cf-slide-down keyframe runs unchanged — and continues to run as the
@@ -271,11 +267,11 @@
     private CancellationTokenSource? _demoCts;
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
 
-    // §3 Column-preview ghost. _hoverCol is the column under the pointer (-1 = none).
+    // Column-preview ghost. _hoverCol is the column under the pointer (-1 = none).
     // The landing row is derived from the live board (never stored), so it stays
     // correct after the AI or the other player fills a slot without a re-hover.
     private int _hoverCol = -1;
-    // Audit #8: ghost-row memoization. We track the last *rendered* landing
+    // Ghost-row memoization. We track the last *rendered* landing
     // row for the hovered column so any state change that mutates the board
     // (AI drop, opponent drop) forces a single re-render and prevents the
     // "ghost floating mid-air after the column grew shorter" flicker.
@@ -311,7 +307,7 @@
     }
 
     /// <summary>
-    /// Audit #8: called from the cell-render loop. If the ghost's target row
+    /// Called from the cell-render loop. If the ghost's target row
     /// changed (because the AI or opponent dropped a piece while the pointer
     /// was still over the column) we memoize the new key so Blazor's diff
     /// emits a clean add/remove of the ghost span instead of leaving a stale
@@ -336,9 +332,8 @@
     // Intro/welcome gate: the board is blocked behind the intro card until the
     // player dismisses it (OK), or the demo flashes it for 2s. Nothing on this
     // board auto-moves in human modes, so the overlay alone gates play.
-    // Audit #5: the 2-player route used to inherit the 1P intro — same "CPU is
-    // matched to your ELO…" copy in a mode with no CPU. Branch on PlayMode so
-    // each variant shows the controls that actually apply.
+    // The intro branches on PlayMode so each variant shows the controls that
+    // actually apply (the 1P "CPU is matched to your ELO…" copy is wrong for 2P).
     private bool _introDone;
     private GameIntro.IntroMode _introMode => PlayMode switch
     {
@@ -355,16 +350,16 @@
     }
 
 
-    // No mode suffix (2026-10-01). "Connect Five · 1 Player" did not fit a phone's top
-    // bar and was cut at "· 1"; the mode is the selected button on the intro card's
+    // No mode suffix: "Connect Five · 1 Player" does not fit a phone's top
+    // bar and is cut at "· 1"; the mode is the selected button on the intro card's
     // switch and the first segment after the game in the address.
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🔴</span> Connect Five</span>;
 
-    // Audit #5: mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
+    // Mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players and a hot seat, and the demo explains it is a
     // CPU-vs-CPU exhibition.
     // Each variant says only what its mode adds: the intro card prints the objective
-    // ("connect five in a row…") directly above, and used to get it again from here.
+    // ("connect five in a row…") directly above.
     private RenderFragment HowToPlayContent => PlayMode switch
     {
         "demo" => @<div>
@@ -460,8 +455,7 @@
     </div>;
 
     // 1-player & 2-player & demo all restart through the end-of-game modal's
-    // Play Again button — the legacy in-canvas Controls fragment was unreachable
-    // (the Settings drawer was removed 2026-07-06) and is intentionally gone.
+    // Play Again button.
 
     protected override void OnInitialized()
     {
@@ -509,7 +503,7 @@
     private void ResetGame()
     {
         _demoCts?.Cancel();
-        // Bug fix QA #9: cancel any in-flight AI move so the player isn't
+        // Cancel any in-flight AI move so the player isn't
         // stuck on "🤖 AI thinking…" after pressing New Game.
         _aiMoveCts?.Cancel();
         _aiMoveCts?.Dispose();
@@ -520,7 +514,7 @@
         _isAiTurn = false;
         _current2pPlayer = Player.Red;
         _matchRecorded = false;
-        // Audit #9: a fresh game must play the cascade again on its next win.
+        // A fresh game must play the cascade again on its next win.
         _winCascadePlayed = false;
         _lastEloDelta = null;
         // Load the adaptive rating and match the CPU to the player's current ELO,
@@ -551,11 +545,10 @@
         await Task.Delay(700, ct);
         while (!ct.IsCancellationRequested && _gameResult == GameResult.InProgress)
         {
-            // Audit #4: 850ms cadence (was 500ms). The drop animation is 0.55s
-            // (CSS cf-slide-down), so 850ms gives each piece ~300ms of calm
-            // between drops. Combined with #3 (no bounce keyframe), the disc
-            // lands cleanly and sits still long enough for the eye to register
-            // before the next piece starts falling.
+            // 850ms cadence. The drop animation is 0.55s (CSS cf-slide-down), so
+            // 850ms gives each piece ~300ms of calm between drops: the disc lands
+            // cleanly and sits still long enough for the eye to register before
+            // the next piece starts falling.
             const int demoStepMs = 850;
             // Red (CPU1) move — full-strength Hard play (see DemoMove).
             var (rr, rc) = DemoMove(_board, Player.Red);
@@ -585,15 +578,15 @@
         }
         if (!ct.IsCancellationRequested && _gameResult != GameResult.InProgress)
         {
-            // 2026-09-04: signal the kiosk reel that the demo match is done. Without this
+            // Signal the kiosk reel that the demo match is done. Without this
             // it sits on the post-game win cascade until the 14s dwell expires; with it
             // the reel rotates ~3s after the last piece drops. No-op when the kiosk is
             // inactive so the standalone /connectfive route is unaffected.
             Kiosk.MarkFinished();
-            // Audit #9: keep the 3-second "view the win" window, but the win
-            // cascade is now a one-shot (.cf-cell.win-cell animation runs once
-            // and settles via `forwards`). After 3s the page resets and the
-            // next demo's `win-cell` cells get a fresh animation run.
+            // Keep the 3-second "view the win" window; the win cascade is a
+            // one-shot (.cf-cell.win-cell animation runs once and settles via
+            // `forwards`). After 3s the page resets and the next demo's
+            // `win-cell` cells get a fresh animation run.
             await Task.Delay(3000, ct);
             if (!ct.IsCancellationRequested)
                 await InvokeAsync(ResetGame);
@@ -625,9 +618,8 @@
         return _ai.GetMove(board, player, Difficulty.Hard);
     }
 
-    // §CF-1 Lazy-load the matter.js physics engine on first render. Failure is
-    // silent — the CSS keyframe drop is the fallback in every error case, and
-    // that is the same behaviour this page shipped with before this section.
+    // Lazy-load the matter.js physics engine on first render. Failure is
+    // silent — the CSS keyframe drop is the fallback in every error case.
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender || _engineReady) return;
@@ -660,7 +652,7 @@
         _ = JS.InvokeVoidAsync("PoConnectFive.dropDisc", col, targetRow, color);
     }
 
-    // §CF-1 Reset the physics engine when the page tears down. Fire-and-forget;
+    // Reset the physics engine when the page tears down. Fire-and-forget;
     // a navigation that wins the race against the JS call is fine because the
     // engine's bodies are recreated on the next init() anyway.
     public void Dispose()
@@ -679,31 +671,6 @@
         }
         // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
     }
-
-    // ── The board is 2D (2026-08-10, user request) ───────────────────────
-    //
-    // This page used to mount the §GFX-4 three.js layer (js/boardGl.js) behind
-    // the cell grid and hide the CSS discs while it was up. It is gone from
-    // ConnectFive — not disabled behind a flag, removed — because it never
-    // produced a trustworthy picture here and the failures were not cosmetic:
-    // chips were driven by a spring that overshot up to 2.2 board units below
-    // the slab on every placement, so pieces routinely rendered as clipped
-    // crescents scattered across the wrong cells while the real board sat
-    // underneath. Fixing the physics removed one cause; the perspective camera,
-    // the parallax tilt and the depth-sorted chips against instanced sockets
-    // remained a lot of machinery to keep correct for a nine-by-nine grid of
-    // flat coloured circles.
-    //
-    // The CSS board underneath was always the fallback and was always complete
-    // — every cell, aria-label, click handler, hover ghost and drop animation
-    // lives there and always did. Removing the GL layer is what makes it
-    // visible again; nothing had to be rebuilt to replace it.
-    //
-    // boardGl.js was kept in the repo at the time because TicTacToe still mounted
-    // it. It did have the same problem there — on a 6×6 grid it drew the marks as
-    // scattered single slashes straddling cell borders — so TicTacToe dropped the
-    // GL layer too (2026-08-10) and the now-unused renderer was deleted with it.
-    //
 
     private void HandleDrop(int col)
     {
@@ -828,13 +795,12 @@
             return;
         }
 
-        // Audit #6: Player.Other replaces the manual ? : swap and proves at
-        // the type level that we never advance to an empty player.
+        // Player.Other proves at the type level that we never advance to an empty player.
         _current2pPlayer = player.Other;
     }
 
     /// <summary>
-    /// Audit #9: shared post-win hook. Marks the win so the cascade is a
+    /// Shared post-win hook. Marks the win so the cascade is a
     /// one-shot. Without this, the .win-cell CSS animation could replay on
     /// any Blazor re-render that preserved the win-cell class (e.g. when the
     /// ghost preview cleared after game-over), causing a visible flicker.

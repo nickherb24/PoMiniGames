@@ -1,4 +1,4 @@
-// enemies.js — the three archetypes, spawn director, and threat perception (PRD §F6).
+// enemies.js — the three archetypes, spawn director, and threat perception.
 //
 //   Swarmer — fast, weak, melee; flows around solids (steering probes, no navmesh)
 //   Brute   — slow, heavy melee; carves through a structure that blocks its path
@@ -9,16 +9,16 @@
 // live voxel grids. Threat perception: an enemy under fast-falling debris flees its
 // ground shadow — killable by collapse (that is the game), but not for standing still.
 //
-// The escalation curve is continuous (endless survival, PRD §F7): spawn interval
+// The escalation curve is continuous (endless survival): spawn interval
 // shrinks and the archetype mix hardens with elapsed time; there are no wave breaks.
 //
-// SIEGE RETHEME (2026-08-19): roaming enemies are off in the Siege. The fortress guns are
-// the threat there, and chasing blocks pulled the player's attention away from the walls --
-// the thing the whole game is about. They were kept behind a constant rather than deleted
-// (the debris-crush kill path and the threat-perception code are load-bearing for the
-// destruction sandbox), and since 2026-09-30 that constant is `opts.enabled`: the start
-// card's Survival mode turns the horde back on, on top of the guns. Solo only — an online
-// run is co-presence, and each client would be fighting its own private horde.
+// Roaming enemies are off in the Siege by default. The fortress guns are the threat
+// there, and chasing blocks would pull the player's attention away from the walls --
+// the thing the whole game is about. The debris-crush kill path and the threat-perception
+// code are load-bearing for the destruction sandbox, so the enemies stay behind
+// `opts.enabled`: the start card's Survival mode turns the horde on, on top of the guns.
+// Solo only — an online run is co-presence, and each client would be fighting its own
+// private horde.
 
 import * as THREE from 'three';
 import { createActorMaterial } from './materials.js';
@@ -86,7 +86,7 @@ export class EnemyManager {
 
   spawn(type, playerPos, cameraForward) {
     const def = ARCHETYPES[type];
-    // Map-edge ring, preferring points outside the view frustum (PRD §F6): behind the
+    // Map-edge ring, preferring points outside the view frustum: behind the
     // camera, or far enough ahead that a pop-in is below noticing.
     let pos = null;
     for (let attempt = 0; attempt < 12; attempt++) {
@@ -151,7 +151,7 @@ export class EnemyManager {
     }
     const dir = toPlayer.normalize();
     const moved = this._steerMove(e, dir, dt, 1);
-    // A brute that cannot route around what blocks it goes THROUGH it (PRD §F6).
+    // A brute that cannot route around what blocks it goes THROUGH it.
     if (!moved && e.type === 'brute' && e.carveClock <= 0) {
       e.carveClock = e.def.carveInterval;
       const probe = e.mesh.position.clone().addScaledVector(dir, e.def.radius + 1.2);
@@ -287,7 +287,7 @@ export class EnemyManager {
     }
   }
 
-  /** Debris crush check (PRD §F5: debris is impartial — this is the enemy half). */
+  /** Debris crush check (debris is impartial — this is the enemy half). */
   checkCrush(pieces) {
     for (const piece of pieces) {
       if (piece.frozen) continue;

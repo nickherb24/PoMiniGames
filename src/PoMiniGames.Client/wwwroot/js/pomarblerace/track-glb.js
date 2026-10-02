@@ -104,11 +104,11 @@ function ringShell(PATH, lanes) {
 }
 
 /**
- * Re-pose the drawn channel onto its ring shell (2026-10-01), for a course whose shell is NOT the
+ * Re-pose the drawn channel onto its ring shell, for a course whose shell is NOT the
  * model's own surface. Playground Run's shell is a smoothed fit (see ringShell): its floor sat up
  * to 2.7 units off the floor the model draws and up to 59° off its bank, so marbles rolled sunk to
  * the centre in the drawn floor on some stretches and floated over it on others. The shell is the
- * one the map is certified on. Laying it on the drawn gutter instead was tried: the field pools
+ * one the map is certified on. Laying it on the drawn gutter instead makes the field pool
  * single file in the low corner of the authored 35-52° banks (median finish 93 s -> 123 s, slowest
  * 163 s against the 180 s timeout, four times the unstick nudges). So the DRAWING moves, and the
  * race is the same race: each vertex of `nodes` within reach of the gutter is carried by the 2D map
@@ -656,12 +656,12 @@ export function createGlbCourse({
     return (HALF_WIDTHS[i] + (HALF_WIDTHS[j] - HALF_WIDTHS[i]) * t) * SCALE;
   }
 
-  // ── lanes (2026-09-30) ────────────────────────────────────────────────────────────────────
+  // ── lanes ─────────────────────────────────────────────────────────────────────────────────
   // The baked centerline follows the MAIN lane only. Branch lanes (splits, the hazard fan, the
   // weave) sit up to 46 units off it, and across a junction the main frame is turned nearly 90°
   // to the channel, so any "where is this marble relative to the track" question asked of the
-  // main line alone is wrong exactly where the course is most interesting. Measured before this
-  // existed: Grand Spiral deleted 293 of 299 marbles it called "off the track" while they were
+  // main line alone is wrong exactly where the course is most interesting. Measured with the main
+  // line alone: Grand Spiral deleted 293 of 299 marbles it called "off the track" while they were
   // rolling on a side lane or up a flared bank.
   //
   // There is no separate baker output for lanes (the baker is gone), but the collision shell
@@ -785,12 +785,12 @@ export function createGlbCourse({
     .filter((s) => s > 60 && s < TRACK.FINISH_S - 60)
     .sort((a, b) => a - b);
 
-  // ── containment (2026-09-30) ─────────────────────────────────────────────────────────────────
+  // ── containment ──────────────────────────────────────────────────────────────────────────────
   // Every closed lane becomes a tube: its walls are extended straight up (along the lane's own
-  // up, so banking is followed) to at least CONTAIN_H, and a lid spans the two wall tops. Before
-  // this the walls were 21.8 (Spiral Works) / 26 (Grand Spiral) tall except at lane mouths, where
-  // they start at ZERO — and marbles reach those mouths at the 85 u/s speed cap. 108 of Spiral
-  // Works' 152 falls per three races were at the Split-A mouth.
+  // up, so banking is followed) to at least CONTAIN_H, and a lid spans the two wall tops. The
+  // authored walls are only 21.8 (Spiral Works) / 26 (Grand Spiral) tall except at lane mouths,
+  // where they start at ZERO — and marbles reach those mouths at the 85 u/s speed cap. 108 of
+  // Spiral Works' 152 falls per three races were at the Split-A mouth.
   //
   // The lid height is capped per ring by the clearance to whatever other channel lies above it
   // (the helixes pass back over themselves ~46 units up; the weave crosses itself), minus a
@@ -1034,7 +1034,7 @@ export function createGlbCourse({
   }
 
   /**
-   * Swept guard over the containment surfaces (2026-09-30).
+   * Swept guard over the containment surfaces.
    *
    * The containment is a single-sided triangle shell, and cannon-es only keeps a sphere on the
    * near side of a triangle while its CENTRE is on the near side. At the 85 u/s speed cap a marble
@@ -1359,7 +1359,7 @@ export function createGlbCourse({
     // it collides against its rendered geometry. Its reachable surface is the inside of the cone,
     // whose normals all point upward, so a single normal test culls the underside exactly.
     //
-    // The funnel also gets a RIM WALL (2026-09-30): marbles arriving fast spun up and over its lip —
+    // The funnel also gets a RIM WALL: marbles arriving fast spin up and over its lip —
     // 30 of Grand Spiral's census losses. The rim is the outermost top vertex per angle bin around
     // the funnel's axis, extruded straight up RIM_H. Bins where a lane meets the rim (the channel
     // that feeds the funnel) are left open, or the wall would shut the entrance.
@@ -1413,15 +1413,14 @@ export function createGlbCourse({
       mesh.name = 'ContainmentGlass';
       group.add(mesh);
     };
-    // Walls only: the lid stays an invisible collider. A glass ceiling over every channel read as
-    // a haze over the whole course (user call, 2026-09-30).
-    // No rail along the lid edges either: the bright line floating over the track read as clutter
-    // (user call, 2026-09-30).
+    // Walls only: the lid stays an invisible collider. A glass ceiling over every channel reads as
+    // a haze over the whole course.
+    // No rail along the lid edges either: the bright line floating over the track reads as clutter.
     glass(CONTAIN.walls, 0.1);
     if (rimWalls.length) glass(rimWalls, 0.1);
 
-    // ── brake bands (2026-09-30) ──
-    // Amber rumble strips before the narrow lane mouths: marbles were reaching them at the 85 u/s
+    // ── brake bands ──
+    // Amber rumble strips before the narrow lane mouths: marbles reach them at the 85 u/s
     // speed cap. game.js caps speed on them (brakeAt); this is the painted strip that says so.
     for (const [a, b] of BRAKE_BANDS) group.add(floorBand(a, b, brakeTexture(), 0.3, 'BrakeBand'));
 

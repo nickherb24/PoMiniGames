@@ -95,13 +95,12 @@ if (-not $SkipPlaywrightInstall) {
 }
 
 # ── Tiered run ───────────────────────────────────────────────────────────────
-# Tier name -> @{ Project; Ceiling } per the 100/50/25/25 Rule.
+# Tier name -> @{ Project; Ceiling } (the per-tier test-count caps).
 $tiers = [ordered]@{
     'Unit'        = @{ Project = 'tests/PoMiniGames.Unit/PoMiniGames.Unit.csproj';                       Ceiling = 100 }
     'Integration' = @{ Project = 'tests/PoMiniGames.Integration/PoMiniGames.Integration.csproj';         Ceiling = 50 }
     'E2EAPI'      = @{ Project = 'tests/PoMiniGames.E2EAPI/PoMiniGames.E2EAPI.csproj';                  Ceiling = 25 }
     'E2EUI'       = @{ Project = 'tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj';                    Ceiling = 25 }
-    # Component tier (bUnit) was retired on 2026-09-11; its ceiling slot no longer applies.
 }
 
 $summary = @()

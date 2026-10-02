@@ -8,16 +8,11 @@
 @* ─────────────────────────────────────────────────────────────────────────
    Kiosk controls — pause / skip / exit for the "Watch all demos" reel.
 
-   KioskCoordinator's own class doc has always promised these controls
-   ("Users can Pause/Resume/Skip/Exit via KioskControlBar.razor"), but the
-   component was deleted in the 2026-07-04 mobile-portrait cleanup and never
-   replaced. That left TogglePause, SkipNext, Exit, IsPaused,
-   SecondsUntilAdvance and CurrentGameName as a live, correct, completely
-   unreachable API — and left a player who started the reel with no way out of
-   a 20-second auto-rotation except the browser's back button.
-
-   This is not general chrome coming back: it renders only while the reel is
-   actually running, and disappears the moment it stops.
+   This is the UI for KioskCoordinator's TogglePause, SkipNext, Exit, IsPaused,
+   SecondsUntilAdvance and CurrentGameName. Without it a player who started the
+   reel has no way out of the 20-second auto-rotation except the browser's back
+   button. It renders only while the reel is actually running, and disappears
+   the moment it stops.
    ───────────────────────────────────────────────────────────────────────── *@
 
 @if (Kiosk.IsActive)

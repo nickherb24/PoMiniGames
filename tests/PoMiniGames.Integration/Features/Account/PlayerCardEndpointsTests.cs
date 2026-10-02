@@ -21,7 +21,11 @@ public sealed class PlayerCardEndpointsTests : IClassFixture<TestWebApplicationF
         var response = await _client.GetAsync("/api/player/card?name=TestSpeedster");
         response.StatusCode.Should().Be(HttpStatusCode.OK);
 
-        var card = await response.Content.ReadFromJsonAsync<PlayerCardDto>();
+        // The API writes enums as strings, so the default reader options cannot parse the tier.
+        var card = await response.Content.ReadFromJsonAsync<PlayerCardDto>(new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)
+        {
+            Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() },
+        });
         card.Should().NotBeNull();
         card!.DisplayName.Should().Be("TestSpeedster");
         card.Mmr.Should().Be(OnlineMmrCalculator.SeedMmr);
@@ -40,7 +44,8 @@ public sealed class PlayerCardEndpointsTests : IClassFixture<TestWebApplicationF
 
         var svg = await response.Content.ReadAsStringAsync();
         svg.Should().StartWith("<svg");
-        svg.Should().EndWith("</svg>\n");
+        // The generator ends lines with the host newline, so trim before comparing.
+        svg.TrimEnd().Should().EndWith("</svg>");
         svg.Should().Contain("CyberRacer");
         svg.Should().Contain("COMPETITIVE LICENSE");
         svg.Should().Contain("MMR");

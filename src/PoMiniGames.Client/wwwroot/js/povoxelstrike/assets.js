@@ -1,4 +1,4 @@
-// assets.js — manifest fetch + content-hash Cache API layer (PRD §F10).
+// assets.js — manifest fetch + content-hash Cache API layer.
 //
 // Payload URLs are content-addressed (the hash IS the identity), so a cached entry can
 // never be stale — a changed GLB is a new hash and a new URL. The only maintenance is

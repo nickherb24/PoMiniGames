@@ -1,23 +1,23 @@
-// connectfive/index.js — physics-driven disc drop + chain reaction for ConnectFive (§CF-1).
+// connectfive/index.js — physics-driven disc drop + chain reaction for ConnectFive.
 //
 // WHY THIS EXISTS
-// §GFX-1 brought the chip-drop audio + impact cue to ConnectFive but the visual
-// drop itself remained a CSS keyframe (cf-slide-down). That keyframe already
-// overshoots and squashes — it reads as "physical" for a single disc — but it
-// drops the same distance into every row, so a disc landing on a tall pile
-// falls through the discs already there. matter.js gives the new disc a real
-// collision body inside a real column, so it falls exactly as far as the pile
-// leaves it and thumps onto the stack.
+// The chip-drop audio + impact cue are separate; the visual drop would otherwise
+// be a CSS keyframe (cf-slide-down). That keyframe overshoots and squashes — it
+// reads as "physical" for a single disc — but it drops the same distance into
+// every row, so a disc landing on a tall pile falls through the discs already
+// there. matter.js gives the new disc a real collision body inside a real
+// column, so it falls exactly as far as the pile leaves it and thumps onto the
+// stack.
 //
-// THE COLUMN IS THE MODEL (2026-09-12). Each drop builds three static bodies
+// THE COLUMN IS THE MODEL. Each drop builds three static bodies
 // around the falling disc: two walls on the column's own boundaries and one
 // support plank whose top face is the top of the pile. A single rigid body
 // cannot tell a plank from the discs it stands for — but it very much can tell
-// a FLAT surface from a round one, which is what the previous per-disc circular
-// "ghost" bodies were. A circle resting on a circle is unstable equilibrium, so
-// with no wall to stop it the disc rolled off the pile and drifted across the
-// board (measured: landing in column 3, coming to rest at column 3.54, with its
-// real cell still hidden behind it). Walls + a flat pile top is the whole fix.
+// a FLAT surface from a round one, which per-disc circular "ghost" bodies would
+// be. A circle resting on a circle is unstable equilibrium, so with no wall to
+// stop it the disc rolls off the pile and drifts across the board (measured:
+// landing in column 3, coming to rest at column 3.54, with its real cell still
+// hidden behind it). Walls + a flat pile top is the whole fix.
 //
 // QUALITY GATES (same shape as impactBus.js / glassFx.js):
 //   • reduced motion      → fall back to the keyframe, never spawn the engine
@@ -60,32 +60,28 @@
         col: number, targetRow: number, color: string,
         cellEl: HTMLElement|null, hiddenEl: HTMLElement|null }|null} */
     let _drop = null;
-    // There is no shared wall set any more. The floor a disc lands on depends on
+    // There is no shared wall set. The floor a disc lands on depends on
     // the target row, so it is built per drop together with the column walls —
-    // see spawnColumnBodies(). A board-wide floor pinned to row 8 was only ever
+    // see spawnColumnBodies(). A board-wide floor pinned to row 8 would only be
     // correct for the first disc in a column.
-    // (vestigial module-scope `_clone` removed 2026-09-11 — nothing ever
-    // assigned it the live element, and step() now reads _drop.clone.)
     let _active = false;
     let _rafId = 0;
     /** Frame-counted stillness: how many consecutive frames the disc has been slow. */
     let _stillFrames = 0;
     /** rAF timestamp from last step; used for delta integration. */
     let _lastFrame = 0;
-    /** 2026-09-12: watchdog id. A disc that never satisfies isAtRest() (it rolled
-        off a circular ghost, the tab was throttled, the board was resized
-        mid-flight) used to leave its cell hidden forever. The drop is force-settled
-        after this long no matter what the physics thinks. */
+    /** Watchdog id. A disc that never satisfies isAtRest() (the tab was throttled,
+        the board was resized mid-flight) would leave its cell hidden forever. The
+        drop is force-settled after this long no matter what the physics thinks. */
     let _watchdogId = 0;
     /** Force-settle deadline. Deliberately BELOW the 850 ms demo cadence in
         ConnectFivePage.RunDemoLoop: a drop that overstays must be finalized by
         its own watchdog, not cancelled by the next drop, or the disc it was
         delivering is revealed mid-flight while a new clone is already falling. */
     const DROP_TIMEOUT_MS = 800;
-    /** 2026-09-11 fix: _restX/_restY were assigned in dropDisc() and read by the
-        step loop's rest detection but never declared — under strict mode the
-        first assignment threw ReferenceError, dropDisc() caught it and fell back
-        to the CSS keyframe, so the matter.js drop never ran at all. */
+    /** Rest-detection position: assigned in dropDisc() and read by the step loop.
+        They must be declared — under strict mode an undeclared assignment throws
+        ReferenceError and dropDisc() would fall back to the CSS keyframe. */
     let _restX = 0;
     let _restY = 0;
 
@@ -118,19 +114,18 @@
         const cellEls = _board.querySelectorAll('.cf-cell');
         if (cellEls.length < 81) return false;
 
-        // ── Measure the CELLS, never the CSS variable (2026-09-12) ────────
-        // This used to read `--cf-cell` with
+        // ── Measure the CELLS, never the CSS variable ────────────────────
+        // Parsing `--cf-cell` with
         //     parseFloat(getComputedStyle(board).getPropertyValue('--cf-cell'))
-        // but that property is declared as
+        // does not work: that property is declared as
         //     clamp(28px, min(calc((100dvh - 310px)/9), calc((100dvw - 100px)/9)), 84px)
         // and getPropertyValue hands back a custom property's TOKENS, unresolved
         // — the literal "clamp(28px, min(calc(..." string. parseFloat of that is
-        // NaN, so `|| 56` silently took over and the whole grid was modelled at
-        // 56px cells with a 59px pitch. Measured live, the cells are 65.55px on a
-        // 68.55px pitch: a 9.55px error per row that compounds to ~76px by row 8,
-        // i.e. MORE THAN A FULL ROW. That is the drift behind discs stopping in
-        // the wrong row, and it is invisible at any viewport where the clamp
-        // happens to land near 56px, which is why it survived.
+        // NaN, so a fallback would silently take over and the whole grid would be
+        // modelled at the wrong cell size. A 9.55px error per row compounds to
+        // ~76px by row 8, i.e. MORE THAN A FULL ROW: discs stop in the wrong row,
+        // and it is invisible at any viewport where the clamp happens to land
+        // near the fallback.
         //
         // The cells are real laid-out elements, so their rects are the ground
         // truth for size, pitch and origin at once — no variable parsing, no
@@ -170,11 +165,9 @@
         // ── One radius, because the disc collides at the size it is drawn ──
         // `.cf-cell .piece` is 84% of the cell, so 0.42 * cellSize.
         //
-        // This briefly used a fatter collision radius of strideY/2 so that a
-        // column of stacked CIRCLES would settle on the grid pitch. Nothing
-        // stacks circles any more — the pile is one flat plank whose top face is
-        // placed off cellCy() — so the stacking pitch no longer depends on the
-        // radius at all, and a body fatter than its own sprite only wedged the
+        // Nothing stacks circles — the pile is one flat plank whose top face is
+        // placed off cellCy() — so the stacking pitch does not depend on the
+        // radius at all, and a body fatter than its own sprite would only wedge the
         // disc against the column walls. The drawn radius is the honest one.
         const visR = cellSize * 0.42;
         const physR = visR;
@@ -242,9 +235,8 @@
         const top = spawnY() - l.strideY;
         const height = (l.gridBottom + T) - top;
         // Bodies are positioned by their CENTRE, so every surface is offset by
-        // half the thickness. Passing the surface coordinate directly put each
-        // wall 100px into the playfield — the 2026-09-12 "disc stops a row high
-        // and then jumps" bug.
+        // half the thickness. Passing the surface coordinate directly would put each
+        // wall 100px into the playfield and make the disc stop a row high and then jump.
         return [
             Matter.Bodies.rectangle(cx, cellCy(targetRow) + r + half, l.strideX, T,
                 { isStatic: true, render: { visible: false } }),
@@ -305,7 +297,7 @@
         });
         // A tiny lateral kick keeps the column entry visually interesting (the
         // disc never falls perfectly straight); zero on average, and the column
-        // walls now bound where it can end up, so it cannot compound into drift.
+        // walls bound where it can end up, so it cannot compound into drift.
         Matter.Body.setVelocity(body, { x: (Math.random() - 0.5) * 0.4, y: 0 });
         return { body, clone };
     }
@@ -366,9 +358,6 @@
             // Write the body position into the clone's transform each frame.
             // translate3d puts the clone on its own compositor layer so this
             // is a GPU-side move — no layout, no paint.
-            // 2026-09-11 fix: this read the module-scope `_clone`, which nothing
-            // has ever assigned (the live clone is _drop.clone) — the first drop
-            // threw TypeError on every rAF frame from here on.
             if (_drop.clone) {
                 _drop.clone.style.transform = `translate3d(${b.position.x - r}px, ${b.position.y - r}px, 0)`;
             }
@@ -388,7 +377,7 @@
         _stillFrames = 0;
         clearWatchdog();
         revealCell(drop);
-        // §GFX-8 The landing event is observable to anyone else who wants to
+        // The landing event is observable to anyone else who wants to
         // hook into it (audio syncing, particles, scoreboard shake). The page
         // already fires the chip-drop audio from Blazor — kept there so the
         // timing is deterministic even when matter.js never loads.
@@ -407,10 +396,9 @@
      * up. Both halves of that matter:
      *   • The disc does not exist yet when dropDisc() runs — the caller places
      *     the piece in the board model and only then re-renders — so the hide
-     *     has to wait for Blazor to paint it. It used to wait exactly one frame
-     *     and silently give up; whenever the render landed a frame later the
-     *     cell kept its static disc AND grew a falling clone, which is the
-     *     "two discs at once" the drop was supposed to replace.
+     *     has to wait for Blazor to paint it. Waiting a single frame and giving
+     *     up would, whenever the render landed a frame later, leave the cell
+     *     with its static disc AND a falling clone: "two discs at once".
      *   • The cell's `class` attribute is Blazor-managed (piece colour, win
      *     cascade, disabled), so a class added here is wiped by the very next
      *     diff. Blazor never sets a `style` attribute on the disc, so it leaves
@@ -439,12 +427,12 @@
     /**
      * Show the cell's static disc again, now that the clone has delivered it.
      *
-     * `animation` stays pinned to none (2026-09-12). Clearing it handed the disc
+     * `animation` stays pinned to none. Clearing it would hand the disc
      * back to `.cf-cell .piece { animation: cf-slide-down … }`, and because the
-     * keyframe had been suppressed since the frame it was created, the browser
-     * started it HERE — so every move played twice: the clone fell and vanished,
-     * then a second disc dropped in from nine rows up. The physics flight IS this
-     * disc's drop animation; there is nothing left for the keyframe to do.
+     * keyframe has been suppressed since the frame the disc was created, the browser
+     * would start it HERE — so every move would play twice: the clone falls and
+     * vanishes, then a second disc drops in from nine rows up. The physics flight IS
+     * this disc's drop animation; there is nothing left for the keyframe to do.
      *
      * The element is re-queried rather than trusted: a Blazor diff between the
      * hide and the reveal can swap the span (ghost-piece → piece), which would
@@ -584,12 +572,12 @@
             const statics = spawnColumnBodies(col, targetRow);
             const { body, clone } = spawnFallingDisc(col, color);
             Matter.World.add(_engine.world, [body, ...statics]);
-            // 2026-09-12: hide ONLY the cell being dropped into. The hide used
-            // to be a board-wide class whose rule hid all 81 discs for the
-            // duration of the flight — in the CPU-vs-CPU demo, where the next
-            // drop starts before the last one settles, that meant the board was
-            // blank essentially always. (suppressKeyframe above is board-wide by
-            // design: it suppresses an ANIMATION, and never visibility.)
+            // Hide ONLY the cell being dropped into. A board-wide hide would
+            // blank all 81 discs for the duration of the flight — in the
+            // CPU-vs-CPU demo, where the next drop starts before the last one
+            // settles, the board would be blank essentially always.
+            // (suppressKeyframe above is board-wide by design: it suppresses
+            // an ANIMATION, and never visibility.)
             const cellEl = cellAt(targetRow, col);
             _drop = { body, statics, clone, col, targetRow, color, cellEl, hiddenEl: null };
             hideCell(_drop);

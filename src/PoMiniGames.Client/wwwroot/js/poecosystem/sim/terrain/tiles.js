@@ -19,7 +19,6 @@ export const isSolidState = (s) => s === TILE_STATE.LAVA || s === TILE_STATE.HUT
 export const isWater = (type) => type === TILE.OCEAN || type === TILE.LAKE;
 export const isWalkable = (type) => type === TILE.BEACH || type === TILE.GRASS || type === TILE.FOREST || type === TILE.HILL;
 export const isFlammable = (type) => type === TILE.GRASS || type === TILE.FOREST;
-export const growsGrass = (type) => type === TILE.GRASS || type === TILE.FOREST || type === TILE.HILL;
 
 /** Tile index for (x, z), clamped to the map so neighbour walks never leave it. */
 export function tileIndex(x, z, size) {

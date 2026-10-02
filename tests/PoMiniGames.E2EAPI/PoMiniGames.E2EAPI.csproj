@@ -4,7 +4,7 @@
     <!-- TFM / Nullable / ImplicitUsings inherited from Directory.Build.props -->
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
-    <!-- §5 E2E-API: pure HTTP-contract tests. Boots the host in-process through
+    <!-- E2E-API: pure HTTP-contract tests. Boots the host in-process through
          WebApplicationFactory (TestServer) and asserts the BFF's public routes,
          status codes, and JSON shape — no browser. Browser/UI coverage lives in
          the sibling PoMiniGames.E2EUI project. -->
@@ -21,7 +21,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- §5: spin the real host in-process (the Blazor WASM client is BFF-served
+    <!-- Spin the real host in-process (the Blazor WASM client is BFF-served
          by the host on :5000; no separate Vite/Node). -->
     <ProjectReference Include="..\..\src\PoMiniGames.API\PoMiniGames.API.csproj" />
     <!-- Shared test utilities (TestBudgetGuard, etc.) — explicit ProjectReference
@@ -34,7 +34,7 @@
     <Using Include="Xunit" />
     <Using Include="FluentAssertions" />
     <!-- ArmAntiforgeryAsync is needed by every test that writes; a global using keeps
-         the §2 CSRF plumbing out of each file's header. -->
+         the CSRF plumbing out of each file's header. -->
     <Using Include="PoMiniGames.TestUtilities" />
   </ItemGroup>
 

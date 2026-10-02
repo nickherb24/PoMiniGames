@@ -4,7 +4,7 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Tooling adopted 2026-09-02 (PoEcosystem plan, "top-50" selection). All four are
+    <!-- Tooling: all four are
          trim-safe: Mapperly is a compile-time source generator (no runtime assembly),
          Blazored.LocalStorage is used through its string API only, and NSubstitute /
          bUnit never ship in the WASM bundle. -->
@@ -22,12 +22,12 @@
     <!-- API -->
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.10" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
-    <!-- §3.4 Native .NET 10 resilience pipelines (retry / circuit-breaker / timeout
+    <!-- Native .NET 10 resilience pipelines (retry / circuit-breaker / timeout
          / hedging) backed by Polly v8, registered via IHttpClientFactory. -->
     <PackageVersion Include="Microsoft.Extensions.Http.Resilience" Version="10.7.0" />
     <PackageVersion Include="Microsoft.Extensions.Configuration.Abstractions" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Extensions.Diagnostics.HealthChecks" Version="10.0.10" />
-    <!-- §3.4 Native HybridCache (stampede protection + L1/L2). Memoizes expensive
+    <!-- Native HybridCache (stampede protection + L1/L2). Memoizes expensive
          Azure OpenAI generations at the slice boundary. -->
     <PackageVersion Include="Microsoft.Extensions.Caching.Hybrid" Version="10.7.0" />
     <!-- Transitive pin: Microsoft.AspNetCore.OpenApi pulls Microsoft.OpenApi; with
@@ -56,7 +56,7 @@
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.10" />
     <PackageVersion Include="Microsoft.AspNetCore.Components.WebAssembly.DevServer" Version="10.0.10" />
     <PackageVersion Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.10" />
-    <!-- §2.3 AuthenticationStateProvider + AuthorizeRouteView. Not transitively
+    <!-- AuthenticationStateProvider + AuthorizeRouteView. Not transitively
          included by the WASM metapackage in .NET 10. -->
     <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.10" />
     <!-- AI (PoSurvive inference: server-side Azure OpenAI relay) -->
@@ -79,7 +79,7 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
     <PackageVersion Include="FluentAssertions" Version="8.8.0" />
-    <!-- PoJevArena (2026-09-25): Verify pins the exact state/question text Jev is shown (a
+    <!-- PoJevArena: Verify pins the exact state/question text Jev is shown (a
          wording change is a behaviour change for the model); FakeTimeProvider drives the daily
          Jev allowance and match-registry TTL tests. Unit tier only; nothing reaches WASM. -->
     <PackageVersion Include="Verify.Xunit" Version="31.12.5" />
@@ -87,14 +87,13 @@
     <PackageVersion Include="coverlet.collector" Version="6.0.4" />
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
     <PackageVersion Include="Microsoft.Playwright" Version="1.50.0" />
-    <!-- §8 Testcontainers v4 with the dedicated Azurite module (replaces the
-         long-deprecated DotNet.Testcontainers 1.6.0 package name). -->
+    <!-- Testcontainers v4 with the dedicated Azurite module. -->
     <PackageVersion Include="Testcontainers.Azurite" Version="4.12.0" />
     <!-- Transitive security pin: Testcontainers 4.12.0 drags in SSH.NET 2025.1.0
          (High). Pin the patched line. Nothing references SSH.NET directly — it
          exists only inside Testcontainers' Docker plumbing in the test tiers. -->
     <PackageVersion Include="SSH.NET" Version="2026.0.0" />
-    <!-- §1.2 Tag-driven versioning. MinVer reads the nearest 'v*' git tag and
+    <!-- Tag-driven versioning. MinVer reads the nearest 'v*' git tag and
          produces a SemVer 2.0 version (e.g. v1.4.0 + 3 commits → 1.4.4-alpha.0.3).
          Version flows into AssemblyVersion, FileVersion, and InformationalVersion
          via Directory.Build.props so every project gets it for free. -->

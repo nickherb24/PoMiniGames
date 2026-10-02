@@ -4,8 +4,8 @@
 
 @* The quick-match status card: connecting, searching, a dropped opponent, a lost
    connection. Renders nothing while there is nothing to say, so a page
-   can leave it mounted above its board. Connect Five, Tic-Tac-Toe and Marble Race each
-   had their own copy of these branches until 2026-09-14. *@
+   can leave it mounted above its board. Shared by Connect Five, Tic-Tac-Toe and
+   Marble Race. *@
 @if (Visible)
 {
     <div class="qm" role="status">
@@ -75,10 +75,10 @@
         NoteMoments(Session);
     }
 
-    // ── Match moments (2026-10-01) ───────────────────────────────────────────────
+    // ── Match moments ────────────────────────────────────────────────────────────
     // The search ending, the opponent dropping and coming back, and the turn passing to
-    // this player were all text changes on a card that hides itself while play is fine.
-    // Edges only, so a re-render with nothing new is silent.
+    // this player are text changes on a card that hides itself while play is fine, so
+    // each gets a cue. Edges only, so a re-render with nothing new is silent.
     private QuickMatchPhase _lastPhase;
     private bool _opponentHere = true, _myTurn;
     private string? _cue;

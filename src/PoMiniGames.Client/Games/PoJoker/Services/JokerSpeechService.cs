@@ -8,7 +8,7 @@ namespace PoMiniGamesClient.Games.PoJoker;
 /// points live in <c>wwwroot/js/pojoker-speech-interop.js</c> under the <c>poJokerSpeech</c>
 /// global. Failures are swallowed (narration is non-essential).
 /// </summary>
-public sealed class JokerSpeechService(IJSRuntime jsRuntime, ILogger<JokerSpeechService> logger) : IJokerSpeechService
+public sealed class JokerSpeechService(IJSRuntime jsRuntime, ILogger<JokerSpeechService> logger)
 {
     private readonly IJSRuntime _jsRuntime = jsRuntime;
     private readonly ILogger<JokerSpeechService> _logger = logger;

@@ -783,7 +783,7 @@
     /* The name gets both lines of the row. On one line, beside the two add buttons,
        "Vanguard Tank" read "Vanguard …" and every creature was a first word. The row
        stays 56px (the list is virtualised on a fixed item size), so the kit line gives
-       up its place here; it is still on the creature's own sheet. 2026-10-01. */
+       up its place here; it is still on the creature's own sheet. */
     .jev-root ::deep .jev-card__name { white-space: normal; line-height: 1.2; overflow-wrap: anywhere; }
     .jev-root ::deep .jev-card__kit { display: none; }
     .jev-hud__map { display: none; }

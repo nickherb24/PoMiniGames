@@ -7,19 +7,14 @@
 @inject GameResultService GameResults
 @implements IAsyncDisposable
 
-@* 2026-07-16: this page wrapped GameShell but never passed GameOver, so the
-   multiplayer finale rendered as an inline block *below the still-live question
-   input* instead of the shared end-of-game modal every other game uses. It now
-   ends on the same modal, with the match's final scores as the summary and the
-   game's all-time top 3 underneath.
+@* The match ends on the shared end-of-game modal every other game uses, with the
+   match's final scores as the summary and the game's all-time top 3 underneath.
 
-   2026-08-10: the host's "Next round (n/m)" button is gone, and with it the
-   client-side tally that gated it (_kingSubmitted / _answersThisRound /
-   _totalNonKingPlayers / an _answeredThisRound HashSet). The server already knew
-   when a round was complete; it now scores and advances on its own the moment
-   everyone has answered, or when the round clock expires. Non-hosts no longer
-   watch "Waiting for the host…", and a host who closes their tab mid-match can
-   no longer strand the rest of the lobby. *@
+   There is no host-driven "Next round" button and no client-side tally of who has
+   answered: the server knows when a round is complete and scores and advances on its
+   own the moment everyone has answered, or when the round clock expires. Non-hosts
+   never wait on the host, and a host who closes their tab mid-match cannot strand the
+   rest of the lobby. *@
 <PageTitle>Couple Quiz — Online · PoMiniGames</PageTitle>
 
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
@@ -29,10 +24,10 @@
            GameSummary="@GameSummaryContent">
     @if (_game is null)
     {
-        @* NetRun10 audit #8: if the player landed on /game without ever joining a
-           lobby (deep-link, refresh mid-game, or wrong navigation), the page used to
-           spin forever on "Waiting for the round to start…". After a short grace
-           period, route them back to the lobby so they understand what happened. *@
+        @* If the player landed on /game without ever joining a lobby (deep-link,
+           refresh mid-game, or wrong navigation), the page would spin forever on
+           "Waiting for the round to start…". After a short grace period, route
+           them back to the lobby so they understand what happened. *@
         @if (_showLobbyHint)
         {
             <div class="cq-gameover">
@@ -135,7 +130,7 @@
     private CoupleQuizRoundResultPayload? _lastResult;
     private CoupleQuizGameOverPayload? _gameOver;
 
-    // NetRun10 audit #8: if no game starts within 4s of landing here, show
+    // If no game starts within 4s of landing here, show
     // the lobby redirect hint instead of an infinite spinner.
     private bool _showLobbyHint;
     private CancellationTokenSource? _lobbyHintCts;

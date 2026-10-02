@@ -18,11 +18,9 @@ import { Fx, CrowdBed, say, hush } from './fx.js';
 import { createPostFx } from './postfx.js';
 import '../weather.js';
 
-// ── Audio (§GFX) ────────────────────────────────────────────────────────────
-// PoSports shipped silent: there was no AudioContext anywhere under posports/,
-// even though gameCues.js has carried a full 'posports' timbre table (rubber,
-// air and stadium crowd) since it was written. These are the call sites that
-// table was designed for. Going through PoCue rather than a local oscillator is
+// ── Audio ───────────────────────────────────────────────────────────────────
+// gameCues.js carries a full 'posports' timbre table (rubber, air and stadium
+// crowd); these are the call sites that table is for. Going through PoCue rather than a local oscillator is
 // what keeps the meet on the shared mix — master mute, ducking and the sfx bus
 // all come for free, and a second AudioContext here would fight the first.
 //
@@ -511,10 +509,10 @@ export class SportsGame {
   }
 
   /**
-   * Push the meet's tension into the soundtrack and the crowd (§GFX).
+   * Push the meet's tension into the soundtrack and the crowd.
    *
-   * The music director only knew 'menu' / 'lobby' / 'match', so a meet sounded the
-   * same on the blocks as on the line. Two signals combine here: how far the
+   * The music director's own states are only 'menu' / 'lobby' / 'match', which would
+   * sound the same on the blocks as on the line. Two signals combine here: how far the
    * leader has run, and how tight the race is behind them — a runaway win should
    * relax as it resolves, a photo finish should not.
    *

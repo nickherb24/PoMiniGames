@@ -23,8 +23,7 @@ public enum QuickMatchPhase
 /// The client-side state machine for an online turn game (Connect Five, Tic-Tac-Toe):
 /// connect, queue, receive a seat, relay moves, read the server's snapshots, vote for a
 /// rematch, record the result. The page keeps only what is board-specific — how a move
-/// is drawn and sounded — through the three events below. Until 2026-09-14 both game
-/// pages carried this machine inline, ~250 identical lines each.
+/// is drawn and sounded — through the three events below.
 /// </summary>
 public sealed class OnlineTurnSession : IAsyncDisposable
 {

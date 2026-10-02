@@ -25,7 +25,7 @@ public sealed class LeaderboardEndpointTests : IClassFixture<TestWebApplicationF
         _client = factory.CreateClient();
     }
 
-    // §2 CSRF: the high-score and ladder POSTs are state-changing /api/* calls and are
+    // The high-score and ladder POSTs are state-changing /api/* calls and are
     // refused without a synchroniser token. Arming lives in InitializeAsync rather than
     // the constructor because fetching the token is an HTTP round trip.
     public Task InitializeAsync() => _client.ArmAntiforgeryAsync();

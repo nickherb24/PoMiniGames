@@ -147,8 +147,6 @@
     /// <summary>Route mode segment. Parsed by <see cref="GameModes.Parse"/>, which
     /// owns every accepted spelling and legacy form — see GameMode.cs.</summary>
     [Parameter] public string? Mode { get; set; }
-    [SupplyParameterFromQuery(Name = "mode")] public string? ModeQuery { get; set; }
-    [SupplyParameterFromQuery(Name = "demo")] public int DemoQuery { get; set; }
     /// <summary>Online: the fight's internal match code (from the lobby's start, or a refresh).</summary>
     [SupplyParameterFromQuery(Name = "code")] public string? CodeQuery { get; set; }
 
@@ -557,7 +555,7 @@
 
     protected override void OnInitialized()
     {
-        var routeMode = GameModes.Parse(Mode, ModeQuery, DemoQuery);
+        var routeMode = GameModes.Parse(Mode);
         _mode = routeMode == GameMode.Demo ? "demo"
               : routeMode == GameMode.TwoPlayer ? "2p"
               : "1p";
@@ -1193,6 +1191,8 @@
                 PlayerInitials = _playerName,
                 KoTimeSeconds = Math.Round(elapsedSeconds, 2),
                 Character = _p1Char,
+                // Stamped here, once: the same entry is what gets parked and replayed.
+                Date = DateTime.UtcNow.ToString("O"),
             };
         }
 

@@ -101,7 +101,7 @@ export function createReel(host, { tier = 'high', photo = null } = {}) {
   drawer.querySelector('[data-act="mini"]').addEventListener('click', () => takePhoto(true));
   drawer.querySelector('[data-act="long"]').addEventListener('click', () => startExposure());
 
-  // ── long exposure (GFX pass 3, 2026-09-30) ──────────────────────────
+  // ── long exposure ──────────────────────────
   // Every composed frame for EXPOSURE_MS is laid onto one canvas with the `lighten`
   // operator, which keeps the brightest value each pixel ever had: the stars draw their
   // arcs, a campfire becomes a column, lava a river, and a still landscape stays as it was.

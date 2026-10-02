@@ -1,6 +1,6 @@
-/* ── Connect Five — scoped board styles (§2 style isolation) ──
-   Moved out of the 1,500-line global games.css so the 81-cell board's selectors
-   no longer participate in every other game's style-matching. Colours, radii and
+/* ── Connect Five — scoped board styles ──
+   Scoped so the 81-cell board's selectors do not participate in every other
+   game's style-matching. Colours, radii and
    elevation come from the central design tokens (:root in app.css) — no raw hex
    drift here. The shared status/result badges (.cf-status--*, .cf-result--*) stay
    global: they're a cross-game vocabulary TicTacToe et al. alias to.
@@ -8,19 +8,16 @@
    Cell size respects 100dvh + 100dvw so the 9x9 board scales to fit portrait
    phones instead of overflowing. */
 .cf-layout {
-  /* Cell size. The 56px ceiling used to bind on essentially every desktop: at
-     900px of viewport height the height term already allows ~73px, so the board
-     was pinned to 548px and sat as a small square in a large empty page while
-     the space to grow into went unused.
-     The ceiling is now 84px, which lets the height term actually decide, and the
-     height reserve grows 240px -> 310px to pay for the status bar added above
-     the board (plus the app header the old figure was already covering). */
+  /* Cell size. The 84px ceiling lets the height term decide on a desktop (at
+     900px of viewport height it allows ~73px); a lower ceiling would pin the
+     board to a small square in a large empty page. The 310px height reserve pays
+     for the status bar above the board plus the app header. */
   --cf-cell: clamp(28px, min(calc((100dvh - 310px) / 9), calc((100dvw - 100px) / 9)), 84px);
   --cf-cell-stride: calc(var(--cf-cell) + 3px);
-  /* Audit #2: every disc drops the full board depth (Rows), not (row + 1).
-     Without this, a piece in row 0 only travels 1 cell (~50px) while a piece
-     in row 8 travels 9 cells (~450px). Viewers see chaotic, inconsistent drop
-     lengths and read it as "pieces going through others." */
+  /* Every disc drops the full board depth (Rows), not (row + 1). Otherwise a
+     piece in row 0 only travels 1 cell (~50px) while a piece in row 8 travels
+     9 cells (~450px), and the inconsistent drop lengths read as "pieces going
+     through others." */
   --cf-drop-rows: 9;
   display: flex;
   flex-direction: column;
@@ -46,15 +43,14 @@
 }
 
 /* ── Turn strip slot ──────────────────────────────────────────────────────
-   The strip itself is Components/TurnStrip (shared with Tic-Tac-Toe since
-   2026-10-01); like the quick-match slot above, this only sizes it to the board. */
+   The strip itself is Components/TurnStrip (shared with Tic-Tac-Toe); like the quick-match slot above, this only sizes it to the board. */
 .cf-status-slot {
   width: calc(var(--cf-cell) * 9 + 3px * 8 + 20px);
   max-width: 100%;
   margin: 0 auto;
 }
 
-/* §6 Glassmorphism board frame + depth layers. A translucent, blurred slab with
+/* Glassmorphism board frame + depth layers. A translucent, blurred slab with
    a lit top edge (inset highlight) and a grounded drop shadow reads as a real
    physical board the discs sit inside. backdrop-filter is GPU-composited. */
 .cf-board {
@@ -63,8 +59,7 @@
   grid-template-rows: repeat(9, var(--cf-cell));
   gap: 3px;
   margin: 1rem auto;
-  /* §8 padding audit: the old rule baked +24px into the width AND added 12px
-     padding — a double inset. One 10px frame now; width tracks grid + frame. */
+  /* One 10px frame; width tracks grid + frame (no extra width on top of the padding). */
   width: calc(var(--cf-cell) * 9 + 3px * 8 + 20px);
   max-width: 100%;
   padding: 10px;
@@ -119,20 +114,19 @@
 .cf-cell.disabled { cursor: default; }
 
 /* ── The disc IS the piece ──
-   §1 One element carries the colour AND the drop, so there is no static
-   colour-fill circle appearing beneath a second sliding circle (the old
-   emoji + .cf-cell.red double-disc bug). GPU path: transform-only, promoted. */
+   One element carries the colour AND the drop, so there is no static
+   colour-fill circle appearing beneath a second sliding circle. GPU path: transform-only, promoted. */
 .cf-cell .piece {
   width: 84%;
   height: 84%;
   border-radius: 50%;
   font-size: 0;
   will-change: transform;
-  /* Audit #1: `forwards` (not `both`) keeps the disc at translateY(0) once
-     the keyframe completes, so settled discs no longer flicker between the
-     0% (above-board) and 100% (cell) frames when Blazor re-renders during
-     rapid demo drops. Iteration count pinned to 1 to prevent any future
-     animation-name leak from re-triggering the cascade. */
+  /* `forwards` (not `both`) keeps the disc at translateY(0) once the keyframe
+     completes, so settled discs do not flicker between the 0% (above-board) and
+     100% (cell) frames when Blazor re-renders during rapid demo drops. Iteration
+     count pinned to 1 to prevent any animation-name leak from re-triggering the
+     cascade. */
   animation: cf-slide-down 0.55s cubic-bezier(0.34, 1.2, 0.55, 1) forwards 1;
 }
 
@@ -154,12 +148,11 @@
   box-shadow: var(--disc-shadow);
 }
 
-/* Audit #3: dropped the 84% bounce keyframe. The cubic-bezier(0.34, 1.2, 0.55, 1)
-   easing already overshoots past 0 between 0% and 70%, giving the disc a soft
-   squash-and-settle. The extra 84% → -14% step lifted the disc ABOVE its cell
-   right at the moment a new piece was about to drop, so observers read it as
-   "the new piece passed through the settled one." One fewer frame, one fewer
-   visible glitch. */
+/* No separate bounce step: the cubic-bezier(0.34, 1.2, 0.55, 1) easing already
+   overshoots past 0 between 0% and 70%, giving the disc a soft squash-and-settle.
+   A larger lift after landing would raise the disc ABOVE its cell right as a new
+   piece is about to drop, which reads as "the new piece passed through the
+   settled one." */
 @keyframes cf-slide-down {
   0%   { transform: translateY(calc(-1 * var(--cf-drop-rows, 9) * var(--cf-cell-stride, 55px))) scale(0.92, 1.12); }
   68%  { transform: translateY(0) scale(1.14, 0.86); }
@@ -167,7 +160,7 @@
   100% { transform: translateY(0) scale(1, 1); }
 }
 
-/* §3 GPU column-preview ghost. A translucent, un-animated disc marks exactly
+/* GPU column-preview ghost. A translucent, un-animated disc marks exactly
    where the next piece will land in the hovered column. Hover-capable pointers
    only — coarse/touch devices never get a stuck ghost after a tap. */
 .cf-cell .piece.ghost-piece {
@@ -182,7 +175,7 @@
   .cf-cell .piece.ghost-piece { opacity: 0.45; }
 }
 
-/* §7 One-shot win reveal — holographic neon laser cascade. The winning discs
+/* One-shot win reveal — holographic neon laser cascade. The winning discs
    pop in a staggered cascade with electric cyan laser rays, then settle to a static cyan halo. */
 .cf-cell.win-cell {
   border-color: var(--accent-cyan);
@@ -195,7 +188,7 @@
   animation-delay: calc(var(--win-i, 0) * 90ms);
   box-shadow: 0 0 18px #00f0ff;
 }
-/* Audit #9: post-cascade static state. */
+/* Post-cascade static state. */
 .cf-cell.win-cell-static {
   border-color: var(--accent-cyan);
   box-shadow: 0 0 20px var(--accent-cyan), inset 0 0 8px var(--accent-cyan);
@@ -214,31 +207,29 @@
   100% { transform: scale(1); filter: brightness(1.1); }
 }
 
-/* §10 Motion hygiene — every animated surface collapses to a static end-state
+/* Motion hygiene — every animated surface collapses to a static end-state
    for users who ask for reduced motion. */
 @media (prefers-reduced-motion: reduce) {
   .cf-cell .piece,
   .cf-cell.win-cell,
   .cf-cell.win-cell .piece { animation: none; }
   .cf-cell { transition: none; }
-  /* Audit #9: under reduced-motion the cascade never plays; jump straight to
+  /* Under reduced-motion the cascade never plays; jump straight to
      the static state so win cells still glow but never animate. */
   .cf-cell.win-cell { animation: none; box-shadow: 0 0 16px var(--accent-glow); }
 }
 
-/* ── Portrait phones (§8 padding audit) ──
+/* ── Portrait phones ──
    Shrink cells and drop the frame inset so board + shell chrome fit one
    viewport height without a second nested border eating horizontal space. */
 @media (max-width: 640px) {
   .cf-layout {
-    /* Constrain by width AND height. 2026-09-11 fix: the width reserve was 40px
-       but the real chrome is .gps-game-area padding (1.5rem × 2 = 48px) + the
-       board frame (7px × 2 = 14px) + the cell gaps (2px × 8 = 16px) = 78px —
-       so a 390px phone got a 380px board in a 342px well and the 9th column
-       clipped off the right edge (measured: last cell right = 397.9px). The
-       reserve is now 86px (78px chrome + 8px safety), and because the grid
-       tracks derive from --cf-cell the whole board shrinks with it — the full
-       9 columns always fit. */
+    /* Constrain by width AND height. The width reserve must cover the real chrome:
+       .gps-game-area padding (1.5rem × 2 = 48px) + the board frame (7px × 2 = 14px)
+       + the cell gaps (2px × 8 = 16px) = 78px; a smaller reserve clips the 9th
+       column off the right edge of a 390px phone. The reserve is 86px (78px chrome
+       + 8px safety), and because the grid tracks derive from --cf-cell the whole
+       board shrinks with it — the full 9 columns always fit. */
     --cf-cell: clamp(24px, min(calc((100dvh - 220px) / 9), calc((100dvw - 86px) / 9)), 44px);
     --cf-cell-stride: calc(var(--cf-cell) + 2px);
   }
@@ -272,17 +263,12 @@
   position: relative;
 }
 
-/* ARIA row wrapper (audit #2). `display: contents` keeps all 81 cells as direct
+/* ARIA row wrapper. `display: contents` keeps all 81 cells as direct
    grid items of .cf-board so the 9×9 template above still lays them out — the
    element exists purely to satisfy grid > row > gridcell in the a11y tree. */
 .cf-row { display: contents; }
 
-/* The three.js board layer (js/boardGl.js) was removed from ConnectFive on
-   2026-08-10 — see the note in ConnectFivePage.razor. The rules that used to
-   live here blanked these DOM sockets and discs so the rendered board could
-   show through; with no canvas to defer to they would only hide the board. */
-
-/* ── §CF-1 Physics-driven drop ───────────────────────────────────────────
+/* ── Physics-driven drop ─────────────────────────────────────────────────
    matter.js drives the disc visually from above the board to its target cell
    via a floating clone parented to document.body, and hides that one cell's
    static disc for the flight so the player does not see the disc already in
@@ -295,12 +281,9 @@
    • The hide is an inline style written by js/connectfive/index.js, because
      the cell's `class` attribute is Blazor-managed and a class added from JS
      is wiped by the next diff.
-
-   2026-09-12: the hide used to be `.cf-board--physics-active .cf-cell .piece`,
-   which hid all 81 discs for the duration of every flight. In the CPU-vs-CPU
-   demo the next drop starts before the previous one settles, so the board was
-   blank essentially always — you heard the drops and saw an empty grid. With
-   the clone unstyled (see above) there was nothing else on screen either. */
+   • The hide is per cell, never a board-wide rule: in the CPU-vs-CPU demo the next
+     drop starts before the previous one settles, so hiding every disc for the
+     duration of a flight would leave the board blank essentially always. */
 
 /* The one board-level rule that survives: while physics owns the drop, the
    keyframe must not ALSO run. Blazor renders the settled disc a frame or two
@@ -321,7 +304,7 @@
    310px reserve above assumes a tall window and left the 28px floor in charge,
    which made the board 87px taller than the room it had. Here the reserve is what
    is really around the board (top bar, the turn strip, the frame, the gaps), and
-   the floor is the 24px minimum target. 2026-10-01. */
+   the floor is the 24px minimum target. */
 @media (max-height: 500px) {
   .cf-layout {
     --cf-cell: clamp(24px, min(calc((100dvh - 176px) / 9), calc((100dvw - 100px) / 9)), 84px);

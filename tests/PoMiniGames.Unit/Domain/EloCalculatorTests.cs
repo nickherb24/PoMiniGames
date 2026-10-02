@@ -6,9 +6,7 @@ namespace PoMiniGames.Unit;
 
 /// <summary>Unit tests for <see cref="EloCalculator"/>.</summary>
 /// <remarks>
-/// <b>§1 100/50/25/25 Rule.</b> Originally 12 single-case <c>[Fact]</c>s; consolidated
-/// to 4 <c>[Theory]</c>s + 3 <c>[Fact]</c>s by parameterizing (difficulty × result)
-/// over a single body. Same discoverable signal, fewer maintenance surfaces.
+/// (difficulty × result) is parameterized over a single body to keep the method count low.
 /// </remarks>
 public sealed class EloCalculatorTests
 {

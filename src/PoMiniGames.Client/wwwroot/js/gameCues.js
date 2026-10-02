@@ -1,4 +1,4 @@
-// gameCues.js — the app's sound vocabulary (§GFX-11).
+// gameCues.js — the app's sound vocabulary.
 //
 // WHY A TABLE AND NOT CALL SITES
 // Before this, "the sound a game makes" was 900 Hz here, a triangle burst
@@ -299,10 +299,9 @@ const CUES = {
     },
 
     // ── PoRacer — motorised, synthwave engine ───────────────────────────
-    // fx particle bursts removed 2026-09-17 (user request): every cue fired
-    // mid-rake bursts at the viewport centre, which is exactly where the
-    // camera keeps your car, so the sparks/smoke read as effects around the
-    // cars. Sounds and screen feel are unchanged.
+    // No fx particle bursts here: they would fire at the viewport centre,
+    // which is exactly where the camera keeps your car, so the sparks/smoke
+    // would read as effects around the cars. Sounds and screen feel only.
     poracer: {
         shift: {
             voices: [v('saw', 220, 0.09, 0.10, { freqEnd: 340, sweep: 0.08, decay: 0.08, cutoff: 1400, q: 3, drive: 0.4 })],

@@ -1,4 +1,4 @@
-// impactBus.js — the platform's shared "game feel" layer (§GFX-8).
+// impactBus.js — the platform's shared "game feel" layer.
 //
 // WHY THIS EXISTS
 // Every game had its own idea of what a hit felt like, or no idea at all.
@@ -383,17 +383,15 @@ export function vibrate(pattern) {
     try {
         if (localStorage.getItem(HAPTICS_KEY) === '0') return;
         if (motionReduced()) return;
-        // Bug fix (2026-08-07): kiosk/demo runs without a user gesture, so
-        // every browser vibrate call below would emit a console error. Skip
-        // the call entirely on any /{game}/demo or ?kiosk=N route — the
-        // attract reel has no one to vibrate.
+        // Kiosk/demo runs without a user gesture, so every browser vibrate call
+        // below would emit a console error. Skip the call entirely on any
+        // /{game}/demo or ?kiosk=N route — the attract reel has no one to vibrate.
         if (isOnKioskRoute()) return;
         // The kiosk guard above covers the attract reel but not every
         // gesture-less caller. /login fires a cue while the sign-in gate is
-        // still mounting, and this — not uiAudio.js — was the call site still
-        // logging "Blocked call to navigator.vibrate because user hasn't tapped
-        // on the frame" on the app's entry page after the uiAudio fix.
-        // Same sticky-activation test, applied here too. 2026-09-11 UI audit.
+        // still mounting, and an ungated call logs "Blocked call to
+        // navigator.vibrate because user hasn't tapped on the frame" on the
+        // app's entry page. Same sticky-activation test as uiAudio.js.
         if (!hasUserGestured()) return;
         if (navigator && typeof navigator.vibrate === 'function') navigator.vibrate(pattern);
     } catch { /* unsupported or storage blocked */ }
@@ -542,7 +540,7 @@ if (typeof window !== 'undefined') {
         registerStage, unregisterStage, vibrate, pop, popSelector, reset, countUp,
     };
 
-    // Consolidated PoImpactFx layer (§GFX-14)
+    // PoImpactFx layer
     (function () {
         const MIN_GAP_MS = 90;
         let _lastHit = 0;

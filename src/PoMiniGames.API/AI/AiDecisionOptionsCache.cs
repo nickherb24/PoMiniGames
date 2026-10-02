@@ -29,29 +29,7 @@ namespace PoMiniGames.AI;
 /// GoF: Flyweight. Held as a singleton in DI; consumers take it via constructor injection.
 /// </para>
 /// </remarks>
-public interface IAiDecisionOptionsCache
-{
-    ChatOptions GetOrBuild(
-        string gameKey,
-        string deployment,
-        IReadOnlyDictionary<string, string> capabilityOverrides,
-        JsonElement schema,
-        string schemaName,
-        int maxOutputTokens,
-        string? schemaDescription,
-        Func<string?, IReadOnlyDictionary<string, string>?, ChatOptions> factory);
-
-    ChatOptions GetOrBuildText(
-        string gameKey,
-        string deployment,
-        IReadOnlyDictionary<string, string> capabilityOverrides,
-        int maxOutputTokens,
-        Func<string?, IReadOnlyDictionary<string, string>?, ChatOptions> factory);
-
-    int Count { get; }
-}
-
-public sealed class AiDecisionOptionsCache : IAiDecisionOptionsCache
+public sealed class AiDecisionOptionsCache
 {
     private readonly ConcurrentDictionary<CacheKey, ChatOptions> _cache = new();
 

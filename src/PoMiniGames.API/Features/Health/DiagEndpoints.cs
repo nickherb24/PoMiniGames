@@ -47,7 +47,7 @@ public static class DiagEndpoints
 
     public static IEndpointRouteBuilder MapDiagEndpoints(this IEndpointRouteBuilder app)
     {
-        async Task<IResult> diagHandler(IConfiguration configuration, IWebHostEnvironment environment, IDiagnosticsSnapshotProvider diagnosticsProvider, CancellationToken ct)
+        async Task<IResult> diagHandler(IConfiguration configuration, IWebHostEnvironment environment, ConfigurationDiagnosticsSnapshotProvider diagnosticsProvider, CancellationToken ct)
         {
             var diagnosticsEnabled = configuration.GetValue("FeatureFlags:EnableDiagnostics", environment.IsDevelopment());
             if (!diagnosticsEnabled)
@@ -58,7 +58,7 @@ public static class DiagEndpoints
             // Adapter-style endpoint: transport concerns stay here, while diagnostics assembly
             // is delegated to an application-facing provider for Onion-style separation.
             // We project the wide provider payload down to a strict, documented DTO so
-            // reflection helpers / type graphs never leak to dev tooling (§9 of QA report).
+            // reflection helpers / type graphs never leak to dev tooling.
             var raw = await diagnosticsProvider.BuildSnapshotAsync();
             var projection = ProjectDiagnostics(raw, configuration, environment);
             var json = System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(projection, new System.Text.Json.JsonSerializerOptions
@@ -187,26 +187,21 @@ public static class DiagEndpoints
             return new DiagResponse(identity, environment, integrations);
         }
 
-        // §1 MapGroup() per slice: /api/diag and /api/diag/correlation share the
-        // /api/diag prefix; /api/logs/tail sits at a sibling path so it gets its
-        // own sibling declaration.
+        // /api/diag routes share the /api/diag prefix; /api/logs/tail sits at a
+        // sibling path so it gets its own sibling declaration.
         var diag = app.MapGroup("/api/diag").WithTags("Health");
 
         diag.MapGet("", diagHandler)
         .WithName("GetDiagnostics")
         .WithSummary("Exposes a development-focused diagnostic summary without raw secret values");
 
-        // GET /api/diag/correlation was removed 2026-08-31: its only consumer was the Blazor
-        // /diag page, which was deleted 2026-08-07. Correlation ids remain on every response
-        // via RequestLogContextMiddleware.
-
         // Note: /diag is NOT registered as an API endpoint to avoid conflicting with
         // the Blazor page route at /diag. Use /api/diag for programmatic access.
 
         // ─── Log tail endpoint for dev diagnostics ───────────────────────
-        // Bug fix (§2 of QA report): Serilog's File sink acquires an exclusive handle
-        // on the log file by default. Reading via `File.ReadAllLines` then throws
-        // "The process cannot access the file …". We now open with FileShare.ReadWrite
+        // Serilog's File sink acquires an exclusive handle
+        // on the log file by default. Reading via `File.ReadAllLines` would throw
+        // "The process cannot access the file …". We open with FileShare.ReadWrite
         // (and a tight 512 KB byte budget) so the tail endpoint can serve the rolling
         // log without taking a competing lock.
         async Task<IResult> logsTailHandler(IConfiguration config, IWebHostEnvironment environment, int? lines = 50)
@@ -283,9 +278,9 @@ public static class DiagEndpoints
             }
         }
 
-        // §1 MapGroup() per slice: the log-tail surface gets its own /api/logs group
-        // (distinct prefix from /api/diag) so every route is registered via a group
-        // rather than a scattered app.MapGet. Same URL (/api/logs/tail) as before.
+        // The log-tail surface gets its own /api/logs group (distinct prefix from
+        // /api/diag) so every route is registered via a group rather than a scattered
+        // app.MapGet.
         var logs = app.MapGroup("/api/logs").WithTags("Health");
         logs.MapGet("/tail", logsTailHandler)
         .WithName("GetLogsTail")

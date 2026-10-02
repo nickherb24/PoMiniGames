@@ -18,13 +18,7 @@ public class LeaderboardEntryEntity : ITableEntity
     public int Losses { get; set; }
 }
 
-public interface ILeaderboardRepository
-{
-    Task SubmitAsync(LeaderboardEntry entry, CancellationToken cancellationToken = default);
-    Task<IReadOnlyList<LeaderboardEntry>> GetTopAsync(QuestionCategory category, int top, CancellationToken cancellationToken = default);
-}
-
-public sealed class LeaderboardRepository(TableServiceClient tableServiceClient) : ILeaderboardRepository
+public sealed class LeaderboardRepository(TableServiceClient tableServiceClient)
 {
     private const string TableName = "PoFunQuizPlayers";
     private readonly TableClient _table = tableServiceClient.GetTableClient(TableName);

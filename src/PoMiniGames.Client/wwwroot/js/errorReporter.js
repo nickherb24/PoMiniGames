@@ -1,8 +1,7 @@
 // errorReporter.js — tells the server when the page breaks in a player's browser.
 //
-// WHY: nothing did. A shader typo left SandPlayground on the error boundary for two
-// weeks (2026-09-16 to 2026-09-30) and the first anyone knew was a person opening the
-// page. Every report becomes one Warning in the server log (POST /client-errors, see
+// WHY: without it a shader typo can leave a game on the error boundary for weeks and
+// the first anyone knows is a person opening the page. Every report becomes one Warning in the server log (POST /client-errors, see
 // Features/Health/ClientErrorEndpoints.cs).
 //
 // What is reported:

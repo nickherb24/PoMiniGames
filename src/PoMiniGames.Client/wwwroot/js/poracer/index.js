@@ -3,8 +3,8 @@
 // snapshot timeline; renderer.js draws, audio.js sounds, input.js reads the driver.
 //
 // The page pushes each 20 Hz server snapshot in as one flat number array (push) and the
-// per-car facts that never change once (setRoster). Until 2026-09-30 every snapshot crossed
-// the interop boundary as eight objects of fifteen named fields, strings included.
+// per-car facts that never change once (setRoster), so a snapshot crosses the interop
+// boundary as numbers only, with no per-car objects or strings.
 import * as Render from './renderer.js';
 import * as Audio from './audio.js';
 import { sampleAt } from './interpolation.js';

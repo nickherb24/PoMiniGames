@@ -14,10 +14,10 @@ namespace PoMiniGames.Features.PoCabinet;
 /// <c>Wildness</c> how often it overcooks a corner and runs off the road (<see cref="Lapse"/>).
 /// </para>
 /// <para>
-/// Traffic (rewritten 2026-09-30 for the 100-car solo field) is three rules: follow the car in
+/// Traffic (built for the 100-car solo field) is three rules: follow the car in
 /// its path no faster than it can still brake down to that car's speed; take the lane with the
-/// longest clear run ahead; never turn in on a car alongside. The old version watched only the
-/// nearest car ahead by race distance, which five cars survive and a hundred do not.
+/// longest clear run ahead; never turn in on a car alongside. Watching only the nearest car
+/// ahead by race distance is something five cars survive and a hundred do not.
 /// </para>
 /// <para>
 /// Deterministic; the only state is per-thread scratch. <c>wwwroot/js/pocabinet/physics.js</c>

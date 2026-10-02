@@ -10,10 +10,9 @@
 
 <PageTitle>Fun Quiz — Multiplayer · PoMiniGames</PageTitle>
 
-@* 2026-10-02 (user call: every game opens and ends the same way): the opening card is back
-   in front of the lobby, with the one real choice, the category, as its option; its button
-   joins. The match ends on the shared end-of-game modal, which used to be an inline block
-   whose only link went to the leaderboards. *@
+@* Every game opens and ends the same way: the opening card sits in front of the lobby,
+   with the one real choice, the category, as its option; its button joins. The match
+   ends on the shared end-of-game modal. *@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
            GameOver="@(_finished is not null)"
            Outcome="@Outcome"
@@ -38,8 +37,8 @@
     @if (_state is null)
     {
         @* There is exactly one lobby, so there is nothing to name and nothing to look up
-           (user decision, 2026-08-10): one button seats you with whoever is waiting, and
-           opens the lobby if nobody is. *@
+           one button seats you with whoever is waiting, and opens the lobby if nobody
+           is. *@
         <div class="fq-join">
             <h2 class="gps-phase-h">Online · Fun Quiz</h2>
             @* Only seen when the card's own join could not happen (still connecting, or

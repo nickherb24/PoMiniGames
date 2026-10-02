@@ -1,60 +1,36 @@
 @namespace PoMiniGamesClient.Components
 @implements IDisposable
-@* §6 Wrap the whole shell in a SwipeBack so every game gets a leftward
+@* The whole shell is wrapped in a SwipeBack so every game gets a leftward
    swipe-back gesture without each game page having to wire it. *@
 
-@* §11 Consolidated header: the game's status + settings are projected into the
-   app top bar (see MainLayout's SectionOutlet), removing the separate second
-   row. The back-arrow and title are intentionally dropped — the top bar's brand
-   already covers navigation back to the home page; the swipe-back gesture below
-   still works. *@
+@* The game's title and rating are projected into the app top bar (see
+   MainLayout's SectionOutlet) rather than a separate second row. There is no
+   back-arrow: the top bar's brand covers navigation back to the home page, and
+   the swipe-back gesture below still works. *@
 <SectionContent SectionName="game-header">
     <div class="gps-header-slot">
         @* Game title — always rendered as the first child of the chrome slot so
            every game page identifies itself in the top bar. Renders as an
-           <h1> (audit #7) so screen readers see a heading hierarchy, not a
-           styled <span>. The page's `Title` fragment may compose an icon + name.
-           The H1 inherits the same --font-display / 0.95rem styling as the
-           span used to, with browser-default margins stripped. *@
+           <h1> so screen readers see a heading hierarchy, not a styled <span>.
+           The page's `Title` fragment may compose an icon + name. The H1 uses
+           --font-display / 0.95rem styling with browser-default margins
+           stripped. *@
         @if (Title != null)
         {
             <h1 class="gps-game-title">@Title</h1>
         }
 
-        @* The "← All games" / "← Game hub" pill was removed on 2026-08-10 (user
-           request). It was the third navigate-away control in a header that also
-           carried the brand wordmark and the 🎮 Games switcher (itself now gone),
-           and it competed for width with the game title on a phone. Leaving a game
-           is still one tap on the brand, plus the swipe-back gesture below.
+        @* The header has no "All games" pill: it would compete for width with the
+           game title on a phone. Leaving a game is one tap on the brand, plus the
+           swipe-back gesture below.
 
-           `BackTo` is NOT dead — it still drives SwipeBack and the Home button on
-           <GameOverModal>, which is why it stays a parameter. *@
+           `BackTo` drives SwipeBack and the Home button on <GameOverModal>. *@
 
         @* Live rating badge for single-player, ELO-rated modes: the page passes
            its current rating via Elo and it renders next to the signed-in
            identity (see MainLayout's "game-elo" outlet), so the player can see
            their standing throughout the match. Left null in 2-player / demo /
            unrated modes, which emits nothing. *@
-
-        @* 2026-07-13 top-bar cleanup (user request): the in-game Player name, the
-           live Status pill, and the "?" how-to trigger were removed from the
-           header to save horizontal space. The signed-in identity now lives once
-           on the right (next to Sign out) and the game result surfaces in the
-           end-of-game modal.
-
-           The `Status` and `HowToPlay` parameters that survived that cleanup have
-           now been removed as well. Nothing rendered them and nothing could: the
-           "?" trigger was the only thing that ever set HowToPlayOpen, so once it
-           went the popover became unreachable markup behind a permanently-false
-           flag, while every game page kept building a Status fragment on each
-           render for output that was discarded.
-
-           Controls text is not lost. Pages feed the same HowToPlayContent
-           fragment to <GameIntro Controls="…">, which is the live surface for it
-           and is what players actually see before a round starts.
-
-           `Player` is NOT dead and stays — it is forwarded to GameOverModal
-           below, which uses it to attribute the score. *@
     </div>
 </SectionContent>
 
@@ -67,10 +43,10 @@
 
 <SwipeBack BackTo="@BackTo" Class="gps-shell-wrap">
 <div class="gps-shell">
-    @* 2026-08-07 browser audit #6: every game's state lived only in pixels — on a
-       canvas, or in DOM that changes without announcing itself — so a screen
-       reader user got no turn, score or result. This is the one polite live
-       region every game shares; a page opts in by passing `Announcement`, and
+    @* Every game's state lives only in pixels — on a canvas, or in DOM that
+       changes without announcing itself — so a screen reader user would get no
+       turn, score or result. This is the one polite live region every game
+       shares; a page opts in by passing `Announcement`, and
        whatever it sets is read out on change. Visually hidden (`.gps-sr-only`),
        never a layout concern. Kept OUTSIDE `.gps-game-area` so a game that
        replaces its whole area (fullscreen renderers) can't tear the region out
@@ -79,16 +55,14 @@
 
     <div class="gps-game-area @(Fullscreen ? "gps-game-area--fullscreen" : "")">
         @* Games that cannot render without WebGL get an explanation instead of a
-           crash (browser audit #5). ChildContent is not rendered at all, so the
-           engine's container never exists and its `init` bails on "container not
-           found" rather than throwing from inside three.js.
+           crash. ChildContent is not rendered at all, so the engine's container
+           never exists and its `init` bails on "container not found" rather than
+           throwing from inside three.js.
 
-           Browser audit #7 (2026-08-10): the only escape was "← Back to all games",
-           which dropped the player on the catalog grid and made them re-pick a
-           game — fine for a desktop, but a phone user who came here from a deep
-           link had to back up twice to find a non-WebGL game. Surface the two
-           2D classics right in the alert so the player never has to make a
-           second choice. *@
+           "← Back to all games" alone would drop the player on the catalog grid to
+           re-pick a game, and a phone user who came from a deep link would have to
+           back up twice to find a non-WebGL game. So the two 2D classics are
+           offered right in the alert, sparing the player a second choice. *@
         @if (RequiresWebGl && _webGlChecked && !_webGlAvailable)
         {
             <div class="gps-nogl" role="alert">
@@ -119,7 +93,7 @@
        home menu. There is intentionally no backdrop-dismiss and no Play Again —
        that button is the only exit, so the flow is identical in every game.
 
-       2026-08-11: GameOverDelayMs lets a game wait a few seconds after the
+       GameOverDelayMs lets a game wait a few seconds after the
        result is decided before the modal appears, so the winning move can
        flash / highlight on the board. The win-cascade animation finishes
        well inside the default 5s window; games that don't care (or want
@@ -157,7 +131,7 @@
     [Parameter] public string BackTo { get; set; } = "/";
     [Parameter] public bool GameOver { get; set; }
     /// <summary>
-    /// 2026-08-11: milliseconds to wait after <see cref="GameOver"/> flips to
+    /// Milliseconds to wait after <see cref="GameOver"/> flips to
     /// true before the modal actually renders. Gives the board's win-cascade
     /// / highlight animation time to finish before the modal covers it.
     /// Default is 0 (no delay); Connect Five passes 5000.
@@ -222,7 +196,7 @@
     // The top-3 fetch and the OK action live in GameOverModal — this shell just
     // decides when to show it and passes the game's data through.
 
-    // 2026-08-11: GameOverDelayMs support. _showGameOver is the gated view of
+    // GameOverDelayMs support. _showGameOver is the gated view of
     // GameOver; the modal only mounts once it's true AND the delay has elapsed.
     // A CancellationToken cancels any in-flight delay when the page tears down
     // (mode change, navigation) so we don't show a stale modal.

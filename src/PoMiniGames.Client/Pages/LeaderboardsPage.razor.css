@@ -4,13 +4,13 @@
 .lb-page {
     max-width: var(--content-max, 960px);
     margin: 0 auto;
-    /* Bottom --space-6 → --space-4: 32px of trailing padding under a grid that
-       was already overflowing on a 720p laptop. 2026-09-11 UI audit. */
+    /* Small bottom padding: the grid already overflows on a 720p laptop, so
+       trailing space under it only adds scroll. */
     padding: var(--space-3) var(--space-4) var(--space-4);
     width: 100%;
 }
 
-/* Audit fix #8: "your top game" hero card, grouped sections, responsive grid. */
+/* "Your top game" hero card, grouped sections, responsive grid. */
 .lb-hero {
     display: flex;
     flex-direction: column;
@@ -178,7 +178,7 @@
     font-size: var(--text-sm);
 }
 
-/* 2026-08-10 audit #9: header row uses the same grid template as data rows so
+/* Header row uses the same grid template as data rows so
    columns stay aligned. Visually subdued — uppercase + letter-spacing mirrors
    the styled .lb-unit label so the table reads as "Rank / Player / Score" at
    a glance, but the header stays out of the way of the actual data. */
@@ -288,10 +288,9 @@
     100% { background-position: -200% 0; }
 }
 
-/* ── The player's own row (§GFX) ───────────────────────────────────────────
-   This page had no way to find yourself on it: nine boards of ten rows and
-   nothing distinguished your line from the rest, so the one thing a player
-   opens a leaderboard to check was the one thing it did not show.
+/* ── The player's own row ──────────────────────────────────────────────────
+   The one thing a player opens a leaderboard to check is their own line, so
+   it must stand out from the rest.
 
    Colour comes through --accent / --accent-soft rather than raw hex so the
    highlight re-points with the light-scheme block in app.css; a literal would

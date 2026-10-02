@@ -2,12 +2,12 @@
 // the main-thread fallback. Keeping one copy means the two render paths can
 // never drift visually.
 //
-// §GFX-5 (this revision) replaced the 200-quad point field with a single
-// full-screen ray-marched volume. The reasons were both quality and cost:
+// It draws a single full-screen ray-marched volume rather than a field of point
+// quads. The reasons are both quality and cost:
 //
 //   COST   — 200 quads is 1,200 vertices and 200 overlapping alpha-blended
-//            fragments' worth of overdraw, and every one of them still ran a
-//            fragment shader that computed a soft circle. One full-screen
+//            fragments' worth of overdraw, and every one of them would run a
+//            fragment shader that computes a soft circle. One full-screen
 //            triangle has 3 vertices and zero overdraw. The march is more
 //            expensive *per pixel*, which is why the backing store is
 //            downscaled by tier (see ambientParticles.js) — but it is bounded
@@ -256,12 +256,10 @@ export function drawFrame(gl, u, w, h, elapsedMs, mouseX, mouseY, s) {
     // 10 steps still resolves the large-scale curtains; below that the volume
     // starts to look like flat gradient bands and the effect is lost.
     //
-    // 2026-08-30: ceiling dropped from `10 + q*24` (34 at high tier) to
-    // `10 + q*14` (24 at high tier). The volume is a soft FBM field; the extra
-    // 10 steps at the top end buy depth-resolution past the point the eye can
-    // resolve the difference but cost ~40% of the per-pixel budget. The floor
-    // is preserved so low-tier machines still get the same look they had
-    // before — only the ceiling comes down.
+    // The ceiling is `10 + q*14` (24 at high tier), not `10 + q*24`. The volume
+    // is a soft FBM field; the extra 10 steps at the top end buy
+    // depth-resolution past the point the eye can resolve the difference but
+    // cost ~40% of the per-pixel budget.
     const steps = Math.round(10 + q * 14);
 
     gl.viewport(0, 0, w, h);

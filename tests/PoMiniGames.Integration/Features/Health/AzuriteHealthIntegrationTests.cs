@@ -46,7 +46,7 @@ public sealed class AzuriteHealthIntegrationTests : IAsyncLifetime
         using var baseFactory = new TestWebApplicationFactory();
         using var factory = baseFactory.WithWebHostBuilder(builder =>
         {
-            // §CI/CD policy (2026-06-27): tests run under the "Test" environment.
+            // Tests run under the "Test" environment.
             builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration((_, cfg) =>
             {

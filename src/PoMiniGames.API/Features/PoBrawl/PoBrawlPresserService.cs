@@ -10,16 +10,6 @@ using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoBrawl;
 
-/// <summary>The post-fight press conference: one line in the speaker's voice.</summary>
-public interface IPoBrawlPresserService
-{
-    /// <summary>The line, or <c>null</c> when either fighter id is not on the roster.</summary>
-    Task<PoBrawlPresserReply?> AskAsync(PoBrawlPresserRequest request, CancellationToken ct = default);
-
-    /// <summary>The PA's ring introduction for a pairing, or <c>null</c> when either id is not a fighter.</summary>
-    Task<PoBrawlPresserReply?> IntroAsync(PoBrawlIntroRequest request, CancellationToken ct = default);
-}
-
 /// <summary>
 /// Writes the single press-conference line shown (and spoken) on PoBrawl's result modal.
 /// </summary>
@@ -43,7 +33,7 @@ public interface IPoBrawlPresserService
 /// for 24 h in place of the real one.
 /// </para>
 /// </remarks>
-public sealed class PoBrawlPresserService : IPoBrawlPresserService
+public sealed class PoBrawlPresserService
 {
     /// <summary>Longest line the modal will render.</summary>
     public const int MaxChars = 220;
@@ -80,7 +70,7 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
     private readonly ILogger<PoBrawlPresserService> _logger;
     private readonly GameChatClientFactory _clients;
     private readonly IOptionsMonitor<AIFoundryOptions> _foundry;
-    private readonly IAiDecisionOptionsCache _options;
+    private readonly AiDecisionOptionsCache _options;
     private readonly HybridCache _cache;
 
     public PoBrawlPresserService(
@@ -89,7 +79,7 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
         ILogger<PoBrawlPresserService> logger,
         GameChatClientFactory clients,
         IOptionsMonitor<AIFoundryOptions> foundry,
-        IAiDecisionOptionsCache options,
+        AiDecisionOptionsCache options,
         HybridCache cache)
     {
         _configuration = configuration;
@@ -108,6 +98,7 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
         string SpeakerName, string OpponentName, PoBrawlOutcome Outcome, bool Knockout,
         int Hits, int OpponentHits, int Blocks, int BestCombo, int BiggestHit, int Seconds);
 
+    /// <summary>The line, or <c>null</c> when either fighter id is not on the roster.</summary>
     public Task<PoBrawlPresserReply?> AskAsync(PoBrawlPresserRequest request, CancellationToken ct = default)
     {
         var bout = Resolve(request);
@@ -116,6 +107,7 @@ public sealed class PoBrawlPresserService : IPoBrawlPresserService
             : GenerateAsync("pobrawl:presser:" + Fingerprint(bout), bout.SpeakerName, SystemPrompt, Describe(bout), () => Canned(bout), ct);
     }
 
+    /// <summary>The PA's ring introduction for a pairing, or <c>null</c> when either id is not a fighter.</summary>
     public Task<PoBrawlPresserReply?> IntroAsync(PoBrawlIntroRequest request, CancellationToken ct = default)
     {
         var left = NameFor(request.P1Id);

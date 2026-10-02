@@ -14,8 +14,8 @@ namespace PoMiniGames.Features.PoVoxelStrike;
 /// their own fingerprint; the server compares incoming fingerprints and flags
 /// desync — the affected client is told to re-sync to the last ack frame.</para>
 ///
-/// <para>The session is in-memory only; an F1 host restart drops the run. Per the
-/// PRD, runs are ephemeral; only the score persists.</para>
+/// <para>The session is in-memory only; an F1 host restart drops the run. Runs are
+/// ephemeral; only the score persists.</para>
 /// </summary>
 public sealed class PoVoxelStrikeLockstepService
 {
@@ -43,7 +43,7 @@ public sealed class PoVoxelStrikeLockstepService
 
     /// <summary>True while no lockstep session exists. The pump polls this to
     /// idle at a fraction of the tick rate instead of waking 20×/sec for the
-    /// whole process lifetime (audit 2026-08-30 #7). ConcurrentDictionary.IsEmpty
+    /// whole process lifetime. ConcurrentDictionary.IsEmpty
     /// is O(1) and allocation-free, unlike <see cref="Sessions"/>.</summary>
     public bool IsIdle => _sessions.IsEmpty;
 

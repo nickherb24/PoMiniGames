@@ -101,7 +101,7 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
-        // §CI/CD policy (2026-06-27): E2E-UI tests run under the "Test" environment
+        // E2E-UI tests run under the "Test" environment
         // so the FakeAuth scheme is opt-in (via Auth:EnableFakeAuth below), the
         // DevCookie path is registered for the SPA's auto-guest flow, and
         // StartupSecretValidator skips its secrets check.
@@ -111,13 +111,13 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
         {
             var overrides = new Dictionary<string, string?>(TestBudgetGuard.Overrides);
 
-            // §3 BFF Header Overrides: enable the FakeAuth scheme so e2e tests can
+            // BFF header overrides: enable the FakeAuth scheme so e2e tests can
             // inject identity variations through X-Fake-User / X-Fake-Roles headers.
             overrides["Auth:EnableFakeAuth"] = "true";
             // Browser tests run against the login-gated SPA; auto-sign-in as Guest so
             // the home page renders without a manual auth step.
             overrides["Auth:AutoGuestLogin"] = "true";
-            // §6 + §3: mirror Azurite to BOTH TableService and BlobService sections.
+            // Mirror Azurite to BOTH TableService and BlobService sections.
             foreach (var (k, v) in TestBudgetGuard.StorageOverrides(_azuriteConnectionString, "pominigames-e2eui"))
             {
                 overrides[k] = v;
@@ -170,7 +170,7 @@ public class KestrelServerFixture : WebApplicationFactory<Program>, IAsyncLifeti
 public sealed class KestrelServerCollection : ICollectionFixture<KestrelServerFixture>
 {
     public const string Name = "PoMiniGames.E2EUI";
-    // Folder renamed to tests/E2EUI in 2026-06-26 cleanup; namespace kept stable for cross-assembly refs.
+    // The namespace stays stable for cross-assembly refs.
 }
 
 /// <summary>
@@ -188,5 +188,5 @@ public sealed class MockDataKestrelServerFixture : KestrelServerFixture
 public sealed class MockDataKestrelServerCollection : ICollectionFixture<MockDataKestrelServerFixture>
 {
     public const string Name = "PoMiniGames.E2EUI.MockData";
-    // Folder renamed to tests/E2EUI in 2026-06-26 cleanup; namespace kept stable for cross-assembly refs.
+    // The namespace stays stable for cross-assembly refs.
 }

@@ -1,7 +1,7 @@
 namespace PoMiniGames.Features.PoCoupleQuiz;
 
 /// <summary>
-/// In-memory implementation of <see cref="IGameSessionManager"/>. Holds exactly one
+/// In-memory implementation of <see cref="GameSessionManager"/>. Holds exactly one
 /// <see cref="GameSession"/> plus a connection-to-player map so the SignalR hub can
 /// identify a caller by connection id.
 /// </summary>
@@ -15,16 +15,18 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// mutations with no I/O. The AI calls that DO take time happen in
 /// <see cref="CoupleQuizRoundDirector"/>, outside this lock.</para>
 /// </remarks>
-public sealed class GameSessionManager : IGameSessionManager
+public sealed class GameSessionManager
 {
     private readonly Lock _gate = new();
     private GameSession? _session;
 
+    /// <summary>The current lobby, or null when nobody is in one.</summary>
     public GameSession? Current
     {
         get { lock (_gate) { return _session; } }
     }
 
+    /// <summary>Join the lobby, creating it if this is the first player. Never fails.</summary>
     public GameSession Join(string connectionId, string playerName, out bool created)
     {
         lock (_gate)
@@ -56,6 +58,7 @@ public sealed class GameSessionManager : IGameSessionManager
         }
     }
 
+    /// <summary>Drop a player. Returns the session (null if the caller wasn't in one).</summary>
     public GameSession? RemovePlayer(string connectionId, out bool sessionEmpty)
     {
         sessionEmpty = false;
@@ -102,6 +105,7 @@ public sealed class GameSessionManager : IGameSessionManager
         }
     }
 
+    /// <summary>Begin a match with the given first question. Throws if there is no lobby.</summary>
     public Game StartGame(string questionText, string category)
     {
         lock (_gate)
@@ -211,6 +215,7 @@ public sealed class GameSessionManager : IGameSessionManager
         }
     }
 
+    /// <summary>Host-only. Sets how many rounds the next match runs for (3, 5 or 7).</summary>
     public LobbyReadyState? SetMaxRounds(string connectionId, int rounds)
     {
         lock (_gate)
@@ -228,6 +233,7 @@ public sealed class GameSessionManager : IGameSessionManager
         }
     }
 
+    /// <summary>Return a finished lobby to the waiting state so the same players can go again.</summary>
     public LobbyReadyState? ResetToLobby()
     {
         lock (_gate)

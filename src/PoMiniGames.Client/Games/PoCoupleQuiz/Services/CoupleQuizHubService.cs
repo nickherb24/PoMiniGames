@@ -14,10 +14,8 @@ namespace PoMiniGamesClient.Games.PoCoupleQuiz.Services;
 /// server payloads exactly (camelCase via JSON).
 /// </summary>
 /// <remarks>
-/// 2026-08-10: <c>GameCode</c>, <c>AiMode</c> and <c>Difficulty</c> are gone from every
-/// payload. There is one lobby per server so a code names nothing; "AI mode" was a string
-/// that only ever held "Remote"; and "difficulty" only ever picked the round count, which
-/// is now sent as <c>MaxRounds</c>.
+/// The payloads carry no game code, AI mode or difficulty: there is one lobby per server,
+/// so a code names nothing, and the round count is sent as <c>MaxRounds</c>.
 /// </remarks>
 public record CoupleQuizGamePlayerState(string Name, bool IsKingPlayer, int Score);
 
@@ -105,12 +103,12 @@ public sealed class CoupleQuizHubService : IAsyncDisposable
     public async Task ConnectAsync()
     {
         if (_connection is not null) return;
-        // §Absolute URL: SignalR ignores the DI HttpClient BaseAddress, so we
+        // Absolute URL: SignalR ignores the DI HttpClient BaseAddress, so we
         // compose against ApiEndpoints.ApiBase — the API host (:5000), not the
         // WASM host (:5261). Without this, the standalone client hits
         // /couplequiz/hubs/game/negotiate on :5261 and gets a 405.
         // Credentials handler + auto-reconnect come baked into the shared
-        // factory (see HubConnectionFactory for the §2026-07-16 cookie contract).
+        // factory (see HubConnectionFactory for the cookie contract).
         _connection = HubConnectionFactory.Create(_endpoints.Hub("couplequiz/hubs/game"));
 
         _connection.On<CoupleQuizLobbyEventPayload>("LobbyJoined", p => OnLobbyJoined?.Invoke(p));

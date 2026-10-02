@@ -1,4 +1,4 @@
-// social.js — herd and pack behaviour (SPEC §7.5): alarms propagate through a herd,
+// social.js — herd and pack behaviour: alarms propagate through a herd,
 // rabbits scatter, wolves follow a pack leader and share kills, juveniles without
 // living parents are orphans.
 import { BEHAVIOR } from '../core/config.js';

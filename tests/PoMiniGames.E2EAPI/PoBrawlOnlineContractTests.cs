@@ -6,7 +6,7 @@ using PoMiniGames.TestUtilities;
 namespace PoMiniGames.E2EAPI;
 
 /// <summary>
-/// §PoBrawlOnline (2026-09-14): contract tests for the live 1v1 surface. The result ingest is
+/// Contract tests for the live 1v1 surface. The result ingest is
 /// write only and auth-gated, so an anonymous POST must return 401 (NOT 403, which would leak
 /// existence); a signed-in POST is judged against the server's own copy of the match.
 /// </summary>
@@ -45,7 +45,7 @@ public class PoBrawlOnlineContractTests
     /// <summary>
     /// Every PoBrawl game-data POST must answer an anonymous caller with 401. One theory over
     /// the routes rather than a method each — the E2E-API tier sits at its 25-method ceiling.
-    /// The presser row (2026-09-23) also proves the route is on the authenticated group: mapped
+    /// The presser row also proves the route is on the authenticated group: mapped
     /// on <c>app</c> by mistake it would have answered 400/200 here instead.
     /// </summary>
     [Theory]
@@ -57,7 +57,7 @@ public class PoBrawlOnlineContractTests
         using var client = _factory.CreateClient();
         var response = await client.PostAsJsonAsync(path, new PoBrawlMatchResultDto { MatchId = "anon-test" });
 
-        // §CSRF: 401 (not 403) for an anonymous caller — the request is
+        // 401 (not 403) for an anonymous caller — the request is
         // rejected before the antiforgery middleware sees it. 403 would
         // leak "this endpoint exists" to anonymous callers.
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);

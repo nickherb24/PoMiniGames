@@ -9,9 +9,8 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// idle rooms are cleaned up when the host disconnects.
 /// </summary>
 /// <remarks>
-/// <para><b>2026-08-10 — one lobby, no game codes (user decision).</b> There used to be
-/// <c>CreateAsync</c> + <c>Join(gameId, …)</c> behind a "create a game / join by 6-letter
-/// code" screen. Both collapse into <see cref="JoinOrCreateAsync"/>: a player presses one
+/// <para><b>One lobby, no game codes.</b> Creating and joining are a single
+/// <see cref="JoinOrCreateAsync"/>: a player presses one
 /// button and lands in the single open lobby, opening it themselves only if nobody is
 /// waiting. <see cref="MultiplayerGame.GameId"/> survives as the internal SignalR group
 /// key and log correlation id — it is never shown to a player and never typed in.</para>
@@ -174,7 +173,7 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
         if (!_games.TryGetValue(gameId, out var game)) return false;
         if (game.HostConnectionId != requesterConnectionId) return false;
         game.CurrentQuestionIndex++;
-        // §Best-practice (2026-07-07): reset per-question flags so a player
+        // Reset per-question flags so a player
         // who already answered can submit their next answer for the new
         // question. Without this, PlayerFinished() in the hub returns early
         // after the first question because HasFinished was set permanently.

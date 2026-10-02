@@ -1,16 +1,15 @@
 @using PoMiniGames.Shared.Games.PoEcosystem
 @* The Tab overlay. Releases pointer lock while open (the engine does that); Esc closes it.
 
-   2026-09-30: four tabs and a gear, where there were eight tabs under a header.
-     Island  the timeline (the one population chart — it used to be drawn three times, on
-             Analytics, Island and Timeline), the world log, the almanac, field notes, wagers
+   Four tabs and a gear:
+     Island  the timeline (the one population chart), the world log, the almanac, field
+             notes, wagers
      Life    thoughts, the watch-list and its alerts, evolution
      Tribes  the clans side by side, their territories, the ladder, diplomacy, the chronicle
-     Worlds  which island this is: seed and new world (were in Settings), cloud slots and
-             the gallery (were in Cloud)
+     Worlds  which island this is: seed and new world, cloud slots and the gallery
      ⚙       AI thoughts, graphics, accessibility, controls
-   The header row repeated the HUD chip (year, day, alive) and is gone; Close sits on the
-   tab row. Speed moved to the HUD. The active tab is component state — the dashboard is
+   There is no header row (the HUD chip already shows year, day, alive); Close sits on the
+   tab row, and speed lives in the HUD. The active tab is component state — the dashboard is
    reopened often and remembers where it was. *@
 <div class="poeco-overlay" role="dialog" aria-modal="true" aria-label="Dashboard — year @(Stats?.Year ?? 0), @(Stats?.Alive ?? 0) alive" @onkeydown="OnKeyDown" tabindex="-1" @ref="_root">
     <div class="poeco-overlay-card">

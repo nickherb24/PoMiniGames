@@ -1,4 +1,4 @@
-// §Cross-origin credentials patch.
+// Cross-origin credentials patch.
 //
 // The Blazor WASM HttpClient uses the browser's `fetch` underneath, and
 // defaults to `credentials: 'omit'`. On the standalone-client dev setup

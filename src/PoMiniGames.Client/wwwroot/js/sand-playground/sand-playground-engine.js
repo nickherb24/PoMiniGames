@@ -89,7 +89,7 @@ const mouse = { x: 0, y: 0, down: false, painting: false, lastX: 0, lastY: 0 };
 let aimOrigin = null;    // {x,y} slingshot anchor (texture coords)
 let barStart = null;     // {x,y} concrete-bar drag anchor
 
-// --- Session state (2026-09-30 feature pass) -------------------------------
+// --- Session state -------------------------------
 let dotnet = null;             // Blazor target: OnEngine(kind, value) keeps the toolbar in step
 let rootEl = null;             // .sand-playground-root — receives the blast CSS variables
 let inited = false;

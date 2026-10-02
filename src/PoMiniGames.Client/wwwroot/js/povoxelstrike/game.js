@@ -1,7 +1,7 @@
 // game.js — PoVoxelStrike engine core. M3 scope: the full survival loop — enemies
 // escalate forever, the gun heats, debris crushes both sides, death ends the run.
 //
-// Input contract (PRD §4.3): during play the CANVAS owns raw input under Pointer Lock.
+// Input contract: during play the CANVAS owns raw input under Pointer Lock.
 // Losing the lock for any reason (Esc, tab switch) pauses the simulation and hands the
 // overlay to Blazor via OnPaused; Resume re-acquires the lock from the button's click
 // gesture. A run is built in state 'ready' — rendered, nothing simulated, behind the
@@ -13,12 +13,12 @@
 // (see input.js): same simulation, no lock, and pause is a button rather than lock loss.
 // `_controlling()` is the one test for "the player is driving", whichever way they got in.
 //
-// Interop contract (PRD §4.2): a 10 Hz OnHudTick pump of flat primitives (positional,
+// Interop contract: a 10 Hz OnHudTick pump of flat primitives (positional,
 // same convention as PoMarbleRace — no DTOs across the boundary), plus the discrete
 // lifecycle events OnReady / OnResumed / OnPaused / OnGameOver / OnFatalError. Never
 // per-frame.
 //
-// Co-op mode (multiplayer slice, 2026-08-18): when the engine is constructed with
+// Co-op mode: when the engine is constructed with
 // `mode: 'multi'`, the local player's inputs are sampled at the platform's lockstep
 // tick rate (20 Hz) and shipped to `multiplayerSink(batch)`. The server stamps a tick
 // number and relays every peer's batch back; the engine applies the batches in
@@ -133,14 +133,13 @@ const PLAYER_MAX_HP = 100;
 const PLAYER_CRUSH_MIN_SPEED = 5;
 
 // ── Online (co-presence) ──
-// 2026-09-14: the co-op slice above shipped inputs but never applied them — and could not
-// have: enemies, debris and the player controller all step with a variable dt and Math.random,
-// so two engines fed identical inputs diverge within seconds. What the run does instead is
-// co-presence: every client builds the SAME arena from the seed the session dealt, ships its
+// Inputs are not replayed on peers: enemies, debris and the player controller all step
+// with a variable dt and Math.random, so two engines fed identical inputs diverge within
+// seconds. The run is co-presence instead: every client builds the SAME arena from the seed the session dealt, ships its
 // own position + yaw at the lockstep rate, and renders the other players as avatars at the
 // positions it is sent. Enemies and damage stay local to each client.
 //
-// 2026-09-30: three things now cross the wire besides positions. Carves do (each client
+// Three things cross the wire besides positions. Carves do (each client
 // replays the others' through Weapon.applyRemote, so the breach is one breach); the win
 // does (one player takes the chalice, the squad wins); and "down" does — a player at 0 HP
 // with a squadmate still standing waits for a revive instead of ending their own run.
@@ -177,7 +176,7 @@ export class Engine {
     this.multiplayerPlayerNumber = 1;
     this._lockstepClock = 0;
     this._lockstepTick = 0;
-    // Multiplayer slice, 2026-08-18: same tick rate as the server pump
+    // Same tick rate as the server pump
     // (PoVoxelStrikeLockstepService.TickIntervalMs = 50). Drift-corrected in the frame
     // loop below — see _frame().
     this._lockstepIntervalMs = 50;
@@ -187,7 +186,7 @@ export class Engine {
     // 'ready' | 'playing' | 'paused' | 'dead'. A played run waits in 'ready' behind the
     // start card until enter(); the kiosk bot has no card and starts playing.
     this.state = demo ? 'playing' : 'ready';
-    // World seed (PRD §F3): generated per run, surfaced in OnGameOver so the run
+    // World seed: generated per run, surfaced in OnGameOver so the run
     // summary can show it. Hex keeps it short enough to read aloud.
     this.seed = (Math.random() * 0xffffffff) >>> 0;
     if (Number.isFinite(opts.seed) && opts.seed > 0) this.seed = opts.seed >>> 0;
@@ -208,7 +207,7 @@ export class Engine {
     this._jumpCd = 0;
     this._jumpQueued = false;
 
-    // Run stats (PRD §F7 score formula).
+    // Run stats (score formula inputs).
     this.hp = PLAYER_MAX_HP;
     this.elapsed = 0;
     this.kills = 0;
@@ -646,8 +645,7 @@ export class Engine {
     this.lastTime = time;
 
     // Paused, or 'ready' behind the start card: render the frozen scene, nothing advances
-    // — until 2026-09-30 the clock ran and the wall guns fired while the click-to-play
-    // veil was still up. Dead: the world keeps moving for the kill-cam beat (debris
+    // (the clock must not run nor the wall guns fire while the start card is up). Dead: the world keeps moving for the kill-cam beat (debris
     // settles, enemies mill), but the clock and input do not.
     const simulating = this.state !== 'paused' && this.state !== 'ready';
     const playing = this.state === 'playing';
@@ -766,7 +764,7 @@ export class Engine {
       this._pumpHud();
     }
 
-    // Multiplayer slice (2026-08-18): drift-corrected 50 ms lockstep tick. Drains any
+    // Drift-corrected 50 ms lockstep tick. Drains any
     // accumulated time so a stutter frame doesn't double-ship a batch; an idle frame
     // catches up. The server is the source of truth for the tick number — we ship a
     // monotonic local counter purely so the wrapper knows which tick each batch belongs
@@ -1343,7 +1341,7 @@ export class Engine {
     this.cracks.style.opacity = (THREE.MathUtils.clamp((60 - this.hp) / 60, 0, 1) * 0.85).toFixed(2);
   }
 
-  /** The debris is impartial (PRD §F5) — the player half of the crush check. */
+  /** The debris is impartial — the player half of the crush check. */
   _checkPlayerCrush(dt) {
     for (const piece of this.debris.pieces) {
       if (piece.frozen) continue;
@@ -1371,7 +1369,7 @@ export class Engine {
       this.player.position.x, this.player.position.y + 0.7, this.player.position.z);
   }
 
-  // ── Demo autopilot (kiosk attract mode, PRD platform convention) ───────
+  // ── Demo autopilot (kiosk attract mode) ───────
   // Wanders the arena, picks something nearby — an enemy, a building, or a patch of
   // ground — and digs/shoots at it in bursts, with the occasional blast ball. Shots aim
   // through weapon.aimOverride since the kiosk has no mouse.
@@ -1578,8 +1576,8 @@ export class Engine {
     const len = Math.hypot(fwd, strafe);
     if (len < 0.05) {
       // Nothing held: stop. The body is frictionless against the world by design (see
-      // physics.js), so until 2026-09-30 — when this branch simply returned — releasing
-      // the keys left the last commanded velocity in place and the player slid on forever.
+      // physics.js), so returning here without zeroing would leave the last commanded
+      // velocity in place after the keys are released and the player would slide on forever.
       if (this.onGround) { v.x = 0; v.z = 0; }
       return;
     }
@@ -1751,7 +1749,7 @@ export class Engine {
     document.removeEventListener('mousemove', this._onMouseMove);
     document.removeEventListener('mousedown', this._onMouseDown);
     document.removeEventListener('mouseup', this._onMouseUp);
-    // Lock loss during play ALWAYS pauses (PRD §F9) — the player is never killed while
+    // Lock loss during play ALWAYS pauses — the player is never killed while
     // unable to steer. Blazor owns the pause dialog.
     if (this.state === 'playing' && !this.demo) {
       this.state = 'paused';
@@ -1765,9 +1763,9 @@ export class Engine {
     this.crosshair.className = 'pvs-crosshair';
     this.crosshair.style.display = 'none';
     // Glanceable state around the reticle: inner ring = weapon heat, outer = blast
-    // cooldown. Conic-gradient fills driven by --p (0..100) from _pumpHud. Since
-    // 2026-09-30 these rings are the ONLY heat/blast readout — the HUD's two bars said the
-    // same thing a second time, a glance away from where the player is aiming.
+    // cooldown. Conic-gradient fills driven by --p (0..100) from _pumpHud. These rings
+    // are the ONLY heat/blast readout: a HUD bar would say the same thing a second time,
+    // a glance away from where the player is aiming.
     this.crosshair.innerHTML =
       '<div class="pvs-ring pvs-ring-heat" style="--p: 0"></div>' +
       '<div class="pvs-ring pvs-ring-alt" style="--p: 100"></div>';

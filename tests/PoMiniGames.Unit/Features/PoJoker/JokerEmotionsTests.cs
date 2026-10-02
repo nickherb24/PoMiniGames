@@ -13,8 +13,8 @@ namespace PoMiniGames.Unit.Features.PoJoker;
 /// for that joke and no error anywhere. This pins all three together.
 /// </summary>
 /// <remarks>
-/// <b>§1 100/50/25/25 Rule.</b> One <c>[Theory]</c> with a row per emotion, not a fact per
-/// concern — the Unit tier has a single method of headroom left, and a new portrait should
+/// One <c>[Theory]</c> with a row per emotion, not a fact per
+/// concern — the Unit tier is capped on method count, and a new portrait should
 /// cost a row in <see cref="JokerEmotions.All"/> and nothing else.
 /// <para>
 /// File I/O in the hermetic tier follows the precedent set by
@@ -37,7 +37,7 @@ public sealed class JokerEmotionsTests
     private static DirectoryInfo RepoRoot()
     {
         // Walk up from the test bin dir to the repo root. PoMiniGames.slnx is the
-        // marker (global.json was retired 2026-09-11); it always sits at the root.
+        // marker; it always sits at the root.
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "PoMiniGames.slnx")))
         {

@@ -18,7 +18,7 @@ public class PoBrawlLobbyServiceTests
     private static PoBrawlFighter AnyFighter => PoBrawlRoster.Bob;
 
     // Host assignment and the cap-2 bounce share one arrangement, so they are one
-    // fact (2026-09-14: the slot went to the turn-match service tests).
+    // fact.
     [Fact]
     public void Open_AssignsFirstArrivalAsHost_AndBouncesThirdAtCap()
     {
@@ -60,7 +60,7 @@ public class PoBrawlLobbyServiceTests
     }
 
     /// <summary>
-    /// The one shared room (2026-09-29, rooms-by-code removed): each start mints a fresh match
+    /// The one shared room: each start mints a fresh match
     /// code and the room frees up, so the next two arrivals fight alongside the first pair.
     /// </summary>
     [Fact]

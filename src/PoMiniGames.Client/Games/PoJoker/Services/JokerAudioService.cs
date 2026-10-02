@@ -8,7 +8,7 @@ namespace PoMiniGamesClient.Games.PoJoker;
 /// cymbal). Interop entry points live in <c>wwwroot/js/pojoker-audio-interop.js</c> under the
 /// <c>poJokerAudio</c> global. Failures are swallowed (audio is non-essential).
 /// </summary>
-public sealed class JokerAudioService(IJSRuntime jsRuntime, ILogger<JokerAudioService> logger) : IJokerAudioService
+public sealed class JokerAudioService(IJSRuntime jsRuntime, ILogger<JokerAudioService> logger)
 {
     private readonly IJSRuntime _jsRuntime = jsRuntime;
     private readonly ILogger<JokerAudioService> _logger = logger;
@@ -59,12 +59,28 @@ public sealed class JokerAudioService(IJSRuntime jsRuntime, ILogger<JokerAudioSe
         catch (JSException ex) { _logger.LogWarning(ex, "Failed to play cymbal"); }
     }
 
+    /// <summary>
+    /// The audience reaction to a punchline that landed — a filtered noise swell
+    /// with a wobbling voice over it, plus a coin burst.
+    /// </summary>
+    /// <remarks>
+    /// <b>This was implemented and unreachable.</b> <c>poJokerAudio.playLaughter</c>
+    /// has existed in the interop module the whole time (and is one of only two
+    /// places in the app that routed through the shared cue vocabulary), but it was
+    /// never added to this interface, so no C# could call it. The effect was that
+    /// PoJoker built a whole comedy stage — drum roll, fanfare, trombone, speech —
+    /// in front of an audience that never laughed.
+    /// </remarks>
     public async Task PlayLaughterAsync(double volume = 0.45)
     {
         try { await _jsRuntime.InvokeVoidAsync("poJokerAudio.playLaughter", volume); }
         catch (JSException ex) { _logger.LogWarning(ex, "Failed to play laughter"); }
     }
 
+    /// <summary>
+    /// The ba-dum-tss sting for a joke that died. Unreachable for the same reason
+    /// as <see cref="PlayLaughterAsync"/>.
+    /// </summary>
     public async Task PlayRimshotAsync(double volume = 0.5)
     {
         try { await _jsRuntime.InvokeVoidAsync("poJokerAudio.playRimshot", volume); }
@@ -86,6 +102,12 @@ public sealed class JokerAudioService(IJSRuntime jsRuntime, ILogger<JokerAudioSe
         catch (JSException ex) { _logger.LogWarning(ex, "Failed to play giggle"); }
     }
 
+    /// <summary>
+    /// Stop every currently-playing cue immediately. Oscillator cues (fanfare,
+    /// trombone) play out on their envelope so they don't need cancellation,
+    /// but buffer-source cues (drum roll, cymbal) would otherwise ring across
+    /// the next state or after Stop. Safe to call when nothing is playing.
+    /// </summary>
     public async Task StopAllAsync()
     {
         try { await _jsRuntime.InvokeVoidAsync("poJokerAudio.stopAll"); }
