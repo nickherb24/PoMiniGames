@@ -7,12 +7,6 @@ public enum Difficulty
     Hard
 }
 
-public enum AccountKind
-{
-    Guest,
-    Microsoft
-}
-
 /// <summary>
 /// How a round stands, from the local player's point of view — the single enum for
 /// "who won", used both as live game state and as the end-of-round cue fed to

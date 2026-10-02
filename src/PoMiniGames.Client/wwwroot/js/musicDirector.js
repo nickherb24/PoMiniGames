@@ -27,7 +27,16 @@
 
     let _state = 'menu';
     let _gestureBound = false;
+    let _unlocked = false;   // a gesture has happened: the context may start from now on
     let _starting = false;
+
+    // Games that play a score of their own. The shared soundtrack stands down on their
+    // routes: two arrangements in two keys at once is noise. (PoEcosystem also stops and
+    // restarts PoAmbientMusic itself; this keeps the director from starting it there.)
+    const OWN_SCORE = ['pobrawl', 'pocabinet', 'poecosystem'];
+    function ownScore() {
+        return OWN_SCORE.indexOf((location.pathname.split('/')[1] || '').toLowerCase()) >= 0;
+    }
     let _verdictUntil = 0;
 
     // Continuous tension, 0..1, riding on top of the current state's base
@@ -49,6 +58,7 @@
         const kick = function () {
             document.removeEventListener('pointerdown', kick);
             document.removeEventListener('keydown', kick);
+            _unlocked = true;
             apply(true);
         };
         document.addEventListener('pointerdown', kick, { once: true });
@@ -58,6 +68,10 @@
     function apply(forceStart) {
         const am = window.PoAmbientMusic;
         if (!am) return;
+        if (ownScore()) {
+            try { if (am.isPlaying()) am.stop(0.8); } catch { /* never load-bearing */ }
+            return;
+        }
         const cfg = STATES[_state] || STATES.menu;
         // A verdict window overrides the resting intensity briefly.
         const inVerdict = Date.now() < _verdictUntil;
@@ -70,7 +84,9 @@
 
         try {
             if (!am.isPlaying()) {
-                if (!forceStart && !_starting) return;  // wait for the gesture kick
+                // Wait for the gesture kick. After it, any apply() may (re)start the
+                // score: leaving an own-score game for the catalog has to bring it back.
+                if (!forceStart && !_unlocked) return;
                 if (_starting) return;
                 _starting = true;
                 Promise.resolve(am.start('default', 0.12)).catch(function () { }).finally(function () { _starting = false; });
@@ -147,6 +163,10 @@
     const paletteWatch = setInterval(function () {
         const ctx = window.PoPalette?.context?.();
         const want = ctx === 'game' ? 'match' : 'menu';
+        // A lobby is a room inside a game route: LobbyPanel asks for 'lobby' when it
+        // mounts and for 'match' when it goes. Without this the watch put every lobby
+        // back to 'match' within its next tick, so the lobby state was never heard.
+        if (_state === 'lobby' && ctx === 'game') return;
         if (want !== _state) setState(want);
     }, 1200);
 

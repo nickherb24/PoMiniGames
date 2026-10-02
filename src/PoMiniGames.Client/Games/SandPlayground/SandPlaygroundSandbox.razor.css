@@ -125,7 +125,7 @@
 }
 
 .sp-brush {
-    font-size: 11px;
+    font-size: var(--text-xs);
     font-variant-numeric: tabular-nums;
 }
 
@@ -163,7 +163,7 @@
     -webkit-backdrop-filter: blur(18px) saturate(1.5);
     backdrop-filter: blur(18px) saturate(1.5);
     color: var(--color-text-primary);
-    font-size: 11px;
+    font-size: var(--text-xs);
     transform: translate(calc(-50% + var(--sp-shake-x)), var(--sp-shake-y));
 }
 
@@ -189,7 +189,7 @@
 
 .sand-playground-menu h2 {
     margin: 9px 0 5px;
-    font-size: 10px;
+    font-size: var(--text-xs);
     font-weight: 700;
     letter-spacing: 1.5px;
     text-transform: uppercase;
@@ -217,7 +217,7 @@
 .sp-dim {
     min-width: 46px;
     color: var(--color-text-secondary);
-    font-size: 11px;
+    font-size: var(--text-xs);
 }
 
 .sp-pill,
@@ -294,7 +294,7 @@
     border-radius: 10px;
     background: rgba(10, 14, 22, 0.78);
     color: #f1f4f9;
-    font-size: 11px;
+    font-size: var(--text-xs);
     text-align: center;
     transform: translateX(-50%);
     opacity: 0;

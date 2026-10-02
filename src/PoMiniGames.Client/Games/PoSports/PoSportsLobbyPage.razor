@@ -14,23 +14,17 @@
 @* 2026-09-30: the lobby used to sit behind an intro card whose only job was to be
    dismissed — one extra click before the connection even started, and a second,
    hand-typed copy of the controls. The page now connects on arrival and the
-   how-to is a fold-out above the roster, rendered from the same PoSportsHowTo the
+   how-to is the lobby card's fold-out, rendered from the same PoSportsHowTo the
    race page uses. *@
 <GameShell Title="@TitleContent" BackTo="/">
     <div class="ps-lobby">
-        <details class="ps-lobby-howto">
-            <summary>How to play · up to 4 runners, the host fires the gun</summary>
-            <PoSportsHowTo Lead="Two-leg meet: 100m sprint, then 110m hurdles — lowest combined time wins."
-                           Players="@HowToKeys" />
-        </details>
-
         @if (CanWatch)
         {
             @* The room refuses seats while a meet is running (and when it is full), so
                an arrival then is a spectator: offer the race instead of a dead lobby. *@
             <p class="ps-lobby-watch">
                 No seat free right now — the room is full or a meet is running.
-                <a class="sp-btn-secondary" href="@($"/posports/race/{Hub.Lobby.State!.GameCode}?watch=1")">👀 Watch the meet</a>
+                <a class="app-btn app-btn--secondary" href="@($"/posports/race/{Hub.Lobby.State!.GameCode}?watch=1")">👀 Watch the meet</a>
             </p>
         }
 
@@ -44,6 +38,7 @@
                     CanReady="@IHavePicked"
                     WaitingHint="Waiting for everyone to pick a runner and mark Ready…"
                     PickerTitle="Your runner"
+                    Hint="One shared room, up to 4 runners. The host fires the gun."
                     OnReady="Hub.ToggleReadyAsync"
                     OnStart="Hub.StartGameAsync"
                     OnLeave="LeaveAsync">
@@ -53,7 +48,7 @@
             <PlayerBadges Context="m">
                 @if (string.IsNullOrEmpty(m.Character))
                 {
-                    <span class="lobby-pill lobby-pill--warn">picking…</span>
+                    <span class="app-chip app-chip--warning">picking…</span>
                 }
             </PlayerBadges>
             <Picker>
@@ -62,6 +57,10 @@
                                       Disabled="@(Hub.Lobby.Me is null)"
                                       OnPick="k => Hub.PickCharacterAsync(k)" />
             </Picker>
+            <HowTo>
+                <PoSportsHowTo Lead="Two-leg meet: 100m sprint, then 110m hurdles — lowest combined time wins."
+                               Players="@HowToKeys" />
+            </HowTo>
         </LobbyPanel>
     </div>
 </GameShell>
@@ -73,7 +72,7 @@
     /// <summary>Set when navigating to the race page — that navigation must KEEP our lobby seat.</summary>
     private bool _starting;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏃</span> Sports · Multiplayer</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏃</span> Sports</span>;
 
     /// <summary>Online races run on layout 1 — the same labels the race page teaches.</summary>
     private static readonly IReadOnlyList<PoSportsHowTo.Keys> HowToKeys =

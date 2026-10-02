@@ -8,7 +8,7 @@
   Pass -Fix to delete offending local branches and prune stale remote-tracking refs.
 .NOTES
   Idempotent read-only check by default. Run in CI or a pre-push hook so branch drift can
-  never silently reappear. See AGENT.MD "Branches".
+  never silently reappear. See AGENT.md rule 1 (master branch only).
 #>
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(

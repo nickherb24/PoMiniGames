@@ -157,10 +157,10 @@ public class OnlineModesUiTests
         // Most online modes open on the intro card, whose Start is also what connects to the hub.
         // The Racer lobby has none (dropped 2026-09-17) and joins on arrival, so its shared lobby
         // card counts as arrived too.
-        var start = page.Locator(".gps-intro-btn--primary").First;
+        var start = page.Locator(".gps-intro-actions .app-btn--primary").First;
         try
         {
-            await page.Locator(".gps-intro-btn--primary, .lobby").First
+            await page.Locator(".gps-intro-actions .app-btn--primary, .lobby").First
                 .WaitForAsync(new LocatorWaitForOptions { Timeout = 60_000 });
         }
         catch (TimeoutException)
@@ -173,7 +173,7 @@ public class OnlineModesUiTests
 
     private static async Task DismissIntroIfShownAsync(IPage page, int timeoutMs)
     {
-        var start = page.Locator(".gps-intro-btn--primary").First;
+        var start = page.Locator(".gps-intro-actions .app-btn--primary").First;
         try
         {
             await start.WaitForAsync(new LocatorWaitForOptions { Timeout = timeoutMs });

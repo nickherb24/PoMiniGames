@@ -462,6 +462,50 @@ export function popSelector(selector) {
     }
 }
 
+/**
+ * Roll the plain-number stats under `root` up from zero, a tick per step with the pitch
+ * climbing an octave — the end-of-game modal's score count. Only a cell whose whole text is
+ * an integer is touched: a lap time, a "3/5" or a name stays exactly as rendered. Under
+ * reduced motion nothing rolls and the numbers are simply there.
+ * @param {HTMLElement} root
+ */
+export function countUp(root) {
+    if (!root || !root.querySelectorAll || motionReduced()) return;
+    let order = 0;
+    for (const el of root.querySelectorAll('.gps-stat-value')) {
+        const node = el.firstChild;
+        const final = (el.textContent || '').trim();
+        const m = /^(\d{1,3}(?:,\d{3})+|\d+)$/.exec(final);
+        if (!m || !node || node.nodeType !== 3 || el.childNodes.length !== 1) continue;
+        const target = parseInt(final.replace(/,/g, ''), 10);
+        if (!(target >= 2)) continue;
+        const grouped = final.includes(',');
+        const steps = Math.min(target, 14);
+        const t0 = performance.now() + (order++) * 160;
+        const dur = 340 + steps * 42;
+        let shown = 0;
+        // Written into Blazor's own text node. Replacing the node (textContent) would orphan
+        // the one its diff still holds, and a later re-render would update a detached node.
+        node.nodeValue = '0';
+        const frame = (now) => {
+            if (!el.isConnected) return;
+            const p = Math.max(0, Math.min(1, (now - t0) / dur));
+            const step = Math.floor((1 - Math.pow(1 - p, 3)) * steps);
+            if (step !== shown) {
+                shown = step;
+                const val = Math.round(target * step / steps);
+                node.nodeValue = step >= steps ? final : (grouped ? val.toLocaleString('en-US') : String(val));
+                // `focus` is the one ui voice with no detune and no screen feel, so the
+                // run reads as a single rising scale rather than fourteen separate taps.
+                try { window.PoCue?.fire('ui', 'focus', { pitch: 0.5 + 0.5 * (step / steps), gain: 1.6 }); } catch { /* never fatal */ }
+            }
+            if (p < 1) requestAnimationFrame(frame);
+            else { node.nodeValue = final; pop(el); }
+        };
+        requestAnimationFrame(frame);
+    }
+}
+
 /** Cancel everything immediately — used on game teardown and route change. */
 export function reset() {
     _shockwaves.length = 0;
@@ -495,7 +539,7 @@ if (typeof window !== 'undefined') {
     // which cannot import an ES module without a dynamic import per call.
     window.PoImpact = {
         impact, shockwave, spring, addTrauma, hitstop, getPunch, getShake, getTimeScale,
-        registerStage, unregisterStage, vibrate, pop, popSelector, reset,
+        registerStage, unregisterStage, vibrate, pop, popSelector, reset, countUp,
     };
 
     // Consolidated PoImpactFx layer (§GFX-14)

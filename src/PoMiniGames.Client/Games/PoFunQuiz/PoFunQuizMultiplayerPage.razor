@@ -1,5 +1,6 @@
 @page "/funquiz/multi"
 @using PoMiniGamesClient.Components
+@using Microsoft.AspNetCore.SignalR.Client
 @using PoMiniGamesClient.Games.PoFunQuiz.Services
 @inject FunQuizHubService Hub
 @inject PlayerNameService PlayerNameService
@@ -9,18 +10,10 @@
 
 <PageTitle>Fun Quiz — Multiplayer · PoMiniGames</PageTitle>
 
+@* 2026-10-01: no intro card in front of the lobby and no "Your name" box (the player is
+   signed in under one). What is left before the lobby is the one real choice, the
+   category, and the lobby itself is the shared LobbyPanel. *@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/funquiz">
-    @if (!_introDone)
-    {
-        <GameIntro CueScope="quiz"
-                   Title="@TitleContent"
-                   Objective="Play Fun Quiz head-to-head online. Join the lobby, then answer faster and smarter than your opponent."
-                   Controls="@HowToPlayContent"
-                   Mode="GameIntro.IntroMode.OnePlayer"
-                   OnStart="OnIntroStartAsync" />
-    }
-    else
-    {
     @if (_reconnecting)
     {
         <div class="fq-reconnecting" role="status" aria-live="polite">
@@ -28,23 +21,13 @@
             Reconnecting to lobby…
         </div>
     }
-    @if (!_isConnected)
+    @if (_state is null)
     {
-        <p>Connecting…</p>
-    }
-    else if (_state is null)
-    {
-        @* There is exactly one lobby, so there is nothing to name and nothing to look up.
-           The game-code box and its "Join by code" button are gone (user decision,
-           2026-08-10), matching the same call made for Couple Quiz: one button seats you
-           with whoever is waiting, and opens the lobby if nobody is. *@
+        @* There is exactly one lobby, so there is nothing to name and nothing to look up
+           (user decision, 2026-08-10): one button seats you with whoever is waiting, and
+           opens the lobby if nobody is. *@
         <div class="fq-join">
-            <h2 class="gps-phase-h">Two-player · Fun Quiz</h2>
-            <label class="fq-join__field">
-                <span class="fq-join__label">Your name</span>
-                <input @bind="_playerName" maxlength="24" disabled="@(_busy || !_isConnected)"
-                       autocomplete="nickname" />
-            </label>
+            <h2 class="gps-phase-h">Online · Fun Quiz</h2>
             <label class="fq-join__field">
                 <span class="fq-join__label">Category <span class="fq-join__hint">used if you're first in</span></span>
                 <select @bind="_category" disabled="@(_busy || !_isConnected)"
@@ -65,43 +48,43 @@
             <div class="fq-actions">
                 @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
                    is in flight, so the primary button cannot fire twice on touch. *@
-                <button class="gps-btn gps-btn--primary"
-                        aria-busy="@_busy"
-                        disabled="@_busy"
+                <button class="app-btn app-btn--primary"
+                        aria-busy="@(_busy ? "true" : "false")"
+                        disabled="@(_busy || !_isConnected)"
                         @onclick="OnJoin">
-                    @(_busy ? "Joining…" : "Join the lobby")
+                    @(!_isConnected ? "Connecting…" : _busy ? "Joining…" : "Join the lobby")
                 </button>
             </div>
             @if (!string.IsNullOrEmpty(_error))
             {
-                <p class="fq-error">
+                <p class="fq-error" role="alert">
                     @_error
-                    <button class="gps-btn gps-btn--secondary gps-btn-retry" @onclick="RetryConnect">Retry</button>
+                    <button class="app-btn app-btn--secondary app-btn--sm" @onclick="RetryConnect">Retry</button>
                 </p>
             }
         </div>
     }
+    else if (IsWaiting)
+    {
+        @* No ready step: two seats, and the host starts once both are filled. *@
+        <LobbyPanel TPlayer="NamedLobbyPlayer"
+                    State="@LobbyState"
+                    LocalConnectionId="@_playerName"
+                    ConnectionState="@(_isConnected ? HubConnectionState.Connected : HubConnectionState.Reconnecting)"
+                    Hint="@($"Category: {CategoryLabel}. The host starts once both players are in.")"
+                    MaxPlayersHint="2"
+                    StartLabel="Start game"
+                    ShowReady="false"
+                    CanStart="@(_state.Players.Count >= 2)"
+                    WaitingHint="Waiting for an opponent to join…"
+                    HowTo="@HowToPlayContent"
+                    OnStart="OnStart"
+                    OnLeave="Leave" />
+    }
     else
     {
         <div class="fq-multi">
-            @* No code to read out, so the heading carries the thing that actually
-               differs between lobbies — the category everyone is about to play. *@
-            <h2 class="gps-phase-h">@(IsWaiting ? "Lobby" : "Fun Quiz") · @CategoryLabel</h2>
-            <h3>Players</h3>
-            <ul>
-                @foreach (var p in _state.Players)
-                {
-                    <li>@p.Name — @p.Score @(p.Name == _state.HostName ? "👑" : "")</li>
-                }
-            </ul>
-            @if (IsWaiting && _state.Players.Count < 2)
-            {
-                <p class="fq-waiting" role="status" aria-live="polite">Waiting for an opponent to join…</p>
-            }
-            @if (IsWaiting && _playerName == _state.HostName && _state.Players.Count >= 2)
-            {
-                <button class="gps-btn gps-btn gps-btn--primary" @onclick="OnStart">Start game</button>
-            }
+            <h2 class="gps-phase-h">Fun Quiz · @CategoryLabel</h2>
             @if (IsInProgress && _currentQuestion is not null)
             {
                 <div class="fq-question">
@@ -138,25 +121,20 @@
                             <li>@kv.Key — @kv.Value</li>
                         }
                     </ul>
-                    <a class="gps-btn gps-btn gps-btn--primary" href="/leaderboards">View leaderboard</a>
+                    <a class="app-btn app-btn--primary" href="/leaderboards">View leaderboard</a>
                 </div>
             }
         </div>
     }
-    }
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧠</span> Fun Quiz · Multiplayer</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧠</span> Fun Quiz</span>;
 
-    // Intro/welcome gate — controls card first; the hub connect waits for OK so
-    // the player joins the lobby only after seeing the controls.
-    private bool _introDone;
     private RenderFragment HowToPlayContent => @<div>
         <p>Two players answer the same questions online. Correct answers score points; build a streak for a bonus.</p>
         <ul>
             <li>Tap or click the answer you think is right</li>
-            <li>Press "Join the lobby" — you're matched with whoever is waiting</li>
             <li>The host starts once both players are in</li>
         </ul>
     </div>;
@@ -186,10 +164,15 @@
     private int OpponentScore => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Score ?? 0;
     private string OpponentName => _state?.Players.FirstOrDefault(p => p.Name != _playerName)?.Name ?? "Opponent";
 
-    protected override void OnInitialized()
+    /// <summary>The hub's game state, in the shape the shared lobby card draws. Seats are keyed by name.</summary>
+    private PoMiniGames.Shared.Games.LobbyState<NamedLobbyPlayer>? LobbyState => _state is null
+        ? null
+        : new PoMiniGames.Shared.Games.LobbyState<NamedLobbyPlayer>(
+            _state.Players.Select(p => new NamedLobbyPlayer(p.Name, IsReady: false)).ToList(),
+            _state.HostName, _state.GameId, MaxPlayers: 2, DateTimeOffset.UtcNow);
+
+    protected override async Task OnInitializedAsync()
     {
-        // Only wire hub handlers here — the connection waits for the intro's OK
-        // (see OnIntroStartAsync).
         _playerName = PlayerNameService.GetPlayerName();
         Hub.OnGameCreated += HandleState;
         Hub.OnGameJoined += HandleState;
@@ -202,23 +185,11 @@
         Hub.OnReconnecting += HandleReconnecting;
         Hub.OnReconnected += HandleReconnected;
         Hub.OnClosed += HandleClosed;
+        await RetryConnect();
     }
 
-    private async Task OnIntroStartAsync()
-    {
-        _introDone = true;
-        StateHasChanged();
-        try
-        {
-            await Hub.ConnectAsync();
-            _isConnected = true;
-        }
-        catch (Exception ex)
-        {
-            _error = $"Could not connect: {ex.Message}";
-        }
-        StateHasChanged();
-    }
+    // DisposeAsync drops the hub connection, which is what gives the seat back.
+    private void Leave() => Navigation.NavigateTo("/");
 
     private void HandleReconnecting(Exception? ex)
     {
@@ -261,8 +232,6 @@
     private async Task OnJoin()
     {
         if (_busy || _state is not null) return;
-        if (string.IsNullOrWhiteSpace(_playerName)) { _error = "Enter a name."; return; }
-        PlayerNameService.SetPlayerName(_playerName);
         _busy = true;
         _error = null;
         StateHasChanged();
@@ -291,7 +260,7 @@
         }
         catch (Exception ex)
         {
-            _error = $"Retry failed: {ex.Message}";
+            _error = $"Could not connect: {ex.Message}";
         }
         StateHasChanged();
     }

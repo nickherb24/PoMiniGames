@@ -32,6 +32,23 @@ public sealed class PoRacerScoreTests(TestWebApplicationFactory factory) : IClas
         var row = rows.Where(r => r.TotalTimeSeconds == timed).Should().ContainSingle().Subject;
         row.PlayerName.Should().NotBe("Forged");
         row.FinalPosition.Should().Be(2);
+        // The lap outlives the registry that timed it. A registry built fresh, as after an F1
+        // recycle, has nothing in memory and must still find it in the durable store; the write
+        // behind Remember is not awaited, hence the short poll.
+        await using var afterRecycle = new PoMiniGames.Features.PoRacer.PoRacerRaceRegistry(
+            factory.Services.GetRequiredService<PoMiniGames.Features.PoRacer.PoRacerLobbyService>(),
+            factory.Services.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<PoMiniGames.Features.PoRacer.PoRacerRaceHub>>(),
+            factory.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>(),
+            factory.Services.GetRequiredService<PoMiniGames.Infrastructure.VerifiedResultStore>());
+        PoMiniGames.Features.PoRacer.PoRacerVerifiedLap? kept = null;
+        for (var attempt = 0; attempt < 30 && kept is null; attempt++)
+        {
+            kept = await afterRecycle.VerifiedLapAsync("test-user", code);
+            if (kept is null) await Task.Delay(100);
+        }
+        kept.Should().NotBeNull("a score parked across a recycle must still be backed by the race that timed it");
+        kept!.BestLapSeconds.Should().Be(timed);
+        (await afterRecycle.VerifiedLapAsync("test-user", "solo-never-raced")).Should().BeNull();
         score.TrackId = "removed-track";
         (await client.PostAsJsonAsync("/api/poracer/scores", score)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
         score.TrackId = "circuit";

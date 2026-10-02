@@ -62,8 +62,9 @@ export function detectTier() {
  */
 export function resolveQuality(tier = detectTier()) {
   const at = (min) => TIERS.indexOf(tier) >= TIERS.indexOf(min);
-  const reducedMotion = !!(window.matchMedia
-    && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  // <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
+  const reducedMotion = document.documentElement.dataset.motion === 'reduce'
+    || !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   return {
     tier,
     reducedMotion,

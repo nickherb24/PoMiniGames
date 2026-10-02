@@ -1,4 +1,5 @@
 using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Infrastructure;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoRacer;
@@ -17,12 +18,15 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
     private readonly ILoggerFactory _logs;
     private readonly CancellationTokenSource _shutdown = new();
     private readonly Task _expiry;
+    private readonly VerifiedResultStore? _store;
 
-    public PoRacerRaceRegistry(PoRacerLobbyService lobby, IHubContext<PoRacerRaceHub> hub, ILoggerFactory logs)
+    public PoRacerRaceRegistry(PoRacerLobbyService lobby, IHubContext<PoRacerRaceHub> hub, ILoggerFactory logs,
+        VerifiedResultStore? store = null)
     {
         _lobby = lobby;
         _hub = hub;
         _logs = logs;
+        _store = store;
         _expiry = ExpireAsync();
     }
 
@@ -81,9 +85,11 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
     // The sim runs here, so the lap a score submit is allowed to store is the one this process
     // timed, not the one the browser reports. A race is disposed 30 s after it ends; its humans'
     // laps are kept for an hour so a parked score (PendingScoreStore) can still be backed when the
-    // connection returns. In memory, like the races themselves: a recycle forgets them and the
-    // parked score is then refused, which is the honest answer.
+    // connection returns. The dictionary is the fast path; every lap is also written through to
+    // VerifiedResultStore, because on F1 the host recycles when idle and a lap held only in memory
+    // meant a score parked across a recycle was refused for good (2026-10-01).
     private static readonly TimeSpan VerifiedFor = TimeSpan.FromHours(1);
+    private const string StoreGame = "poracer";
     private readonly Dictionary<(string UserId, string Code), PoRacerVerifiedLap> _verified = [];
 
     private void Remember(PoRacerRaceService race)
@@ -97,16 +103,27 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
     /// <summary>Back a lap for an identity and race code. Public for the storage tests, which cannot run three laps.</summary>
     public void Remember(string userId, string code, PoRacerVerifiedLap lap)
     {
-        lock (_gate) _verified[(userId, code.ToLowerInvariant())] = lap;
+        code = code.ToLowerInvariant();
+        lock (_gate) _verified[(userId, code)] = lap;
+        // Not awaited: the race loop must not wait on storage, and the store logs its own failures.
+        _ = _store?.SaveAsync(StoreGame, StoreKey(userId, code), lap);
     }
 
-    /// <summary>The lap this server timed for that identity in that race, if it is still remembered.</summary>
-    public PoRacerVerifiedLap? VerifiedLap(string userId, string? code)
+    /// <summary>
+    /// The lap this server timed for that identity in that race, if it is still remembered: by this
+    /// process, or by the durable store when the race ran before a recycle.
+    /// </summary>
+    public async Task<PoRacerVerifiedLap?> VerifiedLapAsync(string userId, string? code, CancellationToken ct = default)
     {
-        lock (_gate)
-            return _verified.TryGetValue((userId, (code ?? "").ToLowerInvariant()), out var lap)
-                && DateTimeOffset.UtcNow - lap.FinishedAtUtc <= VerifiedFor ? lap : null;
+        code = (code ?? "").ToLowerInvariant();
+        PoRacerVerifiedLap? lap;
+        lock (_gate) _verified.TryGetValue((userId, code), out lap);
+        if (lap is null && _store is not null)
+            lap = await _store.FindAsync<PoRacerVerifiedLap>(StoreGame, StoreKey(userId, code), VerifiedFor, ct: ct);
+        return lap is not null && DateTimeOffset.UtcNow - lap.FinishedAtUtc <= VerifiedFor ? lap : null;
     }
+
+    private static string StoreKey(string userId, string code) => userId + "|" + code;
 
     private async Task BroadcastAsync<T>(string code, string method, T message)
     {

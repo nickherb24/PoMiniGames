@@ -64,6 +64,13 @@
    ══════════════════════════════════════════════ */
 
 .prf-page {
+    /* width + min-width are load-bearing. This is a flex item of `main.gl-content`
+       (a column flex container): with no declared width it is sized to its
+       max-content, and `min-width: auto` then stops it shrinking back. Until
+       2026-10-01 that made the page 722px wide inside a 390px phone, with the
+       right-hand third (two stat chips, three of five tabs) clipped off-screen. */
+    width: 100%;
+    min-width: 0;
     max-width: var(--content-max, 960px);
     margin: 0 auto;
     /* The 5rem bottom padding was reserving room for the bottom tab bar deleted
@@ -77,239 +84,89 @@
     gap: 1rem;
 }
 
-/* ── Hero ── */
-.prf-hero {
+/* ── Heading ──
+   The page title and whose stats these are, on one line. The Gamer Card under
+   it is the hero (avatar, account badge, rank), so this carries no card of its
+   own. */
+.prf-head {
     display: flex;
-    align-items: center;
-    gap: 1.5rem;
-    /* Scheme-aware, same reason as the avatar below (Option #5) — this rule was
-       missed by that pass. The literal `linear-gradient(135deg, rgba(30,41,59,.9),
-       rgba(15,23,42,.95))` painted a near-black slate card that stayed near-black
-       in light mode, so the profile hero rendered as a dark slab stranded on a
-       #f6f7fa page. The surface tokens are already `light-dark()` pairs, so one
-       gradient covers both schemes. 2026-09-11 UI audit. */
-    background: linear-gradient(135deg, var(--surface-2), var(--surface-1));
-    border: 1px solid var(--color-border);
-    border-radius: 1.25rem;
-    padding: 1.75rem;
-    /* Elevation likewise: a 0.4-alpha black drop shadow is a dark-scheme value
-       and reads as grime under a light surface. */
-    box-shadow: var(--elevation-1), 0 0 30px rgba(99, 102, 241, 0.1);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-}
-
-.prf-avatar {
-    flex-shrink: 0;
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    /* Option #5: scheme-aware gradient. The previous `linear-gradient(135deg,
-       #6366f1, #06b6d4)` was a hard-coded indigo→cyan pair that disappeared
-       into a light page. Reading from the design tokens keeps the avatar
-       visible on both schemes while keeping the colour identity. */
-    background: linear-gradient(135deg, var(--color-accent-solid, #6366f1), var(--accent-cyan, #22d3ee));
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 0 24px rgba(99, 102, 241, 0.45);
-    border: 2px solid var(--hairline, rgba(255, 255, 255, 0.2));
-    position: relative;
-}
-
-/* Option #5: tiny "guest" or "MS" badge anchored to the avatar's
-   bottom-right corner so a guest player can tell at a glance this profile is
-   a temporary one. Without it the only signal was the unusual handle
-   ("Guest598152-133895"), which reads as a debug value on first load. */
-.prf-avatar-badge {
-    position: absolute;
-    right: -4px;
-    bottom: -4px;
-    min-width: 22px;
-    height: 22px;
-    padding: 0 6px;
-    border-radius: var(--radius-pill);
-    background: var(--color-surface);
-    color: var(--color-text-primary);
-    border: 1px solid var(--color-border);
-    font-size: 0.65rem;
-    font-weight: 700;
-    letter-spacing: 0.04em;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
-}
-.prf-avatar-badge--guest { color: var(--accent-warning-ink); }
-.prf-avatar-badge--microsoft { color: var(--accent-ink); }
-
-.prf-avatar-text {
-    font-size: 1.6rem;
-    font-weight: 800;
-    /* Option #5: white reads fine on both gradient stops in dark mode, and on
-       the slightly darker light-mode tokens. text-shadow lifts the letters
-       off the gradient in both schemes. */
-    color: var(--color-accent-contrast, #ffffff);
-    letter-spacing: -0.05em;
-    font-family: var(--font-display);
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
-}
-
-.prf-hero-body {
-    flex: 1;
-    min-width: 0;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
 }
 
 .prf-name {
     font-size: 1.5rem;
     font-weight: 700;
-    margin-bottom: 0.15rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
 }
 
-/* 2026-08-10 audit: H1 is the page title ("My Stats") — the display name is
-   surfaced as a subtitle so it still appears prominently but no longer
-   shadows the actual page heading. Consistent with every other page
-   (Settings, Leaderboards) where H1 == the destination label. */
-.prf-handle {
-    font-size: 0.9rem;
-    color: var(--color-text-secondary);
-    margin-bottom: 0.65rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
+/* ── Headline numbers ──
+   One wrapping strip. Each chip is a value over a label; how to earn a stat
+   that is still a dash is the chip's tooltip, not a paragraph inside it. */
 .prf-chips {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
     gap: 0.5rem;
-    /* Option #4: equalise the visual rhythm across the four chips. Without
-       align-items: stretch + min-height: 0, the two chips with a hint
-       ("Best Streak", "Top ELO") render at 101px and the other two at 54px —
-       a ragged two-row layout that reads as broken. With min-height set to
-       the tallest chip's natural height, every chip is the same size and the
-       hint sits at the bottom of the column where there is room. */
-    align-items: stretch;
 }
 
 .prf-chip {
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: space-between;
     background: var(--surface-1);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
-    padding: 0.5rem 0.85rem;
-    min-width: 75px;
-    /* Tallest natural chip (val + label + hint) measured ~101px; pin the
-       floor so the four always agree. label and hint sit in their own block
-       so the spacing inside is consistent. */
-    min-height: 5.5rem;
-    transition: transform 0.18s var(--ease-standard), border-color 0.18s var(--ease-standard), box-shadow 0.18s var(--ease-standard);
-    /* 2026-09-04 UI sweep: containment — the four chips reflow independently
-       (a new hint inside one chip does not re-layout the others). */
+    padding: 0.4rem 0.75rem;
     contain: layout paint;
 }
 
-.prf-chip:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent-cyan, #22d3ee);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-/* NetRun10 audit #9: inline hint that explains what unlocks an em-dash stat.
-   Hidden by default (display:none); the Razor toggles it via the parent chip
-   contents; we use :has() so a single .prf-chip-hint inside the chip surfaces it. */
-/* 2026-08-07 browser audit #9: this page carried the smallest type in the app —
-   0.6rem/0.65rem/0.68rem labels rendering at 9.6-10.9px. 0.75rem (12px) is the
-   floor for every label class below; anything smaller is not readable type, it
-   is decoration that happens to contain words. */
-.prf-chip-hint {
-    display: none;
-    font-size: 0.75rem;
-    color: var(--color-text-secondary);
-    text-align: center;
-    margin-top: 0.25rem;
-    line-height: 1.2;
-    max-width: 120px;
-}
-.prf-chip:has(.prf-chip-hint) .prf-chip-hint { display: block; }
+.prf-chip--best { border-color: color-mix(in srgb, var(--accent-success) 35%, var(--color-border)); }
+.prf-chip--nemesis { border-color: color-mix(in srgb, var(--accent-danger) 35%, var(--color-border)); }
 
 .prf-chip-val {
     font-size: 1rem;
     font-weight: 700;
     color: var(--color-text-primary);
-    line-height: 1.2;
+    line-height: 1.3;
+    white-space: nowrap;
 }
 
+/* 0.75rem (12px) is the floor for every label class on this page (2026-08-07
+   browser audit #9): anything smaller is decoration that happens to contain words. */
 .prf-chip-lbl {
     font-size: 0.75rem;
     color: var(--color-text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    margin-top: 1px;
+    white-space: nowrap;
 }
 
-/* ── Charts row ── */
+/* ── Charts (folded) ── */
+.prf-fold > summary {
+    cursor: pointer;
+    margin-bottom: 0;
+    padding: 0.4rem 0;
+}
+
+.prf-fold[open] > summary { margin-bottom: 0.6rem; }
+
 .prf-charts {
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 1rem;
 }
 
-/* NetRun10 audit #9: collapse the profile page aggressively on phone-sized
-   viewports. Without this the page was 1235px tall on a 768px desktop and
-   even worse on a 390px phone — the charts row + 6 stacked sections
-   forced the user to scroll past 5× the viewport. */
 @media (max-width: 640px) {
-    .prf-hero { flex-direction: column; align-items: flex-start; padding: 0.9rem; }
-    /* The four stat chips lay out 2×2 on a phone, and `align-items: stretch`
-       sizes all four to the tallest — which is one of the two carrying a
-       two-line "how to earn this" hint. That made the hero 387px on a 375px
-       phone before any actual stats existed. Two columns explicitly (rather
-       than wrap-whatever-fits) plus a tighter hint keeps the grid even and the
-       hero near 300px. 2026-09-11 UI audit. */
-    .prf-chips { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
-    /* 5.5rem → 4.6rem. The floor is there to keep the four chips level with the
-       tallest, and with the tighter hint below the tallest no longer needs 88px.
-       Two chip rows × 14px is the 24px that kept a 390×844 iPhone scrolling. */
-    .prf-chip { padding: 0.45rem 0.6rem; min-height: 4.4rem; }
     .prf-page { gap: 0.75rem; }
-    .prf-chip-hint { font-size: 0.68rem; line-height: 1.25; margin-top: 0.15rem; }
+    .prf-chip { padding: 0.35rem 0.5rem; }
     .prf-h2h-cols { grid-template-columns: 1fr; }
     .prf-charts { grid-template-columns: 1fr; }
     .prf-game-grid { grid-template-columns: 1fr 1fr; }
 }
-/* Short phones — keyed on height for the same reason as the home page's block:
-   the rules above were tuned against a 390×844 iPhone 14, and an iPhone SE has
-   the same width with 177px less height. The chip hints are the first thing to
-   go; they explain how to earn a stat the player has not earned yet, which is
-   the least urgent content on the screen. */
-@media (max-width: 640px) and (max-height: 780px) {
-    .prf-chip-hint { display: none !important; }
-    /* The 5.5rem floor exists to keep the four chips level when one of them
-       carries a two-line hint. With the hints hidden above there is nothing to
-       be level WITH, and the floor was holding 88px chips around 44px of
-       content — which is most of why the hero stayed at 353px here. */
-    .prf-chip { min-height: 0; padding: 0.4rem 0.6rem; }
-    .prf-hero { padding: 0.75rem; gap: 0.75rem; }
-    /* (The FX bench is hidden at this size too — that rule lives in
-       FxBench.razor.css, because `.fxb` carries FxBench's scope id and a
-       descendant selector written here would never match it.) */
-}
 
 @media (max-width: 480px) {
-    .prf-charts { grid-template-columns: 1fr; }
     .prf-game-grid { grid-template-columns: 1fr; }
-    /* 2026-09-11: bottom padding 3rem -> 1.25rem + safe inset. The empty
-       profile (hero + one empty-state card) measured 24px past the 844px fold
-       with the old 3rem; the padded slab was reserved for the deleted
-       bottom-tab bar (2026-07-05) and outlived its purpose. */
-    .prf-page { gap: 1rem; padding: 1rem 0.75rem calc(1.25rem + env(safe-area-inset-bottom, 0px)); }
+    .prf-page { padding: 0.75rem 0.75rem calc(1.25rem + env(safe-area-inset-bottom, 0px)); }
 }
 
 .prf-chart-card {
@@ -321,22 +178,6 @@
     flex-direction: column;
     align-items: center;
     gap: 0.75rem;
-}
-
-.prf-chart-card--empty {
-    text-align: center;
-    padding: 2.5rem 1.5rem;
-    gap: 0.85rem;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.08), rgba(99, 102, 241, 0.02));
-    border-color: rgba(99, 102, 241, 0.25);
-}
-
-.prf-chart-empty-text {
-    color: var(--color-text-secondary);
-    font-size: 0.85rem;
-    max-width: 320px;
-    margin: 0;
-    line-height: 1.45;
 }
 
 .prf-chart-title {
@@ -379,38 +220,10 @@
 .prf-legend-draw { background: var(--accent-warning); }
 .prf-legend-loss { background: var(--accent-danger); }
 
-/* ── Callouts ── */
-.prf-callouts {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-}
-
-.prf-callout {
-    flex: 1;
-    min-width: 200px;
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1rem 1.25rem;
-    border-radius: 0.875rem;
-    border: 1px solid;
-}
-
-.prf-callout--best {
-    background: rgba(34, 197, 94, 0.08);
-    border-color: rgba(34, 197, 94, 0.3);
-}
-
-.prf-callout--nemesis {
-    background: rgba(239, 68, 68, 0.08);
-    border-color: rgba(239, 68, 68, 0.3);
-}
-
-/* ── Unplayed strip (2026-09-11 UI sweep) ──
+/* ── Unplayed strip (2026-09-11 UI sweep, back in use 2026-10-01) ──
    Replaces the wall of "Not played yet" cards: one wrapped row of small chips
-   under the played-games grid. Colours come from the theme tokens so the strip
-   follows light/dark like the rest of the page. */
+   under the played-games grid, each a link into its game. Colours come from the
+   theme tokens so the strip follows light/dark like the rest of the page. */
 .prf-unplayed {
     display: flex;
     align-items: center;
@@ -435,49 +248,20 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    min-height: 44px; /* touch target */
-    padding: 0.25rem 0.7rem;
+    min-height: 32px;
+    padding: 0.2rem 0.65rem;
     border-radius: var(--radius-pill);
     border: 1px solid var(--color-border);
     background: var(--tint-subtle);
-    color: var(--color-text-secondary);
     font-size: 0.8rem;
     white-space: nowrap;
-}
-
-.prf-unplayed-chip--link {
-    color: var(--color-accent);
     text-decoration: none;
 }
 
-.prf-unplayed-chip--link:hover {
-    border-color: var(--color-accent);
-    color: var(--color-text-primary);
-}
+.prf-unplayed-chip:hover { border-color: var(--color-accent); }
 
-.prf-callout-icon {
-    font-size: 1.75rem;
-    flex-shrink: 0;
-}
-
-.prf-callout-lbl {
-    font-size: 0.75rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-text-secondary);
-    margin-bottom: 1px;
-}
-
-.prf-callout-val {
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--color-text-primary);
-}
-
-.prf-callout-sub {
-    font-size: 0.75rem;
-    color: var(--color-text-secondary);
-    margin-top: 1px;
+@media (pointer: coarse) {
+    .prf-unplayed-chip { min-height: 44px; }
 }
 
 /* ── Section ── */
@@ -510,47 +294,13 @@
     display: inline-flex;
     align-items: center;
     gap: 0.3rem;
-    font-size: 0.72rem;
+    font-size: var(--text-xs);
     color: var(--color-text-soft);
 }
 
 .prf-h2h-legend .prf-h2h-badge { cursor: default; }
 
 .prf-h2h-legend-lbl + .prf-h2h-badge { margin-left: 0.5rem; }
-
-/* 2026-08-12 audit #3: explicit error banner when a leaderboard fetch
-   fails, so the user doesn't see unexplained "Not played yet" rows
-   that are actually missing data. */
-.prf-error {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    margin-bottom: 0.875rem;
-    border: 1px solid color-mix(in srgb, var(--color-accent-warning, #d97706) 40%, var(--color-border));
-    border-radius: 0.625rem;
-    background: color-mix(in srgb, var(--color-accent-warning, #d97706) 8%, var(--color-surface));
-    font-size: 0.85rem;
-    color: var(--color-text);
-}
-
-.prf-error-icon { flex-shrink: 0; font-size: 1.05rem; }
-
-.prf-error-text { flex: 1; }
-
-.prf-error-retry {
-    flex-shrink: 0;
-    padding: 0.3rem 0.75rem;
-    border-radius: 0.5rem;
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text);
-    cursor: pointer;
-    font: inherit;
-    font-weight: 500;
-}
-
-.prf-error-retry:hover { background: var(--color-surface-hover, var(--color-surface)); }
 
 /* ── Game grid ── */
 .prf-game-grid {
@@ -563,29 +313,15 @@
     background: var(--color-surface);
     border: 1px solid var(--color-border);
     border-radius: 0.875rem;
-    padding: 1rem;
+    padding: 0.75rem 0.85rem;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
+    gap: 0.5rem;
     transition: border-color 0.2s;
 }
 
-.prf-game-card:not(.prf-game-card--unplayed):hover {
+.prf-game-card:hover {
     border-color: rgba(99,102,241,0.4);
-}
-
-/* 2026-08-08 audit #3: this used to be `opacity: 0.55` on the whole card, which
-   multiplied through to the text and dropped .prf-game-name to 4.04:1 and
-   .prf-game-unplayed to 2.61:1 in light mode (both under the 4.5:1 AA floor).
-   De-emphasis now comes from a recessed surface plus a dimmed icon, so the card
-   still reads as "not played yet" while its text keeps full token contrast.
-   Rule of thumb for this file: never put opacity on a container that holds text. */
-.prf-game-card--unplayed {
-    background: var(--surface-1);
-}
-
-.prf-game-card--unplayed .prf-game-icon {
-    opacity: 0.55;
 }
 
 .prf-game-header {
@@ -604,6 +340,17 @@
     font-size: 0.875rem;
     font-weight: 600;
     color: var(--color-text-primary);
+}
+
+/* The player's own best on the server board (a score, a time). */
+.prf-game-best {
+    font-size: 0.8rem;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--color-text-primary);
+    background: var(--surface-3);
+    border-radius: 0.35rem;
+    padding: 0.1rem 0.4rem;
 }
 
 .prf-game-wr {
@@ -639,7 +386,7 @@
     display: flex;
     align-items: center;
     gap: 0.4rem;
-    font-size: 0.72rem;
+    font-size: var(--text-xs);
     flex-wrap: wrap;
 }
 
@@ -670,29 +417,9 @@
     padding: 0.05rem 0.3rem;
 }
 
-.prf-game-unplayed {
-    font-size: 0.75rem;
-    color: var(--color-text-secondary);
-    font-style: italic;
-}
-
-.prf-game-note {
-    font-size: 0.72rem;
-    color: var(--color-text-secondary);
-    font-style: italic;
-}
-
-/* 2026-08-12 audit #5: clear "this is a demo count" hint + a one-tap link to
-   (re)launch the demo, so the "8 sessions" line stops reading as a glitch. */
-.prf-game-hint {
-    font-size: 0.7rem;
-    color: var(--color-text-soft, var(--color-text-secondary));
-    margin-top: -0.3rem;
-}
-
+/* "Watch again" on a session-count card: pushed to the row's far end. */
 .prf-game-link {
-    display: inline-block;
-    margin-top: 0.25rem;
+    margin-left: auto;
     font-size: 0.75rem;
     color: var(--color-accent, #6366f1);
     text-decoration: none;
@@ -720,39 +447,9 @@
 }
 
 .prf-game-plays-lbl {
-    font-size: 0.72rem;
+    font-size: var(--text-xs);
     color: var(--color-text-secondary);
 }
-
-/* ── High scores (1P) ── */
-.prf-hs-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 0.75rem;
-}
-.prf-hs-card {
-    display: flex;
-    align-items: center;
-    gap: 0.65rem;
-    background: var(--color-surface);
-    border: 1px solid var(--color-border);
-    border-radius: 0.65rem;
-    padding: 0.7rem 0.85rem;
-}
-/* audit #3 — same container-opacity trap as .prf-game-card--unplayed above:
-   .prf-hs-game and .prf-hs-sub measured 2.61:1 in light / 3.6:1 in dark. */
-.prf-hs-card--empty { background: var(--surface-1); }
-.prf-hs-card--empty .prf-hs-icon { opacity: 0.55; }
-.prf-hs-icon { font-size: 1.5rem; line-height: 1; }
-.prf-hs-body { display: flex; flex-direction: column; min-width: 0; }
-.prf-hs-game {
-    font-size: 0.72rem;
-    color: var(--color-text-secondary);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-}
-.prf-hs-value { font-size: 1.15rem; font-weight: 700; color: var(--color-text-primary); }
-.prf-hs-sub { font-size: 0.72rem; color: var(--color-text-secondary); }
 
 /* ── Head-to-head ── */
 .prf-h2h-cols {
@@ -800,6 +497,9 @@
 .prf-h2h-w { color: var(--accent-success); font-weight: 600; }
 .prf-h2h-l { color: var(--accent-danger); font-weight: 600; }
 .prf-h2h-d { color: var(--color-text-secondary); }
+/* The invite column, online opponents only. Declared after the fixed-width rule
+   above (same specificity), which would otherwise squeeze the button to 2.5rem. */
+.prf-h2h-table th.prf-h2h-invite, .prf-h2h-table td.prf-h2h-invite { width: auto; text-align: right; }
 .prf-h2h-badge {
     font-size: 0.75rem;
     font-weight: 700;
@@ -809,165 +509,3 @@
 }
 .prf-h2h-badge--microsoft { background: rgba(0,120,212,0.2); color: #4aa8ff; }
 .prf-h2h-badge--guest { background: rgba(148,163,184,0.18); color: var(--color-text-secondary); }
-
-/* .prf-settings-link (the pointer out to /settings) was removed on 2026-08-11
-   along with the settings page itself. */
-
-/* ── Your data (export / erase) ─────────────────────────────────────────
-   Deliberately the plainest block on the page: no gradient, no elevation,
-   no accent fill. Everything above it is a score to enjoy looking at; this
-   is an account control, and dressing it up the same way invites the tap
-   it must not get by accident. Colour is carried entirely through the
-   theme tokens so it re-points correctly in light mode. */
-.prf-data {
-    margin-top: 1.5rem;
-    padding-top: 1.25rem;
-    border-top: 1px solid var(--color-border);
-}
-
-.prf-data-blurb {
-    margin: 0 0 0.875rem;
-    font-size: 0.82rem;
-    line-height: 1.5;
-    color: var(--color-text-secondary);
-    max-width: 52ch;
-}
-
-.prf-data-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
-.prf-data-btn {
-    appearance: none;
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text-secondary);
-    font: inherit;
-    font-size: 0.8rem;
-    font-weight: 600;
-    padding: 0.5rem 0.9rem;
-    border-radius: var(--radius-sm);
-    cursor: pointer;
-    transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
-}
-
-.prf-data-btn:hover:not(:disabled) {
-    background: var(--color-surface-hover);
-}
-
-.prf-data-btn:focus-visible {
-    outline: 2px solid var(--accent-ring);
-    outline-offset: 2px;
-}
-
-.prf-data-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-}
-
-/* --accent-danger-ink rather than --accent-danger: the -ink variants are the
-   ones tuned for text contrast in both schemes (see the note in app.css). */
-.prf-data-btn--danger {
-    color: var(--accent-danger-ink);
-    border-color: var(--accent-danger-soft);
-}
-
-.prf-data-btn--danger:hover:not(:disabled) {
-    background: var(--accent-danger-soft);
-}
-
-.prf-data-btn--quiet {
-    border-color: transparent;
-    background: transparent;
-}
-
-.prf-data-confirm {
-    margin-top: 0.875rem;
-    padding: 0.875rem;
-    border: 1px solid var(--accent-danger-soft);
-    border-radius: var(--radius-sm);
-    background: var(--accent-danger-soft);
-}
-
-.prf-data-warn {
-    margin: 0 0 0.75rem;
-    font-size: 0.8rem;
-    line-height: 1.5;
-    color: var(--accent-danger-ink);
-    max-width: 52ch;
-}
-
-.prf-data-confirm-row {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-}
-
-.prf-data-input {
-    flex: 1 1 8rem;
-    min-width: 0;
-    font: inherit;
-    font-size: 0.8rem;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    padding: 0.5rem 0.7rem;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--color-border);
-    background: var(--color-surface);
-    color: var(--color-text);
-}
-
-.prf-data-input:focus-visible {
-    outline: 2px solid var(--accent-ring);
-    outline-offset: 1px;
-}
-
-/* ── Radzen-inspired Segmented Tab Control ── */
-.prf-tabs {
-    display: flex;
-    gap: var(--space-2);
-    margin: var(--space-4) 0 var(--space-3);
-    border-bottom: 1px solid var(--color-border);
-    padding-bottom: var(--space-2);
-    overflow-x: auto;
-    scrollbar-width: none;
-}
-.prf-tabs::-webkit-scrollbar {
-    display: none;
-}
-
-.prf-tab {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.5rem 1rem;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--color-text-secondary);
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: var(--radius-md);
-    cursor: pointer;
-    white-space: nowrap;
-    min-height: 40px;
-    transition: all var(--dur-fast) var(--ease-standard);
-}
-.prf-tab:hover {
-    color: var(--color-text-primary);
-    background: var(--surface-hover);
-}
-.prf-tab--active {
-    color: var(--color-accent-contrast, #fff);
-    background: var(--color-accent-solid, #4f46e5);
-    border-color: var(--color-accent-solid, #4f46e5);
-}
-
-.prf-tabpanel {
-    display: none;
-}
-.prf-tabpanel--active {
-    display: block;
-}

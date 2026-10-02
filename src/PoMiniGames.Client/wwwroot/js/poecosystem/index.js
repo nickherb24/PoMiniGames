@@ -65,8 +65,13 @@ function createEngine(container, dotnetRef, opts) {
   state.music = createMusic(state.audio);
   state.leitmotif = createLeitmotif(state.audio, state.music);
   const rootEl = () => container?.closest?.('.poeco-root') ?? null;
-  const motionReduced = () => !!state.prefs?.get('reducedMotion')
-    || (typeof document !== 'undefined' && document.documentElement.dataset.motion === 'reduce');
+  // Palette and motion are the app's settings (<html data-colorsafe> / <html data-motion>,
+  // the settings sheet). The island had a switch of its own for each until 2026-10-01; the
+  // 'palette' and 'reducedMotion' prefs an older build stored are no longer read.
+  const paletteInUse = () =>
+    (typeof document !== 'undefined' && document.documentElement.dataset.colorsafe === '1') ? 'cb' : 'default';
+  const motionReduced = () =>
+    typeof document !== 'undefined' && document.documentElement.dataset.motion === 'reduce';
 
   const invoke = async (method, ...args) => {
     if (!dotnetRef) return;
@@ -368,7 +373,7 @@ function createEngine(container, dotnetRef, opts) {
         state.subjectTimer = setInterval(() => { updateSubject(); slowPoll(); }, 250);
         if (motionReduced()) rootEl()?.setAttribute('data-poeco-still', '');
       }
-      if (typeof document !== 'undefined') applyPalette(prefs.get('palette'));
+      if (typeof document !== 'undefined') applyPalette();
       await startHost();
     },
   };
@@ -379,7 +384,7 @@ function createEngine(container, dotnetRef, opts) {
   function extend(target, members) { Object.defineProperties(target, Object.getOwnPropertyDescriptors(members)); return target; }
 
   /**
-   * The renderer is built here (and rebuilt by setQuality / setPalette / a lost GL context)
+   * The renderer is built here (and rebuilt by setQuality / a lost GL context)
    * from the prefs the Settings panel writes. A rebuild replays the cached terrain, tiles and
    * stats, so the island reappears exactly as it was without asking the worker for anything.
    */
@@ -389,8 +394,8 @@ function createEngine(container, dotnetRef, opts) {
     return createRenderer(container, {
           minimapCanvas: opts.minimapId ? document.getElementById(opts.minimapId) : null,
           quality: { lowEnd: !!opts.lowEnd, tier: quality === 'auto' ? null : quality },
-          palette: prefs.get('palette'),
-          reducedMotion: prefs.get('reducedMotion'),
+          palette: paletteInUse(),
+          reducedMotion: motionReduced(),
           bindings: prefs.get('bindings'),
           audio: state.audio,
           onPick: (handle) => { api.select(handle); invoke('OnPick', handle); },
@@ -449,16 +454,16 @@ function createEngine(container, dotnetRef, opts) {
   }
 
   /** Chart and chip colours follow a data attribute (poecosystem.css defines both palettes). */
-  function applyPalette(palette) {
+  function applyPalette() {
     if (typeof document === 'undefined') return;
-    if (palette === 'cb') document.documentElement.setAttribute('data-poeco-palette', 'cb');
+    if (paletteInUse() === 'cb') document.documentElement.setAttribute('data-poeco-palette', 'cb');
     else document.documentElement.removeAttribute('data-poeco-palette');
   }
 
   const settingsSnapshot = () => ({
     quality: state.prefs?.get('quality') ?? 'auto',
-    palette: state.prefs?.get('palette') ?? 'default',
-    reducedMotion: !!state.prefs?.get('reducedMotion'),
+    palette: paletteInUse(),
+    reducedMotion: motionReduced(),
     bindings: mergeBindings(state.prefs?.get('bindings')),
     defaults: DEFAULT_BINDINGS,
     bindable: BINDABLE,
@@ -478,17 +483,6 @@ function createEngine(container, dotnetRef, opts) {
       const t = ['auto', 'high', 'medium', 'low'].includes(tier) ? tier : 'auto';
       state.prefs?.set('quality', t);
       rebuildRenderer();
-    },
-    setPalette(palette) {
-      const p = palette === 'cb' ? 'cb' : 'default';
-      state.prefs?.set('palette', p);
-      applyPalette(p);
-      rebuildRenderer();   // tribe banners are baked into their materials
-    },
-    setReducedMotion(on) {
-      state.prefs?.set('reducedMotion', !!on);
-      state.renderer?.setReducedMotion(!!on);
-      if (on) rootEl()?.setAttribute('data-poeco-still', ''); else rootEl()?.removeAttribute('data-poeco-still');
     },
     /** Open or close the Island Reel drawer; returns whether it is now open. */
     toggleReel: () => state.reel?.toggle() ?? false,
@@ -823,8 +817,6 @@ const PoEcosystem = {
   holdDirector: (on) => engine?.holdDirector(on),
   settings: () => engine?.settings() ?? null,
   setQuality: (tier) => engine?.setQuality(tier),
-  setPalette: (palette) => engine?.setPalette(palette),
-  setReducedMotion: (on) => engine?.setReducedMotion(on),
   setBinding: (action, code) => engine?.setBinding(action, code) ?? null,
   resetBindings: () => engine?.resetBindings() ?? null,
   captureKey: () => engine?.captureKey() ?? Promise.resolve(null),

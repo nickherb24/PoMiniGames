@@ -30,7 +30,8 @@ class MinimapHandle {
     constructor(canvas, centerline, opts) {
         this.canvas = canvas;
         this.ctx2d = canvas.getContext('2d');
-        this.colorSafe = !!(opts && opts.colorSafe);
+        // The game's own setting, or the platform's (<html data-colorsafe>, the settings sheet).
+        this.colorSafe = !!(opts && opts.colorSafe) || document.documentElement.dataset.colorsafe === '1';
         this.accent = (opts && opts.accent) || '#d4af37';
         // Point-to-point: the centerline handed in is start → finish, not a loop.
         this.open = !!(opts && opts.open);

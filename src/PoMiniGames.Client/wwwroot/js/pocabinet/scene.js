@@ -311,7 +311,9 @@ class SceneHandle {
     applyView(opts) {
         if (this.disposed) return;
         const o = opts && typeof opts === 'object' ? opts : {};
-        this.fx.reduced = !!o.reducedMotion;
+        // The game's own setting, or the platform's (<html data-motion>: the OS preference
+        // or the settings sheet's switch).
+        this.fx.reduced = !!o.reducedMotion || document.documentElement.dataset.motion === 'reduce';
         this.setRacingLine(!!o.racingLine);
     }
 

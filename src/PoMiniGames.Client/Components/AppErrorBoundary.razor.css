@@ -53,7 +53,7 @@
     padding: 10px;
     border-radius: 6px;
     color: var(--color-text-primary);
-    font-size: 11px;
+    font-size: var(--text-xs);
     line-height: 1.4;
 }
 
@@ -74,7 +74,7 @@
     background: transparent;
     border: 1px solid rgba(148, 163, 184, 0.3);
     color: var(--color-text-secondary);
-    font-size: 11px;
+    font-size: var(--text-xs);
     padding: 2px 8px;
     border-radius: 4px;
     cursor: pointer;
@@ -89,27 +89,3 @@
     gap: 8px;
 }
 
-.app-error-boundary__btn {
-    background: linear-gradient(135deg, #f43f5e, #e11d48);
-    color: white;
-    border: 0;
-    padding: 8px 14px;
-    border-radius: 8px;
-    font-weight: 600;
-    font-size: 13px;
-    text-decoration: none;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.app-error-boundary__btn--ghost {
-    background: transparent;
-    color: var(--color-text-secondary);
-    border: 1px solid rgba(148, 163, 184, 0.4);
-}
-
-.app-error-boundary__btn:hover {
-    filter: brightness(1.1);
-}

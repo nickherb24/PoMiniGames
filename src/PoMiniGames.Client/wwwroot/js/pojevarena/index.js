@@ -45,7 +45,9 @@ const ENGAGED_M = 3;
 const KILLCAM_BEFORE = 90, KILLCAM_AFTER = 30, KILLCAM_SPEED = 0.45;     // frames, frames, × real time
 const CEREMONY_S = 2.6;
 const SLOWMO_S = 0.45, SLOWMO_SCALE = 0.35;
-const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+// <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
+const reducedMotion = () => document.documentElement.dataset.motion === 'reduce'
+  || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
 
 let match = null;            // the one live/replaying arena
 let lastClip = null;         // the last kill cam, kept past stop() so the result bar can share it
@@ -176,7 +178,8 @@ function loop(m, now) {
         // time, so a slowed stretch makes no extra Jev calls.
         const slow = now < m.slowUntil;
         m.audio.setRate(slow ? 0.8 : 1);
-        m.acc += dt * (slow ? SLOWMO_SCALE : 1);
+        // Hit-stop (impactBus, set by a knockout below) rides the same scale.
+        m.acc += dt * (slow ? SLOWMO_SCALE : 1) * (window.PoImpact?.getTimeScale?.() ?? 1);
         while (m.acc >= sim.DT && !m.world.over) {
             m.acc -= sim.DT;
             sim.step(m.world);
@@ -286,6 +289,7 @@ function onKnockout(m, e, now) {
     // An inspector parked on the fallen reads "Defeated, stale" for the rest of the match; move it on.
     if (m.sel[u.team] === u.idx) cycle(u.team, 1);
     window.PoImpact?.vibrate?.([40]);
+    window.PoImpact?.hitstop?.(90);   // no-op under reduced motion
     const counts = sim.teamCounts(m.world);
     // Late knockouts get a beat of slow motion; the opening melee would just crawl.
     if (!m.reduced && !m.world.over && (counts.blue <= 3 || counts.red <= 3)) m.slowUntil = now + SLOWMO_S * 1000;

@@ -406,7 +406,13 @@ function pluck() {
 
 /**
  * Steer the arrangement from game state. A game drives this from
- * agents-remaining, so the music thickens as the battle thins out.
+ * agents-remaining, so the music thickens as the battle thins out. It is also the handle
+ * the music director rides for its menu / lobby / match / verdict states: the layer mixer's
+ * per-tick chase picks the new value up on its own.
+ *
+ * There must be exactly one of these. A second `export function setIntensity` further down
+ * (2026-10-01: found and removed) made the whole module a SyntaxError, so nothing could
+ * import it and the app had no shared soundtrack at all.
  * @param {number} value 0 (calm) .. 1 (tense)
  */
 export async function setIntensity(value) {
@@ -451,16 +457,6 @@ export async function setMode(name) {
 export function setTempo(bpm) {
     if (!_state) return;
     _state.bpm = bpm == null ? _state.preset.bpm : Math.max(40, Math.min(200, bpm));
-}
-
-/**
- * Set the layer-mix intensity (0..1). The per-tick chase toward the layer
- * targets picks this up automatically, so callers can ramp it freely — this is
- * the handle the music director (§GFX-19) rides for menu/match/verdict states.
- */
-export function setIntensity(v) {
-    if (!_state) return;
-    _state.intensity = Math.max(0, Math.min(1, v));
 }
 
 /**

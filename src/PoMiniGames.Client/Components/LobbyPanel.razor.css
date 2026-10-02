@@ -1,24 +1,70 @@
 /* ── LobbyPanel — the one lobby card ──
    Colours come from the design tokens (app.css :root), so the card follows light/dark
-   like the rest of the app. The pills and picker cards are `::deep` because games author
-   their own badges and pickers inside the panel's slots, and those elements carry the
-   page's scope, not this file's. */
+   like the rest of the app. The picker cards are `::deep` because games author their own
+   pickers inside the panel's slots, and those elements carry the page's scope, not this
+   file's. The pills (host / guest / ready and any game's badge) are the shared .app-chip. */
 
-.lobby__status {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
+/* The waiting room breathes with its soundtrack: the card's edge lights on each beat of
+   the lobby track (--audio-pulse in fx.css, from the bands visualRuntime.js publishes while
+   this panel is mounted). Silent or muted, the pulse is 0 and there is no ring at all. Colour only, no movement, so
+   it stays on under reduced motion like the app's other audio-reactive colour. */
+.lobby {
+    position: relative;
 }
 
-.lobby__hint {
+.lobby::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px var(--fx-accent, var(--accent)), inset 0 0 26px -6px var(--fx-accent, var(--accent));
+    opacity: calc(var(--audio-pulse, 0) * 0.85);
+}
+
+/* Roster heading and the hub's status pill, on one line. The strip's "Status" label is
+   kept for screen readers and hidden here: next to "Players · 1/8" the pill explains
+   itself, and the label was a row of its own. */
+.lobby__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.25rem 0.75rem;
+    margin-bottom: 0.4rem;
+}
+
+.lobby__head ::deep .conn-strip { margin: 0; }
+
+.lobby__head ::deep .conn-strip__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+}
+
+.lobby__hint,
+::deep .lobby__hint {
     font-size: 0.85rem;
     color: var(--color-text-secondary);
-    margin: 0 0 0.75rem;
+    margin: 0 0 0.5rem;
 }
 
 .lobby__section {
-    margin: 1rem 0;
+    margin: 0 0 0.9rem;
+}
+
+/* A native control a game puts in the picker slot (Couple Quiz's round count). */
+.lobby__section ::deep select {
+    min-height: 2.25rem;
+    padding: 0 0.6rem;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    font: inherit;
 }
 
 .lobby__empty {
@@ -73,7 +119,7 @@
     flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
-    margin-top: 1rem;
+    margin: 0;
 }
 
 .lobby__actions .lobby__hint {
@@ -81,45 +127,23 @@
     margin: 0;
 }
 
-.lobby__updated {
-    color: var(--color-text-secondary);
-    font-size: 0.75rem;
-    margin: 0.75rem 0 0;
-}
-
-/* Pills — host / guest / ready and any game-authored badge. */
-::deep .lobby-pill {
-    font-size: 0.625rem;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    padding: 0.125rem 0.5rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-border);
-    color: var(--color-text-secondary);
-    white-space: nowrap;
-}
-
-::deep .lobby-pill--ok {
-    color: var(--accent-success-ink);
-    border-color: var(--accent-success);
-    background: var(--accent-success-soft);
-}
-
-::deep .lobby-pill--warn {
-    color: var(--accent-warning-ink);
-    border-color: var(--accent-warning);
-    background: var(--accent-warning-soft);
-}
-
-::deep .lobby-pill--accent {
-    color: var(--accent-ink);
-    border-color: var(--accent);
-    background: var(--accent-soft);
-}
-
-::deep .lobby-pill--muted {
+.lobby__howto {
+    margin-top: 0.9rem;
+    font-size: 0.85rem;
     color: var(--color-text-secondary);
 }
+
+.lobby__howto > summary {
+    cursor: pointer;
+    font-weight: 600;
+}
+
+.lobby__howto ::deep ul {
+    margin: 0.4rem 0 0;
+    padding-left: 1.2rem;
+}
+
+.lobby__howto ::deep p { margin: 0.4rem 0 0; }
 
 /* Picker — a grid of selectable cards (Sports runners, Brawl fighters). */
 ::deep .lobby-pick-grid {

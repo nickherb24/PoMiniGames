@@ -551,15 +551,6 @@ export function vortex(opts) {
  * @param {number} [scale=1]
  */
 export function celebrate(scale) {
-    // §GFX-12: delegate to the WebGPU compute backend when it probed healthy —
-    // the celebration is the highest-volume effect and benefits most. Only
-    // celebrate delegates today: the burst presets' element targeting has no
-    // faithful mapping onto the compute overlay yet, and half-mapping them
-    // would look worse than the WebGL2 originals.
-    if (window.PoGpuWebGPU?.active?.()) {
-        window.PoGpuWebGPU.celebrate(scale);
-        return;
-    }
     if (!init()) return;
     const s = scale == null ? 1 : scale;
     const jets = 7;

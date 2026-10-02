@@ -27,7 +27,7 @@
         <h1 class="hp-title">Service health</h1>
         <div class="hp-head-actions">
             <span class="hp-badge hp-badge--@StatusSlug">@StatusLabel</span>
-            <button class="hp-refresh" @onclick="RefreshAsync" disabled="@_loading">
+            <button class="app-btn app-btn--secondary app-btn--sm" @onclick="RefreshAsync" disabled="@_loading">
                 @(_loading ? "Checking…" : "Refresh")
             </button>
         </div>

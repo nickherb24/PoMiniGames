@@ -1,12 +1,12 @@
 # PoMiniGames
 
 Instant-play mini-games platform: a .NET 10 Minimal API host that also serves its
-Blazor WebAssembly client from a single origin (port 5000), with SignalR for real-time
+Blazor WebAssembly client from a single origin (port 5080), with SignalR for real-time
 multiplayer, Azure Table Storage for persistence, and Azure AI Foundry behind the
 AI-powered games.
 
 > This file is the short tour. **`CLAUDE.md` is the authoritative engineering
-> reference** (commands, gates, architecture contracts); `SPEC.md` holds the product specification.
+> reference** (commands, gates, architecture contracts); `SPEC.md` is the PoJevArena game's specification.
 
 ## Games (`src/PoMiniGames.Client/Games/`)
 

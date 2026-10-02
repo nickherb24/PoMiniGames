@@ -19,9 +19,9 @@ builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 // The host serves both the WASM client and the API on the SAME origin (no separate
-// frontend server, no CORS — see AGENT.MD), so the origin the app was served from is
+// frontend server, no CORS — see CLAUDE.md "Architecture"), so the origin the app was served from is
 // always where the API lives. Use it directly. This is correct in every scenario:
-//   • dev run on :5000  -> served from :5000 -> API on :5000
+//   • dev run on :5080  -> served from :5080 -> API on :5080
 //   • E2E-UI / any host on a dynamic port -> served from that port -> API on that port
 //   • Production/Staging -> same origin
 // A previous hardcode of http://localhost:5000 broke any host not on :5000 (including
@@ -112,6 +112,8 @@ builder.Services.AddScoped<PendingScoreStore>();
 builder.Services.AddScoped<ScoreSyncService>();
 builder.Services.AddScoped<GameResultService>();
 builder.Services.AddScoped<MatchHistoryService>();
+// Game invites: push opt-in for this device and invite-a-past-opponent.
+builder.Services.AddScoped<InviteService>();
 builder.Services.AddScoped<ActivityFeedService>();
 // §5 Native Web Audio micro-feedback — shared across every game so the platform
 // has a consistent sound vocabulary. Lazily resolves the AudioContext on first call.

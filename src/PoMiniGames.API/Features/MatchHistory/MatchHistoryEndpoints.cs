@@ -77,7 +77,7 @@ public static class MatchHistoryEndpoints
     /// way the result passes through moderation, because this value is both the partition key
     /// and the name rendered back on the stats page.
     /// </summary>
-    private static string ResolveOwner(
+    internal static string ResolveOwner(
         RequestIdentity.Identity identity, string? supplied, IScoreIntegrityGuard integrity)
     {
         var claimed = identity.IsAuthenticated && !string.IsNullOrWhiteSpace(identity.DisplayName)

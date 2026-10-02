@@ -28,7 +28,9 @@
    `<form method="dialog">` is intentionally NOT used here — the OK button is a
    normal Blazor button that calls our Back() callback, because we need to invoke
    OnOk + navigate rather than the dialog's native "close + submit" semantics. *@
-<dialog class="gps-modal" aria-label="Game over" data-fx-tilt="5" @ref="_dialog" @oncancel="HandleCancel">
+@* data-glass: glassFx.js paints a blurred capture of the game's last frame under the card
+   (game-shell.css keeps it faint; a DOM game with no canvas simply gets the plain card). *@
+<dialog class="gps-modal" aria-label="Game over" data-fx-tilt="5" data-glass @ref="_dialog" @oncancel="HandleCancel">
         <header class="gps-modal-header">
             <div class="gps-modal-title">@Title</div>
         </header>
@@ -90,12 +92,12 @@
         <footer class="gps-play-again-actions">
             @if (PlayAgain.HasDelegate)
             {
-                <button class="gps-play-again-btn gps-play-again-btn--secondary"
+                <button class="app-btn app-btn--secondary"
                         @onclick="Back">
                     <span>Back</span>
                     <kbd class="gps-kbd">Esc</kbd>
                 </button>
-                <button class="gps-play-again-btn gps-play-again-btn--primary"
+                <button class="app-btn app-btn--primary"
                         @onclick="() => PlayAgain.InvokeAsync()"
                         autofocus>
                     <span>Play again</span>
@@ -104,7 +106,7 @@
             }
             else
             {
-                <button class="gps-play-again-btn gps-play-again-btn--primary"
+                <button class="app-btn app-btn--primary"
                         @onclick="Back"
                         autofocus>
                     <span>Back to all games</span>
@@ -248,7 +250,17 @@
             // dialog's native Escape handler fires the `cancel` event, which
             // we hook into in HandleCancel to map to our Back() callback.
             _dialogOpened = true;
+            // Score count-up: started before the dialog opens, so the stats are already at
+            // zero in its first painted frame instead of flashing their final values.
+            try { await JS.InvokeVoidAsync("PoImpact.countUp", _dialog); } catch { /* feel layer missing: the numbers just show */ }
             await _dialog.ShowModalAsync(JS);
+        }
+
+        // The rank arrives with the board, a render or two after the dialog: land it once.
+        if (_myRank is not null && !_rankLanded)
+        {
+            _rankLanded = true;
+            try { await JS.InvokeVoidAsync("PoImpact.popSelector", ".gps-modal-rank-pos"); } catch { /* same */ }
         }
 
         if (!firstRender || _outcomeCued) return;
@@ -277,6 +289,7 @@
     }
 
     private bool _outcomeCued;
+    private bool _rankLanded;
 
     // Option #9: ElementReference to the native <dialog> so OnAfterRenderAsync
     // can call showModal() and Back() can call close() before navigating. The

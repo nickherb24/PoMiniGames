@@ -1,0 +1,43 @@
+@namespace PoMiniGamesClient.Components
+
+@* The strip above a two-sided board: who is on each side, whose move it is, and one line
+   of status between them. Connect Five had this as its own markup and Tic-Tac-Toe had
+   nothing visible at all outside online play (the turn was only spoken), so the same
+   board game told a sighted player whose turn it was in one and not in the other.
+   2026-10-01.
+
+   aria-hidden on purpose. GameShell's polite live region already speaks the same state
+   (the page's Announcement), and exposing both would announce every turn twice.
+
+   The two colours arrive as CSS values, usually a var() the page's board already uses,
+   so the swatch cannot drift from the piece it stands for. *@
+<div class="turn-strip @Class" aria-hidden="true">
+    <span class="turn-strip__side @(LeftActive ? "turn-strip__side--active" : null)">
+        <span class="turn-strip__mark" style="--ts-mark: @LeftColor"></span>
+        <span class="turn-strip__name">@LeftName</span>
+    </span>
+    <span class="turn-strip__text @TextClass">@Text</span>
+    <span class="turn-strip__side turn-strip__side--right @(RightActive ? "turn-strip__side--active" : null)">
+        <span class="turn-strip__name">@RightName</span>
+        <span class="turn-strip__mark" style="--ts-mark: @RightColor"></span>
+    </span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public string LeftName { get; set; } = "";
+    [Parameter, EditorRequired] public string RightName { get; set; } = "";
+    [Parameter, EditorRequired] public string Text { get; set; } = "";
+    [Parameter] public bool LeftActive { get; set; }
+    [Parameter] public bool RightActive { get; set; }
+    [Parameter] public string LeftColor { get; set; } = "var(--color-accent)";
+    [Parameter] public string RightColor { get; set; } = "var(--color-text-secondary)";
+
+    /// <summary>Extra class on the strip itself. The page's own stylesheet cannot reach it
+    /// (scoped CSS stops at a component boundary), so this is for selectors that are not
+    /// styles: the E2E tier finds Tic-Tac-Toe's turn line by <c>.ttt-online__turn</c>.</summary>
+    [Parameter] public string? Class { get; set; }
+
+    /// <summary>Extra class on the status text, for the same reason: Connect Five's is
+    /// found by <c>.cf-status-text</c>.</summary>
+    [Parameter] public string? TextClass { get; set; }
+}

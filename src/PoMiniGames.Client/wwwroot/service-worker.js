@@ -9,3 +9,7 @@
 // behaviour, run against published output (see docs: publish -> serve -> DevTools
 // offline), not against `dotnet run`.
 self.addEventListener('fetch', () => { });
+
+// Game invites (push + notification click). Not caching, so it belongs here too:
+// without it an invite could only be tried against a published build.
+self.importScripts('./js/pushWorker.js');

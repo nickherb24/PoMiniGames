@@ -12,21 +12,14 @@
 
 <PageTitle>Brawl · Lobby · PoMiniGames</PageTitle>
 
+@* 2026-10-01: no intro card in front of the lobby. The page connects on arrival, like
+   Racer and Sports, and the how-to is folded under the lobby's buttons. *@
 <GameShell Title="@TitleContent" BackTo="/">
-@if (!_introDone)
-{
-    <GameIntro CueScope="pobrawl"
-               Title="@TitleContent"
-               Objective="Fight another player in a real-time 1v1, in the arena. Server-authoritative HP — one 60-second round."
-               Controls="@HowToPlayContent"
-               Mode="GameIntro.IntroMode.OnePlayer"
-               OnStart="OnIntroStartAsync" />
-}
-else if (_failed is { } why)
+@if (_failed is { } why)
 {
     <div class="pbl-failed" role="alert">
         <p>@why</p>
-        <button type="button" class="pbl-btn" @onclick="OnIntroStartAsync">Try again</button>
+        <button type="button" class="app-btn app-btn--primary" @onclick="ConnectAsync">Try again</button>
     </div>
 }
 else
@@ -44,11 +37,12 @@ else
                 CanStart="@EveryoneReady"
                 WaitingHint="Waiting for both players to mark Ready…"
                 PickerTitle="Fighters"
+                HowTo="@HowToPlayContent"
                 OnReady="_lobby.ToggleReadyAsync"
                 OnStart="_lobby.StartGameAsync"
                 OnLeave="LeaveAsync">
         <PlayerBadges Context="p">
-            <span class="lobby-pill lobby-pill--muted">@FighterName(p.Fighter.Id)</span>
+            <span class="app-chip">@FighterName(p.Fighter.Id)</span>
         </PlayerBadges>
         <Picker>
             <p class="lobby__hint">Pick your fighter before you mark ready.</p>
@@ -71,15 +65,21 @@ else
 
 @code {
     private LobbyClient<PoBrawlLobbyPlayer> _lobby = null!;
-    private bool _introDone;
     private string? _failed;   // why the lobby could not be reached; the retry card shows it
     private bool _wired;       // lobby events subscribed (once — a retry must not double them)
 
     protected override void OnInitialized() => _lobby = new LobbyClient<PoBrawlLobbyPlayer>(Endpoints, "pobrawl/lobby-hub");
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl · Online</span>;
+    // After the first render, not in OnInitializedAsync: the lobby card is already on
+    // screen saying "connecting…" while the availability probe and the hub handshake run.
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) await ConnectAsync();
+    }
+
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl</span>;
     private RenderFragment HowToPlayContent => @<div>
-        <p>Fight another player in the arena. The first two people in the lobby are the fight.</p>
+        <p>A real-time 1v1 in the arena, one 60-second round. The server keeps the HP.</p>
         <ul>
             <li>Pick a fighter — your opponent does too — then both mark Ready</li>
             <li><b>Hold</b> <kbd>A</kbd>/<kbd>D</kbd> to walk and <kbd>R</kbd> to block · <kbd>F</kbd> punch, <kbd>G</kbd> kick, <kbd>H</kbd> special (full energy)</li>
@@ -102,14 +102,14 @@ else
     private bool EveryoneReady =>
         _lobby.State is { } s && s.Players.Count == s.MaxPlayers && s.Players.All(p => p.IsReady);
 
-    private async Task OnIntroStartAsync()
+    private async Task ConnectAsync()
     {
-        _introDone = true;
         _failed = null;
         StateHasChanged();
         if (!await Api.IsAvailableAsync())
         {
             _failed = "The server isn't answering right now, so there's no lobby to join.";
+            StateHasChanged();
             return;
         }
         if (!_wired)
@@ -129,6 +129,7 @@ else
             // Unreachable, or the room is full / a fight is being set up: the hub's reason and a retry.
             _failed = PoBrawlNetSession.HubMessage(ex, "Couldn't reach the lobby.");
         }
+        StateHasChanged();
     }
 
     private async Task PickAsync(string fighterId)

@@ -1,5 +1,6 @@
 @namespace PoMiniGamesClient.Components
 @using Microsoft.AspNetCore.SignalR.Client
+@inject UiFeedbackService Feedback
 
 @* ─────────────────────────────────────────────────────────────────────────
    ConnectionStateStrip — the one hub readout for the multiplayer surfaces.
@@ -10,23 +11,22 @@
    second "Connecting to the lobby hub…" line at the bottom of the same card:
    three surfaces answering one question, drifting independently. This strip is
    the single answer: muted "connecting…" while the hub does not exist yet,
-   green "connected", or the raw hub state in warning amber. Styling lives in
-   game-shell.css (.conn-*) beside the rest of the shared chrome, so every
-   consumer reads identically.
+   green "connected", or the raw hub state in warning amber. The pill is the shared
+   .app-chip; the strip's own layout is in game-shell.css (.conn-strip).
    ───────────────────────────────────────────────────────────────────────── *@
 <p class="conn-strip">
     <span class="conn-strip__label">@Label</span>
     @if (Pending || State is null)
     {
-        <span class="conn-pill conn-pill--muted">connecting…</span>
+        <span class="app-chip">connecting…</span>
     }
     else if (State == HubConnectionState.Connected)
     {
-        <span class="conn-pill conn-pill--ok">connected</span>
+        <span class="app-chip app-chip--success">connected</span>
     }
     else
     {
-        <span class="conn-pill conn-pill--warn">@State.Value.ToString().ToLowerInvariant()</span>
+        <span class="app-chip app-chip--warning">@State.Value.ToString().ToLowerInvariant()</span>
     }
     @if (!string.IsNullOrEmpty(Detail))
     {
@@ -49,4 +49,25 @@
 
     /// <summary>Optional trailing context — e.g. "waiting for a fight…".</summary>
     [Parameter] public string? Detail { get; set; }
+
+    // A dropped hub and its return are heard, not only read: the pill changing colour is
+    // easy to miss while looking at the roster. Only a real edge sounds; the first state
+    // the strip is given (and the "connecting…" before it) is silent.
+    private HubConnectionState? _last;
+    private string? _cue;
+
+    protected override void OnParametersSet()
+    {
+        if (Pending || State is null || State == _last) return;
+        if (_last == HubConnectionState.Connected) _cue = "error";
+        else if (_last is not null && State == HubConnectionState.Connected) _cue = "confirm";
+        _last = State;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_cue is not { } cue) return;
+        _cue = null;
+        await Feedback.CueAsync("ui", cue);
+    }
 }

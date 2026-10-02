@@ -99,7 +99,7 @@ public class PoSportsUiTests
         var page = await OpenAsync(browser, "/posports");
 
         // Intro card: the default character (Kim) is preselected — just press OK.
-        await page.Locator(".gps-intro-btn--primary").First.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
+        await page.Locator(".gps-intro-actions .app-btn--primary").First.ClickAsync(new LocatorClickOptions { Timeout = 60_000 });
 
         await page.Locator("#posports-container canvas.ps-canvas").WaitForAsync(new LocatorWaitForOptions
         {

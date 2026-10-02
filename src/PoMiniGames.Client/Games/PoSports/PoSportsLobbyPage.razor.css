@@ -5,23 +5,6 @@
     width: 100%;
 }
 
-/* The how-to is one fold-out line until someone wants it. */
-.ps-lobby-howto {
-    align-self: center;
-    width: min(100%, 34rem);
-    padding: 0.4rem 0.75rem;
-    border-radius: 10px;
-    border: 1px solid var(--color-border);
-    background: var(--tint-soft);
-    color: var(--color-text-primary);
-    font-size: 0.85rem;
-}
-
-.ps-lobby-howto summary {
-    cursor: pointer;
-    font-weight: 600;
-}
-
 .ps-lobby-watch {
     align-self: center;
     display: flex;

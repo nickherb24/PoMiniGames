@@ -16,6 +16,7 @@ import { RunLog, decode as decodeLog } from './runlog.js';
 import * as records from './records.js';
 import { Fx, CrowdBed, say, hush } from './fx.js';
 import { createPostFx } from './postfx.js';
+import '../weather.js';
 
 // ── Audio (§GFX) ────────────────────────────────────────────────────────────
 // PoSports shipped silent: there was no AudioContext anywhere under posports/,
@@ -74,11 +75,14 @@ export class SportsGame {
     this.dotnet = dotnetRef;
     this.options = options;
     this.mode = options.mode ?? '1p';
-    this.rng = makeRng(options.seed ?? ((Math.random() * 2 ** 31) | 0));
+    const seed = options.seed ?? ((Math.random() * 2 ** 31) | 0);
+    this.rng = makeRng(seed);
     // Rebinds land before any tracker is built: a tracker captures its layout once.
     for (const n of [1, 2]) if (options.keymaps?.[n]) setLayout(n, options.keymaps[n]);
 
-    this.reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    // <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
+    this.reduced = document.documentElement.dataset.motion === 'reduce'
+      || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
     const hour = new Date().getHours();
     this.night = options.night ?? (hour >= 19 || hour < 6);
     this.touch = isTouchDevice();
@@ -94,6 +98,13 @@ export class SportsGame {
     this.glCanvas.hidden = true;
     container.appendChild(this.glCanvas);
     this.post = null;
+    // Weather from the meet's seed (weather.js), so a daily meet or an online heat is the same
+    // sky for everyone. Rain and snow only: fog is a blur over the whole track, and this game
+    // is read off its hurdles. Drawn over both canvases, never part of the sim.
+    if (!this.reduced) {
+      const sky = window.PoWeather?.weatherForSeed(seed);
+      if (sky === 'rain' || sky === 'snow') window.PoWeather.apply({ type: sky, after: this.glCanvas });
+    }
 
     this.fx = new Fx();
     this.crowd = new CrowdBed();
@@ -239,6 +250,7 @@ export class SportsGame {
     this.renderer.dispose();
     this.post?.dispose();
     this.crowd.dispose();
+    window.PoWeather?.stop();
     hush();
     try { window.PoMusicDirector?.tension(0); } catch { /* optional */ }
     // Release the context, not just the GPU objects — see the note in

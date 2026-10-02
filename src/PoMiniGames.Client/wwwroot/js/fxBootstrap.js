@@ -27,9 +27,10 @@
     // a round-trip even if the user never sees the effect.
     var reduceMotion = document.documentElement.dataset.motion === 'reduce';
 
-    function load(src) {
+    function load(src, module) {
         return new Promise(function (res) {
             const s = document.createElement('script');
+            if (module) s.type = 'module';
             s.src = src;
             s.onload = res; s.onerror = res;   // a failed module must not stall the rest
             document.head.appendChild(s);
@@ -46,7 +47,13 @@
     var chain = load('js/qualityTiers.js')
         .then(function () { return load('js/paletteBus.js'); });
     if (!reduceMotion) {
+        // ambientMusic.js is the score the director conducts (window.PoAmbientMusic). It
+        // lost its <script> tag on 2026-08-07 and nothing loaded it afterwards, so the
+        // director, and every game that drives its tension, was conducting silence. An ES
+        // module (it imports the audio bus), hence the flag; it only makes sound once the
+        // director starts it on the first gesture.
         chain = chain.then(function () { return load('js/spatialAudio.js'); })
+                     .then(function () { return load('js/ambientMusic.js', true); })
                      .then(function () { return load('js/musicDirector.js'); });
     }
     // The route wipe. Loaded for everyone including reduced-motion users: the
@@ -66,6 +73,11 @@
         });
     }
 
-    // WebGPU compute shader probe is deferred to when 3D game engines initialize
-    // so catalog navigation never pays for compute shader compilation.
+    // The title swarm on the intro card (gpuFxWebGPU.js). Only the module is fetched
+    // here; it asks for a WebGPU adapter the first time an intro card calls assemble(),
+    // so the catalog never pays for an adapter request or a shader compile. Loaded on
+    // its own, not at the end of the chain above: it depends on none of it, and an
+    // intro card on a direct load into a game renders before an eight-deep sequential
+    // chain has finished (GameIntro retries once for the same reason).
+    if (!reduceMotion) load('js/gpuFxWebGPU.js');
 })();

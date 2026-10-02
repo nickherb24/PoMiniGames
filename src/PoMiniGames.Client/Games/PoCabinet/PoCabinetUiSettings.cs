@@ -14,12 +14,10 @@ namespace PoMiniGamesClient.Games.PoCabinet;
 /// </summary>
 public sealed class PoCabinetUiSettings
 {
-    public double MasterVolume { get; set; } = 0.7;
-    public bool Muted { get; set; }
+    // No volume, mute, reduced-motion or colour-safe here (2026-10-01): those are the app's
+    // settings, not Cabinet's. settings.js ignores any value an older build stored for them.
     public bool Music { get; set; } = true;
     public double HudScale { get; set; } = 1;
-    public bool ReducedMotion { get; set; }
-    public bool ColorSafe { get; set; }
     public string Weather { get; set; } = "clear";
     public string TouchControls { get; set; } = "auto";
     public string SteerMode { get; set; } = "pad";

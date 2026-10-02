@@ -147,12 +147,9 @@
    Scoped to `pointer: coarse` so mouse-driven desktop layouts keep their
    current density. */
 @media (pointer: coarse) {
-    :where(.gl-brand, .gl-auth-button, .gl-overflow-trigger, .gl-skip-link,
+    :where(.gl-brand, .gl-account-trigger, .gl-skip-link,
            .gl-overflow-item,
-           .gps-back-link, .gps-btn, .gps-intro-btn,
            .home-mode-chip, .home-action, .home-card-head,
-           .hp-refresh,
-           .sp-btn-primary, .sp-btn-secondary, .sp-back,
            .app-notfound__link, .app-fallback-link,
            .fq-option,
            .reload,
@@ -171,14 +168,13 @@
     /* Height alone is not a 44px target — these are the controls narrow enough
        that the horizontal axis was still the limiting one (the 🎮 switcher at
        42px, the 1P/2P mode chips at 37px). */
-    :where(.gl-overflow-trigger, .home-mode-chip) {
+    :where(.home-mode-chip) {
         min-width: 44px;
     }
 
     /* min-height is inert on an inline box, and several of the above are plain
        <a>. Flex centring makes the extra height actually surround the label. */
-    :where(.gl-brand, .gl-skip-link, .gps-back-link, .home-mode-chip,
-           .sp-btn-primary, .sp-btn-secondary, .sp-back) {
+    :where(.gl-brand, .gl-skip-link, .home-mode-chip) {
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -211,12 +207,15 @@
      neither does the text that sits on it. */
   --color-accent-contrast: #ffffff;
   /* Accent for SOLID fills that carry --color-accent-contrast text on top.
-     White on --color-accent (#818cf8) measures 4.55:1 — just over the 4.5:1
-     AA floor, but the app's primary CTA is "OK / Start / Play again" and the
-     quiz's selected answer, so a one-step darker fill is worth the headroom.
      --color-accent itself is left alone: it is also the link colour, the
-     focus ring and a border hue, none of which want to shift. 2026-08-11. */
-  --color-accent-solid: #6366f1;
+     focus ring and a border hue, none of which want to shift. 2026-08-11.
+
+     #4f46e5 since 2026-10-01. It was #6366f1, on which white measures 4.47:1,
+     a hair UNDER the 4.5:1 AA floor: the Start button and the selected mode on
+     every intro card failed an axe sweep on 39 of 52 dark-theme page visits.
+     White on #4f46e5 is 6.3:1. Not a TEXT colour on a dark surface (it is
+     darker than the accent on purpose); that is --color-accent. */
+  --color-accent-solid: #4f46e5;
   --color-warning: #f59e0b;
   --color-error: #ef4444;
   /* ── Tiered accent bag (Fix #8 — single source of truth for status colour) ──
@@ -607,6 +606,40 @@ html, body, #app {
   animation-timing-function: var(--ease-standard);
 }
 
+/* Card-to-game morph. The boot splash's heading (index.html #po-boot-hero) and the hub card
+   the player pressed (named by js/app.js at click time) share one transition name, so the
+   card's icon and title travel to the splash instead of cross-fading with the page. */
+.po-boot-hero {
+    position: absolute;
+    inset: calc(38vh - 5.75rem) 0 auto 0;
+    width: max-content;
+    max-width: 92vw;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    font-family: var(--font-display);
+    font-size: 1.9rem;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    view-transition-name: po-hero;
+}
+/* Gone once Blazor has put a real element in #app (a layout, the login screen): until
+   then it bridges the gap between the splash and the first page render. */
+.po-boot-hero[hidden],
+body:has(#app > :not(.loading-progress, .loading-progress-text)) .po-boot-hero { display: none; }
+.po-boot-hero > span { font-size: 2.6rem; line-height: 1; }
+
+::view-transition-group(po-hero) {
+  animation-duration: 420ms;
+  animation-timing-function: cubic-bezier(0.2, 0.9, 0.25, 1);
+}
+:root[data-motion='reduce']::view-transition-group(po-hero),
+:root[data-motion='reduce']::view-transition-old(po-hero),
+:root[data-motion='reduce']::view-transition-new(po-hero) {
+  animation: none;
+}
+
 /* §7 a11y: honour reduced-motion for the cross-document transition too — the
    root cross-fade is motion the user opted out of. Skipping the animation makes
    the swap instant (the API still no-ops gracefully where unsupported). */
@@ -740,7 +773,10 @@ h3[tabindex="0"]:focus-visible {
 }
 
 .sp-card {
-  background: rgba(17,24,39,0.6);
+  /* A token, not the dark literal this was: on the low graphics tier (no glass fill
+     from glass.css) the literal left every lobby a dark slab with dark text on it
+     in the light scheme. */
+  background: var(--surface-2);
   border: 1px solid var(--color-border);
   border-radius: 1rem;
   padding: 2rem;
@@ -781,33 +817,6 @@ h3[tabindex="0"]:focus-visible {
   margin-bottom: 1.5rem;
 }
 
-.sp-btn-primary {
-  background: var(--color-accent-solid);
-  border: none;
-  color: #fff;
-  padding: 0.45rem 1.2rem;
-  border-radius: 9999px;
-  font-size: 0.8rem;
-  font-weight: 600;
-  transition: filter 0.2s, transform 0.15s;
-}
-.sp-btn-primary:hover {
-  filter: brightness(1.15);
-  transform: translateY(-1px);
-}
-
-.sp-btn-secondary {
-  background: transparent;
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  padding: 0.45rem 1.2rem;
-  border-radius: 9999px;
-  font-size: 0.8rem;
-  transition: all 0.2s;
-}
-.sp-btn-secondary:hover { border-color: var(--color-text-secondary); color: var(--color-text-primary); } not per page. */
-
-
 /* ── High Scores (Suggestion #9: empty states) — moved to scoped
      Pages/Index.razor.css and Components/HomeHighScores.razor.css ── */
 
@@ -821,25 +830,6 @@ h3[tabindex="0"]:focus-visible {
    same component reflow at a different width depending on which page it was on.
    Per-game boards under css/games.css keep their own board-specific widths —
    those are tuned to a fixed aspect grid, not to the chrome. */
-@media (max-width: 960px) {
-  /* The animated full-viewport mesh is the most expensive thing on a phone GPU{
-    animation: none;
-    opacity: 0.6;
-  }
-  .sp-card,
-  .login-card,
-  .toast {
-    backdrop-filter: none;
-  }
-
-  /* Touch-target floor. Applies from the tablet breakpoint down because a
-     touchscreen is not exclusive to phone widths. */
-  .sp-back,
-  .sp-btn-primary,
-  .sp-btn-secondary {
-    min-height: 44px;
-  }}
-
 @media (max-width: 640px) {
   .sp-page { padding: 1rem; }
   .sp-card { padding: 1.25rem; }}
@@ -1211,7 +1201,9 @@ h3[tabindex="0"]:focus-visible {
 .app-btn--lg { padding: 0.75rem 1.4rem; font-size: var(--text-base); }
 
 /* Chip: small status / filter pill. Matches the existing `.gl-overflow-item`
-   styling so a chip and a menu item read as the same family. */
+   styling so a chip and a menu item read as the same family. Since 2026-10-01 it
+   is also every lobby's host / guest / ready pill and the hub connection pill
+   (they were .lobby-pill and .conn-pill, two more spellings of this). */
 .app-chip {
   display: inline-flex;
   align-items: center;
@@ -1251,6 +1243,74 @@ h3[tabindex="0"]:focus-visible {
   background: var(--accent-danger-soft);
   border-color: color-mix(in srgb, var(--accent-danger) 30%, transparent);
   color: var(--accent-danger-ink);
+}
+
+/* Segmented control: one choice of a few, all visible at once (the game mode
+   switch, the theme picker, a run type). The selected state is read from the
+   ARIA attribute the buttons already have to carry, so there is no "on" class to
+   keep in step with it. A themed surface re-points the four --seg-* properties
+   (Racer's start card does).
+
+   2026-10-01: this replaced five hand-rolled copies (.prefs-seg, .pvs-seg,
+   .racer-modes, .pocabinet-modes and the leaderboard's chip row). */
+.app-seg {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  background: var(--seg-well, var(--surface-3));
+}
+
+.app-seg__btn {
+  appearance: none;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--seg-ink, var(--color-text-secondary));
+  font: inherit;
+  font-size: var(--text-sm);
+  font-weight: 600;
+  line-height: 1.2;
+  min-height: 2rem;
+  padding: 0.3rem 0.85rem;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard);
+}
+
+.app-seg__btn:hover { color: var(--color-text-primary); }
+
+/* --color-accent-solid, not --accent: white on --accent is a hair under AA at
+   this size (see the token's note above). */
+.app-seg__btn:is([aria-selected="true"], [aria-checked="true"], [aria-pressed="true"]) {
+  background: var(--seg-on, var(--color-accent-solid));
+  color: var(--seg-on-ink, var(--color-accent-contrast));
+}
+
+.app-seg__btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.app-seg__btn:focus-visible {
+  outline: 2px solid var(--accent-ring);
+  outline-offset: 2px;
+}
+
+/* A second, subordinate row under an accent one: the selection is a raised
+   surface, not another block of accent. */
+.app-seg--quiet .app-seg__btn { font-weight: 500; }
+
+.app-seg--quiet .app-seg__btn:is([aria-selected="true"], [aria-checked="true"], [aria-pressed="true"]) {
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+}
+
+@media (pointer: coarse) {
+  .app-seg__btn { min-height: 44px; }
 }
 
 /* Link: underlined accent link with the same focus ring as everything else.
@@ -1311,7 +1371,9 @@ p, li, dd, blockquote,
    the older list still sets its selectors to 44px; this list adds the new
    primitives so they inherit the same behaviour. */
 @media (pointer: coarse) {
-  :where(.app-btn, .app-chip, .app-link,
+  /* A chip gets the floor only when it is something to press: most are status
+     labels (a lobby's "host" pill), and a 44px-tall label is just a tall label. */
+  :where(.app-btn, a.app-chip, button.app-chip, .app-link,
          /* New: EmptyState / ErrorState actions. The component renders the
             retry / CTA as `.app-btn` already, but the older selectors do
             not enumerate these so we list them here for safety in case a

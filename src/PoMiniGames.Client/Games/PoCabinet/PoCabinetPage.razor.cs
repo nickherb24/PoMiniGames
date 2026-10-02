@@ -534,7 +534,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         {
             if (_minimapHandle is not null) await JS.InvokeVoidAsync("PoCabinet.unmountMinimap", _minimapHandle);
             _minimapHandle = await JS.InvokeAsync<IJSObjectReference>("PoCabinet.mountMinimap",
-                "pocabinetMinimap", _world, new { accent = _world.Atmosphere.AccentHex, colorSafe = Settings.ColorSafe });
+                "pocabinetMinimap", _world, new { accent = _world.Atmosphere.AccentHex });
         }
         catch { _minimapHandle = null; }
     }
@@ -1108,9 +1108,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             if (_sceneHandle is not null) await JS.InvokeVoidAsync("PoCabinet.applySettings", _sceneHandle, Settings.ToJs());
         }
         catch { /* cosmetic */ }
-
-        // The colour-safe palette is baked into the minimap at mount.
-        if (_minimapHandle is not null) await MountMinimapAsync();
 
         var envKey = Settings.Weather;
         if (!string.Equals(envKey, _envKey, StringComparison.Ordinal))

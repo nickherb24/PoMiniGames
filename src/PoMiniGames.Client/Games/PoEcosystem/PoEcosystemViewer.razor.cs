@@ -1011,8 +1011,6 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
 
     // ── viewing settings ─────────────────────────────────────────────────
     private async Task SetQualityAsync(string tier) { await Interop.SetQualityAsync(tier); _viewSettings = await Interop.SettingsAsync(); }
-    private async Task SetPaletteAsync(string palette) { await Interop.SetPaletteAsync(palette); _viewSettings = await Interop.SettingsAsync(); }
-    private async Task SetReducedMotionAsync(bool on) { await Interop.SetReducedMotionAsync(on); _viewSettings = await Interop.SettingsAsync(); }
     private async Task ResetBindingsAsync() { await Interop.ResetBindingsAsync(); _viewSettings = await Interop.SettingsAsync(); }
 
     private async Task RebindAsync(string action)

@@ -27,15 +27,18 @@ public enum ThemeMode
 /// </summary>
 /// <remarks>
 /// <para>
-/// 2026-08-11 (user request): the /settings page and its SettingsPanel were
-/// removed, so nothing in the app writes these any more — this is now a
-/// read-and-apply service. It still exists rather than being folded into
-/// constants because the values it reads are the ones JS already owns:
-/// audioBus.js writes <c>pomini_muted</c>/<c>pomini_volume</c> as it builds the
-/// audio graph, and the pre-paint script reads <c>pomini_theme</c>. Anything a
-/// player set before the page was removed is therefore still honoured; a fresh
-/// browser gets the defaults below (Auto theme, unmuted, full volume, haptics on,
-/// motion unreduced).
+/// The /settings page and its SettingsPanel were removed on 2026-08-11 (user
+/// request), which left this a read-and-apply service with nothing writing the
+/// keys. The setters came back on 2026-10-01 (user request) behind
+/// <c>Components/SettingsSheet.razor</c>, a dialog rather than a page, together
+/// with <c>pomini_colorsafe</c>. A fresh browser still gets the defaults below
+/// (Auto theme, unmuted, full volume, haptics on, motion unreduced, standard
+/// palettes).
+/// </para>
+/// <para>
+/// Volume and mute are enforced on the JS side — audioBus.js owns both the gain
+/// node and the persisted keys — so their setters only call through; writing
+/// the keys here as well would be a second writer that could disagree.
 /// </para>
 /// <para>
 /// The FPS badge used to be gated here too (<c>pomini_showfps</c>, default off).
@@ -51,9 +54,21 @@ public sealed class SettingsService : IAsyncDisposable
     private const string VolumeKey = "pomini_volume";
     private const string HapticsKey = "pomini_haptics";
     private const string ReducedMotionKey = "pomini_reducedmotion";
+    private const string ColorSafeKey = "pomini_colorsafe";
 
     private readonly Lazy<Task<IJSObjectReference>> _prefs;
     private bool _disposed;
+
+    /// <summary>Raised after any setting changes so the sheet and game pages can react.</summary>
+    public event Action? Changed;
+
+    /// <summary>
+    /// Raised to open the settings sheet. The sheet lives in MainLayout; anything that wants
+    /// to offer a way in (the footer, the hub's action row) calls <see cref="RequestOpen"/>.
+    /// </summary>
+    public event Action? OpenRequested;
+
+    public void RequestOpen() => OpenRequested?.Invoke();
 
     public SettingsService(IJSRuntime js)
     {
@@ -80,6 +95,12 @@ public sealed class SettingsService : IAsyncDisposable
     /// </summary>
     public bool ReducedMotion { get; private set; }
 
+    /// <summary>
+    /// Colour-blind-safe palettes in the games that have one (PoEcosystem's charts,
+    /// PoCabinet's minimap). Either this or the game's own setting turns it on.
+    /// </summary>
+    public bool ColorSafe { get; private set; }
+
     /// <summary>Read persisted values. Call once JS interop is available.</summary>
     public void Load()
     {
@@ -90,6 +111,7 @@ public sealed class SettingsService : IAsyncDisposable
             Volume = ParseVolume(LocalStorageService.GetItem<string>(VolumeKey));
             Haptics = LocalStorageService.GetItem<string>(HapticsKey) != "0";
             ReducedMotion = LocalStorageService.GetItem<string>(ReducedMotionKey) == "1";
+            ColorSafe = LocalStorageService.GetItem<string>(ColorSafeKey) == "1";
         }
         catch { /* pre-render — defaults stand */ }
     }
@@ -118,6 +140,70 @@ public sealed class SettingsService : IAsyncDisposable
         ThemeMode.Dark => "dark",
         _ => "auto",
     };
+
+    public async Task SetThemeAsync(ThemeMode mode)
+    {
+        Theme = mode;
+        LocalStorageService.SetItem(ThemeKey, ThemeToStorage(mode));
+        Changed?.Invoke();
+        await InvokeAsync("applyTheme", ThemeToStorage(mode));
+    }
+
+    public async Task SetMutedAsync(bool muted)
+    {
+        Muted = muted;
+        Changed?.Invoke();
+        await InvokeAsync("applyMuted", muted);
+    }
+
+    public async Task SetVolumeAsync(int percent)
+    {
+        Volume = Math.Clamp(percent, 0, 100);
+        Changed?.Invoke();
+        await InvokeAsync("applyVolume", Volume / 100.0);
+    }
+
+    public void SetHaptics(bool enabled)
+    {
+        Haptics = enabled;
+        LocalStorageService.SetItem(HapticsKey, enabled ? "1" : "0");
+        Changed?.Invoke();
+    }
+
+    public async Task SetReducedMotionAsync(bool reduce)
+    {
+        ReducedMotion = reduce;
+        LocalStorageService.SetItem(ReducedMotionKey, reduce ? "1" : "0");
+        Changed?.Invoke();
+        await InvokeAsync("applyReducedMotion", reduce);
+    }
+
+    public async Task SetColorSafeAsync(bool on)
+    {
+        ColorSafe = on;
+        LocalStorageService.SetItem(ColorSafeKey, on ? "1" : "0");
+        Changed?.Invoke();
+        await InvokeAsync("applyColorSafe", on);
+    }
+
+    /// <summary>
+    /// True when the OS itself asks for reduced motion, in which case the app is
+    /// already calmer regardless of <see cref="ReducedMotion"/>. Used only to
+    /// explain that in the settings sheet.
+    /// </summary>
+    public async Task<bool> OsPrefersReducedMotionAsync()
+    {
+        if (_disposed) return false;
+        try
+        {
+            var module = await _prefs.Value;
+            return await module.InvokeAsync<bool>("prefersReducedMotion");
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     /// <summary>
     /// Push the persisted values into the DOM and audio graph. Call once after

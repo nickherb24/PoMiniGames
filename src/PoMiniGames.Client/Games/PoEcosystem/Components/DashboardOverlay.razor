@@ -125,8 +125,8 @@
                     <button type="button" class="poeco-btn poeco-btn--sm" @onclick="OnReplayTour">Show the getting-started tour again</button>
                 </section>
                 <section class="poeco-panel poeco-panel--chart">
-                    <ViewSettingsPanel Settings="@ViewSettings" Capturing="@Capturing" OnQuality="@OnQuality" OnPalette="@OnPalette"
-                                       OnReducedMotion="@OnReducedMotion" OnRebind="@OnRebind" OnResetBindings="@OnResetBindings" />
+                    <ViewSettingsPanel Settings="@ViewSettings" Capturing="@Capturing" OnQuality="@OnQuality"
+                                       OnRebind="@OnRebind" OnResetBindings="@OnResetBindings" />
                 </section>
             </div>
         }
@@ -214,8 +214,6 @@
     [Parameter] public EventCallback OnTodaysIsland { get; set; }
     [Parameter] public EventCallback OnReplayTour { get; set; }
     [Parameter] public EventCallback<string> OnQuality { get; set; }
-    [Parameter] public EventCallback<string> OnPalette { get; set; }
-    [Parameter] public EventCallback<bool> OnReducedMotion { get; set; }
     [Parameter] public EventCallback<string> OnRebind { get; set; }
     [Parameter] public EventCallback OnResetBindings { get; set; }
     /// <summary>Raised when a tab opens, so the viewer can load what that tab needs (field guide, cloud).</summary>

@@ -132,9 +132,20 @@
         _audio = null;
     }
 
-    // apply({ seed, stage, three?, scene? }):
+    // One listener for the module's life. It used to be added per apply() and never removed,
+    // so every resize after a race threw on the null canvas (and errorReporter.js now posts
+    // uncaught errors to the server).
+    function fit() {
+        if (!_canvas) return;
+        _canvas.width = _canvas.clientWidth; _canvas.height = _canvas.clientHeight;
+    }
+    window.addEventListener('resize', fit);
+
+    // apply({ seed, stage | after, type? }):
     //   seed   — match seed (any string); identical across clients
-    //   stage  — the element the overlay canvas mounts into
+    //   stage  — the element the overlay canvas mounts into (appended, drawn over everything in it)
+    //   after  — instead of stage: the game canvas to sit directly above, so a HUD that follows
+    //            it in the DOM stays on top of the rain
     function apply(opts) {
         const o = opts || {};
         const type = o.type || weatherForSeed(o.seed || 'default');
@@ -149,11 +160,9 @@
         _canvas = document.createElement('canvas');
         _canvas.className = 'po-weather-canvas';
         _canvas.setAttribute('aria-hidden', 'true');
-        Object.assign(_canvas.style, { position: 'absolute', inset: '0', pointerEvents: 'none', zIndex: '3' });
-        (o.stage || document.body).appendChild(_canvas);
-        const fit = function () { _canvas.width = _canvas.clientWidth; _canvas.height = _canvas.clientHeight; };
+        Object.assign(_canvas.style, { position: 'absolute', inset: '0', width: '100%', height: '100%', pointerEvents: 'none', zIndex: o.after ? 'auto' : '3' });
+        if (o.after) o.after.after(_canvas); else (o.stage || document.body).appendChild(_canvas);
         fit();
-        window.addEventListener('resize', fit);
         _ctx = _canvas.getContext('2d');
 
         const count = type === 'fog' ? 0 : Math.round((type === 'snow' ? 90 : 140) * _intensity * (Math.min(_canvas.width, 900) / 900 + 0.3));

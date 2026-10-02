@@ -80,6 +80,9 @@
     <PackageReference Include="Scalar.AspNetCore" />
     <!-- PoVoxelStrike: GLB → voxel ingestion (Features/PoVoxelStrike/GlbVoxelizer). -->
     <PackageReference Include="SharpGLTF.Core" />
+    <!-- Invites: the lobby QR code (Features/Invites/InviteEndpoints.QrSvg). Server-side only,
+         so it costs the WASM bundle nothing. -->
+    <PackageReference Include="QRCoder" />
     <!-- Logging / Telemetry -->
     <PackageReference Include="Azure.Monitor.OpenTelemetry.AspNetCore" />
     <PackageReference Include="Serilog.AspNetCore" />

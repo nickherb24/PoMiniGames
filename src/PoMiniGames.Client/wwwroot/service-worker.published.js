@@ -4,6 +4,8 @@
 // service-worker.js instead.
 
 self.importScripts('./service-worker-assets.js');
+// Game invites: the push and notificationclick handlers, shared with the dev worker.
+self.importScripts('./js/pushWorker.js');
 self.addEventListener('install', event => event.waitUntil(onInstall(event)));
 self.addEventListener('activate', event => event.waitUntil(onActivate(event)));
 self.addEventListener('fetch', event => event.respondWith(onFetch(event)));

@@ -210,8 +210,6 @@ public sealed class PoEcosystemInteropService : IAsyncDisposable
     }
 
     public ValueTask SetQualityAsync(string tier) => SafeInvokeAsync("PoEcosystem.setQuality", tier);
-    public ValueTask SetPaletteAsync(string palette) => SafeInvokeAsync("PoEcosystem.setPalette", palette);
-    public ValueTask SetReducedMotionAsync(bool on) => SafeInvokeAsync("PoEcosystem.setReducedMotion", on);
     public ValueTask SetBindingAsync(string action, string code) => SafeInvokeAsync("PoEcosystem.setBinding", action, code);
     public ValueTask ResetBindingsAsync() => SafeInvokeAsync("PoEcosystem.resetBindings");
 

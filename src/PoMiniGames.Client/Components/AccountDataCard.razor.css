@@ -1,0 +1,77 @@
+/* ── Your data (export / erase) ─────────────────────────────────────────
+   Deliberately the plainest block in the sheet: no gradient, no accent fill.
+   It is an account control, and dressing it up invites the tap it must not get
+   by accident. Buttons are the shared .app-btn; colour is carried entirely
+   through the theme tokens so it re-points correctly in light mode.
+
+   These rules sat in ProfilePage.razor.css until 2026-10-01, scoped to the page
+   rather than to this component, so they never reached its markup and the block
+   rendered as bare browser buttons. */
+.acct-data {
+    padding: 0 var(--space-3);
+}
+
+.acct-data-blurb {
+    margin: 0 0 0.75rem;
+    font-size: var(--text-xs);
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+}
+
+.acct-data-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+/* --accent-danger-ink rather than --accent-danger: the -ink variants are the
+   ones tuned for text contrast in both schemes (see the note in app.css). */
+.acct-data-danger {
+    color: var(--accent-danger-ink);
+    border-color: var(--accent-danger-soft);
+}
+
+.acct-data-danger:hover:not(:disabled) {
+    background: var(--accent-danger-soft);
+}
+
+.acct-data-confirm {
+    margin-top: 0.75rem;
+    padding: 0.75rem;
+    border: 1px solid var(--accent-danger-soft);
+    border-radius: var(--radius-sm);
+    background: var(--accent-danger-soft);
+}
+
+.acct-data-warn {
+    margin: 0 0 0.75rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: var(--accent-danger-ink);
+}
+
+.acct-data-confirm-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.acct-data-input {
+    flex: 1 1 8rem;
+    min-width: 0;
+    font: inherit;
+    font-size: 0.8rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.5rem 0.7rem;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    background: var(--color-surface);
+    color: var(--color-text);
+}
+
+.acct-data-input:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 1px;
+}

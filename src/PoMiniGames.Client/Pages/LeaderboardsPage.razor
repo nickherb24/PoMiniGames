@@ -1,7 +1,6 @@
 @page "/leaderboards"
 @inject ApiService ApiService
 @inject NavigationManager NavigationManager
-@inject BrowserViewport Viewport
 @inject PlayerNameService PlayerNameService
 @inject UiFeedbackService Feedback
 @inject ScreenFxService ScreenFx
@@ -14,23 +13,12 @@
         <h1 class="lb-title">Leaderboards</h1>
         @if (!_loading && _boards.Count > 0)
         {
-            // 2026-08-08 audit #11: previously read "9 ranked · 1 demo-only",
-            // which read as a missing leaderboard rather than a missing game.
-            // Browser audit #8 (2026-08-10): the "demo-only" word still implied a
-            // leaderboard is missing because the game is limited, when a game with
-            // no board is usually one whose result is a session count rather than a
-            // competitive number — nothing to rank. Copy is now "{ranked} with
-            // leaderboards · {remaining} no-leaderboard yet".
-            var rankedCount = _boards.Count;
-            var totalGames = GameCatalog.All.Count;
-            var noBoardCount = totalGames - rankedCount;
-            string label = totalGames > 0 && noBoardCount == 0
-                ? $"{rankedCount} ranked games"
-                : $"{rankedCount} with leaderboards · {noBoardCount} no-leaderboard yet";
-            string title = noBoardCount == 0
-                ? $"{rankedCount} games contribute scores to a global leaderboard."
-                : $"{rankedCount} of {totalGames} games contribute scores to a global leaderboard. {noBoardCount} are still preview/session-counted — playable, not ranked.";
-            <span class="lb-count" title="@title">@label</span>
+            // A count of boards, said as boards. This used to subtract the board count from
+            // the number of games and print "14 ranked games" when the two happened to be
+            // equal. They measure different things: Racer is three boards (one per track),
+            // Brawl is two, Online MMR is none of the games, and four games have no board.
+            // 2026-10-01.
+            <span class="lb-count" title="A game can have more than one board: one per track or per mode.">@_boards.Count boards</span>
         }
     </header>
 
@@ -88,105 +76,115 @@
             sync the next time the API is reachable.
         </ErrorState>
     }
-    else
+    else if (_boards.Count > 0)
     {
-        @* 2026-08-30 audit #2: narrow viewports get a per-game picker (one chip row, one board).
-           Rendered unconditionally and toggled via pure CSS to eliminate CLS. *@
-        <div class="lb-chips" role="tablist" aria-label="Pick a game">
-            @foreach (var b in FlatBoards)
+        @* One board at a time (2026-10-01). The page used to lay every board out at
+           once, three rows deep: fourteen cards, each showing exactly what the
+           end-of-game modal already shows, and 2,600px of them on a phone, where the
+           picker meant to narrow it to one was overridden by a later rule and
+           filtered nothing. Now the picker is the page's navigation and the one
+           board it selects is ten rows deep, with the player's own line added when
+           they rank below that.
+
+           Two renderings of the same picker, toggled in CSS so there is no layout
+           shift: a native <select> on a phone (fourteen chips wrapped to 312px
+           there, and a sideways-scrolling strip is ruled out), a side list on
+           anything wider. Both carry the player's rank beside each board. *@
+        <div class="lb-layout">
+            <select class="lb-select" aria-label="Pick a game"
+                    value="@_selectedGame" @onchange="e => SelectAsync(e.Value?.ToString())">
+                @foreach (var group in _groupedBoards)
+                {
+                    <optgroup label="@group.Title">
+                        @foreach (var b in group.Boards)
+                        {
+                            <option value="@b.GameKey">@OptionLabel(b)</option>
+                        }
+                    </optgroup>
+                }
+            </select>
+
+            <nav class="lb-pick" aria-label="Pick a game">
+                @foreach (var group in _groupedBoards)
+                {
+                    // 2026-08-10 audit #7: the visible heading is a stylised "1 PLAYER";
+                    // the aria-label carries the readable form.
+                    <h2 class="gps-phase-h" aria-label="@($"{GroupAriaLabel(group.Title)} leaderboards")">@group.Title</h2>
+                    @foreach (var b in group.Boards)
+                    {
+                        <button type="button"
+                                class="lb-pick-item @(b.GameKey == _selectedGame ? "lb-pick-item--on" : null)"
+                                aria-pressed="@(b.GameKey == _selectedGame ? "true" : "false")"
+                                @onclick="() => SelectAsync(b.GameKey)">
+                            <span class="lb-pick-name">@b.Title</span>
+                            @if (MyRank(b) is int rank)
+                            {
+                                <span class="lb-pick-rank" title="Your rank">#@rank</span>
+                            }
+                        </button>
+                    }
+                }
+            </nav>
+
+            @if (Selected is { } board)
             {
-                <button role="tab" class="lb-chip @(b.GameKey == _selectedGame ? "lb-chip--on" : "")"
-                        aria-selected="@(b.GameKey == _selectedGame)"
-                        @onclick='() => _selectedGame = b.GameKey'>
-                    @b.Title
-                </button>
+                var rows = VisibleRows(board);
+                <article class="lb-board" aria-label="@($"{board.Title} leaderboard, scored by {board.Unit}")">
+                    <h2 class="lb-board-title">@board.Title</h2>
+
+                    @if (rows.Count == 0)
+                    {
+                        <p class="lb-board-empty">No scores yet. Play @board.Title to claim #1.</p>
+                    }
+                    else
+                    {
+                        // 2026-08-10 audit #9: the data is tabular (rank + player +
+                        // score), so the grid carries table roles and assistive tech
+                        // can navigate it by column. The unit is the value column's
+                        // header; it used to be printed in the board head as well.
+                        <div role="table"
+                             aria-label="@($"{board.Title} top {rows.Count}, scored by {board.Unit}")"
+                             class="lb-rows">
+                            <div role="row" class="lb-row lb-row--head">
+                                <span role="columnheader" class="lb-rank" aria-label="Rank">#</span>
+                                @* 2026-08-12 audit #2: the header is per-board, because the
+                                   Joker board ranks jokes and the Brawl Demo board fighters. *@
+                                <span role="columnheader" class="lb-name">@NameLabelFor(board.GameKey)</span>
+                                <span role="columnheader" class="lb-value">@board.Unit</span>
+                            </div>
+                            @foreach (var e in rows)
+                            {
+                                @RankRow(board, e)
+                            }
+                            @if (_myRow.GetValueOrDefault(board.GameKey) is { } mine)
+                            {
+                                <div class="lb-row lb-row--gap" aria-hidden="true">⋯</div>
+                                @RankRow(board, mine)
+                            }
+                        </div>
+                    }
+                </article>
             }
         </div>
-
-        @* Group leaderboards by category and active tab filter (desktop), or
-           render just the picked game's board (narrow via CSS) *@
-        @foreach (var group in VisibleGroups())
-        {
-            // 2026-08-10 audit #7: previous `<h2>1 PLAYER</h2>` was a styled
-            // heading with no useful screen-reader label. aria-label here
-            // turns the heading text into a real landmark name; combined
-            // with the <section aria-labelledby> wrapper, screen readers
-            // announce the section's purpose before listing boards.
-            <section class="lb-group" aria-labelledby="@($"lb-group-{group.Key}")">
-                <h2 id="@($"lb-group-{group.Key}")" class="gps-phase-h"
-                    aria-label="@($"{GroupAriaLabel(group.Title)} leaderboards")">
-                    @group.Title
-                </h2>
-                <div class="lb-grid">
-                    @foreach (var board in group.Boards)
-                    {
-                        <article class="lb-board"
-                                 data-selected="@(board.GameKey == _selectedGame ? "true" : "false")"
-                                 aria-label="@($"{board.Title} leaderboard, scored by {board.Unit}")">
-                            <div class="lb-board-head">
-                                <h3 class="lb-board-title">@board.Title</h3>
-                                <span class="lb-unit">@board.Unit</span>
-                            </div>
-
-                            @{ var rows = VisibleRows(board, group.Key, BoardRowLimit()); }
-                            @if (rows.Count == 0)
-                            {
-                                <p class="lb-board-empty">No scores yet — play @board.Title to claim #1.</p>
-                            }
-                            else
-                            {
-                                // 2026-08-10 audit #9: the data is tabular (rank +
-                                // player + score) but was rendered as <ol> with
-                                // spans — screen readers couldn't announce column
-                                // relationships. The role="table" wrapper + role
-                                // rows + scope=col headers gives the same DOM
-                                // grid (the CSS keeps using `display:grid`) but
-                                // semantic landmarks that assistive tech can
-                                // navigate by column.
-                                <div role="table"
-                                     aria-label="@($"{board.Title} top {rows.Count}, scored by {board.Unit}")"
-                                     class="lb-rows">
-                                    <div role="row" class="lb-row lb-row--head">
-                                        <span role="columnheader" class="lb-rank" aria-label="Rank">#</span>
-                                        @* 2026-08-12 audit #2: the Joker board ranks best
-                                           JOKES, not sessions — using "Player" as the
-                                           column header was misleading because the visible
-                                           text was a joke setup. The header is per-board
-                                           so each game has a label that matches its row
-                                           content. *@
-                                        <span role="columnheader" class="lb-name">@NameLabelFor(board.GameKey)</span>
-                                        <span role="columnheader" class="lb-value" aria-label="@board.Unit">@board.Unit</span>
-                                    </div>
-                                    @* §5: <Virtualize> keeps the DOM flat even when
-                                       a board's Top-N grows past the section cap. *@
-                                    <Virtualize Items="@rows" Context="e" ItemSize="36">
-                                        @* lb-row--me / data-lb-me: the player's own row is both the
-                                           row they look for first and the anchor the rank-change burst
-                                           fires from, so it needs a class for the highlight and an
-                                           addressable attribute for the FX pass. *@
-                                        <div role="row"
-                                             class="lb-row @(e.Rank <= 3 && e.Name != PlaceholderName ? $"lb-row--top lb-row--{e.Rank} fx-holo-card" : null) @(IsMe(e.Name) ? "lb-row--me" : null)"
-                                             data-fx-holo="@(e.Rank <= 3 && e.Name != PlaceholderName ? "6" : null)"
-                                             data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
-                                            <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
-                                            @* title only when the row carries long-form text it
-                                               had to clip (PoJoker jokes) — null everywhere else,
-                                               and Blazor omits a null attribute entirely. *@
-                                            <span role="cell" class="lb-name" title="@e.Detail">@DisplayName(e.Name)</span>
-                                            <span role="cell" class="lb-value">@e.DisplayValue</span>
-                                        </div>
-                                    </Virtualize>
-                                </div>
-                            }
-                        </article>
-                    }
-                </div>
-            </section>
-        }
     }
 </div>
 
 @code {
+    // lb-row--me / data-lb-me: the player's own row is both the row they look for
+    // first and the anchor the rank-change burst fires from, so it needs a class for
+    // the highlight and an addressable attribute for the FX pass.
+    private RenderFragment RankRow(GameLeaderboardDto board, LeaderboardEntryDto e) =>
+        @<div role="row"
+              class="lb-row @(e.Rank <= 3 ? $"lb-row--top lb-row--{e.Rank} fx-holo-card" : null) @(IsMe(e.Name) ? "lb-row--me" : null)"
+              data-fx-holo="@(e.Rank <= 3 ? "6" : null)"
+              data-lb-me="@(IsMe(e.Name) ? board.GameKey : null)">
+            <span role="cell" class="lb-rank" aria-label="@($"Rank {e.Rank}")">@e.Rank</span>
+            @* title only when the row carries long-form text it had to clip (PoJoker
+               jokes): null everywhere else, and Blazor omits a null attribute. *@
+            <span role="cell" class="lb-name" title="@e.Detail">@DisplayName(e.Name)</span>
+            <span role="cell" class="lb-value">@e.DisplayValue</span>
+        </div>;
+
     private bool _loading = true;
     private bool _error;
     private List<GameLeaderboardDto> _boards = [];
@@ -202,17 +200,57 @@
 
     private string? _selectedGame;
 
-    private IEnumerable<GameLeaderboardDto> FlatBoards =>
-        _groupedBoards.SelectMany(g => g.Boards);
+    private GameLeaderboardDto? Selected => _boards.FirstOrDefault(b => b.GameKey == _selectedGame);
 
-    /// <summary>Groups to render: rendered cleanly with CSS toggles for narrow vs wide screens.</summary>
-    private IEnumerable<BoardGroup> VisibleGroups() => _groupedBoards;
+    /// <summary>How many rows the selected board shows, and how deep the all-boards read goes.</summary>
+    private const int RowLimit = 10;
+
+    /// <summary>How far down a single board is searched for the player's own row (the server's cap).</summary>
+    private const int RankSearchDepth = 100;
+
+    /// <summary>
+    /// The player's own row on a board where they rank below <see cref="RowLimit"/>, keyed by
+    /// board. A key with a null value means "asked, nothing to add".
+    /// </summary>
+    private readonly Dictionary<string, LeaderboardEntryDto?> _myRow = [];
+
+    private int? MyRank(GameLeaderboardDto board) =>
+        board.Entries.FirstOrDefault(e => IsMe(e.Name))?.Rank ?? _myRow.GetValueOrDefault(board.GameKey)?.Rank;
+
+    private string OptionLabel(GameLeaderboardDto board) =>
+        MyRank(board) is int rank ? $"{board.Title} · you #{rank}" : board.Title;
+
+    private async Task SelectAsync(string? gameKey)
+    {
+        if (string.IsNullOrEmpty(gameKey)) return;
+        _selectedGame = gameKey;
+        await LoadMyRowAsync(gameKey);
+    }
+
+    /// <summary>
+    /// Find the player below the fold of a board. Only asked when it can matter: the board
+    /// is full of real rows and none of them is the player's. One read per board per visit.
+    /// </summary>
+    private async Task LoadMyRowAsync(string gameKey)
+    {
+        if (_myNameLower.Length == 0 || _myRow.ContainsKey(gameKey)) return;
+        _myRow[gameKey] = null;
+
+        var board = _boards.FirstOrDefault(b => b.GameKey == gameKey);
+        if (board is null
+            || board.Entries.Any(e => IsMe(e.Name))
+            || board.Entries.Count(e => e.Name != PlaceholderName) < RowLimit)
+        {
+            return;
+        }
+
+        var deep = await ApiService.GetGameLeaderboardAsync(gameKey, limit: RankSearchDepth);
+        _myRow[gameKey] = deep?.Entries.FirstOrDefault(e => IsMe(e.Name));
+        StateHasChanged();
+    }
 
     // The server pads every unified board to the requested limit with dummy
-    // "XXX" rows. By request we now KEEP them so every board fills out to its
-    // row limit — real scores rank first, then "XXX" placeholders. The server
-    // formats a padded row's DisplayValue per board unit ("—", "0%", "0"); the
-    // product wants a literal "0" for every placeholder, so we override it here.
+    // "XXX" rows. This page shows real players only (see VisibleRows).
     private const string PlaceholderName = "XXX";
 
     // The Joker leaderboard keys its rows by an 8-hex-char session id when the
@@ -246,7 +284,7 @@
         return LeaderboardNames.Pretty(safe);
     }
 
-    private List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board, string groupKey, int take)
+    private static List<LeaderboardEntryDto> VisibleRows(GameLeaderboardDto board)
         // §2026-07-18: filter out the server's XXX padding rows so the
         // leaderboards look like real populated boards rather than a
         // 3/5/10-deep graveyard of placeholder names. The server still pads
@@ -254,7 +292,7 @@
         // but this view only shows real players.
         => board.Entries
             .Where(e => e.Name != PlaceholderName)
-            .Take(take)
+            .Take(RowLimit)
             .ToList();
 
     // 2026-08-10 audit #7: the visible heading is a stylised "1 PLAYER" /
@@ -270,10 +308,6 @@
         "Multiplayer" => "Online multiplayer games",
         _ => title,
     };
-
-    // Every board shows its top 3 so many games' boards fit on screen at once
-    // (was top-3 mobile / top-10 desktop). Keeps each section compact.
-    private int BoardRowLimit() => 3;
 
     protected override async Task OnInitializedAsync() => await Load();
 
@@ -341,6 +375,10 @@
         // analyzer rejects, and the string path is the documented safe one.
         LocalStorageService.SetItem(RankMemoryKey, string.Join("|", next));
         _rankFxPending = _rankGains.Count > 0;
+
+        // Open on the news. Only one board is on screen, so a climb on any other would
+        // get its cue with no row to burst from.
+        if (_rankFxPending) _selectedGame = _rankGains.MaxBy(kv => kv.Value).Key;
     }
 
     private static Dictionary<string, int> ParseSeenRanks(string? raw)
@@ -374,12 +412,10 @@
     {
         if (_rankGains.Count == 0) return;
 
-        // Note: the rows live inside <Virtualize>, which only renders what is in
-        // view, so a climb on a board the player has not scrolled to gets the cue
-        // but no burst — the selector simply matches nothing and gpuFx no-ops. That
-        // is the right degradation: the sound is the message, the particles are the
-        // decoration, and bursting at a position the row does not occupy would be
-        // worse than not bursting.
+        // Note: only the selected board is rendered, so a climb on any other gets
+        // the cue but no burst — the selector simply matches nothing and gpuFx
+        // no-ops. That is the right degradation: the sound is the message, the
+        // particles are the decoration.
         var climbs = _rankGains.OrderByDescending(kv => kv.Value).Take(3).ToList();
         foreach (var (gameKey, places) in climbs)
         {
@@ -401,12 +437,6 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (firstRender)
-        {
-            await Viewport.RefreshAsync();
-            _selectedGame ??= FlatBoards.FirstOrDefault()?.GameKey;
-        }
-
         // After render, because the burst targets the player's own row and that row
         // has to exist in the DOM first. The flag is lowered before awaiting so a
         // re-render during the staggered playback cannot start it a second time.
@@ -425,7 +455,7 @@
         _error = false;
         StateHasChanged();
 
-        var boards = await ApiService.GetAllLeaderboardsAsync(limit: 10);
+        var boards = await ApiService.GetAllLeaderboardsAsync(limit: RowLimit);
         if (boards is null)
         {
             _error = true;
@@ -442,6 +472,8 @@
 
         _loading = false;
         StateHasChanged();
+
+        if (_selectedGame is not null) await LoadMyRowAsync(_selectedGame);
     }
 
     private void BuildGrouped()
@@ -458,12 +490,9 @@
         // an associative view of the Brawl game — its rows are characters, not the
         // player's own performance — so it isn't a 1P "achievement" board the way
         // the presidents ladder is. But it IS the Brawl game's sibling board, and
-        // dropping it into 1P keeps the Brawl pair together on the page so a
+        // dropping it into 1P keeps the Brawl pair together in the picker, so a
         // visitor walking through the Brawl presidents ladder sees the demo ELO
-        // board right next to it. Left in "Other" it would sit at the bottom of a
-        // long page below the fold, which the <Virtualize> rows below would then
-        // defer rendering until the visitor scrolled — defeating the "dedicated
-        // top-3 board" framing the feature was built for.
+        // board right next to it rather than alone at the bottom under "Other".
         var brawlDemoKey = "pobrawldemo";
 
         // 2026-07-26 browser audit #6: storage keeps a single global board per game (no
@@ -474,8 +503,11 @@
         // specific first. A section with nothing left is suppressed; the empty-state hint
         // below explains why.
         var claimed = new HashSet<GameKey>();
+        // Alphabetical within a section: the picker is a list to scan, and it keeps
+        // Racer's per-track boards together as one run of entries.
         List<GameLeaderboardDto> Claim(Func<GameLeaderboardDto, bool> belongs) =>
-            _boards.Where(b => belongs(b) && claimed.Add(b.GameKey)).ToList();
+            _boards.Where(b => belongs(b) && claimed.Add(b.GameKey))
+                .OrderBy(b => b.Title, StringComparer.OrdinalIgnoreCase).ToList();
 
         // Racer has one board per track ("poracer", "poracer-neonskyline", …). They are all the
         // Racer game's, so they group by its catalog key; without this the two newer tracks fell
@@ -491,11 +523,11 @@
             new BoardGroup("other",   "Other",          Claim(_ => true)),
         }.Where(g => g.Boards.Count > 0).ToList();
 
-        // Audit #2 (2026-08-30): seed the narrow-mode picker here, not in
-        // OnAfterRenderAsync — the boards frequently land AFTER the first
-        // viewport read, and a picker seeded against an empty group list stays
-        // null forever, leaving narrow viewports with chips but no board.
-        _selectedGame ??= _groupedBoards.SelectMany(g => g.Boards).FirstOrDefault()?.GameKey;
+        // Seed the picker here, with the boards in hand (audit #2, 2026-08-30): a
+        // picker seeded before they land stays null and the page shows no board.
+        // The first board with a real score, so the page never opens on an empty one.
+        var flat = _groupedBoards.SelectMany(g => g.Boards).ToList();
+        _selectedGame ??= (flat.FirstOrDefault(b => b.Entries.Any(e => e.Name != PlaceholderName)) ?? flat.FirstOrDefault())?.GameKey;
     }
 
     private void BuildHero()

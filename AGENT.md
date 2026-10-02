@@ -18,4 +18,4 @@ These rules are mandatory for all AI agent operations in this repository:
 9. **Automate CLI Commands**: Avoid making the user manually type in commands to the CLI, or click through a web GUI, if you can do it for them automatically.
 10. **Zero Compiler Warnings**: Treat compile warnings as errors and ensure they are fixed immediately.
 11. **Flag Big Deletions**: If more than 100 lines of code are removed overall in a prompt, mention it in the reply.
-12. **Annotated UI Screenshots**: When a UI change is made, take an annotated screenshot showing the old and new UI with the changes marked. Save the image in the `SCREENSHOTS/` folder at the repo root and give its valid full path in the reply.
+12. **Annotated UI Screenshots**: When a UI change is made, take an annotated screenshot showing the old and new UI with the changes marked. Save the PNG in the `SCREENSHOTS/` folder at the repo root with an HTML page next to it that shows it (a relative `<img>` to the PNG), and give the HTML page's valid full path in the reply.

@@ -9,6 +9,7 @@ import * as Render from './renderer.js';
 import * as Audio from './audio.js';
 import { sampleAt } from './interpolation.js';
 import { startInput, stopInput, setInputEnabled, getSize, pollPad } from './input.js';
+import '../weather.js';
 
 // Rivals are drawn this far behind the newest snapshot, so there is always a pair of
 // snapshots to interpolate between (two intervals, less one frame of jitter).
@@ -40,7 +41,9 @@ let raf = 0, mainId = null, miniBound = false, finishing = false;
 let hudEls = null, chipEls = null;
 const MINI_ID = 'racerMinimap';
 
-const reducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+// <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
+const reducedMotion = () => document.documentElement.dataset.motion === 'reduce'
+    || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 function clock(seconds) {
     const s = Math.max(0, seconds);
@@ -117,6 +120,7 @@ function stop() {
     stopInput();
     Audio.stop();
     Render.dispose();
+    window.PoWeather?.stop();
     buf = []; clockOffset = null; roster = []; localIdx = -1;
     miniBound = false; finishing = false; hudEls = chipEls = null; mainId = null;
 }
@@ -140,6 +144,13 @@ window.PoRacer = {
         Render.setStatic(center, width, walls, boostPads, surfaceZones, theme);
         totalLaps = laps || 3;
         Audio.start();
+        // Weather of the day (weather.js): one seed per track and UTC day, so everyone on a track
+        // drives under the same sky. A 2D overlay directly above the track canvas, under the HUD;
+        // it changes nothing the server simulates.
+        const track = document.getElementById(mainId);
+        if (track && !reducedMotion()) {
+            window.PoWeather?.apply({ seed: JSON.stringify(theme) + new Date().toISOString().slice(0, 10), after: track });
+        }
     },
 
     /** Names and paint, on join and again whenever a driver's paint arrives. */

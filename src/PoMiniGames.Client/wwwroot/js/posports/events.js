@@ -59,7 +59,9 @@ export class FieldGame {
     this.rng = makeRng((Math.random() * 2 ** 31) | 0);
     if (options.keymaps?.[1]) setLayout(1, options.keymaps[1]);
 
-    this.reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    // <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
+    this.reduced = document.documentElement.dataset.motion === 'reduce'
+      || (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false);
     const hour = new Date().getHours();
     this.canvas = document.createElement('canvas');
     this.canvas.className = 'ps-canvas';

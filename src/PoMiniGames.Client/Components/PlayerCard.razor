@@ -21,9 +21,9 @@ else if (Card is not null)
             <div class="card-brand">
                 <span class="brand-title">POMINIGAMES · COMPETITIVE LICENSE</span>
             </div>
-            <div class="card-badge @(Card.AccountKind == "microsoft" ? "badge-verified" : "badge-guest")">
+            <div class="card-badge @(IsVerified ? "badge-verified" : "badge-guest")">
                 <span class="badge-dot"></span>
-                <span class="badge-text">@(Card.AccountKind == "microsoft" ? "VERIFIED MS" : "GUEST DRIVER")</span>
+                <span class="badge-text">@(IsVerified ? "VERIFIED MS" : "GUEST")</span>
             </div>
         </div>
 
@@ -34,27 +34,43 @@ else if (Card is not null)
                 </div>
                 <div class="driver-details">
                     <div class="driver-name" title="@Card.DisplayName">@Card.DisplayName</div>
-                    <div class="sig-pill" title="Signature game">
-                        <span class="sig-icon">@Card.SignatureGameIcon</span>
-                        <span class="sig-name">@Card.SignatureGameTitle Main</span>
-                    </div>
+                    @* A signature game is the one played most. With no games there is none,
+                       and the server's default ("PoRacer Main") was shown to a player who
+                       had never raced. *@
+                    @if (Ranked)
+                    {
+                        <div class="sig-pill" title="Signature game">
+                            <span class="sig-icon">@Card.SignatureGameIcon</span>
+                            <span class="sig-name">@Card.SignatureGameTitle Main</span>
+                        </div>
+                    }
                 </div>
             </div>
 
             <div class="tier-rating-panel">
                 <div class="tier-badge-pill">
-                    <span class="tier-icon">@Card.TierIcon</span>
-                    <span class="tier-name">@Card.TierName.ToUpperInvariant() TIER</span>
+                    @if (Ranked)
+                    {
+                        <span class="tier-icon">@Card.TierIcon</span>
+                    }
+                    <span class="tier-name">@(Ranked ? $"{Card.TierName.ToUpperInvariant()} TIER" : "UNRANKED")</span>
                 </div>
                 <div class="mmr-display">
                     <span class="mmr-val">@Card.Mmr.ToString("N0")</span>
                     <span class="mmr-lbl">MMR</span>
                 </div>
-                <div class="progress-bar-container" title="@($"{Card.TierProgress:P0} to {Card.NextTierName}")">
-                    <div class="progress-bar-fill" style="width: @($"{Math.Clamp(Card.TierProgress * 100, 4, 100):0}%")"></div>
-                </div>
+                @if (Ranked)
+                {
+                    <div class="progress-bar-container" title="@($"{Card.TierProgress:P0} to {Card.NextTierName}")">
+                        <div class="progress-bar-fill" style="width: @($"{Math.Clamp(Card.TierProgress * 100, 4, 100):0}%")"></div>
+                    </div>
+                }
                 <div class="progress-bar-sub">
-                    @if (!string.IsNullOrEmpty(Card.NextTierName))
+                    @if (!Ranked)
+                    {
+                        <span>Starting rating. Play an online match to earn a tier.</span>
+                    }
+                    else if (!string.IsNullOrEmpty(Card.NextTierName))
                     {
                         <span>@($"{Card.TierProgress:P0} to {Card.NextTierName} ({Card.NextTierMinMmr:N0} MMR)")</span>
                     }
@@ -68,8 +84,10 @@ else if (Card is not null)
 
         <div class="card-stats-grid">
             <div class="stat-col">
-                <span class="stat-label">WIN RATE</span>
-                <span class="stat-value val-emerald">@Card.WinRate.ToString("P0")</span>
+                @* "Online": the page under this card has a Win Rate of its own, for
+                   1-player matches, and the two read 0% and a dash side by side. *@
+                <span class="stat-label">ONLINE WIN RATE</span>
+                <span class="stat-value val-emerald">@(Ranked ? Card.WinRate.ToString("P0") : "—")</span>
             </div>
             <div class="stat-col">
                 <span class="stat-label">ONLINE RECORD</span>
@@ -115,11 +133,11 @@ else if (Card is not null)
             @if (AllowExport)
             {
                 <div class="card-actions">
-                    <button type="button" class="btn-card-action" @onclick="CopySvgAsync" title="Copy standalone vector SVG to clipboard">
+                    <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="CopySvgAsync" title="Copy standalone vector SVG to clipboard">
                         <span>📋</span>
                         <span>@(_copying ? "Copied!" : "Copy SVG")</span>
                     </button>
-                    <button type="button" class="btn-card-action" @onclick="DownloadSvgAsync" title="Download SVG image file">
+                    <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="DownloadSvgAsync" title="Download SVG image file">
                         <span>💾</span>
                         <span>Download SVG</span>
                     </button>
@@ -136,6 +154,15 @@ else if (Card is not null)
 
     private bool _loading;
     private bool _copying;
+
+    // No ranked game on record: the card's numbers are the starting values, not a result.
+    private bool Ranked => Card is not null && Card.Wins + Card.Losses + Card.Draws > 0;
+
+    // A dev-login guest holds a real session, so the server's card calls it "microsoft".
+    // The minted "Guest-NNNNNN" handle is how the client tells them apart everywhere else
+    // (the profile, the data card), and a guest badged VERIFIED MS is simply wrong.
+    private bool IsVerified =>
+        Card is { AccountKind: "microsoft" } && !Card.DisplayName.StartsWith("Guest", StringComparison.Ordinal);
 
     protected override async Task OnParametersSetAsync()
     {

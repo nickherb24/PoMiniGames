@@ -55,7 +55,9 @@ let skidHead = 0;
 const wheelWas = [];                            // per car index: { lx, ly, rx, ry, t }
 const sparks = [], dust = [];
 let fxAt = 0;
-const calm = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+// <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
+const calm = () => document.documentElement.dataset.motion === 'reduce'
+    || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 function clearFx() {
     skids.fill(0); skidHead = 0; wheelWas.length = 0; sparks.length = 0; dust.length = 0; fxAt = 0;

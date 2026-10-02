@@ -5,23 +5,27 @@
 @inject ApiService ApiService
 @inject ToastService Toasts
 @inject IJSRuntime JS
+@inject AuthStateService AuthState
+@inject NavigationManager Navigation
 
-<div class="prf-section prf-data">
-    <h2 class="prf-section-title">Your data</h2>
-    <p class="prf-data-blurb">
+@* Export and erase, as a group inside the settings sheet (2026-10-01; it used to close
+   the profile's last tab). The sheet supplies the "Your data" legend. Erasing reloads
+   the app: every page caches some of what was just deleted. *@
+<div class="acct-data">
+    <p class="acct-data-blurb">
         Scores, match history and player stats are stored against your
-        @(AccountKind == AccountKind.Guest ? "guest profile" : "Microsoft account").
+        @(IsGuest ? "guest profile" : "Microsoft account").
         You can take a copy or remove all of it.
     </p>
 
-    <div class="prf-data-actions">
-        <button type="button" class="prf-data-btn" disabled="@_dataBusy" @onclick="ExportDataAsync">
+    <div class="acct-data-actions">
+        <button type="button" class="app-btn app-btn--secondary app-btn--sm" disabled="@_dataBusy" @onclick="ExportDataAsync">
             @(_dataBusy && _busyAction == "export" ? "Preparing…" : "Download my data")
         </button>
 
         @if (!_eraseArmed)
         {
-            <button type="button" class="prf-data-btn prf-data-btn--danger"
+            <button type="button" class="app-btn app-btn--secondary app-btn--sm acct-data-danger"
                     disabled="@_dataBusy" @onclick="() => _eraseArmed = true">
                 Erase my data
             </button>
@@ -30,20 +34,20 @@
 
     @if (_eraseArmed)
     {
-        <div class="prf-data-confirm" role="group" aria-labelledby="prf-erase-label">
-            <p id="prf-erase-label" class="prf-data-warn">
+        <div class="acct-data-confirm" role="group" aria-labelledby="acct-erase-label">
+            <p id="acct-erase-label" class="acct-data-warn">
                 This permanently deletes your leaderboard entries, match history and stats.
                 It cannot be undone. Type <strong>ERASE</strong> to confirm.
             </p>
-            <div class="prf-data-confirm-row">
-                <input class="prf-data-input" type="text" autocomplete="off" spellcheck="false"
+            <div class="acct-data-confirm-row">
+                <input class="acct-data-input" type="text" autocomplete="off" spellcheck="false"
                        aria-label="Type ERASE to confirm" placeholder="ERASE"
                        @bind="_eraseConfirm" @bind:event="oninput" />
-                <button type="button" class="prf-data-btn prf-data-btn--danger"
+                <button type="button" class="app-btn app-btn--secondary app-btn--sm acct-data-danger"
                         disabled="@(_dataBusy || !EraseConfirmed)" @onclick="EraseDataAsync">
                     @(_dataBusy && _busyAction == "erase" ? "Erasing…" : "Erase everything")
                 </button>
-                <button type="button" class="prf-data-btn prf-data-btn--quiet"
+                <button type="button" class="app-btn app-btn--ghost app-btn--sm"
                         disabled="@_dataBusy" @onclick="CancelErase">
                     Cancel
                 </button>
@@ -53,8 +57,9 @@
 </div>
 
 @code {
-    [Parameter] public AccountKind AccountKind { get; set; }
-    [Parameter] public EventCallback OnDataErased { get; set; }
+    // Same heuristic the profile uses: a guest session's display name is the minted
+    // "Guest-NNNNNN" handle; AuthenticatedUserProfile carries no kind of its own.
+    private bool IsGuest => AuthState.User?.DisplayName?.StartsWith("Guest", StringComparison.Ordinal) ?? true;
 
     private bool _dataBusy;
     private string? _busyAction;
@@ -127,7 +132,7 @@
                     : $"Erased {result.TotalRows} stored row{(result.TotalRows == 1 ? "" : "s")}.",
                 ToastType.Success);
 
-            await OnDataErased.InvokeAsync();
+            Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
         }
         catch
         {

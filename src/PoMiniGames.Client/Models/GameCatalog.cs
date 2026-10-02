@@ -30,20 +30,18 @@ public sealed record CatalogMode(GameMode Mode, string Url, bool RequiresNetwork
 /// home page renders one card per game with a chip per mode, so a game can no
 /// longer go missing from a mode it supports.
 /// </summary>
+/// <remarks>
+/// There is no <c>ChipPrimary</c> flag any more (2026-10-01). It opted a card into showing
+/// a chip for its primary mode, back when the card's title was itself a link to that mode
+/// and a second link to the same place read as a mistake. The title stopped being a link
+/// on 2026-08-11; from then on the two games that had not set the flag (Joker, Fun Quiz)
+/// had a 1-player mode nothing on the hub led to. Every mode is a chip now.
+/// </remarks>
 public sealed record CatalogGame(GameKey Key, string Title, string Icon, IReadOnlyList<CatalogMode> Modes)
 {
-    /// <summary>
-    /// Render a chip for <see cref="Primary"/> even though the card title already links
-    /// there. Off by default: the duplicate chip normally reads as a broken second link
-    /// (see Index.razor). Opt in where suppressing it makes the card look like the game
-    /// has no playable mode at all — Marble Race's only other mode is Demo, so the card
-    /// advertised "Demo" and nothing else, and players read it as demo-only.
-    /// </summary>
-    public bool ChipPrimary { get; init; }
-
-    /// <summary>The mode a card's title links to — the richest interactive mode available.
-    /// Demo is last-resort only: a card whose primary action is "watch" is a card the
-    /// player cannot play.</summary>
+    /// <summary>The richest interactive mode available: what the profile's "play this" chips
+    /// open and what decides whether the hub greys a card out offline. Demo is last-resort
+    /// only: a game whose primary action is "watch" is a game the player cannot play.</summary>
     public CatalogMode Primary =>
         Modes.FirstOrDefault(m => m.Mode == GameMode.OnePlayer)
         ?? Modes.FirstOrDefault(m => m.Mode == GameMode.Multiplayer)
@@ -87,14 +85,7 @@ public static class GameCatalog
             // paired. Server-authoritative board — see Features/ConnectFive.
             new(GameMode.Multiplayer, "/connectfive/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/connectfive/demo"),
-        ])
-        {
-            // ChipPrimary: 1P is the card head (the adaptive ELO ladder), so the
-            // chip row would otherwise read "2P Demo" — players looking for a solo
-            // game would scan the chips, see no 1P, and conclude the game is
-            // unplayable alone. Same fix applied to Brawl / Sports / Marble Race.
-            ChipPrimary = true,
-        },
+        ]),
 
         // 2026-07-19 browser audit #8: the grid dimension (6×6 / 4-in-a-row) was
         // leaking into the product name as "TicTacToe6". Surface the classic product
@@ -113,21 +104,8 @@ public static class GameCatalog
             // Quick-match 1v1 over SignalR, same turn-match service as Connect Five.
             new(GameMode.Multiplayer, "/tictactoe/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/tictactoe/demo"),
-        ])
-        {
-            // 1P is the card head, so the dedup-by-URL filter would hide the 1P
-            // chip and leave the row reading "2P Demo" — a player looking for a
-            // solo game sees no 1P and assumes the game is 2-player only. Same
-            // reason Connect Five / Brawl / Sports / Marble Race set it.
-            ChipPrimary = true,
-        },
+        ]),
 
-        // ChipPrimary: same reason as Sports and Marble Race. 1P is the card head,
-        // so suppressing its chip left the row reading "2P Demo" — a player looking
-        // for a solo game scanned the chips, saw no 1P, and concluded Brawl needed a
-        // second person. It does not: /pobrawl/1player is the fifteen-president
-        // ladder, the only Elo-rated and leaderboard-backed mode the game has.
-        //
         // Auth consistency: every PoBrawl entry point opts into autoGuest so
         // 1P, 2P and demo all land the same way for anonymous visitors.
         new(GameKeys.PoBrawl, "Brawl", "🥊",
@@ -139,30 +117,21 @@ public static class GameCatalog
             // see Features/PoBrawl/Online.
             new(GameMode.Multiplayer, "/pobrawl/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/pobrawl/demo?autoGuest=1"),
-        ]) { ChipPrimary = true },
+        ]),
 
-        // ChipPrimary: 1P is the card head, so the chip row would otherwise read
-        // "Online Demo" — Solo + Online + Demo, no 2P. 2P removed from the home card
-        // on 2026-08-12 at the player's request; the /posports/2player route still
-        // works for old bookmarks, but local same-keyboard split-keyboard play is no
-        // longer advertised from the home grid (the same 2P is still offered for
-        // Brawl / Connect Five / Tic-Tac-Toe / Fun Quiz).
         new(GameKeys.PoSports, "Sports", "🏃",
         [
             new(GameMode.OnePlayer, "/posports/1player"),
             new(GameMode.Multiplayer, "/posports/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/posports/demo"),
-        ]) { ChipPrimary = true },
+        ]),
 
-        // ChipPrimary: 1P is the card head, so the dedup-by-URL filter would hide
-        // the 1P chip and leave the row reading "Online Demo" — same fix as the
-        // other solo-capable games (Connect Five, Brawl, Sports, Marble Race, etc.).
         new(GameKeys.PoRacer, "Racer", "🏎️",
         [
             new(GameMode.OnePlayer, "/poracer/1player"),
             new(GameMode.Multiplayer, "/poracer/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/poracer/demo"),
-        ]) { ChipPrimary = true },
+        ]),
 
         // PoCabinet (2026-09-17): third-person arcade racing, four named officials, four
         // tracks (Capitol Speedway / Mar-a-Lago GP / Press Briefing 500 / Playground Marble Run).
@@ -175,11 +144,8 @@ public static class GameCatalog
             new(GameMode.OnePlayer, "/pocabinet/1player"),
             new(GameMode.Multiplayer, "/pocabinet/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/pocabinet/demo"),
-        ]) { ChipPrimary = true },
+        ]),
 
-        // ChipPrimary: 1P is the card head, so the chip row would otherwise show a lone
-        // "Demo" and the game reads as unplayable. It is very much playable — you steer
-        // the red marble with the arrow keys.
         new(GameKeys.PoMarbleRace, "Marble Race", "🔮",
         [
             new(GameMode.OnePlayer, "/pomarblerace/1player"),
@@ -187,7 +153,7 @@ public static class GameCatalog
             // physics and streams the pack, the guest steers the white marble.
             new(GameMode.Multiplayer, "/pomarblerace/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/pomarblerace/demo"),
-        ]) { ChipPrimary = true },
+        ]),
 
         // Voxel assets stream from /api/povoxelstrike/assets on first load (Cache API
         // holds them after that), so the first run needs a server — but the mode itself
@@ -195,8 +161,11 @@ public static class GameCatalog
         new(GameKeys.PoVoxelStrike, "Voxel Strike", "🧱",
         [
             new(GameMode.OnePlayer, "/povoxelstrike/1player"),
+            // The squad run (2026-09-30) is the Online tab of the same page. It was
+            // missing here until 2026-10-01, so the hub offered no way into it.
+            new(GameMode.Multiplayer, "/povoxelstrike/multi", RequiresNetwork: true),
             new(GameMode.Demo, "/povoxelstrike/demo"),
-        ]) { ChipPrimary = true },
+        ]),
 
         // Joker's set is fetched from a joke API mid-performance in every mode — there
         // is no offline joke bank to fall back on.
@@ -230,13 +199,7 @@ public static class GameCatalog
         new(GameKeys.PoCoupleQuiz, "Couple Quiz", "💕",
         [
             new(GameMode.Multiplayer, "/couplequiz", RequiresNetwork: true),
-        ])
-        {
-            // Tell the renderer to use the primary as the chip target too — the
-            // card has only one mode, so the dedup-by-URL logic would otherwise
-            // leave it with no chips at all.
-            ChipPrimary = true,
-        },
+        ]),
 
         // PoJevArena (2026-09-25): design creatures, draft 10 v 10, and watch TypeSafe's Jev
         // decide every move. Needs sign-in (guests included) and a Jev key on the server;
@@ -246,10 +209,7 @@ public static class GameCatalog
             new(GameMode.OnePlayer, "/pojevarena/1player", RequiresNetwork: true),
             new(GameMode.TwoPlayer, "/pojevarena/2player", RequiresNetwork: true),
             new(GameMode.Demo, "/pojevarena/demo", RequiresNetwork: true),
-        ])
-        {
-            ChipPrimary = true,
-        },
+        ]),
 
         // PoEcosystem is an autonomous simulation that is watched, never played. 1P is "your
         // island": kept in this browser and offered back on the next visit (2026-09-30 — the
@@ -259,21 +219,13 @@ public static class GameCatalog
         [
             new(GameMode.OnePlayer, "/poecosystem/1player"),
             new(GameMode.Demo, "/poecosystem/demo"),
-        ])
-        {
-            ChipPrimary = true,
-        },
+        ]),
 
-        // 1P is the card head, so ChipPrimary keeps the chip row from presenting
-        // this interactive sandbox as watch-only.
         new(GameKeys.SandPlayground, "SandPlayground", "🏜️",
         [
             new(GameMode.OnePlayer, "/sandplayground/1player"),
             new(GameMode.Demo, "/sandplayground/demo"),
-        ])
-        {
-            ChipPrimary = true,
-        },
+        ]),
     ];
 
     /// <summary>Games sorted for display — alphabetical, matching the old per-section order.</summary>

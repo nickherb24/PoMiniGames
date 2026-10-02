@@ -17,6 +17,21 @@
     if (!document.startViewTransition) return;
     e.preventDefault();
     var href = link.getAttribute('href');
+    // Card-to-game morph: name the pressed hub card's heading and leave its icon and title
+    // for the next document's boot splash (index.html #po-boot-hero), which carries the same
+    // view-transition-name, so the card glides up into the loading game's title.
+    var card = link.closest('.home-card');
+    var head = card && card.querySelector('.home-card-head');
+    if (head) {
+      try {
+        sessionStorage.setItem('poHero', JSON.stringify({
+          path: href,
+          icon: (head.querySelector('.home-card-icon') || {}).textContent || '',
+          title: (head.querySelector('.home-card-title') || {}).textContent || ''
+        }));
+        head.style.viewTransitionName = 'po-hero';
+      } catch (_) { /* storage blocked: the plain cross-fade */ }
+    }
     document.startViewTransition(function () {
       window.location.href = href;
     });

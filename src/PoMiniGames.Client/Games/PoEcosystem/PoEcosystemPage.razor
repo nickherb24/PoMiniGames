@@ -44,7 +44,7 @@
     // could not be reached and every visit autosaved a new island over the last one.
     private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem@(IsDemo ? " · Demo" : "")</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         @* 2026-09-11: word budget — the intro card is capped at 100 words. Everything the

@@ -45,7 +45,7 @@ public static class PoRacerScoreEndpoints
             // The lap, the position and the track that get stored are the ones this server timed
             // in the race the code names. The body only says which race; a code this identity did
             // not finish a lap in (or one older than the registry remembers) is refused, not trusted.
-            if (races.VerifiedLap(userId, dto.GameCode) is not { } timed)
+            if (await races.VerifiedLapAsync(userId, dto.GameCode) is not { } timed)
             {
                 return Results.Problem("No finished race on this server backs that lap.", statusCode: StatusCodes.Status422UnprocessableEntity);
             }

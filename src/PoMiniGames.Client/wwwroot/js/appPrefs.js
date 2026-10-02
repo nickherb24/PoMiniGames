@@ -106,6 +106,21 @@ function stampMotion(reduce) {
 }
 
 /**
+ * Colour-blind-safe palettes. Like motion, the answer lives on <html> so game
+ * engines can read it without an interop round-trip: PoEcosystem's charts and
+ * PoCabinet's minimap switch to their Okabe–Ito sets when `data-colorsafe` is
+ * present, on top of each game's own setting. The first stamp is the pre-paint
+ * script in index.html.
+ * @param {boolean} on
+ */
+export function applyColorSafe(on) {
+    try {
+        if (on) document.documentElement.setAttribute('data-colorsafe', '1');
+        else document.documentElement.removeAttribute('data-colorsafe');
+    } catch { /* best-effort */ }
+}
+
+/**
  * Master volume, 0..1. Delegates to the shared bus, which owns the gain node
  * and the persisted key — duplicating that here is exactly the five-modules
  * problem audioBus.js was created to end.

@@ -9,7 +9,7 @@
        js/poracer/index.js writes them every frame, so Blazor must own no text node inside
        .race-speed, .race-clock or .race-lap-now. *@
     <div class="race-strip">
-        <div class="race-metrics">
+        <div class="race-metrics" data-glass>
             @if (IsDemo) { <strong>Spectating</strong> }
             else
             {
@@ -24,7 +24,7 @@
         </div>
         @if (!IsDemo)
         {
-            <div class="race-laps">
+            <div class="race-laps" data-glass>
                 <span>Now <strong class="race-lap-now"></strong></span>
                 <span>Last <strong>@PoRacerFormatting.Time(last)</strong>@if (last > 0 && best > 0 && last > best) { <em>@PoRacerFormatting.Delta(last - best)</em> }</span>
                 <span>Best <strong>@PoRacerFormatting.Time(best)</strong></span>

@@ -988,7 +988,7 @@
     border-radius: 10px;
     background: rgba(8, 12, 28, 0.62);
     color: var(--pb-ink-soft);
-    font-size: 0.74rem;
+    font-size: var(--text-xs);
     line-height: 1.3;
     pointer-events: none;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);

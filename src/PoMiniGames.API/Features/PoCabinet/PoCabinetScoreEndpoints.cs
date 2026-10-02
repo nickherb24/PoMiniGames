@@ -82,7 +82,7 @@ public static class PoCabinetScoreEndpoints
         }
         else
         {
-            var lap = races.TakeVerifiedLap(userId);
+            var lap = await races.TakeVerifiedLapAsync(userId, ct);
             verifiedLap = lap is not null && lap.TrackId == trackId ? lap.BestLapSeconds : -1;
         }
         if (verifiedLap <= 0)

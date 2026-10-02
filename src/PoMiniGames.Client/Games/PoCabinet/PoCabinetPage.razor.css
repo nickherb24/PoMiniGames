@@ -7,7 +7,7 @@
    panel) are therefore ::deep — without it, as before 2026-09-23, they never applied. */
 
 .pocabinet-root {
-    --color-primary: var(--color-accent-solid, #6366f1);
+    --color-primary: var(--color-accent-solid, #4f46e5);
     --color-on-primary: var(--color-accent-contrast, #ffffff);
     --color-text-muted: var(--color-text-secondary, #94a3b8);
     --color-text: var(--color-text-primary, #e2e8f0);
@@ -82,7 +82,9 @@
 
 ::deep .pocabinet-track-selector {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    /* Two across: four tracks make 2x2. auto-fit put three on the first row and one on
+       the second in the 760px start card. A phone gets one column (see the 640px block). */
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 0.75rem;
     margin: 1rem 0;
 }
@@ -217,7 +219,7 @@
     border-radius: 999px;
     background: var(--color-primary);
     color: var(--color-on-primary, white);
-    font-size: 0.7rem;
+    font-size: var(--text-xs);
 }
 
 ::deep .pocabinet-lobby__controls {
@@ -1074,7 +1076,9 @@
     font-size: 0.75rem;
     font-weight: 700;
     letter-spacing: 0.05em;
-    color: var(--color-primary);
+    /* --color-accent, not --color-primary: that one is the solid FILL colour and is
+       too dark to be text on this surface (3.3:1 before 2026-10-01). */
+    color: var(--color-accent);
 }
 
 ::deep .pocabinet-dialogue__body {
@@ -1110,53 +1114,67 @@
 
 /* ─── Start card: two columns on desktop, mode switcher ───────────────────── */
 
+/* One column, read top to bottom like every other game's start card: title and mode
+   switch centred, the tracks, the two fold-away panels side by side, then the button.
+   Until 2026-10-01 this was two columns on a laptop, and the right one held only the
+   two folded panels: 90px of content beside a 430px column, with the Start button at
+   the bottom left. */
 .pocabinet-card--start {
-    max-width: 1040px;
+    max-width: 760px;
     display: grid;
-    gap: 1rem 2rem;
-}
-
-@media (min-width: 960px) {
-    .pocabinet-card--start { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); align-items: start; }
+    gap: 1rem;
 }
 
 .pocabinet-start__head {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    flex-wrap: wrap;
+    gap: 0.6rem;
 }
 
-.pocabinet-start__head h1 {
+.pocabinet-start__head h2 {
     margin: 0;
-}
-
-.pocabinet-modes {
-    display: inline-flex;
-    padding: 0.2rem;
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--color-text) 7%, transparent);
-}
-
-.pocabinet-mode {
-    display: inline-flex;
-    align-items: center;
-    min-height: 2.25rem;
-    padding: 0 0.95rem;
-    border-radius: 999px;
-    color: var(--color-text);
-    text-decoration: none;
-    font-weight: 600;
-}
-
-.pocabinet-mode--on {
-    background: var(--color-primary);
-    color: var(--color-on-primary, white);
+    font-size: var(--text-2xl);
 }
 
 .pocabinet-card__lede {
-    margin: 0.5rem 0 0;
+    margin: 0.75rem 0 0;
+    text-align: center;
+}
+
+.pocabinet-start__side {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.6rem;
+    align-items: start;
+}
+
+/* An open panel takes the row: the paint shop and the settings are both wider than
+   half the card. */
+.pocabinet-start__side > .pocabinet-customize[open] {
+    grid-column: 1 / -1;
+}
+
+.pocabinet-start__side > .pocabinet-customize + .pocabinet-customize {
+    margin-top: 0;
+}
+
+.pocabinet-card--start .pocabinet-actions {
+    justify-content: center;
+    margin-top: 0;
+    /* Pinned to the bottom of the window while the card is taller than it (a phone:
+       four track cards and the two panels come first), so the button that starts the
+       race is never the thing you have to scroll to find. */
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    padding: 0.5rem 0 calc(0.5rem + env(safe-area-inset-bottom));
+    background: var(--color-surface);
+    box-shadow: 0 -0.75rem 0.75rem -0.4rem var(--color-surface);
+}
+
+@media (max-width: 640px) {
+    .pocabinet-start__side { grid-template-columns: minmax(0, 1fr); }
 }
 
 .pocabinet-link {
@@ -1166,7 +1184,8 @@
     padding: 0 0.4rem;
     background: none;
     border: 0;
-    color: var(--color-primary);
+    /* The accent, not --color-primary (the solid fill colour, too dark to be text here). */
+    color: var(--color-accent);
     font: inherit;
     text-decoration: underline;
     text-underline-offset: 3px;
@@ -1475,7 +1494,6 @@
     .pocabinet-primary,
     .pocabinet-secondary,
     .pocabinet-iconbtn,
-    .pocabinet-mode,
     .pocabinet-link,
     .pocabinet-customize > summary,
     ::deep .pocabinet-primary,
@@ -1491,16 +1509,10 @@
     ::deep .pocabinet-settings__row input[type="checkbox"] { width: 1.5rem; height: 1.5rem; }
 }
 
-/* ─── Reduced motion: one rule for both switches ──────────────────────────
-   The in-game setting (.pocabinet-reduced on the race section) and the OS preference
-   used to be two scattered lists per component, and they drifted. */
-.pocabinet-reduced *,
-.pocabinet-reduced *::before,
-.pocabinet-reduced *::after {
-    animation: none !important;
-    transition: none !important;
-}
-
+/* ─── Reduced motion ──────────────────────────────────────────────────────
+   The app's own switch is the global [data-motion="reduce"] guard in app.css; this is
+   the OS preference. (Cabinet's in-game switch and its .pocabinet-reduced class went
+   on 2026-10-01.) */
 @media (prefers-reduced-motion: reduce) {
     .pocabinet-root *,
     .pocabinet-root *::before,
@@ -1514,7 +1526,7 @@
    taller than the HUD strip it replaces — takes its room from the canvas, not the page. */
 @media (max-width: 640px) {
     .pocabinet-card { margin: 0.5rem auto; padding: 1rem; }
-    ::deep .pocabinet-track-selector { gap: 0.5rem; margin: 0.75rem 0; }
+    ::deep .pocabinet-track-selector { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; margin: 0.75rem 0; }
     ::deep .pocabinet-track { padding: 0.55rem 0.7rem; }
     ::deep .pocabinet-track__swatch { height: 48px; }
     .pocabinet-race:has(.pocabinet-replaybar) { --pocabinet-canvas-h: max(260px, calc(100dvh - 15rem)); }

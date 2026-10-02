@@ -63,23 +63,6 @@
 .hp-badge--degraded { color: var(--accent-warning-ink); background: var(--accent-warning-soft); }
 .hp-badge--unhealthy { color: var(--accent-danger-ink); background: var(--accent-danger-soft); }
 
-.hp-refresh {
-  font: inherit;
-  font-size: var(--text-sm);
-  /* audit #3: --accent on --accent-soft measured 3.61:1 light / 3.85:1 dark. */
-  color: var(--accent-ink);
-  background: var(--accent-soft);
-  border: 1px solid var(--accent-ring);
-  border-radius: var(--radius-sm);
-  padding: var(--space-1) var(--space-3);
-  cursor: pointer;
-  transition: background var(--dur-fast) var(--ease-standard);
-}
-
-.hp-refresh:hover:not(:disabled) { background: var(--accent-bg); }
-.hp-refresh:disabled { opacity: 0.6; cursor: progress; }
-.hp-refresh:focus-visible { outline: 2px solid var(--accent-ring); outline-offset: 2px; }
-
 .hp-table {
   width: 100%;
   border-collapse: collapse;

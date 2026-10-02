@@ -77,7 +77,7 @@
 
 .audience-who {
     display: block;
-    font-size: 0.7rem;
+    font-size: var(--text-xs);
     text-transform: uppercase;
     letter-spacing: 0.08em;
     color: var(--text-secondary);

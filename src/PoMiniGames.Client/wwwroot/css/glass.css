@@ -168,13 +168,27 @@
    chips, a leaderboard has fifty rows — and each blurred surface forces its own
    compositor layer plus a re-sample of everything beneath it. A dozen of them
    halves the frame rate on integrated graphics for a difference nobody would
-   notice on a 90 px tile. They get the fill, the lit edge and the sheen,
+   notice on a 90 px tile. They get the lit edge and the sheen, which is where
+   the perceived quality actually comes from.
+
+   2026-10-01: this rule sat inside its own comment from 2026-08-07 (the prune
+   that cut `.home-mode-btn` and friends out of the selector list took the end
+   of the comment with them), so for eight weeks none of it applied. Restored
+   narrower than it was written, because the cards grew up without it:
+     - No translucent `--glass-fill` and no shadow. These cards carry running
+       text (controls, a lobby roster) with no blur behind them, and the lobby
+       card's shadow is now its beat glow (LobbyPanel.razor.css). They keep
+       their own opaque surface and shadow and take only the lit edge.
+     - `overflow: hidden` stays on the game card alone, which needs it to clip
+       the sheen. The intro card scrolls its own content on a short screen
+       (game-shell.css); clipping it would strand the Start button, the same
+       trap the note on `.gps-modal` above describes. */
 .gps-game-card.gps-game-card,
 .gps-intro-card.gps-intro-card,
-.sp-card.sp-card{
-    background: var(--glass-fill);
+.sp-card.sp-card {
     border: 1px solid var(--glass-edge);
-    box-shadow: var(--glass-inner);
+}
+.gps-game-card.gps-game-card {
     position: relative;
     overflow: hidden;
     isolation: isolate;
@@ -204,15 +218,6 @@
 }
 .gps-modal-overlay.gps-modal-overlay { perspective: 1400px; }
 
-/* Pointer-tracked glare, painted as a background-image rather than on a
-   pseudo-element: ::before is already taken on these cards, and ::after now
-   carries the sheen. A background-image cannot collide with anything{
-    background-image: radial-gradient(
-        circle at calc(50% + var(--fx-mx, 0) * 40%) calc(50% + var(--fx-my, 0) * 40%),
-        color-mix(in srgb, #ffffff 14%, transparent),
-        transparent 60%);
-}
-
 /* ── Toasts ───────────────────────────────────────────────────────────────
    Few on screen at once and always over arbitrary content, so blur is
    affordable and genuinely helps legibility. */
@@ -222,14 +227,6 @@
     box-shadow: var(--glass-inner), var(--elevation-3);
     -webkit-backdrop-filter: var(--glass-2);
     backdrop-filter: var(--glass-2);
-}
-
-/* ── Leaderboard panels ───────────────────────────────────────────────────
-   The tables themselves stay opaque: text over a blurred, moving background is
-   measurably harder to read{
-    background: var(--glass-fill-strong);
-    border: 1px solid var(--glass-edge);
-    box-shadow: var(--glass-inner);
 }
 
 /* ── Adaptive degradation ─────────────────────────────────────────────────

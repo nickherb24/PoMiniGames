@@ -44,6 +44,11 @@
     --audio-mid: 0;
     --audio-treble: 0;
     --audio-peak: 0;
+    /* The beat, 0..1: how far the low band is above the soundtrack's resting bed. Measured
+       on the menu mix (2026-10-01): the pad alone holds --audio-bass near 0.34 and a kick
+       lifts it to about 0.53, so reading the raw band gives a glow that is simply always
+       on. Silent or muted, the band is 0 and so is this. */
+    --audio-pulse: clamp(0, calc((var(--audio-bass) - 0.33) * 4.5), 1);
 
     /* Tension & biometric heartbeat variables */
     --fx-tension: 0;
@@ -113,67 +118,19 @@
  * glass.css, kept separate so this file stays free of side effects.
  */
 
-/* Specular sweep on hover. A skewed highlight travelling across the surface —
- * the single most convincing cue that a surface is glossy and lit.
+/* The sheen sweep glass.css runs across a game card on hover. Animated with a
+ * transform on a pseudo-element, not `background-position`: a moving gradient
+ * position repaints the element every frame, a transform stays on the compositor.
  *
- * Animated with `translate` on a pseudo-element rather than `background-position`
- * because a moving gradient position repaints the element every frame{
-    position: relative;
-    overflow: hidden;
-    isolation: isolate;
-}
+ * 2026-10-01: `.fx-sheen`, `.fx-iridescent`, `.fx-tilt`, `.fx-tilt-glare` and
+ * `.fx-frost` stood here as half-deleted blocks (the 2026-08-07 prune cut each
+ * selector out together with the end of the comment above it), and the open
+ * comments swallowed these keyframes with them. Nothing references those
+ * classes, so the deletion is completed. The live tilt is the `[data-fx-tilt]`
+ * rule further down. scripts/css-lint.ps1 now fails CI on this kind of damage. */
 @keyframes fx-sheen-sweep {
     from { transform: translateX(0) skewX(-18deg); }
     to   { transform: translateX(420%) skewX(-18deg); }}
-
-/* Iridescent text. `background-clip: text` paints a gradient through the
- * glyphs; animating --fx-angle rotates it. Used sparingly — on scores and
- * titles, never on body copy{
-    background: linear-gradient(var(--fx-angle),
-        var(--fx-accent, #66b6ff),
-        var(--fx-accent-2, #00e5ff) 35%,
-        var(--fx-accent-3, #facc15) 65%,
-        var(--fx-accent, #66b6ff));
-    background-size: 200% 200%;
-    -webkit-background-clip: text;
-    background-clip: text;
-    color: transparent;
-    animation: fx-rotate-angle 6s linear infinite;
-}
-/* Engines without background-clip:text would render invisible text. Restoring
-   an explicit colour is a correctness guard, not a style choice. */
-@supports not ((-webkit-background-clip: text) or (background-clip: text)) {}
-
-/* Pointer-tracked 3D tilt. fxTilt.js publishes --fx-mx/--fx-my in -1..1 on the
- * element; everything else is declarative.
- *
- * The parent needs the perspective{ perspective: 900px; }
-.fx-tilt {
-    transform:
-        rotateY(calc(var(--fx-mx, 0) * 7deg))
-        rotateX(calc(var(--fx-my, 0) * -7deg))
-        translateZ(0);
-    transform-style: preserve-3d;
-    transition: transform 0.12s ease-out;
-    will-change: transform;
-}
-/* The highlight tracks the pointer across the surface{
-    position: relative;
-    overflow: hidden;
-}
-
-/* Frosted glass with grain. Real frosted glass is not smooth — the
- * micro-texture is what stops a large blurred panel from looking like a flat
- * wash, and it also masks the banding that backdrop-filter produces across a
- * wide gradient.
- *
- * The grain is an inline SVG feTurbulence: ~200 bytes, no request{
-    position: relative;
-}
-:root[data-gfx='low'] .fx-tilt { transform: none; }
-
-@media (prefers-reduced-motion: reduce) {
-    .fx-tilt { transform: none; transition: none; }}
 
 /* 3D Holographic Foil Card — thin-film Bragg diffraction sheen */
 .fx-holo-card {
@@ -220,15 +177,11 @@
 }
 
 /* ===== §6 Compositor-only motion ===========================================
- * Every primitive here animates ONLY transform and opacity. In Blazor WASM the
- * main thread runs the .NET runtime{
-    animation: fx-rise 0.38s cubic-bezier(0.165, 0.84, 0.44, 1) both;
-    will-change: transform, opacity;
-}
-@keyframes fx-rise {
-    from { opacity: 0; transform: translate3d(0, 8px, 0); }
-    to   { opacity: 1; transform: translate3d(0, 0, 0); }}
-
+ * Animates ONLY transform. In Blazor WASM the main thread runs the .NET runtime,
+ * so anything that needs layout or paint per frame competes with the app itself.
+ * `.fx-pop` is the toast entry (impactBus.js adds the class). `.fx-rise` and
+ * `.fx-shake` went with the prune; nothing references them.
+ */
 .fx-pop {
     animation: fx-pop 0.26s cubic-bezier(0.34, 1.56, 0.64, 1) both;
     will-change: transform;
@@ -237,11 +190,6 @@
     0%   { transform: scale(0.86); }
     60%  { transform: scale(1.04); }
     100% { transform: scale(1); }}
-@keyframes fx-shake {
-    10%, 90% { transform: translate3d(-2px, 0, 0); }
-    20%, 80% { transform: translate3d(4px, 0, 0); }
-    30%, 50%, 70% { transform: translate3d(-7px, 0, 0); }
-    40%, 60% { transform: translate3d(7px, 0, 0); }}
 
 
 /* ===== §8 Impact / game feel ===============================================
@@ -292,25 +240,16 @@
     contain: strict;
 }
 
-/* Punch on a DOM element. A true RGB split needs a shader, but a saturation +
- * contrast lift driven off the same envelope reads as the same event to the
- * player, and `filter` stays on the compositor.
+/* 2026-08-07 browser audit: `.fx-punch` (a saturation lift on --po-punch) and
+ * `.fx-punch-text` (a chromatic-fringe text shadow) stood here as half-deleted
+ * blocks: the comment terminator and the selector had both been eaten, leaving
+ * a bare declaration list. Deleted rather than restored: neither class is
+ * referenced by any .razor, .cs or .js in the project, so the prune that
+ * mangled this was right about the intent.
  *
- * Applied opt-in: `filter` on an ancestor creates a containing block for
- * fixed-position descendants{
-    filter:
-        saturate(calc(100% + var(--po-punch, 0) * 60%))
-        contrast(calc(100% + var(--po-punch, 0) * 18%))
-        brightness(calc(100% + var(--po-punch, 0) * 10%));
-}
-
-/* 2026-08-07 browser audit: `.fx-punch-text` (a chromatic-fringe text shadow)
- * and its `[data-gfx='low']` opt-out stood here as a half-deleted block — the
- * comment's `*/` and the selector had both been eaten, leaving a bare
- * declaration list that made the rest of this file parse one brace out of step.
- * Completing the deletion rather than restoring it: neither `.fx-punch-text`
- * nor `.fx-punch` is referenced by any .razor, .cs or .js in the project, so
- * the prune that mangled this was right about the intent. */
+ * 2026-10-01: that note used to quote the terminator itself, which closed the
+ * comment in mid-sentence and fed the rest of the paragraph to the parser as a
+ * selector. The rule below it (the low-tier opt-out) was dropped with it. */
 
 :root[data-gfx='low'] .po-impact-flash { display: none; }
 
@@ -361,14 +300,48 @@
  * the panel keeps its plain backdrop-filter look — same family, no capture.
  */
 [data-glass-live] {
-    background-image: var(--glass-capture, none);
-    background-size: cover;
-    background-position: center;
-    background-blend-mode: luminosity;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.26),
-                0 8px 32px -4px rgba(0, 0, 0, 0.38),
-                0 0 24px rgba(120, 200, 255, 0.08);
+    /* !important, and that is the fix: every panel that opts in is styled by a scoped rule
+       whose `background` shorthand outranks this selector and resets the image to none, so
+       the capture was computed four times a second and never painted. The tint is drawn
+       over it here, because an opaque capture hides the panel's own translucent fill. A
+       panel that is not a dark over-scene HUD sets --glass-capture-tint to its own colour. */
+    background-image:
+        linear-gradient(var(--glass-capture-tint, rgba(12, 16, 28, 0.58)), var(--glass-capture-tint, rgba(12, 16, 28, 0.58))),
+        var(--glass-capture, none) !important;
+    background-size: cover !important;
+    background-position: center !important;
 }
+
+/* ===== Audio-reactive chrome (2026-10-01) ===================================
+ * visualRuntime.js publishes --audio-bass/mid/treble/peak (0..1) on <html> while a
+ * page asks for them: the catalog and the lobbies do (Index.razor, LobbyPanel.razor).
+ * Everywhere else they stay 0 and these rules are the resting look.
+ *
+ * Two readers here, both cheap, both on --audio-pulse (the beat, declared above): an
+ * opacity on one pseudo-element under the top bar, and `scale` on the catalog's card
+ * icons (no layout). The lobby card's glow lives in
+ * LobbyPanel.razor.css. Low tier and reduced motion get neither: the icons are
+ * movement, and the low tier is exactly the machine that cannot spare the repaint.
+ */
+:root:not([data-gfx='low']):not([data-motion='reduce']) .gl-top-bar::after {
+    content: '';
+    position: absolute;
+    inset: auto 0 -1px 0;
+    height: 2px;
+    pointer-events: none;
+    background: linear-gradient(90deg, transparent, var(--fx-accent, #6366f1) 30%, var(--fx-accent-2, #22d3ee) 70%, transparent);
+    opacity: var(--audio-pulse, 0);
+    will-change: opacity;
+}
+
+:root:not([data-gfx='low']):not([data-motion='reduce']) .home-card-icon {
+    display: inline-block;
+    scale: calc(1 + var(--audio-pulse, 0) * 0.1);
+    transform-origin: 50% 80%;
+}
+
+/* The end-of-game card is read, not glanced at: the scene only tints it. */
+dialog.gps-modal[data-glass-live] { --glass-capture-tint: color-mix(in srgb, var(--color-surface) 86%, transparent); }
 
 /* Specular gleam highlight tracking cursor on tilt & glass elements */
 [data-fx-tilt], [data-magnetic], .poeco-btn, .poeco-pill, .poeco-tab {

@@ -1,0 +1,240 @@
+/* Settings sheet. Every colour reads through a design token so the sheet is
+   themed in both schemes — including, necessarily, the control that switches
+   between them. The row/switch/segment rules are the SettingsPanel ones from
+   before 2026-08-11; the dialog chrome around them is new. */
+
+.prefs-sheet {
+    /* The app's global reset zeroes every margin, including the `margin: auto` the
+       user-agent sheet centres a modal dialog with. Put it back. */
+    margin: auto;
+    width: min(30rem, calc(100vw - 2 * var(--space-4)));
+    max-height: min(42rem, calc(100dvh - 2 * var(--space-4)));
+    padding: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    /* --color-surface, not --surface-2: the numbered surfaces are translucent glass,
+       and a sheet the page shows through is hard to read. */
+    background: var(--color-surface);
+    color: var(--color-text-primary);
+    overflow: auto;
+}
+
+.prefs-sheet::backdrop {
+    background: rgb(0 0 0 / 0.55);
+}
+
+.prefs-sheet-head {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-surface);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.prefs-sheet-title {
+    margin: 0;
+    font-size: var(--text-lg);
+    font-weight: 700;
+}
+
+.prefs-sheet-close {
+    appearance: none;
+    width: 2.25rem;
+    height: 2.25rem;
+    border: none;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 1.5rem;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.prefs-sheet-close:hover {
+    background: var(--surface-3);
+    color: var(--color-text-primary);
+}
+
+.prefs-grid {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4) var(--space-3);
+}
+
+/* <fieldset> + <legend> give the categories named landmarks. Reset the
+   user-agent fieldset chrome so the legend reads as a small section label
+   rather than an outline frame, but keep the native grouping. */
+.prefs-group {
+    border: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-1);
+    min-width: 0;
+}
+
+.prefs-group-legend {
+    padding: 0 var(--space-2) var(--space-2);
+    font-size: var(--text-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-secondary);
+    font-weight: 700;
+}
+
+.prefs-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-4);
+    padding: var(--space-3) var(--space-3);
+    border-radius: var(--radius-md);
+    transition: background var(--dur-fast) var(--ease-standard);
+}
+
+.prefs-row + .prefs-row {
+    border-top: 1px solid var(--color-border);
+}
+
+.prefs-row:hover {
+    background: var(--surface-3);
+}
+
+/* A row whose control cannot act (volume while muted, invites while signed
+   out): dimmed but still readable, because the hint says why. */
+.prefs-row--disabled .prefs-name {
+    opacity: 0.5;
+}
+
+.prefs-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.prefs-name {
+    font-size: var(--text-sm);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.prefs-hint {
+    font-size: var(--text-xs);
+    color: var(--color-text-secondary);
+}
+
+/* ── Switch ── */
+.prefs-toggle {
+    appearance: none;
+    flex: 0 0 auto;
+    /* 52x32: the track is the tap target. It was 44x26, which is two pixels over
+       the 24px minimum in height and the smallest control in the sheet. */
+    width: 52px;
+    height: 32px;
+    padding: 3px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-pill);
+    background: var(--surface-3);
+    cursor: pointer;
+    transition: background var(--dur-fast) var(--ease-standard),
+                border-color var(--dur-fast) var(--ease-standard);
+}
+
+.prefs-toggle:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+.prefs-toggle--on {
+    background: var(--color-accent-solid);
+    border-color: var(--color-accent-solid);
+}
+
+.prefs-toggle-knob {
+    display: block;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--color-text-primary);
+    transform: translateX(0);
+    transition: transform var(--dur-fast) var(--ease-standard),
+                background var(--dur-fast) var(--ease-standard);
+}
+
+.prefs-toggle--on .prefs-toggle-knob {
+    background: var(--color-accent-contrast);
+    transform: translateX(20px);
+}
+
+/* ── Range ── */
+.prefs-range {
+    flex: 0 0 auto;
+    width: 140px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.prefs-range:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
+}
+
+.prefs-toggle:focus-visible,
+.prefs-range:focus-visible,
+.prefs-sheet-close:focus-visible {
+    outline: 2px solid var(--accent-ring);
+    outline-offset: 2px;
+}
+
+/* Portrait phones: only the two wide controls go under their label (the theme
+   switch and the volume slider). A switch stays on its label's row. Until
+   2026-10-01 every row stacked, so each of the five switches sat alone on a line
+   under its label and the sheet was 1120px of content in a 670px box. */
+@media (max-width: 480px) {
+    /* Nearly the whole screen: with the rows tightened below, all five groups are on
+       it at once on a 390x844 phone (803px of content). */
+    .prefs-sheet {
+        width: calc(100vw - 2 * var(--space-2));
+        max-height: calc(100dvh - 2 * var(--space-2));
+    }
+
+    .prefs-row { gap: var(--space-3); padding: 0.35rem var(--space-3); }
+
+    .prefs-row:has(.app-seg) {
+        align-items: stretch;
+        flex-direction: column;
+        gap: var(--space-2);
+    }
+
+    /* The three theme buttons share the row instead of huddling at its left end. */
+    .prefs-row .app-seg__btn { flex: 1 1 0; }
+
+    .prefs-range { width: 50%; }
+
+    .prefs-grid { gap: var(--space-2); padding: var(--space-2); }
+    .prefs-group-legend { padding-bottom: var(--space-1); }
+}
+
+/* A window with room for it: two columns of groups, so the last group (the account's
+   data) is on screen when the sheet opens instead of 130px below its fold. */
+@media (min-width: 900px) {
+    .prefs-sheet { width: min(54rem, calc(100vw - 2 * var(--space-4))); }
+
+    .prefs-grid {
+        display: block;
+        columns: 2;
+        column-gap: var(--space-5);
+    }
+
+    .prefs-group {
+        break-inside: avoid;
+        margin-bottom: var(--space-4);
+    }
+}

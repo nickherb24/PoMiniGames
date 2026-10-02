@@ -80,33 +80,40 @@ public partial class ProfilePage
     // persisting local stats through GameResultService/GameStatsService long before
     // they were listed — the data existed, the page just never read it, so a player
     // with prior history sees it appear on the first load after this ships.
-    private static readonly (string Key, string Label, string Icon, RatingKind Kind)[] GameDefs =
+    //
+    // The list itself is GameCatalog's (2026-10-01). It was a second, hand-kept table of
+    // key, name and icon, and it had drifted the way the catalogue was written to stop:
+    // Cabinet and Jev Arena were missing from the profile altogether, and Tic-Tac-Toe and
+    // Connect Five wore different icons here than on the hub. All this page owns is the
+    // kind of record each game keeps; a game with no entry below still gets its row, as a
+    // session count, which is the only stat that is honest for a game with no win
+    // condition and no score (Joker, PoEcosystem, SandPlayground).
+    private static readonly Dictionary<string, RatingKind> Kinds = new(StringComparer.OrdinalIgnoreCase)
     {
-        ("tictactoe",    "Tic-Tac-Toe",   "✖",   RatingKind.Adaptive),
-        ("connectfive",  "Connect Five",  "🔵",  RatingKind.Adaptive),
-        ("pobrawl",      "Brawl",         "🥊",  RatingKind.Adaptive),
-        ("posports",     "Sports",        "🏃",  RatingKind.Difficulty),
-        ("pofunquiz",    "Fun Quiz",      "🧠",  RatingKind.Difficulty),
-        ("poracer",      "Racer",         "🏎️", RatingKind.Difficulty),
-        ("pocouplequiz", "Couple Quiz",   "💕",  RatingKind.Difficulty),
-        ("pomarblerace", "Marble Race",   "🔮",  RatingKind.HighScoreOnly),
-        ("povoxelstrike", "Voxel Strike", "🧱",  RatingKind.HighScoreOnly),
-        // No win condition and no score: PoJoker is an AI-jester/joke-API experience.
-        // A session count is the only honest stat here.
-        ("pojoker",        "Joker",           "🃏",  RatingKind.PlayCountOnly),
-        ("poecosystem",    "PoEcosystem",     "🌿",  RatingKind.PlayCountOnly),
-        ("sandplayground", "SandPlayground",  "🏜️", RatingKind.PlayCountOnly),
+        ["tictactoe"] = RatingKind.Adaptive,
+        ["connectfive"] = RatingKind.Adaptive,
+        ["pobrawl"] = RatingKind.Adaptive,
+        ["posports"] = RatingKind.Difficulty,
+        ["pofunquiz"] = RatingKind.Difficulty,
+        ["poracer"] = RatingKind.Difficulty,
+        ["pocouplequiz"] = RatingKind.Difficulty,
+        ["pomarblerace"] = RatingKind.HighScoreOnly,
+        ["povoxelstrike"] = RatingKind.HighScoreOnly,
     };
+
+    // Rated games first, in the order above (it is the radar's axis order), then the rest
+    // in catalogue order.
+    private static readonly (string Key, string Label, string Icon, RatingKind Kind)[] GameDefs =
+    [
+        .. Kinds.Keys
+            .Select(key => GameCatalog.All.First(g => g.Key.Value.Equals(key, StringComparison.OrdinalIgnoreCase)))
+            .Concat(GameCatalog.All.Where(g => !Kinds.ContainsKey(g.Key.Value)))
+            .Select(g => (g.Key.Value, g.Title, g.Icon, Kinds.GetValueOrDefault(g.Key.Value, RatingKind.PlayCountOnly))),
+    ];
 
     // ── State ────────────────────────────────────────────────────
     private bool _loading = true;
     private string _playerName = "Player";
-    private string _initials = "P";
-    // Option #5: which kind of account owns this profile. Drives the
-    // "Guest" / "MS" badge in the avatar's bottom-right corner. Default
-    // Guest until AuthState tells us otherwise — same defensive default the
-    // page already uses for the rest of the chrome.
-    private AccountKind _accountKind = AccountKind.Guest;
     private int _totalGames, _totalWins, _totalLosses, _totalDraws;
     private int _bestStreak, _topElo;
     // Browser audit #6 (2026-08-10): the friendlier partial-session count
@@ -116,8 +123,6 @@ public partial class ProfilePage
     private int _unsyncedSessions;
     private GameEntry? _bestEntry, _nemesisEntry;
     private List<GameEntry> _entries = new();
-    private string _activeTab = "breakdown";
-    private void SetTab(string tab) => _activeTab = tab;
 
     // ── High scores (best available per 1P game) ──────────────────
     private sealed record HighScoreEntry(string Game, string Icon, string Value, string Sub, bool HasValue);
@@ -156,6 +161,8 @@ public partial class ProfilePage
     {
         public string Name { get; init; } = "";
         public string Type { get; init; } = "guest";
+        /// <summary>The game most recently played against them: where an invite takes both players.</summary>
+        public string LastGame { get; init; } = "";
         public int Wins, Losses, Draws;
         public int Total => Wins + Losses + Draws;
     }
@@ -195,20 +202,13 @@ public partial class ProfilePage
     private async Task LoadStatsAsync()
     {
         _playerName = PlayerNameService.GetPlayerName();
-        // Option #5: derive the account kind from AuthState so the avatar
-        // badge matches the actual sign-in. AuthenticatedUserProfile carries
-        // no Kind field, so the same DisplayName-prefix heuristic the rest of
-        // the page uses (line ~84) decides it. Microsoft sign-ins have a real
-        // human name ("Jane Doe"), guests have the auto-generated "GuestNNNN-"
-        // string. Anything else (no user at all, or a name without the
-        // "Guest" prefix) is treated as Microsoft — covers the unlikely case
-        // of a future third sign-in kind without a code change here.
-        _accountKind = IsGuestUser() ? AccountKind.Guest : AccountKind.Microsoft;
         LoadStats();
         BuildLocalHighScores();
         await Task.CompletedTask;
     }
 
+    // A guest session's display name is the minted "Guest-NNNNNN" handle (see
+    // DevLoginIntake.BuildProfile); AuthenticatedUserProfile carries no kind of its own.
     private bool IsGuestUser()
         => AuthState.User?.DisplayName?.StartsWith("Guest", StringComparison.Ordinal) ?? true;
 
@@ -217,7 +217,6 @@ public partial class ProfilePage
     private void OnNameChanged()
     {
         _playerName = PlayerNameService.GetPlayerName();
-        _accountKind = IsGuestUser() ? AccountKind.Guest : AccountKind.Microsoft;
         LoadStats();
         BuildLocalHighScores();
         // Re-show the skeleton so a "Switch user" mid-session (see top-bar dev
@@ -403,6 +402,8 @@ public partial class ProfilePage
             {
                 Name = g.Key,
                 Type = g.Any(x => x.OpponentType == "microsoft") ? "microsoft" : "guest",
+                // The API returns history newest-first, so the group's first row is the latest.
+                LastGame = g.First().Game,
                 Wins = g.Count(x => x.Outcome == "win"),
                 Losses = g.Count(x => x.Outcome == "loss"),
                 Draws = g.Count(x => x.Outcome == "draw"),
@@ -412,10 +413,48 @@ public partial class ProfilePage
     }
 
 
+    // ── Invite a past opponent ───────────────────────────────────
+    private string? _inviting;
+
+    /// <summary>
+    /// Push an invite to someone from the online head-to-head list, for the game last played
+    /// against them. The server only delivers to people who turned invites on, so "sent 0" is
+    /// an ordinary outcome and gets its own wording rather than an error.
+    /// </summary>
+    private async Task InviteAsync(OpponentRecord opponent)
+    {
+        if (_inviting is not null) return;
+        _inviting = opponent.Name;
+        try
+        {
+            var slug = InviteService.SlugFor(opponent.LastGame);
+            var sent = await Invites.InviteAsync(opponent.Name, slug);
+            if (sent is null)
+            {
+                Toasts.Show($"Couldn't invite {opponent.Name}. Try again in a minute.", ToastType.Error);
+            }
+            else if (sent == 0)
+            {
+                Toasts.Show($"{opponent.Name} hasn't turned on invites. Share the lobby link with them instead.", ToastType.Info);
+            }
+            else
+            {
+                Toasts.ShowAction($"Invite sent to {opponent.Name}.", "Open lobby", () =>
+                {
+                    NavigationManager.NavigateTo($"/{slug}/multi");
+                    return Task.CompletedTask;
+                }, ToastType.Success);
+            }
+        }
+        finally
+        {
+            _inviting = null;
+        }
+    }
+
     // ── Stats loading ────────────────────────────────────────────
     private void LoadStats()
     {
-        _initials = BuildInitials(_playerName);
         _entries = new();
         _totalGames = _totalWins = _totalLosses = _totalDraws = 0;
         _bestStreak = 0;
@@ -487,22 +526,35 @@ public partial class ProfilePage
     }
 
     /// <summary>
-    /// Whether a card should render dimmed, measured against whatever that game
-    /// actually tracks. HighScoreOnly games are never dimmed — their activity lives
-    /// on the server board, which this local record cannot see.
+    /// Whether the player has anything to show for this game, measured against whatever
+    /// the game tracks: a W/L record, a session count, or a row of their own on the
+    /// server board. A game with none of them is a chip on the "not played yet" line.
     /// </summary>
-    private static bool IsUnplayed(GameEntry g) => g.Kind switch
-    {
-        RatingKind.PlayCountOnly => g.PlayCount == 0,
-        RatingKind.HighScoreOnly => false,
-        _ => g.TotalGames == 0,
-    };
+    private static bool HasActivity(GameEntry g, Dictionary<string, HighScoreEntry> best) =>
+        g.TotalGames > 0 || g.PlayCount > 0 || (best.TryGetValue(g.Key, out var hs) && hs.HasValue);
+
+    /// <summary>
+    /// The player's best on the server board, for the games whose board carries a score
+    /// or a time. Null for the AI games: their "best" is the ELO their rating rows show.
+    /// </summary>
+    private static string? ScoreOf(GameEntry g, Dictionary<string, HighScoreEntry> best) =>
+        HsDefs.Any(d => d.Key == g.Key && d.Kind != "ai") && best.TryGetValue(g.Key, out var hs) && hs.HasValue
+            ? hs.Value
+            : null;
 
     // 2026-08-12 audit #5: every PlayCountOnly game (Joker today) is
     // a demo-only experience — the only entry point on the catalog is its
-    // /demo route, so a "Try the demo" CTA from the profile card takes the
+    // /demo route, so a "Watch again" link from the profile card takes the
     // user straight to it without bouncing through the home page first.
     private static string DemoUrl(string gameKey) => $"/{gameKey}/demo";
+
+    /// <summary>
+    /// Where an unplayed game's chip leads: the catalogue's primary mode for it. The stat
+    /// keys here predate the catalogue's (pofunquiz / funquiz), hence the suffix match;
+    /// anything unmatched falls back to the hub.
+    /// </summary>
+    private static string PlayUrl(string gameKey) =>
+        GameCatalog.All.FirstOrDefault(g => gameKey.EndsWith(g.Key.Value, StringComparison.OrdinalIgnoreCase))?.Primary.Url ?? "/";
 
     /// <summary>
     /// A game rated by a single adaptive ELO against a rating-matched CPU. The whole
@@ -552,20 +604,6 @@ public partial class ProfilePage
             ]
         };
     }
-
-    private static string BuildInitials(string name)
-    {
-        var parts = name.Split([' ', '-', '_'], StringSplitOptions.RemoveEmptyEntries);
-        return parts.Length >= 2
-            ? $"{parts[0][0]}{parts[1][0]}".ToUpperInvariant()
-            : (name.Length >= 2 ? name[..2].ToUpperInvariant() : name.ToUpperInvariant());
-    }
-
-    // (DisplayHandle() removed 2026-09-11 — see the note at the .prf-handle call
-    // site. It trimmed the old 18-character double-suffixed guest handle down to
-    // "Guest5…"; handles are 12 characters now and fit, so the trim only hid the
-    // name. The .prf-handle CSS still ellipsises on overflow as a backstop for a
-    // long Microsoft display name.)
 
     // ── Radar SVG ────────────────────────────────────────────────
     private string BuildRadarSvg()

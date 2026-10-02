@@ -34,53 +34,6 @@
     width: min(94vw, 480px);
 }
 
-.pvs-seg {
-    display: flex;
-    gap: 2px;
-    padding: 3px;
-    border-radius: 10px;
-    background: var(--color-surface-hover);
-    border: 1px solid var(--color-border);
-    align-self: stretch;
-}
-
-.pvs-seg-btn {
-    flex: 1;
-    min-height: 2.25rem;
-    display: grid;
-    place-items: center;
-    padding: 0.3rem 0.6rem;
-    border: none;
-    border-radius: 8px;
-    background: transparent;
-    color: var(--color-text-secondary);
-    font: inherit;
-    font-size: var(--text-sm);
-    font-weight: 600;
-    text-decoration: none;
-    cursor: pointer;
-}
-
-.pvs-seg-btn:hover { color: var(--color-text-primary); }
-
-.pvs-seg-btn.is-on {
-    background: var(--color-accent-solid);
-    color: var(--color-accent-contrast);
-}
-
-.pvs-seg-btn:focus-visible {
-    outline: 2px solid var(--accent-ring);
-    outline-offset: 1px;
-}
-
-.pvs-seg--sub .pvs-seg-btn { font-weight: 500; }
-
-.pvs-seg--sub .pvs-seg-btn.is-on {
-    background: var(--color-surface);
-    color: var(--color-text-primary);
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
-}
-
 .pvs-start-note {
     margin: -0.35rem 0 0;
     font-size: var(--text-xs);
@@ -287,7 +240,7 @@
     overflow: hidden;
     white-space: nowrap;
     text-overflow: ellipsis;
-    font-size: clamp(0.68rem, 1.8vw, var(--text-sm));
+    font-size: clamp(var(--text-xs), 1.8vw, var(--text-sm));
     color: rgba(232, 238, 248, 0.78);
     font-variant-numeric: tabular-nums;
     text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
@@ -780,7 +733,7 @@
     border: 2px solid rgba(232, 238, 248, 0.5);
     background: rgba(15, 23, 42, 0.45);
     color: #f4f7fd;
-    font-size: 0.72rem;
+    font-size: var(--text-xs);
     font-weight: 700;
     letter-spacing: 0.06em;
     touch-action: none;

@@ -44,7 +44,7 @@
         <div class="gps-game-card">
             <h2 class="gps-phase-h">Couldn't start the quiz</h2>
             <p class="gps-error">@(_error ?? "No questions available right now.")</p>
-            <button class="gps-cta" @onclick="StartGame">Retry</button>
+            <button class="app-btn app-btn--primary app-btn--lg" @onclick="StartGame">Retry</button>
         </div>
     }
     else if (_currentIndex < _questions.Count && !_splitScreen)
@@ -53,7 +53,7 @@
         var showReveal = _selected.ContainsKey(_currentIndex) && _playMode != "demo";
         var pickIdx = showReveal ? _selected[_currentIndex].selected : -1;
         var correctIdx = showReveal ? q.CorrectOptionIndex : -1;
-        <div class="fq-question">
+        <div class="fq-question gps-game-card">
             <h2 class="gps-phase-h">Question @(_currentIndex + 1) of @_questions.Count@(_playMode == "2p" ? $" · {_currentPlayerLabel}'s turn" : "")</h2>
             <p class="fq-text">@q.Text</p>
             @* Solo/2P-shared-screen options now share the same numbered-key
@@ -247,15 +247,12 @@
                 <li>Player 1 (left): keys <kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd> <kbd>4</kbd></li>
                 <li>Player 2 (right): keys <kbd>6</kbd> <kbd>7</kbd> <kbd>8</kbd> <kbd>9</kbd></li>
                 <li>Mouse works too — click any option on your side</li>
-                <li>Chain correct answers for a scoring multiplier</li>
             </ul>
         </div>,
         _ => @<div>
-            <p>Answer each multiple-choice question. Correct answers in a row build a streak for bonus points.</p>
             <ul>
                 <li>Tap or click an answer, or use keys <kbd>1</kbd>–<kbd>4</kbd></li>
                 <li>The correct option highlights green; a wrong pick goes red</li>
-                <li>Chain correct answers for a scoring multiplier</li>
             </ul>
         </div>,
     };

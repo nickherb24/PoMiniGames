@@ -112,7 +112,7 @@
 
 .login-env-note {
     color: var(--color-text-secondary);
-    font-size: 0.72rem;
+    font-size: var(--text-xs);
     margin: 0.5rem 0 0 0;
 }
 

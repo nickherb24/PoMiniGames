@@ -58,22 +58,30 @@
        broken rather than merely plain. Nothing had to be built to replace it: the
        CSS/SVG board underneath was always the documented fallback and was always
        complete. The canvas was hiding it; removing the canvas makes it visible. *@
-    @if (IsOnline)
-    {
-        @* Tic-Tac-Toe has no visible status bar of its own (the turn is only spoken), so
-           online mode adds one under the shared quick-match card: a remote opponent's turn
-           has to be visible or the disabled board just looks unresponsive. *@
-        <div class="ttt-online">
+    @* One column: the quick-match card (online only), the turn strip, the board. Until
+       2026-10-01 the card and the board were two children of the game area, which is a
+       row: on a phone the card took the left half and pushed three of the board's six
+       columns off the right edge. *@
+    <div class="ttt-layout">
+    <div class="ttt-slot">
+        @if (IsOnline)
+        {
             <QuickMatchPanel Session="@_online" OnCancel="LeaveOnline" OnRetry="RetryOnlineAsync" OnFindAnother="FindOpponentSafeAsync" />
-            @if (_online?.Phase is QuickMatchPhase.Playing or QuickMatchPhase.Over)
-            {
-                <div class="ttt-online__turn" role="status">
-                    <span class="ttt-online__side @(_mySide == TurnMatchSide.First ? "ttt-online__side--x" : "ttt-online__side--o")" aria-hidden="true"></span>
-                    <span>@OnlineStatusText</span>
-                </div>
-            }
-        </div>
-    }
+        }
+        @* The turn strip, in every mode. Outside online play the turn used to be spoken
+           (GameShell's live region) and shown to nobody; Connect Five, the same kind of
+           game, had the strip. Online, before there is an opponent, the card above is
+           the whole page and neither the strip nor an empty board is drawn. *@
+        @if (!OnlineWaiting)
+        {
+            <TurnStrip LeftName="@XName" RightName="@OName" Text="@StatusText"
+                       LeftActive="@IsXTurn" RightActive="@IsOTurn"
+                       LeftColor="var(--ttt-x)" RightColor="var(--ttt-o)"
+                       Class="ttt-online__turn" />
+        }
+    </div>
+    @if (!OnlineWaiting)
+    {
     <div class="ttt-board @(_isAiTurn ? "ttt-board--thinking" : "") @ResultClass" role="grid" aria-label="Tic-Tac-Toe game board">
         @* role="grid" requires role="row" between it and its gridcells (2026-08-08
            audit #2 — 234 axe violations across this board and Connect Five). The
@@ -129,6 +137,8 @@
             <div class="ttt-winline" style="@WinLineStyle"></div>
         }
     </div>
+    }
+    </div>
 
     @* Self-drawing SVG mark. Coral X / cyan O; strokes reveal via stroke-dashoffset
        on placement (see TicTacToePage.razor.css). The ghost variant is pre-drawn
@@ -172,6 +182,60 @@
         GameResult.Draw => "It's a draw.",
         _ when _isAiTurn => "Opponent is thinking.",
         _ => "Your turn.",
+    };
+
+    // ── Visible turn strip (Components/TurnStrip) ────────────────────────────
+    // Derived from the SAME state the spoken Announcement reads, rather than tracking
+    // its own: two turn indicators that can disagree is worse than one that is only
+    // spoken. X is always the left side; in local play Win means X won (HandleTwoPlayerMove).
+    // Your own seat is "You" on the strip: the session's "<name> (you)" is 27 characters
+    // for a guest, and two of those wrapped the strip to three lines on a phone.
+    private string OnlineSeatName(TurnMatchSide side) =>
+        _online is { Seat: not null } && side == _mySide ? "You"
+        : _online?.SeatName(side, "X", "O") ?? (side == TurnMatchSide.First ? "X" : "O");
+
+    private string XName => PlayMode switch
+    {
+        "demo" => "X",
+        "online" => OnlineSeatName(TurnMatchSide.First),
+        // Against the CPU there is one person at the board. Their display name adds
+        // nothing, and a guest's is 21 characters that wrapped the strip to three lines.
+        "ai" => "You",
+        _ => P1Name,
+    };
+    private string OName => PlayMode switch
+    {
+        "ai" => "CPU",
+        "demo" => "O",
+        "online" => OnlineSeatName(TurnMatchSide.Second),
+        _ => _player2Name,
+    };
+
+    // Demo plays itself, so neither side is "waiting on you" and nothing is highlighted.
+    private bool IsXTurn => _gameResult == GameResult.InProgress && PlayMode switch
+    {
+        "demo" => false,
+        "ai" => !_isAiTurn,
+        "online" => _online is { Phase: QuickMatchPhase.Playing, Turn: TurnMatchSide.First },
+        _ => _current2pToken == CellValue.X,
+    };
+    private bool IsOTurn => _gameResult == GameResult.InProgress && PlayMode switch
+    {
+        "demo" => false,
+        "ai" => _isAiTurn,
+        "online" => _online is { Phase: QuickMatchPhase.Playing, Turn: TurnMatchSide.Second },
+        _ => _current2pToken == CellValue.O,
+    };
+
+    private string StatusText => IsOnline ? OnlineStatusText : _gameResult switch
+    {
+        GameResult.Win => PlayMode == "ai" ? "You win!" : $"{XName} wins!",
+        GameResult.Loss => PlayMode == "ai" ? "You lose" : $"{OName} wins!",
+        GameResult.Draw => "Draw",
+        _ when PlayMode == "demo" => "Demo — CPU vs CPU",
+        _ when _isAiTurn => "CPU thinking…",
+        _ when PlayMode == "ai" => "Your turn",
+        _ => $"{(_current2pToken == CellValue.X ? XName : OName)}'s turn",
     };
 
     // Adaptive 1-player rating (same system as ConnectFive/PoBrawl). The CPU is
@@ -233,22 +297,23 @@
     // ("TicTacToe6") into the product name. Surface the classic "Tic-Tac-Toe"
     // and let the in-game intro / how-to-play carry the 6×6 / 4-in-a-row
     // details.
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">❌</span> Tic-Tac-Toe@(IsOnline ? " · Online" : "")</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">❌</span> Tic-Tac-Toe</span>;
 
     // Audit #5: mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players taking turns, the demo is a CPU-vs-CPU exhibition.
+    // Each variant says only what its mode adds: the intro card prints the objective
+    // ("line up N in a row…") directly above, and used to get it again from here.
     private RenderFragment HowToPlayContent => PlayMode switch
     {
         "demo" => @<div>
-            <p>Watch two CPUs play 4-in-a-row on a @TicTacToeBoard.Size×@TicTacToeBoard.Size grid.</p>
+            <p>Watch two CPUs play.</p>
             <ul>
                 <li>No input — the board runs itself for the duration of the demo reel</li>
-                <li>First to line up @TicTacToeBoard.WinLength in a row wins</li>
                 <li>The demo loops on the post-game screen until the reel advances</li>
             </ul>
         </div>,
         "online" => @<div>
-            <p>Play another person over the internet — line up @TicTacToeBoard.WinLength in a row on the @TicTacToeBoard.Size×@TicTacToeBoard.Size board.</p>
+            <p>Play another person over the internet.</p>
             <ul>
                 <li>You're paired with the next player who picks Online — no lobby, no codes</li>
                 <li>❌ goes first; who gets ❌ is drawn at random and swaps on every rematch</li>
@@ -259,12 +324,11 @@
             <p>Two players, one device — ❌ goes first, then ⭕.</p>
             <ul>
                 <li>Tap an empty cell on your turn; the next player taps on theirs</li>
-                <li>First to @TicTacToeBoard.WinLength in a row — horizontal, vertical or diagonal — wins</li>
+                <li>Rows, columns and diagonals all count</li>
                 <li>No CPU and no rating: just take turns</li>
             </ul>
         </div>,
         _ => @<div>
-            <p>Line up @TicTacToeBoard.WinLength in a row on the @TicTacToeBoard.Size×@TicTacToeBoard.Size board.</p>
             <ul>
                 <li>Tap an empty cell to place your ❌ — the CPU answers with ⭕</li>
                 <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
@@ -529,7 +593,7 @@
         var currentToken = CellValue.X;
         _board = _board.Place(row, col, currentToken);
         _lastMove = (row, col);
-        _ = Feedback.DiscDropAsync();
+        _ = Feedback.DiscDropAsync(UiFeedbackService.BoardPan(col, TicTacToeBoard.Size));
 
         var winCheck = _board.CheckWin(currentToken);
         if (winCheck.Won)
@@ -559,7 +623,7 @@
             var (ar, ac) = _ai.GetAdaptiveMove(_board, CellValue.O, _cpuElo);
             _board = _board.Place(ar, ac, CellValue.O);
             _lastMove = (ar, ac);
-            _ = Feedback.DiscDropAsync();
+            _ = Feedback.DiscDropAsync(UiFeedbackService.BoardPan(ac, TicTacToeBoard.Size));
             var aiWin = _board.CheckWin(CellValue.O);
             if (aiWin.Won)
             {
@@ -590,7 +654,7 @@
         var token = _current2pToken;
         _board = _board.Place(row, col, token);
         _lastMove = (row, col);
-        _ = Feedback.DiscDropAsync();
+        _ = Feedback.DiscDropAsync(UiFeedbackService.BoardPan(col, TicTacToeBoard.Size));
 
         var winCheck = _board.CheckWin(token);
         if (winCheck.Won)
@@ -670,6 +734,8 @@
 
     private bool IsOnline => PlayMode == "online";
     private bool IsMyOnlineTurn => _online?.IsMyTurn ?? false;
+    // No opponent yet (or the connection is gone): the quick-match card stands alone.
+    private bool OnlineWaiting => IsOnline && _online?.Phase is not (QuickMatchPhase.Playing or QuickMatchPhase.Over);
     private TurnMatchSide _mySide => _online?.MySide ?? TurnMatchSide.First;
     private string OpponentName => _online?.OpponentName ?? "Opponent";
     private bool OpponentGone => _online?.OpponentGone ?? false;
@@ -702,7 +768,7 @@
         if (_board.Get(move.Row, move.Col) != CellValue.None) return;
         _board = _board.Place(move.Row, move.Col, move.Side == TurnMatchSide.First ? CellValue.X : CellValue.O);
         _lastMove = (move.Row, move.Col);
-        _ = Feedback.DiscDropAsync();
+        _ = Feedback.DiscDropAsync(UiFeedbackService.BoardPan(move.Col, TicTacToeBoard.Size));
     }
 
     // Rejoin or a missed broadcast: rebuild silently, nothing to animate.

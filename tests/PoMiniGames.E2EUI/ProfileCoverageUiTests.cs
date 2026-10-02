@@ -49,7 +49,7 @@ public class ProfileCoverageUiTests
 
         await page.GotoAsync($"{_fixture.ServerAddress}profile?autoGuest=1",
             new PageGotoOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await page.Locator(".prf-game-card").First.WaitForAsync(
+        await page.Locator(".prf-game-name").First.WaitForAsync(
             new LocatorWaitForOptions { Timeout = 30_000 });
 
         // Seed a session count for a game that has no outcome and no score. Play
@@ -66,7 +66,7 @@ public class ProfileCoverageUiTests
             "id => localStorage.setItem(`pomini_plays_pojoker_${id}`, '3')", playerId);
 
         await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
-        await page.Locator(".prf-game-card").First.WaitForAsync(
+        await page.Locator(".prf-game-name").First.WaitForAsync(
             new LocatorWaitForOptions { Timeout = 30_000 });
 
         var names = await page.Locator(".prf-game-name").AllInnerTextsAsync();

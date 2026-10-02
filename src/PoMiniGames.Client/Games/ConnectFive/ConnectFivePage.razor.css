@@ -45,83 +45,13 @@
   font-size: 0.85rem;
 }
 
-/* ── Turn / status bar ────────────────────────────────────────────────────
-   Unlike PoBrawl's HUD, this one sits on the normal themed page rather than
-   over a scheme-invariant canvas, so it reads its colours from the theme
-   tokens and follows light/dark like the rest of the app. The two disc colours
-   are the exception: they identify the players and must match the pieces on
-   the board in both schemes. */
-.cf-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
+/* ── Turn strip slot ──────────────────────────────────────────────────────
+   The strip itself is Components/TurnStrip (shared with Tic-Tac-Toe since
+   2026-10-01); like the quick-match slot above, this only sizes it to the board. */
+.cf-status-slot {
   width: calc(var(--cf-cell) * 9 + 3px * 8 + 20px);
   max-width: 100%;
   margin: 0 auto;
-  padding: 0.45rem 0.85rem;
-  border-radius: var(--radius-lg);
-  background: var(--glass-tint);
-  -webkit-backdrop-filter: var(--glass-2);
-  backdrop-filter: var(--glass-2);
-  border: 1px solid var(--color-border);
-  font-size: 0.85rem;
-}
-
-.cf-status-side {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.4rem;
-  min-width: 0;
-  /* Dimmed until it is that player's move — the active side is the signal, so
-     the inactive one has to give up contrast for it to read as one.
-     0.45 composited --color-text-primary down to #90949e on the light surface,
-     which measured 2.92:1 and failed WCAG AA outright — the waiting player's
-     name is still content, not decoration. 0.62 measures 4.65:1 and the
-     active/inactive distinction still reads clearly. 2026-09-11 UI audit. */
-  opacity: 0.62;
-  transition: opacity var(--dur-fast) var(--ease-standard);
-}
-
-.cf-status-side--right { justify-content: flex-end; }
-
-.cf-status-side--active { opacity: 1; }
-
-.cf-status-name {
-  color: var(--color-text-primary);
-  font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.cf-status-dot {
-  width: 0.85rem;
-  height: 0.85rem;
-  border-radius: 50%;
-  flex: none;
-  box-shadow: inset 0 -2px 3px rgba(0, 0, 0, 0.35);
-}
-
-/* Read from the same tokens the board discs use, so the bar cannot drift out
-   of sync with the colour of the pieces it is labelling. */
-.cf-status-dot--red { background: var(--disc-red-mid); }
-.cf-status-dot--yellow { background: var(--disc-yellow-mid); }
-
-/* The active player's disc gets a halo so turn state survives being read at a
-   glance mid-game, when the eye is on the board and not the bar. */
-.cf-status-side--active .cf-status-dot {
-  box-shadow:
-    inset 0 -2px 3px rgba(0, 0, 0, 0.35),
-    0 0 0 3px var(--color-accent);
-}
-
-.cf-status-text {
-  color: var(--color-text-secondary);
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-align: center;
-  white-space: nowrap;
 }
 
 /* §6 Glassmorphism board frame + depth layers. A translucent, blurred slab with
@@ -321,7 +251,7 @@
   /* Track the mobile board chrome (gaps 2×8 + frame 7×2), not the desktop
      figure — the status bar used to come out 12px wider than the board it
      labels. */
-  .cf-status,
+  .cf-status-slot,
   .cf-online-slot {
     width: calc(var(--cf-cell) * 9 + 2px * 8 + 14px);
   }
@@ -385,4 +315,15 @@
    handing the keyframe back never restarts a settled disc. */
 .cf-board--physics .cf-cell .piece {
   animation: none;
+}
+
+/* A phone on its side: about 390px of height, 326px of it under the top bar. The
+   310px reserve above assumes a tall window and left the 28px floor in charge,
+   which made the board 87px taller than the room it had. Here the reserve is what
+   is really around the board (top bar, the turn strip, the frame, the gaps), and
+   the floor is the 24px minimum target. 2026-10-01. */
+@media (max-height: 500px) {
+  .cf-layout {
+    --cf-cell: clamp(24px, min(calc((100dvh - 176px) / 9), calc((100dvw - 100px) / 9)), 84px);
+  }
 }

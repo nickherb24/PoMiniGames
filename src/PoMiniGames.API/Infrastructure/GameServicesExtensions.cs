@@ -180,6 +180,17 @@ internal static class GameServicesExtensions
         // Writes to the MatchHistory table (PartitionKey = owner identity, RowKey = reverse-time).
         services.AddSingleton<PoMiniGames.Features.MatchHistory.MatchHistoryRepository>();
 
+        // Server-timed race results (PoRacer, PoCabinet multiplayer), written through to Table
+        // Storage so the proof behind a parked score survives an F1 recycle.
+        services.AddSingleton<VerifiedResultStore>();
+
+        // Game invites: subscriptions, pending invites and the self-provisioned VAPID key in one
+        // table, plus the sender. Redirects are off because the sender POSTs to an address a
+        // subscriber supplied; it is host-checked, and a redirect would walk past that check.
+        services.AddSingleton<PoMiniGames.Features.Invites.InviteStore>();
+        services.AddHttpClient<PoMiniGames.Features.Invites.WebPushSender>(client => client.Timeout = TimeSpan.FromSeconds(10))
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
         // Fail-fast startup validator: throws in Production if any consolidated game's
         // required Azure OpenAI secrets are missing. See PoFunQuiz StartupSecretValidator
         // (2026-06-13 mock-data fix) for the original pattern.

@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using Microsoft.AspNetCore.SignalR;
+using PoMiniGames.Infrastructure;
 using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Features.PoCabinet;
@@ -40,6 +41,8 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     private readonly ILogger<PoCabinetRaceRegistry> _logger;
     private readonly TimeProvider _time;
     private readonly ITimer _timer;
+    private readonly VerifiedResultStore? _store;
+    private const string StoreGame = "pocabinet";
     private int _ticking;
     private bool _disposed;
 
@@ -48,12 +51,14 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
         IHubContext<PoCabinetLobbyHub> lobbyHub,
         PoCabinetLobbyService lobbies,
         ILogger<PoCabinetRaceRegistry> logger,
-        TimeProvider? time = null)
+        TimeProvider? time = null,
+        VerifiedResultStore? store = null)
     {
         _raceHub = raceHub;
         _lobbyHub = lobbyHub;
         _lobbies = lobbies;
         _logger = logger;
+        _store = store;
         _time = time ?? TimeProvider.System;
         var period = TimeSpan.FromSeconds(1.0 / TickHz);
         _timer = _time.CreateTimer(_ => TickAll(), null, period, period);
@@ -81,11 +86,22 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
     /// <summary>
     /// The best lap this host's own sim timed for <paramref name="playerId"/> in their last
     /// finished race — the proof behind a multiplayer leaderboard submit. One use: taking it
-    /// removes it. In memory only, so a host recycle between the finish and the submit loses
-    /// it (the submit is then refused rather than trusted).
+    /// removes it, from memory and from <see cref="VerifiedResultStore"/>. The store is what
+    /// carries it across a host recycle between the finish and the submit (2026-10-01); with
+    /// storage down the lap is in memory only, as it always was, and a recycle then loses it.
     /// </summary>
-    public VerifiedLap? TakeVerifiedLap(string playerId) =>
-        _verifiedLaps.TryRemove(playerId, out var lap) && _time.GetUtcNow() - lap.At < VerifiedLapLifetime ? lap : null;
+    public async Task<VerifiedLap?> TakeVerifiedLapAsync(string playerId, CancellationToken ct = default)
+    {
+        if (_verifiedLaps.TryRemove(playerId, out var lap))
+        {
+            if (_store is not null) await _store.RemoveAsync(StoreGame, playerId, ct);
+        }
+        else if (_store is not null)
+        {
+            lap = await _store.FindAsync<VerifiedLap>(StoreGame, playerId, VerifiedLapLifetime, take: true, ct);
+        }
+        return lap is not null && _time.GetUtcNow() - lap.At < VerifiedLapLifetime ? lap : null;
+    }
 
     /// <summary>
     /// Bind a connection to a race and return the join snapshot: current state plus the static
@@ -181,7 +197,12 @@ public sealed class PoCabinetRaceRegistry : IAsyncDisposable
                 foreach (var car in session.Sim.SnapshotCars())
                 {
                     if (car.IsPlayer && car.BestLapSeconds > 0)
-                        _verifiedLaps[car.OwnerId] = new VerifiedLap(session.Sim.TrackId, car.BestLapSeconds, now);
+                    {
+                        var timed = new VerifiedLap(session.Sim.TrackId, car.BestLapSeconds, now);
+                        _verifiedLaps[car.OwnerId] = timed;
+                        // Not awaited: this is the 30 Hz tick, and the store logs its own failures.
+                        _ = _store?.SaveAsync(StoreGame, car.OwnerId, timed);
+                    }
                 }
                 foreach (var (id, lap) in _verifiedLaps)
                 {

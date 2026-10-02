@@ -4,6 +4,7 @@ using PoMiniGames.Features.ConnectFive;  // ConnectFiveHub (the slice's only ser
 using PoMiniGames.Features.TicTacToe;    // TicTacToeHub (same)
 using PoMiniGames.Features.Health;
 using PoMiniGames.Features.Integrity;
+using PoMiniGames.Features.Invites;       // push subscriptions + game invites (2026-10-01)
 using PoMiniGames.Features.PoSports;
 using PoMiniGames.Features.PoBrawl;        // moved out of Features.HighScores 2026-08-11,
                                            // same correction PoMarbleRace already had
@@ -56,6 +57,9 @@ internal static class EndpointRouteExtensions
         // aggregate per-game counters plus the caller's own allowance.
         app.MapAiUsageEndpoints();
         app.MapDiagEndpoints();
+        // Browser-side error sink (js/errorReporter.js). Deliberately NOT under /api: it is fed
+        // by sendBeacon, which cannot carry the antiforgery header that scope requires.
+        app.MapClientErrorEndpoints();
         // MapPoGalleryEndpoints removed 2026-09-11: /api/diag/gallery and
         // /api/gallery/upload existed only to feed Pages/PoGallery.razor, a dev-only
         // demo surface for the external img2threejs pipeline. The page shipped in every
@@ -139,6 +143,8 @@ internal static class EndpointRouteExtensions
         // PoJevArena: Jev status/allowance, match registration and the decision proxy. Inside the
         // authenticated group because every route spends or reveals the caller's Jev allowance.
         gameApi.MapPoJevArenaEndpoints();
+        // Game invites: push subscriptions, invite-a-past-opponent and the lobby QR code.
+        gameApi.MapInviteEndpoints();
 
         // ── SignalR hubs (auth required; not part of MapGroup) ────────────
         app.MapHub<CoupleQuizHub>("/couplequiz/hubs/game").RequireAuthorization();

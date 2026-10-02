@@ -35,22 +35,20 @@
        CSS gradient on browsers without WebGL2 (Safari TP, etc.). *@
     <canvas @ref="_ambientCanvas" class="home-ambient" aria-hidden="true"></canvas>
 
-    <h1 class="home-title">
-        <span class="home-title-icon">
-            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect x="3" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
-                <rect x="23" y="5" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
-                <rect x="3" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.5"/>
-                <rect x="23" y="23" width="14" height="14" rx="2" fill="currentColor" opacity="0.8"/>
-            </svg>
-        </span>
-        PoMiniGames
-    </h1>
-    <p class="home-subtitle">Pick a game, then pick how you want to play</p>
+    @* The page's heading is for the outline and for FocusOnNavigate only (visually
+       hidden): the brand is already in the top bar, one row above, and the strapline
+       under it said what fourteen game cards say by existing. 2026-10-01. *@
+    <h1 class="home-title">PoMiniGames</h1>
 
-    @* One action row. Previously the Leaderboard link was rendered three times
-       (once per non-demo section) pointing at the same page, and My Stats sat in
-       a separate block below the grid. *@
+    <div class="home-grid">
+    @* One action. Leaderboards, My Stats and Settings moved into the top bar's account
+       menu (2026-10-01), which is on every route; the demo reel is the only control
+       that belongs to this page.
+
+       It is a cell of the grid, not a row above it: fourteen games leave one empty
+       cell in a three-column grid, and this fills it (Index.razor.css moves it to the
+       end there and stretches it across the top on narrower grids). First in the DOM
+       either way, so it stays the first tab stop. *@
     <div class="home-actions">
         @* aria-pressed below is a literal string, not a bare bool: Blazor renders
            a bool-valued attribute as an HTML boolean attribute, which emits
@@ -77,26 +75,8 @@
             </span>
             @(Kiosk.IsActive ? "Stop demos" : "Watch all demos")
         </button>
-
-        <a class="home-action" href="/leaderboards">
-            <span class="home-action-icon" aria-hidden="true">🏆</span>Leaderboards
-        </a>
-
-        <button type="button" class="home-action" @onclick="GoToStats">
-            <span class="home-action-icon" aria-hidden="true">
-                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/><path d="M17 11l2 2 4-4"/>
-                </svg>
-            </span>My Stats
-        </button>
-
-        @* The ⚙️ Settings action (and the /settings page behind it) was removed on
-           2026-08-11 by request. Theme, volume, haptics and motion now run on their
-           defaults; the FPS badge is always on in the top bar. *@
     </div>
 
-    <div class="home-grid">
         @foreach (var game in GameCatalog.AllSorted)
         {
             <article class="home-card" aria-labelledby="@($"home-card-{game.Key.Value}")">
@@ -113,45 +93,15 @@
                     <span class="home-card-title" id="@($"home-card-{game.Key.Value}")">@game.Title</span>
                 </div>
 
+                @* One chip per mode the catalogue declares, no exceptions. Until
+                   2026-10-01 the chip for a game's primary mode was hidden unless the
+                   game opted in (ChipPrimary), a leftover from when the card title
+                   linked there itself. Joker and Fun Quiz had not opted in, so their
+                   1-player mode could not be reached from this page. *@
                 <div class="home-card-modes">
-                    @* 2026-08-10 audit #3: a card whose only mode is the primary
-                       link (Couple Quiz) used to render the same destination twice
-                       — once as the card head, once as a chip — which read as a
-                       broken second link rather than a deliberate empty chip
-                       row. Suppress the chip when its URL matches the head's
-                       URL; render a small "How to play" pill on cards that
-                       would otherwise have zero chips so the row is never
-                       visually orphaned. *@
-                    @* 2026-08-10: CatalogGame.ChipPrimary opts a card out of that
-                       suppression. Marble Race's only non-primary mode is Demo, so
-                       hiding the 1P chip left the card advertising "Demo" alone and
-                       players took it for a watch-only game. *@
-                    @{
-                        var visibleChips = game.Modes
-                            .Where(m => game.ChipPrimary
-                                        || !string.Equals(m.Url, game.Primary.Url, StringComparison.OrdinalIgnoreCase))
-                            .ToList();
-                    }
-                    @foreach (var m in visibleChips)
+                    @foreach (var m in game.Modes)
                     {
                         @ModeChip(game, m)
-                    }
-                    @if (visibleChips.Count == 0)
-                    {
-                        @* 2026-08-10: Couple Quiz is the only game where every
-                           mode matches the card head, so visibleChips is empty.
-                           Render the primary action as a real chip rather than a
-                           "How to play" info pill — the card head already says
-                           "Couple Quiz", a generic "How to play" pill read as a
-                           missing link. The chip carries the mode label so a
-                           player landing on the card knows the game is online
-                           multiplayer. Browser audit #2 (2026-08-10): prefer the
-                           chip's ChipUrl so the chip destination is distinct
-                           from the head's URL even on a single-mode card. *@
-                        <a class="home-mode-chip home-mode-chip--@game.Primary.Mode.ToString().ToLowerInvariant()"
-                           href="@(game.Primary.ChipUrl ?? game.Primary.Url)"
-                           title="@($"{game.Title} — {GameModes.ToDescription(game.Primary.Mode)}")"
-                           aria-label="@($"{game.Title}, {GameModes.ToDescription(game.Primary.Mode)}")">@GameModes.ToLabel(game.Primary.Mode)</a>
                     }
                 </div>
             </article>
@@ -259,6 +209,10 @@
         if (firstRender && !_ambientStarted)
         {
             _ambientStarted = true;
+            // The --audio-* bands the card icons and the top bar's edge move to (fx.css).
+            // Off by default in visualRuntime.js; on here and off in DisposeAsync so only
+            // the catalog and the lobbies pay for the per-frame write.
+            try { await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", true); } catch { /* module not loaded */ }
             try
             {
                 var canRender = await JS.InvokeAsync<bool>("probeWebGL2");
@@ -282,15 +236,6 @@
     private void OnKioskStateChanged() => InvokeAsync(StateHasChanged);
 
     private void OnOnlineStateChanged() => InvokeAsync(StateHasChanged);
-
-    // §10 fire a Web Audio tap before navigating to the stats page. The audio
-    // unlock happens on this same user gesture — the first tap unlocks the
-    // AudioContext (mobile autoplay rules) and plays; best-effort, never blocks.
-    private async Task GoToStats()
-    {
-        await Feedback.TapAsync();
-        NavigationManager.NavigateTo("/profile");
-    }
 
     // "Watch all demos": start (or stop) the auto-rotating kiosk over every demo game.
     private async Task ToggleWatchAll()
@@ -335,6 +280,7 @@
     {
         Kiosk.Changed -= OnKioskStateChanged;
         OnlineStatus.StateChanged -= OnOnlineStateChanged;
+        try { await JS.InvokeVoidAsync("PoVisualRuntime.enableAudioReactive", false); } catch { /* page unloading */ }
         if (_ambientModule is not null)
         {
             try

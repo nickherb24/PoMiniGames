@@ -424,6 +424,9 @@ export class Game {
         // GFX #5: a genuinely heavy hit lights the track around it for a beat. Gated harder than
         // the clink, or traffic would strobe.
         if (v > 14) this.scene.pulseLight(pos, 0xffd9a0, Math.min(1.5, 0.5 + v * 0.04));
+        // The same heavy hit holds the frame for a beat. Local races only: online, the host's
+        // clock is the guest's race, and one player's hit should not stall the other's view.
+        if (v > 14 && !this.online) window.PoImpact?.hitstop?.(45);
       },
       // Marble-only specular environment (realism pass #3). Bound as `envMap` on the marble
       // materials alone — deliberately NOT scene.environment, so the track stays matte.
@@ -755,7 +758,9 @@ export class Game {
       // times stay measured in simulation seconds and remain comparable across races.
       this.slowmo = !!leaderPre && !leaderPre.finished &&
         (this.track.finishS - leaderPre.s) < SLOWMO_DIST;
-      const want = this.slowmo ? dt * SLOWMO_SCALE : dt;
+      // Hit-stop rides the same scale: impactBus holds time at 0.12 for a few dozen ms after a
+      // heavy hit or the winner's finish (1 otherwise, and always 1 under reduced motion).
+      const want = (this.slowmo ? dt * SLOWMO_SCALE : dt) * (window.PoImpact?.getTimeScale?.() ?? 1);
 
       this.track.driveMotors();
       this._applySteer(want);   // player's held steering, integrated by the step below

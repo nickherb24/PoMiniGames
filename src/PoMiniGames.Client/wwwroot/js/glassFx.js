@@ -78,15 +78,26 @@
                 g.restore();
             }
 
-            panel.style.setProperty('--glass-capture', 'url("' + off.toDataURL('image/webp', 0.6) + '")');
-            if (!panel.hasAttribute('data-glass-live')) {
-                panel.setAttribute('data-glass-live', '');
-                // Subtle crystalline resonance stinger on first live attachment
-                if (window.PoUiAudio && window.PoUiAudio.glassResonate) {
-                    window.PoUiAudio.glassResonate();
-                }
+            const url = 'url("' + off.toDataURL('image/webp', 0.6) + '")';
+            show(panel, url);
+            return url;
+        } catch { return null; /* tainted canvas or gone — the CSS fallback still applies */ }
+    }
+
+    function show(panel, url) {
+        panel.style.setProperty('--glass-capture', url);
+        if (!panel.hasAttribute('data-glass-live')) {
+            panel.setAttribute('data-glass-live', '');
+            // Subtle crystalline resonance stinger on first live attachment
+            if (window.PoUiAudio && window.PoUiAudio.glassResonate) {
+                window.PoUiAudio.glassResonate();
             }
-        } catch { /* tainted canvas or gone — the CSS fallback still applies */ }
+        }
+    }
+
+    function rippling(panel) {
+        for (const r of _ripples) if (r.panel === panel) return true;
+        return false;
     }
 
     function attachPanel(panel, opts) {
@@ -112,17 +123,28 @@
 
         function sweep() {
             if (!allowed()) return;
+            // One capture per sweep, shared by every panel: the blur and the WebP encode are
+            // the whole cost, and they used to be paid once per panel. A panel with a tap
+            // ripple in flight still gets its own, since the ripple is drawn into the capture.
+            let shared = null;
             document.querySelectorAll(sel).forEach(function (p) {
                 if (!p.isConnected) { tracked.delete(p); return; }
                 tracked.add(p);
-                captureOnce(sourceCanvas, p);
+                if (shared && !rippling(p)) show(p, shared);
+                else shared = captureOnce(sourceCanvas, p) || shared;
             });
         }
 
-        sweep();
+        // Captured inside an animation frame, not straight from the timer. A WebGL canvas
+        // without preserveDrawingBuffer (every three.js game here but PoCabinet) is only
+        // readable in the frame it was drawn in; from a timer drawImage copied an empty
+        // buffer. A frame requested here runs after the game's own, which was requested
+        // during its previous frame, so the buffer is still this frame's picture.
+        const sweepSoon = function () { requestAnimationFrame(sweep); };
+        sweepSoon();
         const id = setInterval(function () {
             if (sourceCanvas && !sourceCanvas.isConnected) { clearInterval(id); return; }
-            sweep();
+            sweepSoon();
         }, o_intervalMs);
         return function () {
             clearInterval(id);

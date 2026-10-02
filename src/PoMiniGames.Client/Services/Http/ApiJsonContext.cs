@@ -78,6 +78,11 @@ namespace PoMiniGamesClient.Services.Http;
 [JsonSerializable(typeof(MatchRecordRequest))]
 [JsonSerializable(typeof(MatchRecordDto))]
 [JsonSerializable(typeof(MatchRecordDto[]))]
+// Game invites (InviteService): push key, this device's subscription, invite a past opponent.
+[JsonSerializable(typeof(PushKeyDto))]
+[JsonSerializable(typeof(PushSubscriptionDto))]
+[JsonSerializable(typeof(InviteRequestDto))]
+[JsonSerializable(typeof(InviteResultDto))]
 // PoFunQuiz
 [JsonSerializable(typeof(QuizQuestion))]
 [JsonSerializable(typeof(List<QuizQuestion>))]

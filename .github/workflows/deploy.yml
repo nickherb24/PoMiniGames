@@ -124,6 +124,12 @@ jobs:
       - name: Validate infrastructure
         run: az bicep build --file infra/main.bicep --stdout > /dev/null
 
+      # No build needed: a text check for comments that swallowed rules and for
+      # unbalanced braces. See the header of the script for the damage it is for.
+      - name: Check stylesheets
+        shell: pwsh
+        run: ./scripts/css-lint.ps1
+
       - name: Enforce all four test ceilings
         shell: pwsh
         run: ./scripts/test-ceilings.ps1 -Configuration ${{ github.event_name == 'pull_request' && 'Debug' || 'Release' }} -NoBuild

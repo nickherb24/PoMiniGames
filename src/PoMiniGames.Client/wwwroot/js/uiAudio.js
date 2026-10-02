@@ -52,19 +52,34 @@ async function out() {
 }
 
 /**
+ * Where a voice group lands in the stereo field. A board game passes the column a piece was
+ * played in; 0 (or no StereoPannerNode) is the bus itself, so nothing else pays for a node.
+ */
+function placed(ctx, dest, pan, holdMs) {
+    if (!pan || !ctx.createStereoPanner) return dest;
+    const p = ctx.createStereoPanner();
+    p.pan.value = Math.max(-1, Math.min(1, pan));
+    p.connect(dest);
+    setTimeout(() => { try { p.disconnect(); } catch { /* context closed */ } }, holdMs + 250);
+    return p;
+}
+
+/**
  * Play a single tone.
  * @param {number} freq  - Frequency in Hz (e.g. 880 = A5)
  * @param {number} ms    - Duration in milliseconds
  * @param {number} gain  - Peak gain (0..1)
  * @param {string} type  - Oscillator type (triangle/sine/square/sawtooth)
+ * @param {number} [pan] - -1 (left) .. 1 (right)
  */
-export async function playTone(freq, ms, gain, type) {
+export async function playTone(freq, ms, gain, type, pan) {
     try {
         // Global master mute (settings gear in the top bar; see SettingsService).
         if (AudioBus.isMuted()) return;
         const ctx = await getCtx();
-        const dest = await out();
-        if (!ctx || !dest) return;
+        const bus = await out();
+        if (!ctx || !bus) return;
+        const dest = placed(ctx, bus, pan, ms);
         const t0 = ctx.currentTime;
         const dur = ms / 1000;
         const osc = ctx.createOscillator();
@@ -162,14 +177,16 @@ export async function playArpeggio(freqs, durationsMs, gain) {
  * @param {number} [opts.slideMs=400]  duration of the slide.
  * @param {number} [opts.thudMs=110]   duration of the impact.
  * @param {number} [opts.masterGain=0.22] peak amplitude cap (0..1).
+ * @param {number} [opts.pan=0]        -1..1, the column the chip fell in.
  */
 export async function playChipDrop(opts) {
     try {
         if (AudioBus.isMuted()) return;
         const ctx = await getCtx();
-        const dest = await out();
-        if (!ctx || !dest) return;
+        const bus = await out();
+        if (!ctx || !bus) return;
         const o = opts || {};
+        const dest = placed(ctx, bus, o.pan, (o.slideMs ?? 400) + (o.thudMs ?? 110));
         const row = Math.max(0, Math.min(8, o.rowIndex ?? 8));
         const slideMs = o.slideMs ?? 400;
         const thudMs = o.thudMs ?? 110;

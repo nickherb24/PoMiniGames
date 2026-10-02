@@ -1,0 +1,312 @@
+@namespace PoMiniGamesClient.Components
+@inject SettingsService Settings
+@inject InviteService Invites
+@inject AuthStateService AuthState
+@inject UiFeedbackService Feedback
+@inject IJSRuntime JS
+@implements IDisposable
+
+@* ─────────────────────────────────────────────────────────────────────────
+   The one settings sheet: theme, sound, haptics, motion, colour-blind palettes,
+   game invites and the account's data (export / erase), for every game at once.
+
+   History: this was SettingsPanel on a /settings page, removed on 2026-08-11 by
+   request and brought back on 2026-10-01 by request, as a <dialog> rather than
+   a page. The ⚙️ gear stays out of the top bar (the 2026-07-13 call); the sheet
+   is opened through SettingsService.RequestOpen() from the footer and the hub's
+   action row. The FPS-badge and game-intro rows did not come back: both of
+   those are unconditional now.
+
+   What a game does with these: sound is the shared audio bus, so mute and
+   volume reach every engine. Motion and colour ride <html data-motion> and
+   <html data-colorsafe>, which the engines read on top of their own settings —
+   either source turns the calmer/safer option on. Key bindings and gamepad
+   stay in each game's own panel; they are different keys per game.
+
+   Rendered once, in MainLayout. Each fieldset is announced by its legend.
+   ───────────────────────────────────────────────────────────────────────── *@
+
+<dialog @ref="_dialog" class="prefs-sheet" closedby="any" aria-labelledby="prefs-sheet-title">
+    <header class="prefs-sheet-head">
+        <h2 id="prefs-sheet-title" class="prefs-sheet-title">Settings</h2>
+        <button type="button" class="prefs-sheet-close" aria-label="Close settings" @onclick="CloseAsync">×</button>
+    </header>
+
+    <div class="prefs-grid">
+        <fieldset class="prefs-group">
+            <legend class="prefs-group-legend">Display</legend>
+            <div class="prefs-row">
+                <div class="prefs-label">
+                    <span class="prefs-name">Theme</span>
+                    <span class="prefs-hint">Auto follows your device setting.</span>
+                </div>
+                <div class="app-seg" role="radiogroup" aria-label="Theme">
+                    @foreach (var mode in ThemeModes)
+                    {
+                        <button type="button"
+                                role="radio"
+                                class="app-seg__btn"
+                                aria-checked="@Aria(Settings.Theme == mode)"
+                                @onclick="() => SetTheme(mode)">
+                            @ThemeLabel(mode)
+                        </button>
+                    }
+                </div>
+            </div>
+        </fieldset>
+
+        <fieldset class="prefs-group">
+            <legend class="prefs-group-legend">Sound</legend>
+            <div class="prefs-row">
+                <div class="prefs-label">
+                    <span class="prefs-name">Sound</span>
+                    <span class="prefs-hint">Music, effects and menu sounds in every game.</span>
+                </div>
+                <button type="button"
+                        class="prefs-toggle @(Settings.Muted ? null : "prefs-toggle--on")"
+                        role="switch"
+                        aria-checked="@Aria(!Settings.Muted)"
+                        aria-label="Sound"
+                        @onclick="ToggleMuted">
+                    <span class="prefs-toggle-knob"></span>
+                </button>
+            </div>
+
+            <div class="prefs-row @(Settings.Muted ? "prefs-row--disabled" : null)">
+                <div class="prefs-label">
+                    <span class="prefs-name">Volume</span>
+                    <span class="prefs-hint">@Settings.Volume%</span>
+                </div>
+                @* Bound on oninput so the level tracks the drag. audioBus ramps the
+                   gain node, so a per-pixel update neither clicks nor thrashes. *@
+                <input type="range" class="prefs-range"
+                       min="0" max="100" step="5"
+                       aria-label="Volume"
+                       disabled="@Settings.Muted"
+                       value="@Settings.Volume"
+                       @oninput="OnVolumeInput" />
+            </div>
+
+            <div class="prefs-row">
+                <div class="prefs-label">
+                    <span class="prefs-name">Haptics</span>
+                    <span class="prefs-hint">Vibration on phones and controllers that have it.</span>
+                </div>
+                <button type="button"
+                        class="prefs-toggle @(Settings.Haptics ? "prefs-toggle--on" : null)"
+                        role="switch"
+                        aria-checked="@Aria(Settings.Haptics)"
+                        aria-label="Haptics"
+                        @onclick="ToggleHaptics">
+                    <span class="prefs-toggle-knob"></span>
+                </button>
+            </div>
+        </fieldset>
+
+        <fieldset class="prefs-group">
+            <legend class="prefs-group-legend">Accessibility</legend>
+            <div class="prefs-row">
+                <div class="prefs-label">
+                    <span class="prefs-name">Reduce motion</span>
+                    <span class="prefs-hint">
+                        @if (_osReducedMotion)
+                        {
+                            @:Your device already asks for reduced motion.
+                        }
+                        else
+                        {
+                            @:Less shake, flash and animation, in menus and in games.
+                        }
+                    </span>
+                </div>
+                <button type="button"
+                        class="prefs-toggle @(Settings.ReducedMotion ? "prefs-toggle--on" : null)"
+                        role="switch"
+                        aria-checked="@Aria(Settings.ReducedMotion)"
+                        aria-label="Reduce motion"
+                        @onclick="ToggleReducedMotion">
+                    <span class="prefs-toggle-knob"></span>
+                </button>
+            </div>
+
+            <div class="prefs-row">
+                <div class="prefs-label">
+                    <span class="prefs-name">Colour-blind safe colours</span>
+                    <span class="prefs-hint">Used by PoEcosystem's charts and Cabinet's minimap.</span>
+                </div>
+                <button type="button"
+                        class="prefs-toggle @(Settings.ColorSafe ? "prefs-toggle--on" : null)"
+                        role="switch"
+                        aria-checked="@Aria(Settings.ColorSafe)"
+                        aria-label="Colour-blind safe colours"
+                        @onclick="ToggleColorSafe">
+                    <span class="prefs-toggle-knob"></span>
+                </button>
+            </div>
+        </fieldset>
+
+        <fieldset class="prefs-group">
+            <legend class="prefs-group-legend">Game invites</legend>
+            <div class="prefs-row @(InvitesAvailable ? null : "prefs-row--disabled")">
+                <div class="prefs-label">
+                    <span class="prefs-name">Invites on this device</span>
+                    <span class="prefs-hint">@InviteHint</span>
+                </div>
+                <button type="button"
+                        class="prefs-toggle @(_invites == InviteState.On ? "prefs-toggle--on" : null)"
+                        role="switch"
+                        aria-checked="@Aria(_invites == InviteState.On)"
+                        aria-label="Invites on this device"
+                        disabled="@(!InvitesAvailable || _invitesBusy)"
+                        @onclick="ToggleInvites">
+                    <span class="prefs-toggle-knob"></span>
+                </button>
+            </div>
+        </fieldset>
+
+        <fieldset class="prefs-group">
+            <legend class="prefs-group-legend">Your data</legend>
+            <AccountDataCard />
+        </fieldset>
+    </div>
+</dialog>
+
+@code {
+    /// <summary>
+    /// Renders a bool as the literal string ARIA requires. Blazor treats a bool-valued
+    /// attribute as an HTML boolean attribute (present/absent), which is not a valid ARIA
+    /// state — never inline a bare bool into an aria-* attribute.
+    /// </summary>
+    private static string Aria(bool value) => value ? "true" : "false";
+
+    private static readonly ThemeMode[] ThemeModes = [ThemeMode.Auto, ThemeMode.Light, ThemeMode.Dark];
+
+    private ElementReference _dialog;
+    private bool _osReducedMotion;
+    private InviteState _invites = InviteState.Unsupported;
+    private bool _invitesBusy;
+    private bool _inviteFailed;
+
+    private bool InvitesAvailable =>
+        AuthState.IsAuthenticated && _invites is InviteState.On or InviteState.Off;
+
+    private string InviteHint => _invites switch
+    {
+        _ when !AuthState.IsAuthenticated => "Sign in to be invited by players you have met.",
+        InviteState.Unsupported => "This browser cannot show invites. On an iPhone, add the app to your Home Screen first.",
+        InviteState.Denied => "Notifications are blocked for this site in your browser settings.",
+        _ when _inviteFailed => "Could not turn invites on. Try again in a moment.",
+        InviteState.On => "Players you have met online can invite you to a lobby.",
+        _ => "Get a notification when a player you have met invites you to a lobby.",
+    };
+
+    private static string ThemeLabel(ThemeMode mode) => mode switch
+    {
+        ThemeMode.Light => "Light",
+        ThemeMode.Dark => "Dark",
+        _ => "Auto",
+    };
+
+    protected override void OnInitialized()
+    {
+        Settings.Changed += OnSettingsChanged;
+        Settings.OpenRequested += OnOpenRequested;
+    }
+
+    private void OnSettingsChanged() => InvokeAsync(StateHasChanged);
+
+    private void OnOpenRequested() => InvokeAsync(OpenAsync);
+
+    private async Task OpenAsync()
+    {
+        // Asked on open rather than on mount: both answers can change while the app is running
+        // (a permission revoked in the browser, the OS switching motion), and neither is worth
+        // an interop call on every page that never opens the sheet.
+        _osReducedMotion = await Settings.OsPrefersReducedMotionAsync();
+        _invites = await Invites.StateAsync();
+        _inviteFailed = false;
+        StateHasChanged();
+        await _dialog.ShowModalAsync(JS);
+        // After the sheet is up, so a slow API never delays it. See InviteService.PrepareAsync.
+        if (InvitesAvailable) await Invites.PrepareAsync();
+    }
+
+    private async Task CloseAsync() => await _dialog.CloseAsync(JS);
+
+    public void Dispose()
+    {
+        Settings.Changed -= OnSettingsChanged;
+        Settings.OpenRequested -= OnOpenRequested;
+    }
+
+    private async Task SetTheme(ThemeMode mode)
+    {
+        if (Settings.Theme == mode) return;
+        await Settings.SetThemeAsync(mode);
+        await Feedback.ClickAsync();
+    }
+
+    // Audio feedback fires only when turning sound ON — playing a confirmation
+    // tone as the user mutes would be the one cue they just asked not to hear.
+    private async Task ToggleMuted()
+    {
+        var nowMuted = !Settings.Muted;
+        await Settings.SetMutedAsync(nowMuted);
+        if (!nowMuted) await Feedback.ClickAsync();
+    }
+
+    private async Task OnVolumeInput(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var pct))
+        {
+            await Settings.SetVolumeAsync(pct);
+        }
+    }
+
+    // Fire the haptic *after* enabling so the user feels the setting they just
+    // turned on; skip it when disabling, for the same reason as mute above.
+    private async Task ToggleHaptics()
+    {
+        var enabled = !Settings.Haptics;
+        Settings.SetHaptics(enabled);
+        if (enabled) await Feedback.TapAsync();
+    }
+
+    private async Task ToggleReducedMotion()
+    {
+        await Settings.SetReducedMotionAsync(!Settings.ReducedMotion);
+        await Feedback.ClickAsync();
+    }
+
+    private async Task ToggleColorSafe()
+    {
+        await Settings.SetColorSafeAsync(!Settings.ColorSafe);
+        await Feedback.ClickAsync();
+    }
+
+    private async Task ToggleInvites()
+    {
+        if (_invitesBusy) return;
+        _invitesBusy = true;
+        _inviteFailed = false;
+        try
+        {
+            if (_invites == InviteState.On)
+            {
+                await Invites.DisableAsync();
+            }
+            else
+            {
+                _inviteFailed = !await Invites.EnableAsync();
+            }
+            _invites = await Invites.StateAsync();
+            // Declining the prompt lands on Denied or Off with nothing wrong; only an Off
+            // after an attempt that was not declined is worth calling a failure.
+            if (_invites != InviteState.Off) _inviteFailed = false;
+        }
+        finally
+        {
+            _invitesBusy = false;
+        }
+    }
+}

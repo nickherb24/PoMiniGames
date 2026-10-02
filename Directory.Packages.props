@@ -73,6 +73,7 @@
     <!-- PoVoxelStrike asset pipeline: GLB parsing for the startup voxelizer. API-side
          only — must never be referenced from the Client, whose publish is trim-audited. -->
     <PackageVersion Include="SharpGLTF.Core" Version="1.0.6" />
+    <PackageVersion Include="QRCoder" Version="1.8.0" />
     <!-- Testing -->
     <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageVersion Include="xunit" Version="2.9.3" />

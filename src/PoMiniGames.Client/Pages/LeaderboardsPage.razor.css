@@ -26,7 +26,7 @@
 }
 .lb-hero:hover { transform: translateY(-2px); }
 .lb-hero-eyebrow {
-    font-size: 0.7rem;
+    font-size: var(--text-xs);
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.08em;
@@ -35,50 +35,102 @@
 .lb-hero-title { font-size: 1.25rem; font-weight: 800; }
 .lb-hero-rank { font-size: 0.95rem; color: var(--color-text-secondary); }
 
-.lb-group {
-    margin-top: var(--space-4);
+/* ── Picker + board ──────────────────────────────────────────────────────────
+   Wide: a side list of every board beside the one that is selected. Narrow: the
+   same list as a native <select> above it. Both are in the DOM and CSS picks,
+   so nothing shifts after load. */
+.lb-layout {
+    display: grid;
+    grid-template-columns: 15rem minmax(0, 1fr);
+    gap: var(--space-4);
+    align-items: start;
 }
-/* Short viewports: two groups × 16px of top margin plus the chip row's own
-   spacing was the last 17px of overflow on a 1280×720 laptop. 2026-09-11. */
+
+.lb-select { display: none; }
+
+.lb-pick {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.lb-pick .gps-phase-h {
+    margin: var(--space-2) 0 var(--space-1);
+}
+
+.lb-pick .gps-phase-h:first-child { margin-top: 0; }
+
+.lb-pick-item {
+    appearance: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+    padding: 0.4rem 0.65rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font: inherit;
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: pointer;
+}
+
+.lb-pick-item:hover {
+    background: var(--tint-soft);
+    color: var(--color-text-primary);
+}
+
+.lb-pick-item--on {
+    border-color: var(--color-accent, #6366f1);
+    background: var(--accent-soft);
+    color: var(--color-text-primary);
+    font-weight: 600;
+}
+
+.lb-pick-name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* The player's rank on that board, so every board they are on shows at a glance. */
+.lb-pick-rank {
+    flex: 0 0 auto;
+    font-size: var(--text-xs);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    color: var(--accent-ink);
+}
+
+@media (max-width: 640px) {
+    .lb-layout { grid-template-columns: minmax(0, 1fr); gap: var(--space-2); }
+    .lb-pick { display: none; }
+    .lb-select {
+        display: block;
+        width: 100%;
+        min-height: 44px;
+        padding: 0 var(--space-3);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        background: var(--color-surface);
+        color: var(--color-text-primary);
+        font: inherit;
+    }
+}
+
 @media (max-height: 780px) {
-    .lb-group { margin-top: var(--space-2); }
-    .lb-chips { padding-bottom: 0; margin-bottom: var(--space-2); gap: var(--space-1); }
     .lb-page { padding-top: var(--space-2); padding-bottom: var(--space-2); }
     .lb-head { margin-bottom: var(--space-2); }
 }
-.lb-group .gps-phase-h {
-    margin-bottom: var(--space-2);
-}
-.lb-grid {
-    display: grid;
-    /* 260px → 210px, same reasoning as the home grid's 190px floor: the track
-       minimum sets the column count and the column count sets the row count,
-       which is the page height. At 260px a 1280×720 laptop fit three columns
-       and the 1-Player group alone ran 461px, putting the page 136px past the
-       fold. At 210px the same laptop gets four and the page fits.
-       `min(…, 100%)` so a narrow phone collapses the track instead of
-       overflowing sideways. 2026-09-11 UI audit. */
-    grid-template-columns: repeat(auto-fill, minmax(min(210px, 100%), 1fr));
-    gap: var(--space-2);
-}
 
-/* `auto-fill` already collapses to one column below ~520px, so the old
-   `@media (max-width: 640px) { grid-template-columns: 1fr }` was doing nothing
-   the intrinsic sizing wasn't — except at 520–640px, where it forced a single
-   column that had room for two. Removed.
-
-   A lone board used to sit in a 260px column with the rest of the row empty.
-   `:has()` lets the grid react to its own content — no marker class, and no
-   render-time branch in LeaderboardsPage.razor to count the boards. */
-.lb-grid:has(> .lb-board:only-child) {
-    grid-template-columns: minmax(0, 34rem);
-    justify-content: center;
-}
 .lb-board-title {
-    font-size: 1rem;
+    font-size: var(--text-lg);
     font-weight: 700;
     color: var(--color-text-primary);
-    margin: 0;
+    margin: 0 0 var(--space-2);
 }
 
 .lb-head {
@@ -100,82 +152,7 @@
     color: var(--color-text-secondary);
 }
 
-/* Filter chips. 2026-09-11 UI sweep: the row was a single 1011px
-   `overflow-x: auto` strip on a 390px phone — sideways scrolling to reach a
-   filter violates the no-horizontal-scroll rule. `flex-wrap` folds the same
-   chips into 2–3 rows instead; with 11 chips the wrapped stack still fits the
-   portrait fold, so nothing is truncated and nothing scrolls. */
-.lb-chips {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-2);
-    padding-bottom: var(--space-2);
-    margin-bottom: var(--space-3);
-}
-
-/* Narrow viewports: show per-game picker chips and only the selected board to eliminate CLS */
-@media (max-width: 640px) {
-    .lb-chips {
-        display: flex;
-    }
-    .lb-group {
-        display: none;
-    }
-    .lb-group:has(.lb-board[data-selected="true"]) {
-        display: block;
-    }
-    .lb-board {
-        display: none;
-    }
-    .lb-board[data-selected="true"] {
-        display: flex;
-    }
-}
-
-@media (min-width: 641px) {
-    .lb-chips {
-        display: none;
-    }
-    .lb-board {
-        display: flex;
-    }
-    .lb-group {
-        display: block;
-    }
-}
-
-.lb-chip {
-    flex: 0 0 auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.4rem 0.8rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-border);
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-size: var(--text-sm);
-    white-space: nowrap;
-    min-height: 44px; /* touch target — WCAG 2.5.8 / platform 44pt norm */
-    /* 2026-09-04 UI sweep: containment — a chip's pill never paints outside
-       its own box, and its label/text reflow does not affect the siblings in
-       the filter row. Lets the browser promote each chip to its own layer
-       when the row is animating between filter states. */
-    contain: layout paint;
-}
-
-.lb-chip--on {
-    border-color: var(--color-accent, #6366f1);
-    color: var(--color-text-primary);
-    background: rgba(99, 102, 241, 0.14);
-    font-weight: 600;
-}
-
-/* Boards render as a uniform grid of cards. Every board gets identical
-   padding/border/background so all cells read as the same shape and their
-   tops align across a row — no per-board margin/divider (which, in a grid,
-   only skipped :first-of-type and pushed the rest of the first row down,
-   making the layout look ragged). */
+/* The selected board. */
 .lb-board {
     display: flex;
     flex-direction: column;
@@ -183,35 +160,6 @@
     border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
     background: var(--tint-subtle);
-
-    /* Each board is its own layout context. A board's rows should reflow on how
-       wide THE BOARD is, not how wide the window is — the grid above puts one,
-       two or three boards per row depending on viewport, so a viewport media
-       query cannot answer "is this particular card narrow?". At 1400px with
-       three columns each board is ~430px; at 700px with two it is ~330px. The
-       old rules keyed both off the viewport and got the 700px case wrong. */
-    container-type: inline-size;
-    container-name: lb-board;
-}
-
-.lb-board-head {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    margin-bottom: var(--space-2);
-}
-
-.lb-board-head h2 {
-    font-size: var(--text-lg);
-    font-weight: 700;
-    color: var(--color-text-primary);
-}
-
-.lb-unit {
-    font-size: var(--text-xs);
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-text-secondary);
 }
 
 .lb-rows {
@@ -248,18 +196,21 @@
     background: var(--tint-subtle);
 }
 
-/* Narrow board: drop the fixed rank gutter and let the name take the width.
-   Keyed on the CARD, so a board squeezed into a three-up desktop row gets the
-   same treatment as one on a phone — which is the point of a container query. */
-@container lb-board (inline-size < 20rem) {
+/* The break between the top ten and the player's own row further down. */
+.lb-row--gap {
+    display: block;
+    padding: 0;
+    text-align: center;
+    color: var(--color-text-secondary);
+    line-height: 1.2;
+}
+
+@media (max-width: 400px) {
     .lb-row {
         grid-template-columns: 1.6rem minmax(0, 1fr) auto;
         gap: var(--space-1);
         padding: 0.45rem 0.35rem;
-        font-size: var(--text-xs);
     }
-
-    .lb-board-head h2 { font-size: var(--text-base); }
 }
 
 .lb-rank {
@@ -295,16 +246,6 @@
     box-shadow: 0 0 6px rgba(249, 115, 22, 0.35);
 }
 
-.lb-board {
-    transition: transform 0.2s var(--ease-standard), border-color 0.2s var(--ease-standard), box-shadow 0.2s var(--ease-standard);
-}
-
-.lb-board:hover {
-    transform: translateY(-2px);
-    border-color: var(--accent-cyan, #22d3ee);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3), 0 0 16px rgba(34, 211, 238, 0.08);
-}
-
 .lb-name {
     color: var(--color-text-primary);
     overflow: hidden;
@@ -326,26 +267,10 @@
     text-align: right;
 }
 
-.lb-board-empty,
-.lb-empty p {
+.lb-board-empty {
     color: var(--color-text-secondary);
     font-size: var(--text-sm);
     padding: var(--space-3) 0;
-}
-
-.lb-empty {
-    text-align: center;
-    padding: var(--space-6) var(--space-3);
-}
-
-.lb-retry {
-    margin-top: var(--space-2);
-    padding: 0.5rem 1rem;
-    border-radius: var(--radius-pill);
-    border: 1px solid var(--color-border);
-    background: transparent;
-    color: var(--color-text-primary);
-    min-height: 40px;
 }
 
 /* Loading skeletons */

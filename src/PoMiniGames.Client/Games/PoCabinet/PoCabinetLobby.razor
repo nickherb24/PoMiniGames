@@ -74,7 +74,10 @@
             {
                 <p class="pocabinet-lobby__note" role="status">All @PoCabinetCatalog.CarCount seats are taken — you'll get one as soon as someone leaves.</p>
             }
-            <button type="button" class="pocabinet-secondary" @onclick="LeaveAsync">Leave lobby</button>
+            <div class="pocabinet-lobby__row">
+                <button type="button" class="pocabinet-secondary" @onclick="LeaveAsync">Leave lobby</button>
+                <InviteLink />
+            </div>
         </section>
     }
     else if (string.IsNullOrEmpty(_error))

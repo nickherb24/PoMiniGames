@@ -1,0 +1,49 @@
+@namespace PoMiniGamesClient.Components
+@inject NavigationManager Nav
+@inject IJSRuntime JS
+@inject ToastService Toasts
+
+@* Bringing someone into the lobby you are in: one Invite button, whose popover holds
+   a QR code for a phone in the same room and a Share button for everyone else (the
+   device's share sheet where it has one, the clipboard otherwise). Until 2026-10-01
+   these were two buttons side by side in every lobby's action row.
+
+   Every lobby is the one shared room for its game, so the link is always /{game}/multi
+   and needs no code. The QR is drawn by the server (/api/invites/qr) and only fetched
+   when the popover first opens. *@
+<span class="invite">
+    <button type="button" class="app-btn app-btn--secondary" popovertarget="@_qrId">Invite</button>
+    <span id="@_qrId" popover="auto" class="invite__qr">
+        <img src="@($"/api/invites/qr?game={Game}")" width="220" height="220" loading="lazy"
+             alt="QR code that opens this lobby" />
+        <span class="invite__caption">Scan to join this lobby</span>
+        <button type="button" class="app-btn app-btn--primary invite__share"
+                popovertarget="@_qrId" popovertargetaction="hide"
+                @onclick="ShareAsync">Share the link</button>
+    </span>
+</span>
+
+@code {
+    private readonly string _qrId = $"invite-qr-{Guid.NewGuid():N}";
+
+    /// <summary>The game's route slug: the first segment of the page this lobby is on.</summary>
+    private string Game => new Uri(Nav.Uri).AbsolutePath.Trim('/').Split('/')[0].ToLowerInvariant();
+
+    private async Task ShareAsync()
+    {
+        var url = $"{Nav.BaseUri.TrimEnd('/')}/{Game}/multi";
+        string outcome;
+        try
+        {
+            outcome = await JS.InvokeAsync<string>("poPwa.shareLink", "Join my lobby on PoMiniGames", url);
+        }
+        catch
+        {
+            outcome = "failed";
+        }
+
+        // The share sheet is its own confirmation; only the silent paths need a toast.
+        if (outcome == "copied") Toasts.Show("Invite link copied.", ToastType.Success);
+        else if (outcome == "failed") Toasts.Show($"Couldn't copy the link. It is {url}", ToastType.Error);
+    }
+}

@@ -51,6 +51,12 @@ public sealed class StorageInitializer
         // PoJevArena public creature library (one partition). Name must match
         // CreatureLibraryStore.TableName.
         "PoJevArenaCreatures",
+        // Server-timed race results kept past a recycle. Name must match
+        // VerifiedResultStore.TableName.
+        "VerifiedResults",
+        // Push subscriptions, pending game invites and the VAPID key pair. Name must match
+        // InviteStore.TableName.
+        "PushInvites",
     ];
 
     /// <summary>Blob containers used by the consolidated games.</summary>

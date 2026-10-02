@@ -38,7 +38,7 @@
             <div class="cq-gameover">
                 <h2 class="gps-phase-h">You haven't joined a game yet</h2>
                 <p>This page is only useful mid-round. Join the lobby and the match starts once everyone is ready.</p>
-                <a class="gps-btn gps-btn--primary" href="/couplequiz">Go to the lobby →</a>
+                <a class="app-btn app-btn--primary" href="/couplequiz">Go to the lobby →</a>
             </div>
         }
         else
@@ -70,7 +70,7 @@
                        maxlength="60"
                        disabled="@_submitted" />
                 <div class="cq-actions">
-                    <button class="gps-btn gps-btn--primary"
+                    <button class="app-btn app-btn--primary"
                             @onclick="Submit"
                             disabled="@(_submitted || string.IsNullOrWhiteSpace(_myAnswer))">
                         @(_submitted ? "Submitted ✓" : "Submit")
@@ -109,7 +109,7 @@
 @code {
     private enum Phase { Answering, Results, GameOver }
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz · Multiplayer</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz</span>;
 
     // This match's final scores, highest first. The all-time top 3 is rendered
     // separately by GameShell from GameKey.

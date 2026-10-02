@@ -29,14 +29,9 @@
                 <div class="racer-card">
                     @* One card, three modes. The lobby used to be a page of its own at this same
                        /poracer/multi address; it is the Online tab now, so switching mode never
-                       reloads the engine. Buttons, not links, although each mode is an address:
-                       js/app.js turns every click on an in-app <a> into a full page load, which
-                       would boot the whole WASM app again to change tab. *@
-                    <div class="racer-modes" role="tablist" aria-label="Mode">
-                        <button type="button" role="tab" aria-selected="@Selected(RaceMode.Solo)" @onclick="@(() => Nav.NavigateTo("/poracer/1player"))">Solo</button>
-                        <button type="button" role="tab" aria-selected="@Selected(RaceMode.Online)" @onclick="@(() => Nav.NavigateTo("/poracer/multi"))">Online</button>
-                        <button type="button" role="tab" aria-selected="@Selected(RaceMode.Demo)" @onclick="@(() => Nav.NavigateTo("/poracer/demo"))">Demo</button>
-                    </div>
+                       reloads the engine: this page follows the address in place, hence
+                       Reload="false" on the shared switch. *@
+                    <ModeSwitch Reload="false" />
 
                     @if (_mode == RaceMode.Online && string.IsNullOrWhiteSpace(MatchCode))
                     {
@@ -51,11 +46,13 @@
                                     OnStart="@(() => _lobby?.StartGameAsync() ?? Task.CompletedTask)"
                                     OnLeave="LeaveLobbyAsync">
                             <Picker>
+                                @* Track, then paint, then the buttons: the paint shop used to sit
+                                   under Start Race, after the thing it is a choice for. *@
                                 <PoRacerTrackSelector SelectedTrackId="@LobbyTrackId" SelectedTrackIdChanged="PickLobbyTrackAsync"
                                                       Disabled="@(_lobby?.IsHost != true)" Bests="_bests" />
+                                <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
                             </Picker>
                         </LobbyPanel>
-                        <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
                     }
                     else if (_mode == RaceMode.Solo)
                     {
@@ -156,7 +153,6 @@
     private RenderFragment SummaryContent => @<PoRacerResults Result="_result" Roster="_roster" PlayerId="_localCarId"
         Track="@PoRacerCatalog.GetTrack(_raceTrackId)" PreviousBest="_previousBest" IsTrial="_raceTrial"
         SubmitStatus="@_submitStatus" Retry="SubmitScoreAsync" />;
-    private string Selected(RaceMode mode) => _mode == mode ? "true" : "false";
     // Each track has its own board (UnifiedLeaderboardEndpoints): the oval keeps the original
     // "poracer" key, the other two are "poracer-{trackId}". The results' Top 3 is the raced track's.
     private string BoardKey => _raceTrackId == PoRacerCatalog.DefaultTrackId ? "poracer" : "poracer-" + _raceTrackId;

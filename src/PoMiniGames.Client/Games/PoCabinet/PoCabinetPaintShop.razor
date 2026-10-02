@@ -26,7 +26,7 @@
                 <button type="button"
                         class="pocabinet-swatch @(isSelected ? "pocabinet-swatch--selected" : null)"
                         role="radio"
-                        aria-checked="@isSelected"
+                        aria-checked="@(isSelected ? "true" : "false")"
                         aria-label="@livery @name"
                         style="--swatch: @previewBg;"
                         @onclick="() => Select(livery, name)">

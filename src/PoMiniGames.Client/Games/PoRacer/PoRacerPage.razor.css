@@ -6,7 +6,7 @@
 .racer-root { position: relative; width: 100%; height: max(480px, calc(100dvh - 100px)); overflow: hidden; background: var(--racer-bg); color: var(--racer-text);
     color-scheme: dark;
     --color-bg: #0f172a; --color-surface: #102033; --color-surface-hover: #334155; --color-border: #60839d66;
-    --color-text-primary: #e2e8f0; --color-text-secondary: #a8bacd; --color-accent: #818cf8; --color-accent-solid: #6366f1;
+    --color-text-primary: #e2e8f0; --color-text-secondary: #a8bacd; --color-accent: #818cf8; --color-accent-solid: #4f46e5;
     --accent-ink: #c7d2fe; --accent-success-ink: #6ee7b7; --accent-warning-ink: #fcd34d; --accent-danger-ink: #fca5a5; --accent-amber-ink: #fcd34d;
     --accent-soft: rgba(129, 140, 248, 0.16);
     /* The Racer palette, once. It is a per-game canvas palette (scheme-invariant, like the canvas
@@ -27,9 +27,10 @@
 .racer-card .racer-error { margin: 0; color: var(--accent-danger-ink); }
 
 /* Mode switcher: each tab is an address (/poracer/1player, /multi, /demo), reached in-app. */
-.racer-modes { display: flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--racer-well); width: fit-content; }
-.racer-modes button { min-height: 36px; padding: 6px 18px; border: 0; border-radius: 9px; background: none; color: var(--racer-muted); font: inherit; font-weight: 700; cursor: pointer; }
-.racer-modes button[aria-selected="true"] { background: var(--racer-accent); color: var(--racer-on-accent); }
+/* The shared mode switch (.app-seg), in this card's palette. */
+.racer-card { --seg-well: var(--racer-well); --seg-ink: var(--racer-muted); --seg-on: var(--racer-accent); --seg-on-ink: var(--racer-on-accent); }
+/* Centred, like the switch and the Start button on every other game's start card. */
+.racer-card ::deep .app-seg { width: fit-content; margin-inline: auto; }
 
 /* Chip groups (race type, pace, livery): radios that look like segmented buttons. ::deep because
    the paint shop is a child component and uses the same class. */
@@ -41,7 +42,7 @@
 .racer-card ::deep .racer-chips label:focus-within { outline: 2px solid var(--racer-ink); outline-offset: 2px; }
 .racer-card ::deep .racer-chips input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
 
-.racer-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+.racer-actions { display: flex; align-items: center; justify-content: center; gap: 16px; flex-wrap: wrap; }
 .racer-primary, .racer-ghost { min-height: 44px; padding: 10px 20px; border: 1px solid var(--racer-accent); border-radius: 10px; font: inherit; font-weight: 700; cursor: pointer; }
 .racer-primary { background: var(--racer-accent); color: var(--racer-on-accent); }
 .racer-primary:disabled { opacity: .6; cursor: wait; }

@@ -1,6 +1,11 @@
-@* Viewing settings (feature #10, 2026-09-23): graphics quality, colour palette, motion and
-   controls. All of it is about how the island is SEEN — the engine keeps it in its prefs
-   (sim/persistence/prefs.js), and none of it reaches the simulation. *@
+@* Viewing settings (feature #10, 2026-09-23): graphics quality and controls. All of it is
+   about how the island is SEEN — the engine keeps it in its prefs
+   (sim/persistence/prefs.js), and none of it reaches the simulation.
+
+   The colour palette and reduce-motion rows went on 2026-10-01: both are app settings
+   (the sheet in the top bar's account menu), and the island had a second switch for
+   each that could only add to the app's, never turn it off. *@
+@inject SettingsService AppSettings
 <div class="poeco-viewsettings">
     <h3>Graphics</h3>
     <label class="poeco-field" title="Resolution also scales itself when the frame rate drops. Changing quality rebuilds the view; the island keeps running.">
@@ -14,17 +19,10 @@
     </label>
 
     <h3>Accessibility</h3>
-    <label class="poeco-field">
-        <span>Colours</span>
-        <select value="@(Settings?.Palette ?? "default")" @onchange="PaletteChanged">
-            <option value="default">Standard</option>
-            <option value="cb">Colour-blind safe (Okabe–Ito)</option>
-        </select>
-    </label>
-    <label class="poeco-switch">
-        <input type="checkbox" checked="@(Settings?.ReducedMotion ?? false)" @onchange="e => OnReducedMotion.InvokeAsync(e.Value is true)" />
-        <span>Reduce motion (no camera shake)</span>
-    </label>
+    <p class="poeco-note">
+        Colour-blind safe colours, reduced motion and sound volume are app settings.
+        <button type="button" class="poeco-btn poeco-btn--sm" @onclick="AppSettings.RequestOpen">App settings</button>
+    </p>
 
     <h3>Controls</h3>
     <p class="poeco-note" title="Left stick moves, right stick looks, A inspect, B float/walk, X follow, Y dashboard, bumpers rise/sink, Start cinematic.">
@@ -65,14 +63,11 @@
     [Parameter] public EcoSettings? Settings { get; set; }
     [Parameter] public string? Capturing { get; set; }
     [Parameter] public EventCallback<string> OnQuality { get; set; }
-    [Parameter] public EventCallback<string> OnPalette { get; set; }
-    [Parameter] public EventCallback<bool> OnReducedMotion { get; set; }
     [Parameter] public EventCallback<string> OnRebind { get; set; }
     [Parameter] public EventCallback OnResetBindings { get; set; }
 
     private static string Label(string action) => Labels.GetValueOrDefault(action, action);
     private Task QualityChanged(ChangeEventArgs e) => OnQuality.InvokeAsync(e.Value?.ToString() ?? "auto");
-    private Task PaletteChanged(ChangeEventArgs e) => OnPalette.InvokeAsync(e.Value?.ToString() ?? "default");
 
     /// <summary>KeyboardEvent.code → what is printed on the key ("KeyW" → "W", "ArrowUp" → "↑").</summary>
     internal static string KeyName(string code) => code switch

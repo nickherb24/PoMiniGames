@@ -214,9 +214,10 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// piece landing in a Connect-style board. Deliberately low and short so rapid
     /// moves don't fatigue — the settle-bounce visual and this cue fire together.
     /// </summary>
-    public async ValueTask DiscDropAsync()
+    /// <param name="pan">-1 (left) .. 1 (right): where on the board the piece went down.</param>
+    public async ValueTask DiscDropAsync(double pan = 0)
     {
-        await PlayToneAsync(174.61, 75, 0.20, "triangle");
+        await PlayToneAsync(174.61, 75, 0.20, "triangle", pan);
         await VibrateAsync(HapticDrop);
     }
 
@@ -229,7 +230,8 @@ public sealed class UiFeedbackService : IAsyncDisposable
     /// Best-effort; silent on autoplay-blocked / no-AudioContext environments.
     /// </summary>
     /// <param name="rowIndex">0..8 — the row the chip landed on (8 = bottom).</param>
-    public async ValueTask ChipDropAsync(int rowIndex)
+    /// <param name="pan">-1 (left) .. 1 (right): the column it fell in (see <see cref="BoardPan"/>).</param>
+    public async ValueTask ChipDropAsync(int rowIndex, double pan = 0)
     {
         if (_disposed) return;
         try
@@ -242,6 +244,7 @@ public sealed class UiFeedbackService : IAsyncDisposable
             await module.InvokeVoidAsync("playChipDrop", new
             {
                 rowIndex,
+                pan,
                 slideMs = 400,
                 thudMs = 110,
                 masterGain = 0.22,
@@ -352,13 +355,21 @@ public sealed class UiFeedbackService : IAsyncDisposable
         }
     }
 
-    private async ValueTask PlayToneAsync(double freq, int ms, double gain, string type)
+    /// <summary>
+    /// Stereo placement for a piece played in <paramref name="col"/> of a board
+    /// <paramref name="cols"/> wide. Stops at 0.7: a hard-panned mono voice reads
+    /// as a broken channel on headphones.
+    /// </summary>
+    public static double BoardPan(int col, int cols) =>
+        cols <= 1 ? 0 : Math.Clamp(((col / (double)(cols - 1)) * 2) - 1, -1, 1) * 0.7;
+
+    private async ValueTask PlayToneAsync(double freq, int ms, double gain, string type, double pan = 0)
     {
         if (_disposed) return;
         try
         {
             var module = await _module.Value;
-            await module.InvokeVoidAsync("playTone", freq, ms, gain, type);
+            await module.InvokeVoidAsync("playTone", freq, ms, gain, type, pan);
         }
         catch
         {

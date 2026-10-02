@@ -125,7 +125,7 @@ dialog.gps-modal {
 }
 
 .gps-stat-label {
-  font-size: 0.65rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -191,7 +191,7 @@ dialog.gps-modal {
 }
 
 .gps-modal-board-unit {
-  font-size: 0.65rem;
+  font-size: var(--text-xs);
   font-weight: 600;
   color: var(--color-text-secondary);
   text-transform: uppercase;
@@ -264,51 +264,15 @@ dialog.gps-modal {
   margin-top: 0.4rem;
 }
 
-.gps-play-again-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.65rem 1.25rem;
-  border-radius: 12px;
-  font-size: 0.92rem;
-  font-weight: 700;
-  cursor: pointer;
-  transition: transform 0.12s ease, filter 0.15s ease, background 0.15s ease, border-color 0.15s ease;
-}
-
-.gps-play-again-btn:active {
-  transform: scale(0.97);
-}
-
-.gps-play-again-btn--primary {
-  flex: 1.2;
-  background: linear-gradient(135deg, var(--color-accent-solid, #3b82f6), #2563eb);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #ffffff;
-  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.35);
-}
-
-.gps-play-again-btn--primary:hover {
-  filter: brightness(1.12);
-  box-shadow: 0 6px 18px rgba(37, 99, 235, 0.45);
-}
-
-.gps-play-again-btn--secondary {
+/* The buttons are the shared .app-btn; here they share the row's width. */
+.gps-play-again-actions .app-btn {
   flex: 1;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  color: var(--color-text-primary);
-}
-
-.gps-play-again-btn--secondary:hover {
-  background: rgba(255, 255, 255, 0.09);
-  border-color: rgba(255, 255, 255, 0.2);
+  padding: 0.65rem 1.25rem;
 }
 
 .gps-kbd {
   font-family: inherit;
-  font-size: 0.68rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   padding: 0.15rem 0.4rem;
   border-radius: 6px;
@@ -324,35 +288,15 @@ dialog.gps-modal {
   color: #ffffff;
 }
 
-/* 2026-07-19 browser audit #6: the intro OK button used to share
-   .gps-play-again-btn{,-primary}, which collided with the end-of-game
-   modal's class names and made Playwright's stability heuristic time out
-   waiting for the intro button to "settle". Same visual treatment, but a
-   distinct semantic class so the two buttons can never be confused again. */
-.gps-intro-btn {
-  padding: 0.6rem 1.25rem;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  transition: filter 0.2s, border-color 0.2s, color 0.2s;
+/* The shared mode switch, centred under the card's title. */
+.gps-intro-modes {
+  display: flex;
+  justify-content: center;
 }
 
-.gps-intro-btn--primary {
-  background: var(--color-accent-solid);
-  border: none;
-  color: white;
+/* The card's action is the shared .app-btn; it keeps a floor so "OK" is not a sliver. */
+.gps-intro-actions .app-btn {
   min-width: 7rem;
-  cursor: pointer;
-}
-
-.gps-intro-btn--primary:hover {
-  filter: brightness(1.1);
-}
-
-.gps-intro-btn--primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  filter: none;
 }
 
 @keyframes gps-modal-fade {
@@ -571,7 +515,34 @@ dialog.gps-modal {
   align-items: center;
   gap: 0.4rem;
   padding-top: 0.35rem;
-  position: relative;
+  /* Pinned to the bottom of the card. The card scrolls its own content when it is
+     taller than the screen (a phone on its side, Marble Race's track picker on a
+     phone), and the Start button used to be the part that scrolled out of view.
+     The shadow is the card's own colour: it fades the text passing underneath. */
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  width: 100%;
+  padding-bottom: calc(0.25rem + env(safe-area-inset-bottom));
+  background: var(--color-surface);
+  box-shadow: 0 -0.75rem 0.75rem -0.4rem var(--color-surface);
+}
+
+/* A phone on its side: 390px of height. Wider card, tighter spacing, the controls
+   list in two columns, and Start beside its tick-box instead of above it. */
+@media (max-height: 500px) {
+  .gps-intro-overlay { padding: 0.5rem; }
+  .gps-intro-card {
+    width: min(96vw, 720px);
+    max-height: calc(100dvh - 1rem);
+    gap: 0.5rem;
+    padding: 0.75rem 1rem 0.5rem;
+  }
+  .gps-intro-title { font-size: 1.1rem; }
+  .gps-intro-controls { padding-top: 0.5rem; line-height: 1.4; }
+  .gps-intro-controls ul { columns: 2; column-gap: 1.5rem; }
+  .gps-intro-controls li { break-inside: avoid; }
+  .gps-intro-actions { flex-direction: row; justify-content: center; gap: 1rem; }
 }
 
 .gps-intro-hint,
@@ -622,12 +593,6 @@ dialog.gps-modal {
   animation: gps-intro-spin 0.8s linear infinite;
 }
 
-.gps-play-again-btn--primary:disabled {
-  filter: none;
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
 /* ── Shared two-player select grid (used by Brawl; available to any 2P game) ──
    Two rosters side by side, one per player, each with a highlighted cursor and
    a "locked" state once that player confirms their pick. */
@@ -656,7 +621,7 @@ dialog.gps-modal {
 }
 
 .gps-intro-side-keys {
-  font-size: 0.62rem;
+  font-size: var(--text-xs);
   color: var(--color-text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.04em;
@@ -733,7 +698,7 @@ button.gps-intro-roster-item:focus-visible {
   padding: 0.32rem 0.5rem;
   border-radius: 6px;
   font: inherit;
-  font-size: 0.72rem;
+  font-size: var(--text-xs);
   font-weight: 700;
   cursor: pointer;
   color: var(--color-text-secondary);
@@ -786,36 +751,6 @@ button.gps-intro-roster-item:focus-visible {
 .conn-strip__detail {
   font-size: var(--text-sm);
   color: var(--color-text-secondary);
-}
-
-.conn-pill {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.125rem 0.55rem;
-  border-radius: var(--radius-pill);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-secondary);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  white-space: nowrap;
-}
-
-.conn-pill--ok {
-  color: var(--accent-success-ink);
-  border-color: var(--accent-success);
-  background: var(--accent-success-soft);
-}
-
-.conn-pill--warn {
-  color: var(--accent-warning-ink);
-  border-color: var(--accent-warning);
-  background: var(--accent-warning-soft);
-}
-
-.conn-pill--muted {
-  color: var(--color-text-secondary);
-  background: var(--surface-2);
 }
 
 @media (max-width: 640px) {

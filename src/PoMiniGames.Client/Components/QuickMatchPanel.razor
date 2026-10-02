@@ -1,5 +1,6 @@
 @namespace PoMiniGamesClient.Components
 @using PoMiniGamesClient.Services.Play
+@inject UiFeedbackService Feedback
 
 @* The quick-match status card: connecting, searching, a dropped opponent, a pending
    rematch, a lost connection. Renders nothing while there is nothing to say, so a page
@@ -17,15 +18,15 @@
             <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Looking for an opponent…</span></div>
             <p class="qm__note">@SearchingHint</p>
             <div class="qm__actions">
-                <button type="button" class="sp-btn-secondary" @onclick="OnCancel">Cancel</button>
+                <button type="button" class="app-btn app-btn--secondary" @onclick="OnCancel">Cancel</button>
             </div>
         }
         else if (Phase == QuickMatchPhase.Error)
         {
             <p>Lost the connection to the game server.</p>
             <div class="qm__actions">
-                <button type="button" class="sp-btn-primary" @onclick="OnRetry">Try again</button>
-                <button type="button" class="sp-btn-secondary" @onclick="OnCancel">Back</button>
+                <button type="button" class="app-btn app-btn--primary" @onclick="OnRetry">Try again</button>
+                <button type="button" class="app-btn app-btn--secondary" @onclick="OnCancel">Back</button>
             </div>
         }
         else if (Phase == QuickMatchPhase.Playing)
@@ -36,15 +37,15 @@
         {
             <p>@OpponentName has left.</p>
             <div class="qm__actions">
-                <button type="button" class="sp-btn-primary" @onclick="OnFindAnother">Find another opponent</button>
-                <button type="button" class="sp-btn-secondary" @onclick="OnCancel">Back</button>
+                <button type="button" class="app-btn app-btn--primary" @onclick="OnFindAnother">Find another opponent</button>
+                <button type="button" class="app-btn app-btn--secondary" @onclick="OnCancel">Back</button>
             </div>
         }
         else if (RematchRequested)
         {
             <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Waiting for @OpponentName to accept the rematch…</span></div>
             <div class="qm__actions">
-                <button type="button" class="sp-btn-secondary" @onclick="OnFindAnother">Find another opponent</button>
+                <button type="button" class="app-btn app-btn--secondary" @onclick="OnFindAnother">Find another opponent</button>
             </div>
         }
         else
@@ -86,6 +87,38 @@
         OpponentGone = Session.OpponentGone;
         RematchRequested = Session.RematchRequested;
         OpponentWantsRematch = Session.OpponentWantsRematch;
+        NoteMoments(Session);
+    }
+
+    // ── Match moments (2026-10-01) ───────────────────────────────────────────────
+    // The search ending, the opponent dropping and coming back, and the turn passing to
+    // this player were all text changes on a card that hides itself while play is fine.
+    // Edges only, so a re-render with nothing new is silent.
+    private QuickMatchPhase _lastPhase;
+    private bool _opponentHere = true, _myTurn;
+    private string? _cue;
+
+    private void NoteMoments(OnlineTurnSession session)
+    {
+        var playing = session.Phase == QuickMatchPhase.Playing;
+        var wasPlaying = _lastPhase == QuickMatchPhase.Playing;
+        var here = session.OpponentConnected;
+        var myTurn = playing && session.IsMyTurn;
+
+        if (playing && _lastPhase is QuickMatchPhase.Searching or QuickMatchPhase.Connecting) _cue = "join";
+        else if (playing && wasPlaying && here != _opponentHere) _cue = here ? "confirm" : "error";
+        else if (myTurn && !_myTurn && wasPlaying) _cue = "crystalPing";
+
+        _lastPhase = session.Phase;
+        _opponentHere = here;
+        _myTurn = myTurn;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_cue is not { } cue) return;
+        _cue = null;
+        await Feedback.CueAsync("ui", cue, cue == "crystalPing" ? [14, 40, 14] : null);
     }
 
     private bool Visible => Phase switch

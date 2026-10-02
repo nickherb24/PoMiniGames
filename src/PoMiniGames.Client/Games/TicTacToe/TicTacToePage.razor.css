@@ -233,11 +233,21 @@
 }
 
 /* ── Responsive ── */
-/* ── Online: the shared quick-match card plus a turn line ─────────────────
-   Tic-Tac-Toe has no visible status bar (the turn is only spoken), so online mode
-   adds one: a remote opponent's turn has to be visible or the disabled board just
-   looks unresponsive. Width tracks the board. */
-.ttt-online {
+/* ── Layout: quick-match card, turn strip, board, in one column ────────────
+   The game area is a row; without this wrapper the card and the board sat side
+   by side and the board ran off a phone's right edge. */
+.ttt-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+}
+
+/* The slot above the board: the shared QuickMatchPanel (online) and the shared
+   TurnStrip. It only sizes them to the board, so it repeats the board's geometry
+   tokens; the two colours are here because the strip's swatches read them. */
+.ttt-slot {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -245,34 +255,10 @@
   --ttt-cell: clamp(44px, calc((100vh - 220px) / 6), 78px);
   --ttt-gap: 4px;
   --ttt-pad: 12px;
+  --ttt-x: #ff6b6b;
+  --ttt-o: #00e5ff;
   max-width: 100%;
-  margin: 0 auto 0.6rem;
 }
-
-.ttt-online__turn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.6rem 1rem;
-  border-radius: var(--radius-lg);
-  background: var(--glass-tint);
-  -webkit-backdrop-filter: var(--glass-2);
-  backdrop-filter: var(--glass-2);
-  border: 1px solid var(--color-border);
-  color: var(--color-text-primary);
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-
-/* The local player's mark, as a small swatch next to the turn text. */
-.ttt-online__side {
-  width: 0.7rem;
-  height: 0.7rem;
-  border-radius: 50%;
-}
-.ttt-online__side--x { background: var(--ttt-x); }
-.ttt-online__side--o { background: var(--ttt-o); }
 
 /* Secondary line in the panel and on the end-of-game summary. */
 .ttt-online-note {
@@ -281,16 +267,24 @@
 }
 
 @media (max-width: 640px) {
-    .ttt-online {
-        --ttt-cell: clamp(40px, 13.5vw, 52px);
-        --ttt-gap: 3px;
-        --ttt-pad: 8px;
-    }
+    .ttt-slot,
     .ttt-board {
         --ttt-cell: clamp(40px, 13.5vw, 52px);
         --ttt-gap: 3px;
         --ttt-pad: 8px;
     }
+}
+
+/* A phone on its side has the width and about 390px of height. The 44px floor
+   above made the board 340px tall there, taller than the room under the top bar. */
+@media (max-height: 500px) {
+    .ttt-slot,
+    .ttt-board {
+        --ttt-cell: clamp(30px, calc((100dvh - 190px) / 6), 78px);
+        --ttt-gap: 3px;
+        --ttt-pad: 8px;
+    }
+    .ttt-board { margin: 0.4rem auto; }
 }
 
 /* ── Accessibility: the global prefers-reduced-motion guard in app.css already

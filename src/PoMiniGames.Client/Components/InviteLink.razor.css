@@ -1,0 +1,38 @@
+.invite {
+    display: inline-flex;
+}
+
+/* A popover is in the top layer and centred by the user-agent sheet. The card
+   stays white in both themes: a scanner needs the contrast the code was drawn with. */
+.invite__qr {
+    /* The global reset zeroes the `margin: auto` that centres a popover; restore it. */
+    margin: auto;
+    padding: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    background: #fff;
+    color: #111;
+    text-align: center;
+}
+
+.invite__qr::backdrop {
+    background: rgb(0 0 0 / 0.55);
+}
+
+.invite__qr img {
+    display: block;
+    width: min(220px, 70vw);
+    height: auto;
+    aspect-ratio: 1;
+}
+
+.invite__caption {
+    display: block;
+    margin: var(--space-2) 0 var(--space-3);
+    font-size: var(--text-sm);
+    font-weight: 600;
+}
+
+.invite__share {
+    width: 100%;
+}

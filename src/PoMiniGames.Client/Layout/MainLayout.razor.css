@@ -54,7 +54,7 @@
 
 @media (max-width: 480px) {
     .gl-offline-banner {
-        font-size: 0.72rem;
+        font-size: var(--text-xs);
         padding: var(--space-1) var(--space-2);
     }
 }

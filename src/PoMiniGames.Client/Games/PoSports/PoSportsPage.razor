@@ -177,14 +177,14 @@
                 <div class="ps-actions">
                     @if (_mode == "online")
                     {
-                        <button type="button" class="sp-btn-primary" @onclick="BackToLobby">Back to the lobby</button>
+                        <button type="button" class="app-btn app-btn--primary" @onclick="BackToLobby">Back to the lobby</button>
                     }
                     else
                     {
-                        <button type="button" class="sp-btn-primary" @onclick="AgainAsync">Again</button>
-                        <button type="button" class="sp-btn-secondary" @onclick="ChangeRunnerAsync">Change runner</button>
+                        <button type="button" class="app-btn app-btn--primary" @onclick="AgainAsync">Again</button>
+                        <button type="button" class="app-btn app-btn--secondary" @onclick="ChangeRunnerAsync">Change runner</button>
                     }
-                    <a class="sp-btn-secondary" href="/leaderboards">Leaderboard</a>
+                    <a class="app-btn app-btn--secondary" href="/leaderboards">Leaderboard</a>
                 </div>
                 @if (_mode == "1p" && _eventResult is null)
                 {

@@ -171,6 +171,36 @@ internal static class RateLimitingExtensions
                         QueueLimit = 0,
                     }));
 
+            // Browser error reports (2026-10-01). Anonymous and outside the antiforgery scope, so
+            // this limit is what stops the sink being used to fill the log. The page itself sends
+            // at most ten per load, deduplicated; 20/min covers a couple of bad page loads.
+            opts.AddPolicy("client-errors", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: BuildPartitionKey(ctx),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 20,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
+            // Game invites (2026-10-01). Each one is a write and an outbound push to someone
+            // else's device, so it gets the tightest window after account-data: nobody invites
+            // more than a handful of people a minute, and the recipient is the one who pays.
+            opts.AddPolicy("invites", ctx =>
+                RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: BuildPartitionKey(ctx),
+                    factory: _ => new FixedWindowRateLimiterOptions
+                    {
+                        Window = TimeSpan.FromMinutes(1),
+                        PermitLimit = 6,
+                        AutoReplenishment = true,
+                        QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                        QueueLimit = 0,
+                    }));
+
             // Every policy here is a fixed window with QueueLimit = 0, so a rejected caller has
             // to guess how long to wait — and the client's own retry handler deliberately does
             // not replay a 429. Hand back the window's remaining time as Retry-After so the UI

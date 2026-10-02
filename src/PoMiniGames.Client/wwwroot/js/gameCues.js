@@ -83,6 +83,16 @@ const CUES = {
             feel: 'light', scale: 0.7,
         },
         toggle: { voices: [v('square', 1200, 0.03, 0.04, { decay: 0.025, cutoff: 4000 })], feel: 'tick' },
+        // Someone took a seat in the lobby (LobbyPanel) or a quick match found its opponent.
+        // A rising fourth, longer and lower than `confirm`, so it reads as an arrival and
+        // not as the player's own click.
+        join: {
+            voices: [
+                v('sine', 587, 0.12, 0.09, { decay: 0.11 }),
+                v('sine', 784, 0.24, 0.10, { decay: 0.22, delay: 0.09 }),
+            ],
+            feel: 'select',
+        },
         open: { voices: [v('sine', 320, 0.22, 0.05, { freqEnd: 720, sweep: 0.2, decay: 0.2 })], feel: null },
         close: { voices: [v('sine', 720, 0.18, 0.045, { freqEnd: 300, sweep: 0.16, decay: 0.16 })], feel: null },
         focus: { voices: [v('sine', 1320, 0.025, 0.028, { decay: 0.02 })], feel: null, jitter: 0 },
@@ -513,105 +523,6 @@ const CUES = {
         },
     },
 
-    // ── PoEcosystem — living biome, geopolitics & divine presence ─────
-    poecosystem: {
-        shockwave: {
-            voices: [
-                v('sine', 140, 0.55, 0.42, { freqEnd: 28, sweep: 0.5, decay: 0.5, drive: 0.8 }),
-                v('noise', 0, 0.28, 0.18, { decay: 0.25, cutoff: 1400, cutoffEnd: 100, q: 2.5 }),
-            ],
-            feel: 'heavy', scale: 1.6, fx: { preset: 'dust', scale: 1.5 }, duck: 0.45,
-        },
-        godFinger: {
-            voices: [
-                v('sine', 880, 0.12, 0.18, { freqEnd: 1760, sweep: 0.1, decay: 0.12 }),
-                v('triangle', 440, 0.22, 0.15, { decay: 0.2 }),
-            ],
-            feel: 'select', scale: 0.9, fx: { preset: 'sparks', scale: 1.1 },
-        },
-        diplomacyWar: {
-            voices: [
-                v('saw', 110, 0.65, 0.24, { freqEnd: 82, sweep: 0.6, decay: 0.6, cutoff: 900, q: 3, drive: 0.6 }),
-                v('sine', 77.78, 0.65, 0.28, { decay: 0.6, drive: 0.4 }),
-                v('noise', 0, 0.25, 0.12, { decay: 0.22, cutoff: 1200, q: 2 }),
-            ],
-            feel: 'heavy', scale: 1.4, fx: { preset: 'impact', scale: 1.4 }, duck: 0.5,
-        },
-        diplomacyAllied: {
-            voices: [
-                v('sine', 523.25, 0.25, 0.14, { decay: 0.22 }),
-                v('sine', 659.25, 0.35, 0.14, { decay: 0.32, delay: 0.06 }),
-                v('sine', 783.99, 0.55, 0.16, { decay: 0.50, delay: 0.12 }),
-                v('triangle', 1046.5, 0.70, 0.12, { decay: 0.65, delay: 0.18 }),
-            ],
-            feel: 'select', fx: { preset: 'confetti', scale: 0.9 }, duck: 0.25,
-        },
-        diplomacyTrade: {
-            voices: [
-                v('triangle', 880, 0.08, 0.12, { decay: 0.07 }),
-                v('triangle', 1174.66, 0.12, 0.12, { decay: 0.10, delay: 0.05 }),
-                v('sine', 1760, 0.35, 0.14, { decay: 0.32, delay: 0.10 }),
-            ],
-            feel: 'tick', fx: { preset: 'coins', scale: 0.8 },
-        },
-        caravanTransit: {
-            voices: [
-                v('sine', 1318.5, 0.06, 0.08, { decay: 0.05 }),
-                v('noise', 0, 0.03, 0.04, { decay: 0.025, cutoff: 3500 }),
-            ],
-            feel: 'tick', jitter: 1.2,
-        },
-        milestoneGong: {
-            voices: [
-                v('noise', 0, 0.09, 0.16, { decay: 0.08, cutoff: 5500, cutoffEnd: 800, q: 2 }),
-                v('sine', 110, 0.85, 0.35, { freqEnd: 105, sweep: 0.8, decay: 0.85, drive: 0.3 }),
-                v('sine', 303.6, 0.65, 0.22, { decay: 0.60, delay: 0.002 }),
-                v('sine', 595.1, 0.45, 0.15, { decay: 0.40, delay: 0.004 }),
-            ],
-            feel: 'win', fx: { preset: 'coins', scale: 1.3 }, duck: 0.45,
-        },
-        nightFall: {
-            voices: [
-                v('sine', 320, 0.80, 0.10, { freqEnd: 160, sweep: 0.75, decay: 0.75 }),
-                v('noise', 0, 0.80, 0.08, { decay: 0.75, cutoff: 800, cutoffEnd: 250, q: 1.5 }),
-            ],
-            feel: null, duck: 0.2,
-        },
-        sporePulse: {
-            voices: [
-                v('sine', 987.77, 0.18, 0.06, { decay: 0.16 }),
-                v('sine', 1479.98, 0.25, 0.05, { decay: 0.22, delay: 0.04 }),
-            ],
-            feel: null, jitter: 1.8,
-        },
-    },
-
-    // ── Dynasty — ancestral harp & genetic lineage ─────────────────────
-    dynasty: {
-        pluckAncestor: {
-            voices: [
-                v('triangle', 440, 0.45, 0.18, { decay: 0.42 }),
-                v('saw', 880, 0.18, 0.10, { decay: 0.14, cutoff: 3200, cutoffEnd: 600, q: 2 }),
-            ],
-            feel: 'select', scale: 0.6,
-        },
-        ancestorPass: {
-            voices: [
-                v('sine', 220, 0.75, 0.18, { freqEnd: 180, sweep: 0.7, decay: 0.72 }),
-                v('sine', 330, 0.65, 0.12, { decay: 0.60, delay: 0.05 }),
-            ],
-            feel: 'light', scale: 0.5, duck: 0.25,
-        },
-        geneMutate: {
-            voices: [
-                v('sine', 784, 0.08, 0.10, { decay: 0.07 }),
-                v('sine', 987, 0.08, 0.10, { decay: 0.07, delay: 0.05 }),
-                v('sine', 1318, 0.25, 0.12, { decay: 0.22, delay: 0.10 }),
-            ],
-            feel: 'select', fx: { preset: 'sparks', scale: 0.7 },
-        },
-    },
-
     // ── SandPlayground — fluid bubbles, boiling steam & incandescence ──
     sandplayground: {
         bubble: {
@@ -663,6 +574,17 @@ const CUES = {
 
     // ── PoEcosystem — living geopolitical diplomacy & tribal trade ──
     poecosystem: {
+        // The camera-preset and minimap click (PoEcosystemViewer). It lived in an earlier
+        // `poecosystem:` block in this same object literal; a second key of the same name
+        // replaces the first, so this cue (and seven nothing fired) had been silent since
+        // the diplomacy block was added below it. One block per scope.
+        godFinger: {
+            voices: [
+                v('sine', 880, 0.12, 0.18, { freqEnd: 1760, sweep: 0.1, decay: 0.12 }),
+                v('triangle', 440, 0.22, 0.15, { decay: 0.2 }),
+            ],
+            feel: 'select', scale: 0.9, fx: { preset: 'sparks', scale: 1.1 },
+        },
         diplomacyWar: {
             voices: [
                 v('sawtooth', 110, 0.45, 0.28, { freqEnd: 82, sweep: 0.35, decay: 0.40, drive: 0.5 }),

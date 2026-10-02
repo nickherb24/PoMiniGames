@@ -17,6 +17,7 @@
 @page "/couplequiz/multi"
 @using PoMiniGamesClient.Games.PoCoupleQuiz.Services
 @using PoMiniGamesClient.Components
+@using Microsoft.AspNetCore.SignalR.Client
 @inject CoupleQuizHubService Hub
 @inject PlayerNameService PlayerNameService
 @inject NavigationManager Navigation
@@ -24,114 +25,56 @@
 
 <PageTitle>Couple Quiz · PoMiniGames</PageTitle>
 
+@* 2026-10-01: the lobby is the shared LobbyPanel. It used to be an intro card, then a
+   "Your name" form (for a player who is already signed in under a name), then a bare
+   list with no Leave and no Invite. The page now connects and takes its seat on
+   arrival, like every other lobby, and the how-to is folded under the buttons. *@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/">
-    @* OnePlayer is the "one person is reading this screen" intro mode. There is
-       no Multiplayer member; TwoPlayer means a shared-device ready-up, which
-       this isn't.
-       This comment must stay OUTSIDE the <GameIntro /> attribute list — Razor
-       otherwise parses the entire Razor-comment block as an attribute name,
-       and the runtime throws InvalidCharacterError from setAttribute (taking
-       the whole page render with it). See Index.razor for the same warning. *@
-    @if (!_introDone)
+    @if (!string.IsNullOrEmpty(_error))
     {
-        <GameIntro CueScope="quiz"
-                   Title="@TitleContent"
-                   Objective="Match your partner's answers. Each round one of you is the King and types a secret answer; everyone else tries to match it."
-                   Controls="@HowToPlayContent"
-                   Mode="GameIntro.IntroMode.OnePlayer"
-                   OnStart="OnIntroStartAsync" />
+        <p class="gps-error" role="alert">
+            @_error
+            <button class="app-btn app-btn--secondary app-btn--sm" @onclick="ConnectAndJoinAsync">Retry</button>
+        </p>
     }
-    else if (!_isConnected)
-    {
-        <p>Connecting…</p>
-    }
-    else if (_lobby is null)
-    {
-        <div class="gps-game-card">
-            <h2 class="gps-phase-h">Multiplayer · Couple Quiz</h2>
-            <h3 class="gps-game-h">💕 Join the lobby</h3>
-            <p>
-                Two or more players answer questions about each other. Each round one player is
-                the King and types the secret answer; everyone else tries to match it — scored
-                by AI. The King seat moves round the table every round.
-            </p>
-            @* There is exactly one lobby, so there is nothing to name and nothing to look up.
-               The game-code box and its "Join by code" button are gone (user decision,
-               2026-08-10) — the old "Find or create a lobby" button already auto-joined the
-               first waiting lobby, so the code was almost always a slower path to the same
-               place, with "the code may be invalid" as its own failure mode. *@
-            <label>Your name: <input @bind="_playerName" maxlength="24" disabled="@_busy" /></label>
-            <div class="gps-row">
-                @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
-                   is in flight, so the primary button cannot fire twice on touch. *@
-                <button class="gps-cta"
-                        aria-busy="@_busy"
-                        disabled="@_busy"
-                        @onclick="OnJoin">
-                    @(_busy ? "Joining…" : "Join the lobby")
-                </button>
-            </div>
-            @if (!string.IsNullOrEmpty(_error))
-            {
-                <p class="gps-error">
-                    @_error
-                    <button class="gps-btn gps-btn--secondary" @onclick="RetryConnect">Retry</button>
-                </p>
-            }
-        </div>
-    }
-    else
-    {
-        <div class="gps-game-card">
-            <h2 class="gps-phase-h">Lobby</h2>
-            <h3 class="gps-game-h">💕 Waiting for players</h3>
-            <p>Host: <strong>@_lobby.HostName</strong></p>
-
+    @* One start path: the server starts the match the moment everyone is ready, so there
+       is no Start button (ShowStart) and a ready cannot be taken back (CanReady). *@
+    <LobbyPanel TPlayer="NamedLobbyPlayer"
+                State="@LobbyState"
+                LocalConnectionId="@(_lobby?.PlayerName ?? "")"
+                ConnectionState="@(_isConnected ? HubConnectionState.Connected : HubConnectionState.Connecting)"
+                Hint="@(_lobby is { Players.Count: >= 2 }
+                        ? "One shared room. The match starts as soon as everyone is ready."
+                        : "One shared room. Waiting for another player to join…")"
+                MaxPlayersHint="0"
+                StartLabel="Start"
+                ShowStart="false"
+                HostReadies="true"
+                CanReady="@(!_ready)"
+                PickerTitle="Rounds"
+                HowTo="@HowToPlayContent"
+                OnReady="OnReady"
+                OnLeave="Leave">
+        <Picker>
             @* Rounds is host-only. It used to be a "Difficulty" select every player saw,
                which mapped to nothing but the round count — and belonged to whoever created
                the lobby, so a joiner picked "Hard", had it silently discarded, and got no
                hint why. Non-hosts now read the value instead of setting it. *@
-            @if (_lobby.IsHost)
+            @if (_lobby is { IsHost: true })
             {
-                <label>
-                    Rounds:
-                    <select value="@_lobby.MaxRounds" @onchange="OnRoundsChanged">
-                        @foreach (var n in RoundChoices)
-                        {
-                            <option value="@n">@n rounds</option>
-                        }
-                    </select>
-                </label>
+                <select aria-label="Rounds" value="@_lobby.MaxRounds" @onchange="OnRoundsChanged">
+                    @foreach (var n in RoundChoices)
+                    {
+                        <option value="@n">@n rounds</option>
+                    }
+                </select>
             }
             else
             {
-                <p>Rounds: <strong>@_lobby.MaxRounds</strong></p>
+                <p class="lobby__hint">@(_lobby?.MaxRounds ?? 5) rounds, set by the host.</p>
             }
-
-            <h3>Players (@_lobby.Players.Count)</h3>
-            <ul>
-                @foreach (var p in _lobby.Players)
-                {
-                    var isReady = _lobby.ReadyPlayers.Contains(p);
-                    <li>@p @(p == _lobby.HostName ? "👑" : "") @(isReady ? "✅" : "")</li>
-                }
-            </ul>
-
-            @* One start path. The host's "Start game" button used to sit beside the
-               ready-up flow and race it — the server auto-started the moment everyone was
-               ready anyway, so the button could only ever start a match early or do nothing. *@
-            <div class="cq-actions">
-                <button class="gps-btn gps-btn--primary" disabled="@_ready" @onclick="OnReady">
-                    @(_ready ? "Ready ✓" : "I'm ready")
-                </button>
-            </div>
-            <p class="cq-hint">
-                @(_lobby.Players.Count < 2
-                    ? "Waiting for another player to join…"
-                    : "The match starts as soon as everyone is ready.")
-            </p>
-        </div>
-    }
+        </Picker>
+    </LobbyPanel>
 </GameShell>
 
 @code {
@@ -139,11 +82,8 @@
 
     // 2026-09-13 UI unification: multiplayer-only route, so it carries the mode like
     // every other lobby title rather than reading as the game's whole name.
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz · Multiplayer</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz</span>;
 
-    // Intro/welcome gate — the controls card shows first; only on OK do we connect
-    // to the lobby hub (so the player doesn't appear to others until they're ready).
-    private bool _introDone;
     private RenderFragment HowToPlayContent => @<div>
         <p>Answer questions about each other. Each round one player is the King and locks a secret answer; everyone else tries to match it — matches score points.</p>
         <ul>
@@ -160,50 +100,40 @@
     private bool _ready;
     private CoupleQuizLobbyEventPayload? _lobby;
 
-    protected override void OnInitialized()
+    /// <summary>The hub's lobby payload, in the shape the shared lobby card draws.</summary>
+    private PoMiniGames.Shared.Games.LobbyState<NamedLobbyPlayer>? LobbyState => _lobby is null
+        ? null
+        : new PoMiniGames.Shared.Games.LobbyState<NamedLobbyPlayer>(
+            _lobby.Players.Select(p => new NamedLobbyPlayer(p, _lobby.ReadyPlayers.Contains(p))).ToList(),
+            _lobby.HostName, GameCode: "", MaxPlayers: 0, DateTimeOffset.UtcNow);
+
+    protected override async Task OnInitializedAsync()
     {
-        // Only wire the hub handlers here — the connection itself waits for the
-        // intro's OK (see OnIntroStartAsync) so the player joins the lobby only
-        // after seeing the controls.
         _playerName = PlayerNameService.GetPlayerName();
         Hub.OnLobbyJoined += HandleLobbyJoined;
         Hub.OnLobbyUpdated += HandleLobbyUpdated;
         Hub.OnPlayerDisconnected += HandleLobbyUpdated;
         Hub.OnLobbyError += HandleError;
         Hub.OnGameStarted += HandleGameStarted;
+        await ConnectAndJoinAsync();
     }
 
-    private async Task OnIntroStartAsync()
+    // Also the Retry button's handler: the hub service's connect is idempotent.
+    private async Task ConnectAndJoinAsync()
     {
-        _introDone = true;
-        StateHasChanged();
+        if (_busy || _lobby is not null) return;
+        _busy = true;
+        _error = null;
         try
         {
             await Hub.ConnectAsync();
             _isConnected = true;
-        }
-        catch (Exception ex)
-        {
-            _error = $"Could not connect: {ex.Message}";
-        }
-        StateHasChanged();
-    }
-
-    private async Task OnJoin()
-    {
-        if (_busy || _lobby is not null) return;
-        if (string.IsNullOrWhiteSpace(_playerName)) { _error = "Enter a name."; return; }
-        PlayerNameService.SetPlayerName(_playerName);
-        _busy = true;
-        _error = null;
-        StateHasChanged();
-        try
-        {
+            StateHasChanged();
             await Hub.JoinAsync(_playerName);
         }
         catch (Exception ex)
         {
-            _error = $"Could not join the lobby: {ex.Message}";
+            _error = $"Could not reach the lobby: {ex.Message}";
         }
         finally
         {
@@ -212,20 +142,9 @@
         }
     }
 
-    private async Task RetryConnect()
-    {
-        _error = null;
-        try
-        {
-            await Hub.ConnectAsync();
-            _isConnected = true;
-        }
-        catch (Exception ex)
-        {
-            _error = $"Retry failed: {ex.Message}";
-        }
-        StateHasChanged();
-    }
+    // The hub connection is app-lifetime and shared with the game page (see DisposeAsync),
+    // so leaving the page does not drop the seat by itself; a full load does.
+    private void Leave() => Navigation.NavigateTo("/", forceLoad: true);
 
     private async Task OnReady()
     {

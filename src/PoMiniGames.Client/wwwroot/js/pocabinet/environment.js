@@ -30,6 +30,10 @@ const ENV_CACHE_MS = 30 * 60 * 1000;
 // open-meteo weather codes that mean "wet track" (drizzle/rain/showers/storm).
 const RAIN_CODES = new Set([51, 53, 55, 56, 57, 61, 63, 65, 66, 67, 80, 81, 82, 95, 96, 99]);
 
+// The game's own reduced-motion setting, or the platform's (<html data-motion>: the OS
+// preference or the settings sheet's switch).
+const calm = (prefs) => !!prefs.reducedMotion || document.documentElement.dataset.motion === 'reduce';
+
 let current = { raining: false, source: 'default' };
 
 /** Environment of the most recent mount — race.js reads this for solo rain grip. */
@@ -116,7 +120,7 @@ class EnvironmentHandle {
 
         // ── Rain: camera-parented streak field ──
         if (raining) {
-            const count = prefs.reducedMotion ? 120 : 320;
+            const count = calm(prefs) ? 120 : 320;
             const positions = new Float32Array(count * 2 * 3);
             this.dropY = new Float32Array(count);
             for (let i = 0; i < count; i++) {
@@ -175,7 +179,7 @@ class EnvironmentHandle {
                 reassert += dt;
                 if (reassert > 1) { reassert = 0; audio.setRain(1); }
                 const pos = this.rain.geom.attributes.position.array;
-                const speed = prefs.reducedMotion ? 9 : 22;
+                const speed = calm(prefs) ? 9 : 22;
                 for (let i = 0; i < this.rain.count; i++) {
                     let y = this.dropY[i] - speed * dt;
                     if (y < -1) y += 12;

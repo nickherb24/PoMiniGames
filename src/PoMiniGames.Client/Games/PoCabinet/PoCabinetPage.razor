@@ -21,31 +21,17 @@
                 <div class="pocabinet-card pocabinet-card--start">
                     <div class="pocabinet-start__main">
                         <header class="pocabinet-start__head">
-                            <h1>Cabinet</h1>
-                            @* One switcher replaces the "Multiplayer" link and the three mode-specific intros. *@
-                            <nav class="pocabinet-modes" aria-label="Mode">
-                                <a href="/pocabinet/1player" class="pocabinet-mode @(Mode == GameMode.OnePlayer ? "pocabinet-mode--on" : null)" aria-current="@(Mode == GameMode.OnePlayer ? "page" : null)">Solo</a>
-                                <a href="/pocabinet/multi" class="pocabinet-mode @(IsMultiplayerMode ? "pocabinet-mode--on" : null)" aria-current="@(IsMultiplayerMode ? "page" : null)">Online</a>
-                                <a href="/pocabinet/demo" class="pocabinet-mode @(Mode == GameMode.Demo ? "pocabinet-mode--on" : null)" aria-current="@(Mode == GameMode.Demo ? "page" : null)">Demo</a>
-                            </nav>
+                            @* h2: the page's h1 is the game title GameShell puts in the top bar. *@
+                            <h2>Cabinet</h2>
+                            @* One switcher replaces the "Multiplayer" link and the three mode-specific
+                               intros; since 2026-10-01 it is the shared one every game has. *@
+                            <ModeSwitch />
                         </header>
                         <p class="pocabinet-card__lede">@Lede</p>
                         @if (!IsMultiplayerMode)
                         {
                             <PoCabinetTrackSelector SelectedTrackId="@_trackId" SelectedTrackIdChanged="OnTrackChanged"
                                                     Campaign="@(Mode == GameMode.OnePlayer)" />
-                        }
-                        <div class="pocabinet-actions">
-                            <button class="pocabinet-primary" @onclick="StartRaceAsync">@(Mode == GameMode.Demo ? "Watch demo" : IsMultiplayerMode ? "Join lobby" : "Start race")</button>
-                            <a class="pocabinet-link" href="/leaderboards?game=pocabinet">Leaderboard</a>
-                            @if (Mode == GameMode.OnePlayer && HasAnyCareerProgress)
-                            {
-                                <button class="pocabinet-link" @onclick="ResetCareerAsync" aria-label="Reset career progression">Reset career</button>
-                            }
-                        </div>
-                        @if (!string.IsNullOrEmpty(_status))
-                        {
-                            <p class="pocabinet-status" role="alert">@_status</p>
                         }
                     </div>
                     <div class="pocabinet-start__side">
@@ -63,6 +49,19 @@
                             <PoCabinetSettingsPanel Value="Settings" ValueChanged="OnSettingsChangedAsync" />
                         </details>
                     </div>
+                    @* Last, under the options, where every other start card has its button. *@
+                    <div class="pocabinet-actions">
+                        <button class="pocabinet-primary" @onclick="StartRaceAsync">@(Mode == GameMode.Demo ? "Watch demo" : IsMultiplayerMode ? "Join lobby" : "Start race")</button>
+                        <a class="pocabinet-link" href="/leaderboards?game=pocabinet">Leaderboard</a>
+                        @if (Mode == GameMode.OnePlayer && HasAnyCareerProgress)
+                        {
+                            <button class="pocabinet-link" @onclick="ResetCareerAsync" aria-label="Reset career progression">Reset career</button>
+                        }
+                    </div>
+                    @if (!string.IsNullOrEmpty(_status))
+                    {
+                        <p class="pocabinet-status" role="alert">@_status</p>
+                    }
                 </div>
             </section>
         }
@@ -73,7 +72,7 @@
         }
         else
         {
-            <section class="pocabinet-race @(Settings.ReducedMotion ? "pocabinet-reduced" : "")"
+            <section class="pocabinet-race"
                      style="--pocabinet-hud:@Settings.HudScaleCss"
                      aria-label="@(_phase == Phase.Replay ? "Race replay" : "Race in progress")">
                 <canvas id="pocabinetCanvas"

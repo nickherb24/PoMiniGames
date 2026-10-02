@@ -1,29 +1,28 @@
-@* PoCabinetSettingsPanel — audio / accessibility / environment prefs and driver aids.
-   Bound two-way via Value + ValueChanged; persistence and JS-side application
-   (Web Audio gains, aids, racing line) are the page's job — this component only
-   edits the view model and raises the change. Native Blazor + design tokens,
-   no Radzen. Render quality and FOV are gone (2026-09-29): scene.js picks the
-   quality tier from the measured frame rate.
+@* PoCabinetSettingsPanel — the settings that are Cabinet's own: race music, HUD size,
+   weather, controls and driver aids. Bound two-way via Value + ValueChanged;
+   persistence and JS-side application are the page's job — this component only edits
+   the view model and raises the change. Native Blazor + design tokens, no Radzen.
+   Render quality and FOV are gone (2026-09-29): scene.js picks the quality tier from
+   the measured frame rate.
 
-   Compact (the pause overlay): the three audio rows up front, everything else
-   folded under "More settings", so pausing doesn't open a 15-row form. *@
+   Volume, mute, reduced motion and colour-blind colours are gone too (2026-10-01).
+   They are the app's settings (the sheet in the top bar's account menu) and Cabinet
+   kept a second switch for each. Either source turned the option on, so with the
+   app's switch on, turning Cabinet's off did nothing. One button opens the sheet.
+
+   Compact (the pause overlay): music and the app-settings button up front, everything
+   else folded under "More settings", so pausing doesn't open a 12-row form. *@
+@inject SettingsService AppSettings
 
 <div class="pocabinet-settings" role="group" aria-label="Cabinet settings">
     <div class="pocabinet-settings__row">
-        <label for="pocabinet-vol">Master volume</label>
-        <input id="pocabinet-vol" type="range" min="0" max="1" step="0.05"
-               value="@Format(Value.MasterVolume)" @oninput="OnVolumeChanged" />
-        <span class="pocabinet-settings__value">@($"{Value.MasterVolume:0%}")</span>
-    </div>
-
-    <div class="pocabinet-settings__row">
-        <label for="pocabinet-mute">Mute all audio</label>
-        <input id="pocabinet-mute" type="checkbox" checked="@Value.Muted" @onchange="OnMuteChanged" />
-    </div>
-
-    <div class="pocabinet-settings__row">
         <label for="pocabinet-music">Race music</label>
         <input id="pocabinet-music" type="checkbox" checked="@Value.Music" @onchange="OnMusicChanged" />
+    </div>
+
+    <div class="pocabinet-settings__row">
+        <span>Volume, mute, motion and colours</span>
+        <button type="button" class="pocabinet-secondary" @onclick="AppSettings.RequestOpen">App settings</button>
     </div>
 
     @if (Compact)
@@ -62,16 +61,6 @@
                 <option value="rain">Rain (slippery, solo)</option>
                 <option value="auto">Live (Washington D.C.)</option>
             </select>
-        </div>
-
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-motion">Reduced motion (confetti, rain density)</label>
-            <input id="pocabinet-motion" type="checkbox" checked="@Value.ReducedMotion" @onchange="OnReducedMotionChanged" />
-        </div>
-
-        <div class="pocabinet-settings__row">
-            <label for="pocabinet-colorsafe">Colorblind-safe minimap palette</label>
-            <input id="pocabinet-colorsafe" type="checkbox" checked="@Value.ColorSafe" @onchange="OnColorSafeChanged" />
         </div>
 
         <h3 class="pocabinet-settings__group">Controls &amp; driver aids</h3>
@@ -130,12 +119,6 @@
         if (ValueChanged.HasDelegate) await ValueChanged.InvokeAsync(Value);
     }
 
-    private Task OnVolumeChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.MasterVolume = ParseDouble(e.Value?.ToString(), s.MasterVolume));
-
-    private Task OnMuteChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.Muted = e.Value is bool b && b);
-
     private Task OnMusicChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.Music = e.Value is bool b && b);
 
@@ -144,12 +127,6 @@
 
     private Task OnWeatherChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.Weather = e.Value?.ToString() ?? s.Weather);
-
-    private Task OnReducedMotionChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.ReducedMotion = e.Value is bool b && b);
-
-    private Task OnColorSafeChanged(ChangeEventArgs e) =>
-        RaiseAsync(s => s.ColorSafe = e.Value is bool b && b);
 
     private Task OnTouchChanged(ChangeEventArgs e) =>
         RaiseAsync(s => s.TouchControls = e.Value?.ToString() ?? s.TouchControls);

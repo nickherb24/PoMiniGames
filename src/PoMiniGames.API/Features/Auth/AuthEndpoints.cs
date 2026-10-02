@@ -12,8 +12,8 @@ public static class AuthEndpoints
         // §1 MapGroup() per slice: every /api/auth/* endpoint shares the same
         // prefix and OpenAPI tag. The legacy unprefixed /auth/login/microsoft,
         // /auth/login/fake, /auth/logout, and /auth/me routes are kept OUTSIDE
-        // this group — those URLs are documented in §2.3 of AGENT.MD and used
-        // by external monitors, so the wire path must not change.
+        // this group — those URLs are used by external monitors, so the wire
+        // path must not change.
         var auth = app.MapGroup("/api/auth").WithTags("Auth");
 
         auth.MapGet("/config", (
@@ -131,7 +131,7 @@ public static class AuthEndpoints
         // NetRun10 audit #7: accept both `?user=…` and `?displayName=…` —
         // every other dev-bypass endpoint in the project uses `displayName`,
         // so the previous `user`-only binding silently minted "Guest" for
-        // anyone copying the AGENT.MD example. `displayName` wins if both
+        // anyone copying the example AGENT.md then carried. `displayName` wins if both
         // are supplied; unknown query params are rejected with 400 to keep
         // the contract honest.
         app.MapGet("/auth/login/fake", [AllowAnonymous] async (

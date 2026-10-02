@@ -60,27 +60,19 @@
                 <QuickMatchPanel Session="@_online" OnCancel="LeaveOnline" OnRetry="RetryOnlineAsync" OnFindAnother="FindOpponentSafeAsync" />
             </div>
         }
-        @* Visible turn/status bar.
-
-           Whose turn it is already existed — but only as text inside GameShell's
-           `gps-sr-only` live region, so it was spoken to screen readers and shown
-           to nobody. A sighted player had no indication of turn, of the CPU
-           thinking, or of which colour they were; the screen was a board and
-           nothing else.
-
-           aria-hidden on purpose: the polite live region above is still the
-           accessible source of this information, and exposing both would make a
-           screen reader announce every turn change twice. *@
-        <div class="cf-status" aria-hidden="true">
-            <span class="cf-status-side @(IsRedTurn ? "cf-status-side--active" : "")">
-                <span class="cf-status-dot cf-status-dot--red"></span>
-                <span class="cf-status-name">@RedName</span>
-            </span>
-            <span class="cf-status-text">@StatusText</span>
-            <span class="cf-status-side cf-status-side--right @(IsYellowTurn ? "cf-status-side--active" : "")">
-                <span class="cf-status-name">@YellowName</span>
-                <span class="cf-status-dot cf-status-dot--yellow"></span>
-            </span>
+        @* Online, before there is an opponent (connecting, searching, connection lost),
+           the card above is the whole page. The strip and an empty board used to sit
+           under it: on a laptop that pushed the board's bottom rows 140px below the
+           fold, for a board nobody could play on yet. 2026-10-01. *@
+        @if (!OnlineWaiting)
+        {
+        @* Visible turn/status strip: whose turn, the CPU thinking, which colour is
+           whose. It used to exist only as text in GameShell's sr-only live region. *@
+        <div class="cf-status-slot">
+            <TurnStrip LeftName="@RedName" RightName="@YellowName" Text="@StatusText"
+                       LeftActive="@IsRedTurn" RightActive="@IsYellowTurn"
+                       LeftColor="var(--disc-red-mid)" RightColor="var(--disc-yellow-mid)"
+                       TextClass="cf-status-text" />
         </div>
         @* §3 Hover-ghost: pointerleave on the board clears the column preview so
            the ghost disc never sticks when the cursor exits the grid. *@
@@ -148,6 +140,7 @@
                 </div>
             }
         </div>
+        }
     </div>
 </GameShell>
 
@@ -203,6 +196,9 @@
     {
         "demo" => "Red",
         "online" => OnlineSeatName(TurnMatchSide.First),
+        // Against the CPU there is one person at the board. Their display name adds
+        // nothing, and a guest's is 21 characters that wrapped the strip to three lines.
+        "ai" => "You",
         _ => P1Name,
     };
     private string YellowName => PlayMode switch
@@ -361,31 +357,28 @@
         if (IsOnline) _ = StartOnlineAsync();
     }
 
-    private string ActiveModeLabel => PlayMode switch
-    {
-        "demo" => "Demo",
-        "2p" => "2 Players",
-        "online" => "Online",
-        _ => "1 Player",
-    };
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔴</span> Connect Five · @ActiveModeLabel</span>;
+    // No mode suffix (2026-10-01). "Connect Five · 1 Player" did not fit a phone's top
+    // bar and was cut at "· 1"; the mode is the selected button on the intro card's
+    // switch and the first segment after the game in the address.
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔴</span> Connect Five</span>;
 
     // Audit #5: mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players and a hot seat, and the demo explains it is a
     // CPU-vs-CPU exhibition.
+    // Each variant says only what its mode adds: the intro card prints the objective
+    // ("connect five in a row…") directly above, and used to get it again from here.
     private RenderFragment HowToPlayContent => PlayMode switch
     {
         "demo" => @<div>
             <p>Watch two CPUs play Connect Five.</p>
             <ul>
                 <li>No input — the board runs itself for the duration of the demo reel</li>
-                <li>First to five discs in a row wins the round</li>
                 <li>The demo loops on the post-game screen until the reel advances</li>
             </ul>
         </div>,
         "online" => @<div>
-            <p>Play another person over the internet — first to five in a row wins.</p>
+            <p>Play another person over the internet.</p>
             <ul>
                 <li>You're paired with the next player who picks Online — no lobby, no codes</li>
                 <li>Who goes first is drawn at random and swaps on every rematch</li>
@@ -396,12 +389,10 @@
             <p>Two players, one device — pass it back and forth.</p>
             <ul>
                 <li>Player 1 drops 🔴, then Player 2 drops 🟡, and so on</li>
-                <li>First to five in a row — horizontal, vertical or diagonal — wins</li>
                 <li>No CPU and no rating: just take turns</li>
             </ul>
         </div>,
         _ => @<div>
-            <p>1 Player vs CPU — get five discs in a row, horizontally, vertically or diagonally.</p>
             <ul>
                 <li>Click or tap a column to drop your disc</li>
                 <li>The CPU is matched to your ELO: win and it gets stronger, lose and it eases off</li>
@@ -576,7 +567,7 @@
             var (rr, rc) = DemoMove(_board, Player.Red);
             _board = _board.Place(rr, rc, Player.Red);
             _demoPly++;
-            _ = Feedback.ChipDropAsync(rr); // demo was silent before — now each CPU drop plays the slide + thud
+            _ = Feedback.ChipDropAsync(rr, UiFeedbackService.BoardPan(rc, ConnectFiveBoard.Cols)); // demo was silent before — now each CPU drop plays the slide + thud
             TryDrop(rc, rr, "red"); // §CF-1 physics-driven visual drop (demo Red)
             var redWin = _board.CheckWin(Player.Red);
             if (redWin.Won) { _gameResult = GameResult.Win; _winCells = redWin.Cells; OnWinDetected(); }
@@ -590,7 +581,7 @@
             _board = _board.Place(yr, yc, Player.Yellow);
             _demoPly++;
             TryDrop(yc, yr, "yellow"); // §CF-1 physics-driven visual drop (demo Yellow)
-            _ = Feedback.ChipDropAsync(yr); // demo CPU #2 — same realistic cue
+            _ = Feedback.ChipDropAsync(yr, UiFeedbackService.BoardPan(yc, ConnectFiveBoard.Cols)); // demo CPU #2 — same realistic cue
             var yellowWin = _board.CheckWin(Player.Yellow);
             if (yellowWin.Won) { _gameResult = GameResult.Loss; _winCells = yellowWin.Cells; OnWinDetected(); }
             else if (_board.IsFull()) { _gameResult = GameResult.Draw; }
@@ -738,7 +729,7 @@
         if (PlayMode == "2p") { HandleTwoPlayerDrop(targetRow, col); return; }
 
         _board = _board.Place(targetRow, col, Player.Red);
-        _ = Feedback.ChipDropAsync(targetRow); // realistic slide + thud, synced to the drop animation
+        _ = Feedback.ChipDropAsync(targetRow, UiFeedbackService.BoardPan(col, ConnectFiveBoard.Cols)); // realistic slide + thud, synced to the drop animation
         TryDrop(col, targetRow, "red"); // §CF-1 physics-driven visual drop
 
         var winCheck = _board.CheckWin(Player.Red);
@@ -786,7 +777,7 @@
             // Strength scales with the CPU's ELO (matched to the player's rating).
             var (ar, ac) = _ai.GetAdaptiveMove(_board, Player.Yellow, _cpuElo);
             _board = _board.Place(ar, ac, Player.Yellow);
-            _ = Feedback.ChipDropAsync(ar); // AI's disc lands with the same realistic cue
+            _ = Feedback.ChipDropAsync(ar, UiFeedbackService.BoardPan(ac, ConnectFiveBoard.Cols)); // AI's disc lands with the same realistic cue
             TryDrop(ac, ar, "yellow"); // §CF-1 physics-driven visual drop (AI)
             var aiWin = _board.CheckWin(Player.Yellow);
             if (aiWin.Won)
@@ -822,7 +813,7 @@
     {
         var player = _current2pPlayer;
         _board = _board.Place(targetRow, col, player);
-        _ = Feedback.ChipDropAsync(targetRow); // realistic slide + thud, 2P
+        _ = Feedback.ChipDropAsync(targetRow, UiFeedbackService.BoardPan(col, ConnectFiveBoard.Cols)); // realistic slide + thud, 2P
         TryDrop(col, targetRow, player == Player.Red ? "red" : "yellow"); // §CF-1 physics-driven visual drop
 
         var winCheck = _board.CheckWin(player);
@@ -927,6 +918,8 @@
     private bool IsOnline => PlayMode == "online";
     private bool IsMyOnlineTurn => _online?.IsMyTurn ?? false;
     private bool OnlinePlaying => _online?.Phase == QuickMatchPhase.Playing;
+    // No opponent yet (or the connection is gone): the quick-match card stands alone.
+    private bool OnlineWaiting => IsOnline && _online?.Phase is not (QuickMatchPhase.Playing or QuickMatchPhase.Over);
     private TurnMatchSide _mySide => _online?.MySide ?? TurnMatchSide.First;
     private TurnMatchSide OnlineTurn => _online?.Turn ?? TurnMatchSide.First;
     private string OpponentName => _online?.OpponentName ?? "Opponent";
@@ -934,8 +927,11 @@
     private bool RematchRequested => _online?.RematchRequested ?? false;
     private TurnMatchEndReason OnlineEndReason => _online?.EndReason ?? TurnMatchEndReason.None;
     private string OnlineStatusText => _online?.StatusText ?? "Connecting…";
+    // Your own seat is "You" on the strip: the session's "<name> (you)" is 27 characters
+    // for a guest, and two of those wrapped the strip to three lines on a phone.
     private string OnlineSeatName(TurnMatchSide side) =>
-        _online?.SeatName(side, "Red", "Yellow") ?? (side == TurnMatchSide.First ? "Red" : "Yellow");
+        _online is { Seat: not null } && side == _mySide ? "You"
+        : _online?.SeatName(side, "Red", "Yellow") ?? (side == TurnMatchSide.First ? "Red" : "Yellow");
 
     private Task StartOnlineAsync()
     {
@@ -962,7 +958,7 @@
         _board = _board.Place(move.Row, move.Col, player);
         _hoverCol = -1;
         _lastGhostRenderKey = -1;
-        _ = Feedback.ChipDropAsync(move.Row);
+        _ = Feedback.ChipDropAsync(move.Row, UiFeedbackService.BoardPan(move.Col, ConnectFiveBoard.Cols));
         TryDrop(move.Col, move.Row, player == Player.Red ? "red" : "yellow");
     }
 

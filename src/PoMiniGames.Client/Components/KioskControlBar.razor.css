@@ -72,7 +72,7 @@
 .kiosk-bar-progress {
     color: var(--color-text-secondary);
     font-variant-numeric: tabular-nums;
-    font-size: 0.72rem;
+    font-size: var(--text-xs);
     padding: 0.1rem 0.45rem;
     border-radius: var(--radius-pill, 999px);
     background: var(--surface-2);

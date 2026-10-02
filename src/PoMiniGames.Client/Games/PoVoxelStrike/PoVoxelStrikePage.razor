@@ -55,16 +55,10 @@
             <div class="gps-intro-card pvs-start">
                 <div class="gps-intro-title">@TitleContent</div>
 
-                <div class="pvs-seg" role="tablist" aria-label="Mode">
-                    <button type="button" role="tab" class="pvs-seg-btn @(_tab == Tab.Solo ? "is-on" : null)"
-                            aria-selected="@Flag(_tab == Tab.Solo)" @onclick="() => SwitchTabAsync(Tab.Solo)">Solo</button>
-                    <button type="button" role="tab" class="pvs-seg-btn @(_tab == Tab.Online ? "is-on" : null)"
-                            aria-selected="@Flag(_tab == Tab.Online)" @onclick="() => SwitchTabAsync(Tab.Online)">Online</button>
-                    @* A button, not a link: app.js turns every in-app <a> click into a full page
-                       load, which would reboot the whole WASM app to switch a tab. *@
-                    <button type="button" role="tab" class="pvs-seg-btn" aria-selected="false"
-                            @onclick="@(() => Navigation.NavigateTo("/povoxelstrike/demo"))">Demo</button>
-                </div>
+                @* The shared mode switch. Solo and Online swap in place on this card (the
+                   address does not move), so the page tells it which is selected and
+                   makes the switch itself. *@
+                <ModeSwitch Current="@(_tab == Tab.Online ? GameMode.Multiplayer : GameMode.OnePlayer)" OnSelect="OnModeAsync" />
 
                 @if (_fatalError is not null)
                 {
@@ -75,10 +69,10 @@
                 {
                     <p class="gps-intro-objective">Blast through the walls to the golden chalice — while the guns shoot back.</p>
 
-                    <div class="pvs-seg pvs-seg--sub" role="radiogroup" aria-label="Run type">
+                    <div class="app-seg app-seg--quiet" role="radiogroup" aria-label="Run type">
                         @foreach (var run in Enum.GetValues<SoloRun>())
                         {
-                            <button type="button" role="radio" class="pvs-seg-btn @(_solo == run ? "is-on" : null)"
+                            <button type="button" role="radio" class="app-seg__btn"
                                     aria-checked="@Flag(_solo == run)" @onclick="() => SetSoloRunAsync(run)">@RunLabel(run)</button>
                         }
                     </div>
@@ -95,7 +89,7 @@
                     </details>
 
                     <div class="gps-intro-actions">
-                        <button type="button" class="gps-intro-btn gps-intro-btn--primary"
+                        <button type="button" class="app-btn app-btn--lg app-btn--primary"
                                 disabled="@(!_ready)" @onclick="EnterAsync">
                             @(_ready ? "Enter the siege" : "Building the arena…")
                         </button>
@@ -114,7 +108,7 @@
                                 OnStart="Hub.StartGameAsync"
                                 OnLeave="() => SwitchTabAsync(Tab.Solo)">
                         <PlayerLabel Context="p">
-                            <span class="lobby-pill lobby-pill--muted">P@(p.PlayerNumber)</span> @p.DisplayName
+                            <span class="app-chip">P@(p.PlayerNumber)</span> @p.DisplayName
                         </PlayerLabel>
                     </LobbyPanel>
                 }
@@ -129,7 +123,7 @@
                         @ControlsContent
                     </div>
                     <div class="gps-intro-actions">
-                        <button type="button" class="gps-intro-btn gps-intro-btn--primary"
+                        <button type="button" class="app-btn app-btn--lg app-btn--primary"
                                 disabled="@(!_ready)" @onclick="EnterAsync">
                             @(_ready ? "Deploy" : "Building the squad's arena…")
                         </button>
@@ -285,7 +279,7 @@
     private long _popId;
     private int _lastScore;
 
-    private RenderFragment TitleContent => @<span>🧱 Voxel Strike@(IsMulti ? " · Online" : "")</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧱</span> Voxel Strike</span>;
 
     // The ONE controls block: the start card, the squad's deploy card and the pause dialog
     // all render this. It used to be written out four times (intro, veil, pause, a status
@@ -525,6 +519,13 @@
         await InvokeAsync(StateHasChanged);
         if (!await EnsureEngineAsync()) return;
         await StartEngineAsync(demo: true, seed: 0, survival: false, playerNumber: 0, names: null);
+    }
+
+    private Task OnModeAsync(GameMode mode)
+    {
+        if (mode != GameMode.Demo) return SwitchTabAsync(mode == GameMode.Multiplayer ? Tab.Online : Tab.Solo);
+        Navigation.NavigateTo("/povoxelstrike/demo");
+        return Task.CompletedTask;
     }
 
     private async Task SwitchTabAsync(Tab tab)

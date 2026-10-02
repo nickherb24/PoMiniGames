@@ -41,7 +41,7 @@ else
             <button type="button"
                     class="pocabinet-track @(isSelected ? "pocabinet-track--selected" : null)"
                     role="radio"
-                    aria-checked="@isSelected"
+                    aria-checked="@(isSelected ? "true" : "false")"
                     data-track-id="@track.Id"
                     title="@track.Description"
                     @onclick="() => SelectTrack(track.Id)">

@@ -103,43 +103,44 @@
                    GameShell so it sits right beside the player's identity. Renders
                    nothing outside a rated 1P game. *@
                 <SectionOutlet SectionName="game-elo" />
+                @* The account menu (2026-10-01): the name chip is the one button, and it
+                   holds every page-level destination. It replaced a bare name, an
+                   always-visible Sign out pill, three of the hub's four action buttons
+                   and the footer's Settings link, and it is the only way to the settings
+                   sheet from inside a game (the footer is hidden on game routes). No
+                   gear: the 2026-07-13 call stands.
+
+                   There is no signed-out branch. AuthGate renders the login screen in
+                   place of this layout until a session exists, so the Sign in / ANON /
+                   ⋯ controls that used to sit here could only ever show on the
+                   /auth/callback page, for the moment it takes to finish signing in.
+
+                   Native Popover API: light-dismiss, Escape-to-close and the top layer
+                   come free. popovertargetaction="hide" closes the panel on activation
+                   and the @onclick still runs. *@
                 @if (AuthState.IsAuthenticated)
                 {
-                    @* Narrow phones show just the initial as an avatar (the name ellipsised to "t…"
-                       beside a game title); the name stays in the DOM, visually hidden, for screen readers. *@
-                    <span class="gl-auth-user" title="@AuthUserTitle"><span class="gl-auth-user__initial" aria-hidden="true">@AuthUserInitial</span><span class="gl-auth-user__name">@AuthUserLabel</span></span>
-                }
-                <button class="gl-auth-button" @onclick="AuthState.IsAuthenticated ? SignOut : SignIn">
-                    @(AuthState.IsAuthenticated ? "Sign out" : "Sign in")
-                </button>
-                @if (!AuthState.IsAuthenticated)
-                {
-                    <button class="gl-auth-button gl-auth-button--anon" @onclick="SignInAnon" title="Continue as anonymous">ANON</button>
-                }
-                @* §10 narrow-screen overflow: the ANON button is hidden on portrait phones
-                   (< 480px) and surfaced via the ⋯ overflow menu instead of competing for
-                   horizontal space with the Sign in button.
-
-                   Uses the native Popover API rather than the <details>/<summary>
-                   disclosure this used to be. <details> is a disclosure widget, not a
-                   menu: it has no light-dismiss (the panel stayed open until you hit
-                   the ⋯ again — clicking anywhere else on the page left it hanging),
-                   no Escape-to-close, and it renders in normal flow, which is why the
-                   panel needed a --z-dropdown value to sit above the page at all.
-                   `popover` gives all three for free and promotes the panel to the top
-                   layer, so it can never be trapped by an ancestor's stacking context. *@
-                @if (!AuthState.IsAuthenticated)
-                {
-                    <button class="gl-overflow-trigger gl-overflow-menu--anon"
-                            popovertarget="gl-anon-overflow"
-                            aria-label="More">⋯</button>
-                    <div id="gl-anon-overflow" popover="auto" class="gl-overflow-panel">
-                        @* popovertargetaction="hide" closes the panel on activation;
-                           the @onclick still runs. Without it the menu would stay open
-                           behind the sign-in flow it just started. *@
-                        <button class="gl-overflow-item"
-                                popovertarget="gl-anon-overflow" popovertargetaction="hide"
-                                @onclick="SignInAnon">Continue as anonymous</button>
+                    <button type="button" class="gl-account-trigger"
+                            popovertarget="gl-account-menu"
+                            aria-label="@($"Account menu, signed in as {AuthUserLabel}")"
+                            title="@AuthUserTitle">
+                        <span class="gl-account-initial" aria-hidden="true">@AuthUserInitial</span>
+                        <span class="gl-account-name" aria-hidden="true">@AuthUserLabel</span>
+                        <span class="gl-account-caret" aria-hidden="true">▾</span>
+                    </button>
+                    <div id="gl-account-menu" popover="auto" class="gl-overflow-panel">
+                        <button type="button" class="gl-overflow-item"
+                                popovertarget="gl-account-menu" popovertargetaction="hide"
+                                @onclick='() => GoTo("/profile")'>My Stats</button>
+                        <button type="button" class="gl-overflow-item"
+                                popovertarget="gl-account-menu" popovertargetaction="hide"
+                                @onclick='() => GoTo("/leaderboards")'>Leaderboards</button>
+                        <button type="button" class="gl-overflow-item"
+                                popovertarget="gl-account-menu" popovertargetaction="hide"
+                                @onclick="Settings.RequestOpen">Settings</button>
+                        <button type="button" class="gl-overflow-item gl-overflow-item--sep"
+                                popovertarget="gl-account-menu" popovertargetaction="hide"
+                                @onclick="SignOut">Sign out</button>
                     </div>
                 }
             }
@@ -201,11 +202,14 @@
     {
         <footer class="gl-footer" aria-label="Site information">
             <span class="gl-footer-build">PoMiniGames</span>
-            @* The Settings link went with the /settings page on 2026-08-11 (user
-               request) — preferences now run on their defaults. *@
+            @* Settings lives in the top bar's account menu, which is on every route. *@
             <a class="gl-footer-link" href="/health" aria-label="Service health">Status</a>
         </footer>
     }
+
+    @* The one settings sheet. Mounted here so it exists on every route; it opens
+       itself when anything calls Settings.RequestOpen(). *@
+    <SettingsSheet />
 </div>
 
 @code {
@@ -443,34 +447,18 @@
         }
     }
 
-    private async Task SignIn()
+    // Account-menu destinations. NavigateTo, not an <a>: app.js turns every in-app
+    // link click into a full page load.
+    private async Task GoTo(string path)
     {
         await Feedback.TapAsync();
-        var wasAuthenticated = AuthState.IsAuthenticated;
-        // Interactive sign-in: real MSAL when Microsoft is configured, dev-login
-        // stand-in otherwise. (The old SignInAsync() only errored in MSAL mode.)
-        await AuthState.SignInMicrosoftAsync();
-
-        // §10 Deferred-save payoff: if the player just signed in, replay any scores
-        // they parked while playing as a guest so their board entries land now.
-        if (!wasAuthenticated && AuthState.IsAuthenticated)
-        {
-            // The toast and the celebration now ride on ScoreSync.Flushed, so this
-            // only has to trigger the drain — see CelebrateFlushAsync.
-            await ScoreSync.FlushAsync();
-        }
+        NavigationManager.NavigateTo(path);
     }
 
     private async Task SignOut()
     {
         await Feedback.TapAsync();
         await AuthState.SignOutAsync();
-    }
-
-    private async Task SignInAnon()
-    {
-        await Feedback.TapAsync();
-        await AuthState.DevBypassAsync("ANON");
     }
 
     public void Dispose()

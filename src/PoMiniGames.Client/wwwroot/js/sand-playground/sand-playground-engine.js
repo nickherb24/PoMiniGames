@@ -105,7 +105,9 @@ let undoStack = [];
 let challenge = null;          // { id, def, t, n0, progress, done, held, tnt }
 let shotRequest = false, rec = null, recCanvas = null;
 let lastHaptic = 0;
-const reducedMotion = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+// <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
+const reducedMotion = (typeof document !== 'undefined' && document.documentElement.dataset.motion === 'reduce')
+    || (typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches);
 
 // --- GFX pass (same day): GPU particles, smoke field, sky, x-ray, reset transition
 let progPUpdate, progSmoke, progCopy;

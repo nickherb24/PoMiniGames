@@ -139,5 +139,89 @@ window.poPwa = (() => {
             deferredInstallPrompt = null;
             return choice.outcome; // 'accepted' or 'dismissed'
         },
+
+        // ── Invite link ────────────────────────────────────────────────────
+        // The native share sheet where there is one (phones, and Windows/macOS
+        // Chrome), the clipboard otherwise. Resolves 'shared', 'copied' or 'failed'
+        // so the caller can say which happened; a dismissed share sheet is 'shared'
+        // too, because the player saw it and chose not to send.
+        async shareLink(title, url) {
+            if (navigator.share) {
+                try {
+                    await navigator.share({ title, url });
+                    return 'shared';
+                } catch (e) {
+                    if (e && e.name === 'AbortError') return 'shared';
+                    // NotAllowedError etc. — fall through to the clipboard.
+                }
+            }
+            try {
+                await window.poCopyToClipboard(url);
+                return 'copied';
+            } catch {
+                return 'failed';
+            }
+        },
+    };
+})();
+
+// Game invites: the page half of Web Push. The worker half is js/pushWorker.js, the
+// server half Features/Invites. Only the browser calls live here; the API calls go
+// through the app's HttpClient in InviteService so they carry the antiforgery token.
+window.poPush = (() => {
+    const supported = () =>
+        'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+
+    // `navigator.serviceWorker.ready` never settles when no worker registered, so ask
+    // for the registration instead and treat "none" as "cannot".
+    const registration = async () => (supported() ? await navigator.serviceWorker.getRegistration() : null) || null;
+
+    function keyBytes(base64Url) {
+        const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+        const raw = atob(base64 + '='.repeat((4 - base64.length % 4) % 4));
+        return Uint8Array.from(raw, c => c.charCodeAt(0));
+    }
+
+    return {
+        // 'unsupported' | 'denied' | 'on' | 'off'
+        async state() {
+            const reg = await registration();
+            if (!reg) return 'unsupported';
+            if (Notification.permission === 'denied') return 'denied';
+            return (await reg.pushManager.getSubscription()) ? 'on' : 'off';
+        },
+
+        // Asks for permission (must run inside a click) and subscribes. Resolves the
+        // endpoint to register with the server, or null if the player said no.
+        async subscribe(publicKey) {
+            const reg = await registration();
+            if (!reg) return null;
+            if (await Notification.requestPermission() !== 'granted') return null;
+
+            const options = { userVisibleOnly: true, applicationServerKey: keyBytes(publicKey) };
+            try {
+                return (await reg.pushManager.subscribe(options)).endpoint;
+            } catch {
+                // An old subscription made with a different server key blocks a new
+                // one. Drop it and try once more.
+                const stale = await reg.pushManager.getSubscription();
+                if (!stale) return null;
+                await stale.unsubscribe();
+                try {
+                    return (await reg.pushManager.subscribe(options)).endpoint;
+                } catch {
+                    return null;
+                }
+            }
+        },
+
+        // Resolves the endpoint that was dropped, so the server can forget it too.
+        async unsubscribe() {
+            const reg = await registration();
+            const subscription = reg && await reg.pushManager.getSubscription();
+            if (!subscription) return null;
+            await subscription.unsubscribe();
+            return subscription.endpoint;
+        },
     };
 })();

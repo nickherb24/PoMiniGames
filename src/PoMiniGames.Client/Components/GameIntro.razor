@@ -48,6 +48,17 @@
             <div class="gps-intro-title">@Title</div>
         }
 
+        @* The game's other modes, one tap away (2026-10-01): before this, changing mode
+           meant going back to the hub. Not on the demo card, which is gone in two
+           seconds. Keydowns stop here so Enter on a mode button picks that mode
+           instead of also reaching HandleKey and starting this one. *@
+        @if (Mode != IntroMode.Demo)
+        {
+            <div class="gps-intro-modes" @onkeydown:stopPropagation="true">
+                <ModeSwitch />
+            </div>
+        }
+
         @if (!string.IsNullOrWhiteSpace(Objective))
         {
             <p class="gps-intro-objective">@Objective</p>
@@ -79,7 +90,7 @@
                 case IntroMode.TwoPlayer:
                     @if (ShowStart)
                     {
-                        <button class="gps-intro-btn gps-intro-btn--primary"
+                        <button class="app-btn app-btn--lg app-btn--primary"
                                 disabled="@(!StartEnabled)"
                                 @onclick="StartAsync">
                             @(StartLabel ?? "Start")
@@ -92,7 +103,7 @@
                     break;
 
                 default:
-                    <button class="gps-intro-btn gps-intro-btn--primary"
+                    <button class="app-btn app-btn--lg app-btn--primary"
                             @onclick="StartAsync">
                         @(StartLabel ?? "Start")
                     </button>
@@ -287,10 +298,35 @@
         // (2P) land here without the player having to click first.
         try { await _root.FocusAsync(); } catch { /* headless / detached — fine */ }
 
+        // The title swarm (gpuFxWebGPU.js): particles fall into the heading's letters and
+        // burst away when this card leaves the DOM, which the module watches for itself.
+        // Not awaited (it waits on a GPU adapter), and a no-op without WebGPU, on the low
+        // tier or under reduced motion.
+        _ = SwarmAsync();
+
         if (Mode == IntroMode.Demo && _demoTimer is null)
         {
             _demoTimer = new Timer(async _ => await InvokeAsync(StartAsync),
                 null, DemoDelayMs, Timeout.Infinite);
+        }
+    }
+
+    private async Task SwarmAsync()
+    {
+        // fxBootstrap.js fetches the module after the page's own scripts; on a direct load
+        // into a game this card can be up a moment before it. One retry covers that. Under
+        // reduced motion the module is never loaded and both calls simply fail.
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                await JS.InvokeVoidAsync("PoGpuWebGPU.assemble", _root);
+                return;
+            }
+            catch
+            {
+                await Task.Delay(600);
+            }
         }
     }
 
