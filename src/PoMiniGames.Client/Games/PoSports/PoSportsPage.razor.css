@@ -312,8 +312,8 @@
    half of it. Give the track the height instead. */
 @media (max-width: 640px) and (orientation: portrait) {
     .ps-canvas-host {
-        aspect-ratio: 3 / 4;
-        max-height: 74dvh;
+        aspect-ratio: 9 / 16;
+        max-height: 78dvh;
     }
 }
 

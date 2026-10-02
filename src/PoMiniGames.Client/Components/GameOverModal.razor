@@ -5,8 +5,8 @@
    The one end-of-game modal for every game in PoMiniGames.
 
    Centered, blocking, no backdrop-dismiss: the final result (GameSummary), the
-   stats grid (Stats), this game's top 3 (fetched from GameKey), and a single
-   button that returns to the main menu.
+   stats grid (Stats), this game's top 3 (fetched from GameKey), a Play again
+   button and one that returns to the main menu.
 
    Most games get this for free by passing GameOver to <GameShell>, which renders
    this component. It is a standalone component rather than markup inside
@@ -89,8 +89,11 @@
             </div>
         }
 
-        @* One exit, in every game and every mode: playing again is the hub's chip. *@
         <footer class="gps-play-again-actions">
+            @if (CanPlayAgain)
+            {
+                <button class="app-btn app-btn--secondary" @onclick="PlayAgain">Play again</button>
+            }
             <button class="app-btn app-btn--primary"
                     @onclick="Back"
                     autofocus>
@@ -339,6 +342,34 @@
 
     private bool IsMe(LeaderboardEntryDto e) =>
         !string.IsNullOrEmpty(Player) && string.Equals(e.Name, Player, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Play again is offered on a game's own address (/game or /game/{mode}). A deeper
+    /// address is one specific match (/posports/race/{code}), which cannot be replayed.
+    /// </summary>
+    private bool CanPlayAgain
+    {
+        get
+        {
+            var uri = new Uri(Navigation.Uri);
+            return uri.AbsolutePath.Trim('/').Split('/').Length <= 2
+                && !uri.Query.Contains("code=", StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    /// <summary>
+    /// Reloads the game's page, the same way a hub chip opens it, so every game starts
+    /// again from a clean engine without needing a reset path of its own.
+    /// </summary>
+    private async Task PlayAgain()
+    {
+        if (_dialogOpened)
+        {
+            try { await _dialog.CloseAsync(JS); } catch { /* already closed */ }
+        }
+        if (OnOk.HasDelegate) await OnOk.InvokeAsync();
+        Navigation.NavigateTo(Navigation.Uri, forceLoad: true);
+    }
 
     private async Task Ok()
     {

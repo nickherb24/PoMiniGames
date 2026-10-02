@@ -10,7 +10,7 @@
     <ul>
         @foreach (var p in Players)
         {
-            <li>
+            <li class="keys-only">
                 @p.Who
                 @foreach (var k in p.Sequence)
                 {
@@ -19,7 +19,8 @@
                 in order to run · <kbd>@p.Jump</kbd> jumps
             </li>
         }
-        <li>A wrong key restarts your cycle; a key before the gun is a false start</li>
+        <li class="touch-only">Tap the pads in the order they light up to run · JUMP jumps</li>
+        <li>A wrong press restarts your cycle; a press before the gun is a false start</li>
         <li>Clip a hurdle and it costs +1.5s</li>
     </ul>
 </div>

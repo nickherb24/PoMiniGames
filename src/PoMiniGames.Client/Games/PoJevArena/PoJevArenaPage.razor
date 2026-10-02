@@ -91,7 +91,7 @@
                             OnSaveSquad='name => SaveSquadAsync("blue", name)' OnLoadSquad='name => LoadSquadAsync("blue", name)' OnDeleteSquad="DeleteSquadAsync"
                             OnSlot='slot => OnSlotAsync("blue", slot)' />
 
-                <main class="jev-center">
+                <div class="jev-center">
                     @if (Drafting)
                     {
                         <CreatureLibrary Items="VisibleLibrary" Sort="@_sort" Query="@_query" Filter="@_filter"
@@ -149,7 +149,7 @@
                             }
                         }
                     }
-                </main>
+                </div>
 
                 <TeamColumn Team="red" Slots="_red" Drafting="Drafting"
                             Locked="@(!CanDraftFor("red"))"

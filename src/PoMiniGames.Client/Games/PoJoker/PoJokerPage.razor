@@ -27,12 +27,8 @@
                    OnStart="DismissIntro" />
     }
     <div class="pojoker-root">
-        @* Do NOT auto-start the show on /pojoker while the intro modal is up.
-           AutoStart=true would arm the beforeunload guard before the player had
-           even read the controls — click the brand link while the intro is up
-           and the browser prompts "Leave site? Changes you made may not be
-           saved." for a show that hasn't begun. Demo mode keeps AutoStart=true
-           because the kiosk has nobody to dismiss anything. *@
+        @* The show waits for the intro card to be dismissed. Demo mode starts at once:
+           the kiosk has nobody to dismiss anything. *@
         <JesterStage AutoStart="@(_isDemo || _introDone)" Loop="@_isDemo" OnShowComplete="HandleShowComplete" />
     </div>
 </GameShell>

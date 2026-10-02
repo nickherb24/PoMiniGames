@@ -32,9 +32,15 @@
         head.style.viewTransitionName = 'po-hero';
       } catch (_) { /* storage blocked: the plain cross-fade */ }
     }
-    document.startViewTransition(function () {
+    var transition = document.startViewTransition(function () {
       window.location.href = href;
     });
+    // The page unloads before the transition can finish, so its promises reject.
+    // That is the expected end of this transition, not an error.
+    var ignore = function () {};
+    transition.ready.catch(ignore);
+    transition.finished.catch(ignore);
+    transition.updateCallbackDone.catch(ignore);
   });
 
   // ----- 2. WebGL2 + device capability probe (callable from Blazor) -----

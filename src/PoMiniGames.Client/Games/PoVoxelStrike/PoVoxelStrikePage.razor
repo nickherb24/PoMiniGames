@@ -289,9 +289,12 @@
     // all render this. It used to be written out four times (intro, veil, pause, a status
     // line under the canvas) plus a fifth, wrong, copy on the lobby page.
     private RenderFragment ControlsContent => @<ul class="pvs-controls">
-        <li><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look</li>
-        <li>Hold <kbd>F</kbd> or left mouse to dig · <kbd>G</kbd> or right mouse to blast</li>
-        <li><kbd>Esc</kbd> pauses · a gamepad or a touch screen works too</li>
+        <li class="keys-only"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> move · <kbd>Shift</kbd> run · <kbd>Space</kbd> jump · mouse to look</li>
+        <li class="keys-only">Hold <kbd>F</kbd> or left mouse to dig · <kbd>G</kbd> or right mouse to blast</li>
+        <li class="keys-only"><kbd>Esc</kbd> pauses · a gamepad works too</li>
+        <li class="touch-only">Left thumb moves · drag the right side of the screen to look</li>
+        <li class="touch-only">Hold DIG to dig · tap BLAST and JUMP</li>
+        <li class="touch-only">The II button pauses</li>
     </ul>;
 
     private RenderFragment SettingsContent => @<div class="pvs-settings">

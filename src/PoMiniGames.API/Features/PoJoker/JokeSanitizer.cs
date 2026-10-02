@@ -9,8 +9,8 @@ namespace PoMiniGames.Features.PoJoker;
 /// otherwise be dropped can still be performed.
 /// </summary>
 /// <remarks>
-/// The Jester runs with JokeAPI safe-mode OFF and no blacklist (see
-/// <c>JesterStage.StartPerformance</c>), so flagged jokes arrive intact. Rather than
+/// The Jester runs with JokeAPI safe-mode OFF (see <c>JesterStage.StartPerformance</c>),
+/// so crude and explicit jokes arrive intact. Rather than
 /// skipping the harshest ones, they are rewritten and played.
 ///
 /// <para><b>Limitation, by construction:</b> this substitutes <i>words</i>. A joke

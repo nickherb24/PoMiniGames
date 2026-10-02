@@ -74,6 +74,13 @@ public sealed class AntiforgeryHandler : DelegatingHandler
 
         if (!await IsAntiforgeryRejectionAsync(response, cancellationToken))
         {
+            // A dev sign-in or sign-out just changed the identity this token is bound to.
+            // Dropping it here saves the next write a refusal and a replay.
+            if (response.IsSuccessStatusCode && ChangesIdentity(request))
+            {
+                Invalidate(token);
+            }
+
             return response;
         }
 
@@ -88,6 +95,14 @@ public sealed class AntiforgeryHandler : DelegatingHandler
         SetHeader(replay, refreshed);
 
         return await base.SendAsync(replay, cancellationToken);
+    }
+
+    private static bool ChangesIdentity(HttpRequestMessage request)
+    {
+        var path = request.RequestUri?.AbsolutePath;
+        return path is not null
+            && (path.EndsWith("/api/auth/dev-login", StringComparison.OrdinalIgnoreCase)
+                || path.EndsWith("/api/auth/dev-logout", StringComparison.OrdinalIgnoreCase));
     }
 
     private static bool RequiresToken(HttpRequestMessage request)

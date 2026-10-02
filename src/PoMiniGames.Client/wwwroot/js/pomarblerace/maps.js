@@ -36,10 +36,6 @@
 //   kickers          telegraphed kicker bands (see game.js _applyKickers)
 //   regenerate       true if asking for a new track means anything (procedural maps only)
 //
-// Each entry also says how the map was MADE and how many VERTICES it renders — both shown on the
-// track picker. `vertices` was measured by building the map in the engine and summing every
-// geometry in its track group (course, glass containment, arches, props); it is constant
-// per map, seeds included. Re-measure after changing a course or its dressing.
 // A registry entry (MAPS below) may also carry a `theme` — scene.js setTheme(): background/fog
 // colour, fog range, ambient/hemisphere/key lights and exposure. The page reads names and blurbs
 // from mapMenu(), so this file is the only place a map is described.
@@ -277,8 +273,6 @@ const MAPS = [
   {
     id: 1,
     name: 'Neon Chute',
-    made: 'Built in code — procedural generator',
-    vertices: 22394,
     blurb: 'Procedural — a new chute every race, with boost pads, rumble strips and the Gauntlet.',
     // Night: the chute's neon emissives are the light show, so the fill drops and goes violet.
     theme: {
@@ -292,8 +286,6 @@ const MAPS = [
   {
     id: 2,
     name: 'Spiral Works',
-    made: 'Modelled by hand in Blender',
-    vertices: 69422,
     blurb: 'A four-turn helix into split lanes, a funnel, two banked loops and a hazard fan.',
     // Factory floor under sodium lamps: warm key, rust-brown ground bounce, smoky brown haze.
     theme: {
@@ -306,8 +298,6 @@ const MAPS = [
   {
     id: 3,
     name: 'Grand Spiral',
-    made: 'Generated in Blender by a Python script',
-    vertices: 51144,
     blurb: 'A wide weave: a risky split, washboard, a funnel, a free fall and boost pads to the line.',
     // Open daytime sky: pale blue haze pushed further out, bright neutral sun.
     theme: {
@@ -320,8 +310,6 @@ const MAPS = [
   {
     id: 4,
     name: 'Canyon Run',
-    made: 'Built in code — procedural generator',
-    vertices: 22828,
     blurb: 'Procedural at dusk — a longer, tighter canyon: twin kicker gates, a long plinko and a double Gauntlet.',
     // Built from the Neon Chute recipe (track-procedural.js), whose 44-tall walls have never lost
     // a marble. Narrower, longer and twistier, with a different hazard mix.
@@ -336,8 +324,6 @@ const MAPS = [
   {
     id: 5,
     name: 'Playground Run',
-    made: 'Imported 3D scene — textured playground model',
-    vertices: 139445,
     blurb: 'Three laps of gutter round a jungle gym, down the drop well and the big slide into the tray.',
     // Afternoon park: warm sun, soft sky fill, light haze.
     theme: {
@@ -359,5 +345,5 @@ export function mapById(id) {
 
 /** Slot ids and names, for the host's map picker. */
 export function mapMenu() {
-  return MAPS.map((m) => ({ id: m.id, name: m.name, blurb: m.blurb, made: m.made, vertices: m.vertices }));
+  return MAPS.map((m) => ({ id: m.id, name: m.name, blurb: m.blurb }));
 }

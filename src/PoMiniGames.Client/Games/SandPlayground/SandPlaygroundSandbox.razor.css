@@ -112,6 +112,13 @@
     box-shadow: 0 0 14px color-mix(in srgb, var(--accent-amber) 45%, transparent);
 }
 
+/* The name of the selected tool, beside its icon. */
+.sp-btn-label {
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
 .sp-btn:disabled {
     opacity: 0.3;
     cursor: default;

@@ -5,7 +5,7 @@
 @using PoMiniGamesClient.Services
 @inject PlayerNameService PlayerNameService
 
-<PageTitle>SandPlayground</PageTitle>
+<PageTitle>Sand Playground · PoMiniGames</PageTitle>
 
 @* Fullscreen: the sandbox sizes itself to the game area (see
    SandPlaygroundSandbox.razor.css) rather than sitting in a padded card, which is what
@@ -45,7 +45,7 @@
 
     private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏜️</span> SandPlayground</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏜️</span> Sand Playground</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         @* Each tool button already carries its description as a tooltip and shows it as

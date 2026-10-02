@@ -278,7 +278,8 @@
 
     private RenderFragment OnlineHowToPlayContent => @<div>
         <ul>
-            <li><kbd>←</kbd>/<kbd>→</kbd> hold to steer — red for the host, white for the guest</li>
+            <li class="keys-only"><kbd>←</kbd>/<kbd>→</kbd> hold to steer — red for the host, white for the guest</li>
+            <li class="touch-only">Hold the ◀ ▶ pads to steer — red for the host, white for the guest</li>
             <li>The host's browser runs the physics; the guest sees the race a beat behind</li>
             <li>The next race starts automatically with the same opponent</li>
         </ul>
@@ -286,7 +287,8 @@
 
     private RenderFragment HowToPlayContent => @<div>
         <ul>
-            <li><kbd>←</kbd>/<kbd>→</kbd> hold to steer · <kbd>R</kbd> new track · <kbd>M</kbd> mute</li>
+            <li class="keys-only"><kbd>←</kbd>/<kbd>→</kbd> hold to steer · <kbd>R</kbd> new track · <kbd>M</kbd> mute</li>
+            <li class="touch-only">Hold the ◀ ▶ pads at the bottom of the screen to steer</li>
             <li>Chain top-10 finishes for a multiplier — one miss ends the run</li>
         </ul>
     </div>;
@@ -331,7 +333,6 @@
                         <span class="mr-opt-name">@m.Name</span>
                         <span class="mr-track-wr">@RecordText(id)</span>
                         <span class="mr-opt-hint">@TrackStatText(StatFor(id))</span>
-                        <span class="mr-track-meta">@m.Made · @m.Vertices.ToString("N0") vertices</span>
                     </button>
                 }
             </div>

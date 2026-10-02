@@ -200,13 +200,13 @@ public static class GameCatalog
         // PoEcosystem is an autonomous simulation that is watched, never played. 1P is "your
         // island": kept in this browser and offered back on the next visit. Demo is the kiosk:
         // a fresh island every time, never saved.
-        new(GameKeys.PoEcosystem, "PoEcosystem", "🌿",
+        new(GameKeys.PoEcosystem, "Ecosystem", "🌿",
         [
             new(GameMode.OnePlayer, "/poecosystem/1player"),
             new(GameMode.Demo, "/poecosystem/demo"),
         ]),
 
-        new(GameKeys.SandPlayground, "SandPlayground", "🏜️",
+        new(GameKeys.SandPlayground, "Sand Playground", "🏜️",
         [
             new(GameMode.OnePlayer, "/sandplayground/1player"),
             new(GameMode.Demo, "/sandplayground/demo"),

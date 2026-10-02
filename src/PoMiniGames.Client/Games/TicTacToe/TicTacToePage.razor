@@ -68,6 +68,7 @@
                        LeftActive="@IsXTurn" RightActive="@IsOTurn"
                        LeftColor="var(--ttt-x)" RightColor="var(--ttt-o)"
                        Class="ttt-online__turn" />
+            <p class="ttt-goal">@TicTacToeBoard.WinLength in a row wins</p>
         }
     </div>
     @if (!OnlineWaiting)
@@ -385,7 +386,7 @@
             }
             else if (_gameResult == GameResult.Loss)
             {
-                <span class="cf-result cf-result--loss">🤖 AI wins</span>
+                <span class="cf-result cf-result--loss">🤖 CPU wins</span>
             }
             else if (_gameResult == GameResult.Draw)
             {

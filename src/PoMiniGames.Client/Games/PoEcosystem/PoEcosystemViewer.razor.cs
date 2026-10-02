@@ -811,7 +811,7 @@ public partial class PoEcosystemViewer : ComponentBase, IAsyncDisposable
     private async Task ShareLinkAsync(string code, string name)
     {
         var url = Navigation.ToAbsoluteUri($"poecosystem?island={Uri.EscapeDataString(code)}").ToString();
-        var result = await Interop.ShareLinkAsync($"PoEcosystem · {name}", "A living island — watch it without changing it.", url);
+        var result = await Interop.ShareLinkAsync($"Ecosystem · {name}", "A living island — watch it without changing it.", url);
         _cloudMessage = result switch { "shared" => null, "copied" => "Link copied.", _ => $"Copy this link: {url}" };
         if (result == "copied") Toasts.Show("Link copied.", ToastType.Success);
         await InvokeAsync(StateHasChanged);

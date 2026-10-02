@@ -4,7 +4,7 @@
 @using PoMiniGamesClient.Models
 @inject PlayerNameService PlayerNameService
 
-<PageTitle>PoEcosystem · A living island</PageTitle>
+<PageTitle>Ecosystem · PoMiniGames</PageTitle>
 
 <GameShell Title=@TitleContent
            Player="@_playerName"
@@ -44,7 +44,7 @@
     // unreachable and every visit autosave a new island over the last one.
     private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> PoEcosystem</span>;
+    private RenderFragment TitleContent => @<span><span aria-hidden="true">🌿</span> Ecosystem</span>;
 
     private RenderFragment HowToPlayContent => @<div>
         @* Word budget — the intro card is capped at 100 words. Everything the

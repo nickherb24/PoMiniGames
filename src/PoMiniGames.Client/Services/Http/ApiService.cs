@@ -139,13 +139,10 @@ public class ApiService
     public async Task<AuthenticatedUserProfile?> DevBypassAsync(string? userName = null)
     {
         var name = string.IsNullOrWhiteSpace(userName) ? "Dev Admin" : userName;
-        var slug = name.Trim().ToLowerInvariant().Replace(' ', '-');
-        return await DevLoginAsync(new DevLoginRequest
-        {
-            UserId = $"dev-{slug}",
-            DisplayName = name,
-            Email = $"{slug}@local.dev"
-        });
+        // Only the name is sent. The server suffixes it and derives the user id and email from
+        // the suffixed form, so two guests never share an id. Pinning the id here ("dev-guest")
+        // made every guest the same player: one profile, one row per board.
+        return await DevLoginAsync(new DevLoginRequest { DisplayName = name });
     }
 
     public async Task<bool> DevLogoutAsync()

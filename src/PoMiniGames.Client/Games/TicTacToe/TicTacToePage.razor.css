@@ -295,3 +295,11 @@
     .ttt-winline { transform: rotate(var(--wl-angle, 0deg)); }
     .ttt-cell { animation: none; }
 }
+
+/* The rule in one line, under the turn strip. */
+.ttt-goal {
+    margin: 0.35rem 0 0;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--color-text-secondary);
+}

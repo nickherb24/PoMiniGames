@@ -73,6 +73,13 @@ public sealed class JokeApiClient(HttpClient httpClient, ILogger<JokeApiClient> 
         {
             url += "&safe-mode";
         }
+        else
+        {
+            // Dark and crude are the act; jokes that target a group are not. These are also
+            // the ones the AI jester's content filter refuses, which left the show with a
+            // joke on screen and nothing to say about it.
+            url += "&blacklistFlags=racist,sexist,religious";
+        }
 
         // Note: JokeAPI does not support excluding specific joke IDs via API.
         // Exclusion is handled at the application level (the endpoint re-fetches if needed).

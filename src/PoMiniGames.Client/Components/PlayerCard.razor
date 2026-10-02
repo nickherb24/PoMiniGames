@@ -135,11 +135,11 @@ else if (Card is not null)
                 <div class="card-actions">
                     <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="CopySvgAsync" title="Copy standalone vector SVG to clipboard">
                         <span>📋</span>
-                        <span>@(_copying ? "Copied!" : "Copy SVG")</span>
+                        <span>@(_copying ? "Copied!" : "Copy card")</span>
                     </button>
                     <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="DownloadSvgAsync" title="Download SVG image file">
                         <span>💾</span>
-                        <span>Download SVG</span>
+                        <span>Download card</span>
                     </button>
                 </div>
             }

@@ -22,13 +22,13 @@
            displayed size. *@
         <canvas @ref="_canvas" width="800" height="600" aria-hidden="true"></canvas>
         <canvas @ref="_overlay" width="800" height="600" class="sand-playground-overlay"
-                aria-label="SandPlayground sandbox — drag to paint, drag in open air to slingshot ordnance"></canvas>
+                aria-label="Sand Playground sandbox — drag to paint, drag in open air to slingshot ordnance"></canvas>
 
         @* In the attract reel the whole view is the simulation; the dock arrives
            with the first touch. *@
         @if (DockShown)
         {
-        <div class="sand-playground-dock" role="toolbar" aria-label="SandPlayground tools">
+        <div class="sand-playground-dock" role="toolbar" aria-label="Sand Playground tools">
             @foreach (var g in Groups)
             {
                 var t = CurrentOf(g);
@@ -38,7 +38,13 @@
                         aria-label="@(g.Tools.Length > 1 ? $"{g.Label}: {t.Label}" : t.Label)"
                         aria-pressed="@Pressed(GroupOf(ActiveTool) == g)"
                         disabled="@(!Array.Exists(g.Tools, x => ToolAllowed(x.Id)))"
-                        @onclick="() => SelectToolAsync(CurrentOf(g).Id)">@t.Icon</button>
+                        @onclick="() => SelectToolAsync(CurrentOf(g).Id)">
+                    @t.Icon
+                    @if (GroupOf(ActiveTool) == g)
+                    {
+                        <span class="sp-btn-label">@t.Label</span>
+                    }
+                </button>
             }
 
             <span class="sp-sep" aria-hidden="true"></span>
@@ -109,7 +115,7 @@
 
         @if (MenuOpen)
         {
-            <div id="sand-playground-menu" class="sand-playground-menu" role="dialog" aria-label="SandPlayground menu"
+            <div id="sand-playground-menu" class="sand-playground-menu" role="dialog" aria-label="Sand Playground menu"
                  @onkeydown="OnMenuKey">
                 <section>
                     <h2>World</h2>

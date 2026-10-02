@@ -72,16 +72,6 @@
     {
         if (firstRender)
         {
-            // The beforeunload listener function is defined up front, but it is only
-            // *attached* once a 1-player show is mid-flight (see StartPerformance), and
-            // removed the moment it ends, so leaving the page is friction-free before
-            // Start, after Stop, on completion, and in Loop mode (an always-attached
-            // listener would fire the "Leave site?" prompt on every link, including
-            // in Demo where looping shows never have work to lose).
-            await JS.InvokeVoidAsync("eval", @"window.__pojokerBeforeUnload = function(e) {
-                if (window.__pojokerShowRunning) { e.preventDefault(); e.returnValue = ''; }
-            };");
-
             if (AutoStart && !_orchestrator.IsRunning)
             {
                 _ = StartPerformance();
@@ -105,86 +95,37 @@
 
     private async Task StartPerformance()
     {
-        // Deliberately not safeMode: the Jester is meant to be edgy, so it runs
-        // unfiltered on JokeAPI's Dark category — the harshest material the upstream
-        // API exposes.
-        //
-        // Consequences, all intentional:
-        //  - safe-mode off means NO flags are stripped. JokeAPI's flag set is nsfw,
-        //    religious, political, racist, sexist, explicit; the client sends no
-        //    blacklistFlags, so any of them can come back. Add a blacklist in
-        //    JokeApiClient.BuildUrl to exclude specific flags without going back to
-        //    blanket safe mode.
-        //  - Dark jokes trip the AI jester's upstream content filter far more often.
-        //    AiJesterService handles that (shrug line, scored as not-a-triumph), so
-        //    expect visibly fewer triumphs in the 10-joke set.
+        // Deliberately not safeMode: the Jester is meant to be edgy, so it runs on
+        // JokeAPI's Dark category with safe-mode off. JokeApiClient.BuildUrl still
+        // blacklists the racist, sexist and religious flags: dark and crude can come
+        // back, jokes that target a group cannot. A Dark joke can still trip the AI
+        // jester's content filter; AiJesterService answers with a shrug line and
+        // scores it as not-a-triumph.
         _orchestrator.SelectedCategory = "Dark";
         _orchestrator.SelectedSafeMode = false;
         _orchestrator.SelectedMoodLabel = "Random";
 
-        // Arm the beforeunload guard ONLY for a non-loop 1-player show that has
-        // actually begun delivering jokes. Loop / demo shows never have work to
-        // lose (they auto-restart), and arming before the first joke arrives would
-        // fire the prompt on every navigation.
-        // The listener function is installed once on first render; here we
-        // attach it and flip the gate flag. The finally block below detaches
-        // it and clears the flag when the show is no longer running.
-        bool armGuard = !Loop;
-        if (armGuard)
+        // Iterative, not recursive: an attract screen can run for days, and each show
+        // calling the next would grow the stack until it fell over.
+        while (true)
         {
-            await JS.InvokeVoidAsync("eval",
-                "window.__pojokerShowRunning = true; window.addEventListener('beforeunload', window.__pojokerBeforeUnload);");
-        }
-        else
-        {
-            await JS.InvokeVoidAsync("eval", "window.__pojokerShowRunning = false;");
-        }
+            await _orchestrator.StartAsync();
 
-        try
-        {
-            // Iterative, not recursive: an attract screen can run for days, and each show
-            // calling the next would grow the stack until it fell over.
-            while (true)
+            // Only a show that ran to Complete rolls over. A manual Stop (or teardown)
+            // leaves another state, and must stay stopped.
+            if (!Loop || _disposed || _orchestrator.CurrentState != PerformanceState.Complete)
             {
-                await _orchestrator.StartAsync();
-
-                // Only a show that ran to Complete rolls over. A manual Stop (or teardown)
-                // leaves another state, and must stay stopped.
-                if (!Loop || _disposed || _orchestrator.CurrentState != PerformanceState.Complete)
-                {
-                    break;
-                }
-
-                await Task.Delay(LoopGapMs);
-                if (_disposed) break;
-                _orchestrator.ResetForNewShow();
+                break;
             }
-        }
-        finally
-        {
-            if (!_disposed && armGuard)
-            {
-                try
-                {
-                    await JS.InvokeVoidAsync("eval",
-                        "window.__pojokerShowRunning = false; window.removeEventListener('beforeunload', window.__pojokerBeforeUnload);");
-                }
-                catch { /* JS interop may be unavailable during teardown */ }
-            }
+
+            await Task.Delay(LoopGapMs);
+            if (_disposed) break;
+            _orchestrator.ResetForNewShow();
         }
     }
 
     private async Task StopPerformance()
     {
-        // Clear the guard flag AND remove the listener so a manual Stop leaves the
-        // page navigable without prompt, not just "armed but with a flag that
-        // would block if anything re-arms".
-        try
-        {
-            await JS.InvokeVoidAsync("eval",
-                "window.__pojokerShowRunning = false; window.removeEventListener('beforeunload', window.__pojokerBeforeUnload);");
-        }
-        catch { /* JS interop may be unavailable during teardown */ }
         await _orchestrator.StopAsync();
     }
 
@@ -221,11 +162,5 @@
             _orchestrator.StateChanged -= OnStateChanged;
             await _orchestrator.DisposeAsync();
         }
-        try
-        {
-            await JS.InvokeVoidAsync("eval",
-                "window.__pojokerShowRunning = false; window.removeEventListener('beforeunload', window.__pojokerBeforeUnload);");
-        }
-        catch { /* JS interop may be unavailable during teardown */ }
     }
 }

@@ -93,7 +93,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         : !_status.Configured ? "Jev unavailable: this arena needs Jev"
         : _hud is not null && !Drafting
             ? string.Create(CultureInfo.InvariantCulture, $"{_hud.Calls:N0} Jev calls · {_hud.Remaining ?? _status.Remaining:N0} left today")
-            : string.Create(CultureInfo.InvariantCulture, $"Jev ready · {_status.Remaining:N0} calls left today");
+            : string.Create(CultureInfo.InvariantCulture, $"AI ready · {_status.Remaining:N0} moves left today");
 
     private string? Banner => _error ?? NoticeBanner ?? _toast;
 
@@ -136,7 +136,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
             if (IsTwoPlayer) return _twoPlayerStep == TwoPlayerStep.Ready ? null : _twoPlayerStep == TwoPlayerStep.Blue ? "Player 1 drafts Blue" : "Player 2 drafts Red";
             if (missing > 0) return $"{missing} to draft";
             return (_status?.Remaining ?? long.MaxValue) < CallsPerFullMatch
-                ? string.Create(CultureInfo.InvariantCulture, $"Only {_status!.Remaining:N0} Jev calls left today")
+                ? string.Create(CultureInfo.InvariantCulture, $"Only {_status!.Remaining:N0} AI moves left today")
                 : null;
         }
     }

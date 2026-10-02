@@ -379,7 +379,6 @@
     color: var(--accent-amber-ink);
 }
 
-.mr-track-meta,
 .mr-opt-hint {
     font-size: var(--text-xs);
     color: color-mix(in srgb, var(--color-text-primary) 80%, transparent);

@@ -24,10 +24,6 @@ public sealed class MarbleMapOption
     public int Id { get; set; }
     public string Name { get; set; } = "";
     public string Blurb { get; set; } = "";
-    /// <summary>How the map was built (code generator, Blender by hand, Blender by script).</summary>
-    public string Made { get; set; } = "";
-    /// <summary>Vertices the map renders — measured, see maps.js.</summary>
-    public int Vertices { get; set; }
 }
 
 public sealed class MarbleSkinOption
