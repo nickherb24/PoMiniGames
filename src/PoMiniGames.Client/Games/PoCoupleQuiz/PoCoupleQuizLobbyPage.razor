@@ -27,9 +27,20 @@
 
 @* 2026-10-01: the lobby is the shared LobbyPanel. It used to be an intro card, then a
    "Your name" form (for a player who is already signed in under a name), then a bare
-   list with no Leave and no Invite. The page now connects and takes its seat on
-   arrival, like every other lobby, and the how-to is folded under the buttons. *@
+   list with no Leave and no Invite. 2026-10-02 (user call: every way into a game opens
+   on the same card): the opening card is back, and the seat is taken when it is dismissed. *@
 <GameShell Title=@TitleContent Player="@_playerName" BackTo="/">
+    @if (!_introDone)
+    {
+        <GameIntro CueScope="pocouplequiz"
+                   Title="@TitleContent"
+                   Objective="Answer questions about each other. Each round one of you is the King and locks a secret answer; match it to score."
+                   Controls="@HowToPlayContent"
+                   StartLabel="Join lobby"
+                   OnStart="OnIntroStartAsync" />
+    }
+    else
+    {
     @if (!string.IsNullOrEmpty(_error))
     {
         <p class="gps-error" role="alert">
@@ -75,6 +86,7 @@
             }
         </Picker>
     </LobbyPanel>
+    }
 </GameShell>
 
 @code {
@@ -85,7 +97,6 @@
     private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz</span>;
 
     private RenderFragment HowToPlayContent => @<div>
-        <p>Answer questions about each other. Each round one player is the King and locks a secret answer; everyone else tries to match it — matches score points.</p>
         <ul>
             <li>Type your answer and submit — the round scores itself once everyone is in</li>
             <li>The King seat rotates every round, so you both get asked about</li>
@@ -96,6 +107,7 @@
     private string _playerName = string.Empty;
     private string? _error;
     private bool _isConnected;
+    private bool _introDone;
     private bool _busy;
     private bool _ready;
     private CoupleQuizLobbyEventPayload? _lobby;
@@ -107,7 +119,7 @@
             _lobby.Players.Select(p => new NamedLobbyPlayer(p, _lobby.ReadyPlayers.Contains(p))).ToList(),
             _lobby.HostName, GameCode: "", MaxPlayers: 0, DateTimeOffset.UtcNow);
 
-    protected override async Task OnInitializedAsync()
+    protected override void OnInitialized()
     {
         _playerName = PlayerNameService.GetPlayerName();
         Hub.OnLobbyJoined += HandleLobbyJoined;
@@ -115,6 +127,13 @@
         Hub.OnPlayerDisconnected += HandleLobbyUpdated;
         Hub.OnLobbyError += HandleError;
         Hub.OnGameStarted += HandleGameStarted;
+    }
+
+    /// <summary>The opening card was dismissed: connect and take a seat.</summary>
+    private async Task OnIntroStartAsync()
+    {
+        _introDone = true;
+        StateHasChanged();
         await ConnectAndJoinAsync();
     }
 

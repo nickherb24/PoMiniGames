@@ -65,8 +65,9 @@ public class PoCabinetRouteUiTests
         var appHtml = await page.Locator("#app").InnerHTMLAsync();
         appHtml.Should().NotBeNullOrWhiteSpace("the Blazor app shell must render markup after NetworkIdle");
 
-        // Solo shows the track selector before the race; Online shows only "Join lobby" (the
-        // lobby host picks the track there, 2026-09-29); Demo auto-starts into the race reel.
+        // Every mode opens on the shared intro card. Solo's carries the track selector; Online's
+        // only "Join lobby" (the lobby host picks the track there, 2026-09-29); Demo's times out
+        // into the race reel.
         if (path.EndsWith("/multi", StringComparison.OrdinalIgnoreCase))
         {
             var join = page.GetByRole(AriaRole.Button, new() { Name = "Join lobby", Exact = true });

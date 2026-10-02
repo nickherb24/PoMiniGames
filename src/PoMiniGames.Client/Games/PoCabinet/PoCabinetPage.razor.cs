@@ -54,6 +54,10 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
 
     protected string _playerName = "Player";
     protected Phase _phase = Phase.Start;
+    /// <summary>The stored settings are read: the opening card may render (and, skipped, start the race).</summary>
+    protected bool _loaded;
+    /// <summary>The card is back after a race or the lobby: "don't show this again" must not start another one.</summary>
+    protected bool _reopenIntro;
     protected string? _trackId = PoCabinetCatalog.DefaultTrackId;
     protected string? _livery = "Stripe";
     protected string? _color = "Indigo";
@@ -214,6 +218,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
             _envKey = Settings.Weather;
         }
         catch { /* storage unavailable or corrupt — defaults are fine */ }
+        _loaded = true;
     }
 
     /// <summary>
@@ -231,23 +236,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
     }
 
     /// <summary>
-    /// Demo auto-starts on first paint. Every mode mounts in two render passes: the Loading
+    /// Every mode mounts in two render passes: the Loading
     /// phase renders the race section (so the canvas exists), and only the NEXT pass mounts
     /// the engine into it. The Finished pass draws the telemetry chart once its canvas exists.
     /// </summary>
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (Mode == GameMode.Demo && firstRender && _phase == Phase.Start)
-        {
-            // The demo that starts itself shows a different track each visit; a track picked
-            // on the card afterwards ("Watch demo") is still the one that runs.
-            _trackId = PoCabinetCatalog.Tracks[Random.Shared.Next(PoCabinetCatalog.Tracks.Count)].Id;
-            _playerName = PlayerNameSvc.GetOrReadInitialName();
-            _phase = Phase.Loading;
-            await InvokeAsync(StateHasChanged);
-            return;
-        }
-
         if (_phase == Phase.Loading && !_mountStarted)
         {
             _mountStarted = true;
@@ -301,9 +295,12 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    /// <summary>Start button: multiplayer joins the lobby; everything else races.</summary>
+    /// <summary>The opening card's Start (or a demo card timing out): multiplayer joins the lobby; everything else races.</summary>
     protected async Task StartRaceAsync()
     {
+        _reopenIntro = true;
+        // A demo shows a different track each time it starts itself.
+        if (Mode == GameMode.Demo) _trackId = PoCabinetCatalog.Tracks[Random.Shared.Next(PoCabinetCatalog.Tracks.Count)].Id;
         _playerName = PlayerNameSvc.GetOrReadInitialName();
         _status = null;
         await UnlockAudioAsync();
@@ -669,6 +666,16 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         _telemetryDrawn = false;
         _liveAnnouncement = IsSpectating ? "Race finished." : $"Race finished. Position {_position} of {_totalCars}.";
         Fire("PoCabinet.fanfare", _position <= FrontRunnerCut && !IsSpectating);
+        if (Mode == GameMode.Demo) _ = LoopDemoAsync();
+    }
+
+    /// <summary>A demo has no result screen (nobody is there to leave it): hold on the finish, then race again.</summary>
+    private async Task LoopDemoAsync()
+    {
+        await Task.Delay(8000);
+        if (_disposed || _phase != Phase.Finished || Mode != GameMode.Demo) return;
+        await TeardownRaceAsync();
+        await StartRaceAsync();
     }
 
     private async Task ShowDialogueAsync(PoCabinetDialogueEvent d)
@@ -952,29 +959,6 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         await InvokeAsync(StateHasChanged);
     }
 
-    protected async Task BackToStartAsync()
-    {
-        await TeardownRaceAsync();
-        if (IsMultiplayerMode) await Session.LeaveLobbyAsync();
-        _phase = Phase.Start;
-        await InvokeAsync(StateHasChanged);
-    }
-
-    protected async Task RaceAgainAsync()
-    {
-        await TeardownRaceAsync();
-        await StartRaceAsync();
-    }
-
-    /// <summary>Rematch: the lobby reopened when the race ended; rejoining it is idempotent.</summary>
-    protected async Task BackToLobbyAsync()
-    {
-        var wasOnline = _gameCode is not null;
-        await TeardownRaceAsync();
-        _phase = wasOnline ? Phase.Lobby : Phase.Start;
-        await InvokeAsync(StateHasChanged);
-    }
-
     /// <summary>Stop the race driver and unmount every engine handle; the canvas is about to leave the DOM.</summary>
     private async Task TeardownRaceAsync()
     {
@@ -1183,9 +1167,15 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         catch { /* engine torn down or interop unavailable — cues are best-effort */ }
     }
 
+    private bool _disposed;
+
     public async ValueTask DisposeAsync()
     {
+        _disposed = true;
         await TeardownRaceAsync();
+        // The results modal's one button leaves the page, and the session outlives the page:
+        // without this the seat stayed taken in the lobby. (The old "Back to start" button did it.)
+        if (IsMultiplayerMode) await Session.LeaveLobbyAsync();
         _selfRef?.Dispose();
         GC.SuppressFinalize(this);
     }

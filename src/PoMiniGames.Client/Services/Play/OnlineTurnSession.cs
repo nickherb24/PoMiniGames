@@ -75,8 +75,6 @@ public sealed class OnlineTurnSession : IAsyncDisposable
     public GameResult Result { get; private set; } = GameResult.InProgress;
     public string OpponentName { get; private set; } = "Opponent";
     public bool OpponentConnected { get; private set; } = true;
-    public bool OpponentWantsRematch { get; private set; }
-    public bool RematchRequested { get; private set; }
     public bool OpponentGone { get; private set; }
     public bool AwaitingServer { get; private set; }
     public bool Reconnecting { get; private set; }
@@ -84,9 +82,6 @@ public sealed class OnlineTurnSession : IAsyncDisposable
     public bool IsMyTurn =>
         Phase == QuickMatchPhase.Playing && Result == GameResult.InProgress
         && Turn == MySide && !AwaitingServer && !Reconnecting;
-
-    /// <summary>The page's game-over flag: true once decided, except while a rematch vote is pending so the waiting panel is readable.</summary>
-    public bool ShowGameOver => Result != GameResult.InProgress && !RematchRequested;
 
     /// <summary>Display name for a side, marked "(you)" for the local seat; the fallbacks show before pairing.</summary>
     public string SeatName(TurnMatchSide side, string firstFallback, string secondFallback)
@@ -159,8 +154,6 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         _client.ForgetSeat();
         Seat = null;
         OpponentGone = false;
-        RematchRequested = false;
-        OpponentWantsRematch = false;
         OpponentConnected = true;
         EndReason = TurnMatchEndReason.None;
         Result = GameResult.InProgress;
@@ -207,30 +200,6 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         }
     }
 
-    /// <summary>Play Again: a rematch vote, or a fresh search when the opponent has gone.</summary>
-    public async Task PlayAgainAsync()
-    {
-        if (_client is null) return;
-        try
-        {
-            if (OpponentGone)
-            {
-                await FindOpponentAsync();
-                return;
-            }
-            RematchRequested = true;
-            Changed?.Invoke();
-            await _client.RequestRematchAsync();
-        }
-        catch (Exception)
-        {
-            RematchRequested = false;
-            if (_client.State != HubConnectionState.Connected) Phase = QuickMatchPhase.Error;
-            _toasts.Show("Couldn't reach the server.", ToastType.Warning);
-            Changed?.Invoke();
-        }
-    }
-
     public async Task TearDownAsync()
     {
         var client = _client;
@@ -255,8 +224,6 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         GameNumber = start.GameNumber;
         OpponentName = (start.YourSide == TurnMatchSide.First ? start.Second : start.First).DisplayName;
         Phase = QuickMatchPhase.Playing;
-        RematchRequested = false;
-        OpponentWantsRematch = false;
         OpponentGone = false;
         OpponentConnected = true;
         EndReason = TurnMatchEndReason.None;
@@ -275,7 +242,6 @@ public sealed class OnlineTurnSession : IAsyncDisposable
         var opponent = state.OpponentOf(MySide);
         OpponentName = opponent.DisplayName;
         OpponentConnected = opponent.Connected;
-        OpponentWantsRematch = opponent.WantsRematch;
 
         var sameGame = state.GameNumber == GameNumber;
         if (sameGame && state.MoveCount == MoveCount + 1 && state.LastMove is { } move)

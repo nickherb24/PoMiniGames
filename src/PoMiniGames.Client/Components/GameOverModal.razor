@@ -5,8 +5,8 @@
    The one end-of-game modal for every game in PoMiniGames.
 
    Centered, blocking, no backdrop-dismiss: the final result (GameSummary), the
-   stats grid (Stats), this game's top 3 (fetched from GameKey), and a single OK
-   that returns to the main menu.
+   stats grid (Stats), this game's top 3 (fetched from GameKey), and a single
+   button that returns to the main menu.
 
    Most games get this for free by passing GameOver to <GameShell>, which renders
    this component. It is a standalone component rather than markup inside
@@ -89,30 +89,15 @@
             </div>
         }
 
+        @* One exit, in every game and every mode (user call, 2026-10-02). The second
+           "Play again" button six games had is gone: playing again is the hub's chip. *@
         <footer class="gps-play-again-actions">
-            @if (PlayAgain.HasDelegate)
-            {
-                <button class="app-btn app-btn--secondary"
-                        @onclick="Back">
-                    <span>Back</span>
-                    <kbd class="gps-kbd">Esc</kbd>
-                </button>
-                <button class="app-btn app-btn--primary"
-                        @onclick="() => PlayAgain.InvokeAsync()"
-                        autofocus>
-                    <span>Play again</span>
-                    <kbd class="gps-kbd gps-kbd--primary">↵</kbd>
-                </button>
-            }
-            else
-            {
-                <button class="app-btn app-btn--primary"
-                        @onclick="Back"
-                        autofocus>
-                    <span>Back to all games</span>
-                    <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
-                </button>
-            }
+            <button class="app-btn app-btn--primary"
+                    @onclick="Back"
+                    autofocus>
+                <span>Back to all games</span>
+                <kbd class="gps-kbd gps-kbd--primary">Esc</kbd>
+            </button>
         </footer>
 </dialog>
 
@@ -145,16 +130,6 @@
     /// modal would still be up when the player next opens the game.
     /// </summary>
     [Parameter] public EventCallback OnOk { get; set; }
-
-    /// <summary>
-    /// 2026-08-10: optional "Play again" handler. When set, the modal shows
-    /// a secondary button next to OK that re-runs the page (the page owns the
-    /// reset). Leave null (the default) to keep the OK-only flow every other
-    /// game uses. Only ever opt in for modes without a server leaderboard at
-    /// stake — solo should not show it (the previous run just got submitted),
-    /// local 2-player split-screen is the intended user.
-    /// </summary>
-    [Parameter] public EventCallback PlayAgain { get; set; }
 
     /// <summary>
     /// How the match ended, so the modal can sound the right cue. Left
@@ -395,27 +370,6 @@
             try { await _dialog.CloseAsync(JS); } catch { /* already closed */ }
         }
         await Ok();
-    }
-
-    private async Task HandleKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
-    {
-        // Option #9: the Enter/Space path stays — the primary button has
-        // autofocus, so this fires when no element is focused (which is
-        // exactly the "OK / Play again" intent). Escape is gone: the native
-        // <dialog> fires its `cancel` event for Escape and HandleCancel below
-        // maps it to Back() via the dialog's own API rather than us
-        // listening for a keydown on a wrapper div.
-        if (e.Key is "Enter" or " ")
-        {
-            if (PlayAgain.HasDelegate)
-            {
-                await PlayAgain.InvokeAsync();
-            }
-            else
-            {
-                await Back();
-            }
-        }
     }
 
     /// <summary>

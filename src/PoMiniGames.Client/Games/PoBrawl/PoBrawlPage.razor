@@ -25,7 +25,7 @@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            Elo="@(_mode == "1p" ? _rating.Elo : (int?)null)"
-           BackTo="@(_mode == "online" ? "/pobrawl/multi" : "/")"
+           BackTo="/"
            Stats="@_statItems"
            GameOver="@(_phase == "result" && !_demo)"
            GameOverDelayMs="@LadderResultHoldMs"
@@ -34,7 +34,6 @@
            Outcome="@OutcomeForCue"
            RequiresWebGl="true"
            GameSummary="@GameSummaryContent"
-           PlayAgain="@PlayAgainCallback"
            Announcement="@_announcement">
     @if (!_introDone)
     {
@@ -292,8 +291,6 @@
     private bool _everJoined;
     private PoMiniGames.Shared.Games.PoBrawlMatchResult? _netResult;
     private string? _netSubmittedFor; // match id whose result already went to the Elo board
-    private bool _rematchRequested;
-    private int _rematchVotes;
     private string? _netNoticeShown;
     private string _p1Player = "";
     private string _p2Player = "";
@@ -314,11 +311,6 @@
             return null;
         }
     }
-
-    // Play Again: a fresh 1P run from the current rung, the same 2P pairing, or an online rematch
-    // vote. A spectator has nothing to replay, so the modal shows its plain "Back" instead.
-    private EventCallback PlayAgainCallback =>
-        _demo || _isSpectator || _netMissing ? default : EventCallback.Factory.Create(this, PlayAgainAsync);
 
     /// <summary>
     /// Per-round scorecard reported by the engine alongside the result.
@@ -475,19 +467,6 @@
         {
             <div>KO in @_lastKo.ToString("0.00")s@(_newRecord ? " — 🏆 New record!" : "")</div>
         }
-        @if (_mode == "online" && !_isSpectator)
-        {
-            @* Both corners have to ask; the server starts the next fight with the
-               same fighters the moment the second one does. *@
-            @if (_rematchRequested || _rematchVotes > 0)
-            {
-                <div class="pb-rematch">🔁 Rematch @_rematchVotes/2 — @(_rematchRequested ? $"waiting for {OpponentPlayer}…" : $"{OpponentPlayer} wants a rematch! Press Play again.")</div>
-            }
-            else
-            {
-                <div>Play again asks @OpponentPlayer for a rematch — same fighters.</div>
-            }
-        }
         @if (_mode == "1p")
         {
             <div>Elo @_rating.Elo (@(_lastEloDelta >= 0 ? "+" : "")@_lastEloDelta) vs @CharName(_p2Char) @PresidentElo(LadderRungOf(_p2Char))</div>
@@ -584,7 +563,7 @@
               : "1p";
         // /pobrawl/online?code=… — the lobby's fight. Not a GameModes slug: it is not a way to
         // START a game (that is /pobrawl/multi), only where a started one is played or watched.
-        // The lobby already showed the intro card, so there is none here.
+        // The lobby page showed the intro card, so there is none here.
         if (string.Equals(Mode, "online", StringComparison.OrdinalIgnoreCase))
         {
             _mode = "online";
@@ -846,48 +825,6 @@
         }
     }
 
-    /// <summary>
-    /// The result modal's Play again. 1P starts a fresh run from the current rung (a loss never
-    /// costs a rung, it only ends the run); 2P re-runs the same pairing; online asks the other
-    /// corner for a rematch, and the fight restarts when they ask too.
-    /// </summary>
-    private async Task PlayAgainAsync()
-    {
-        if (_mode == "online")
-        {
-            if (_net is null || _rematchRequested) return;
-            _rematchRequested = true;
-            _rematchVotes = Math.Max(_rematchVotes, 1);
-            StateHasChanged();
-            try { await _net.RequestRematchAsync(); }
-            catch (Exception ex)
-            {
-                // The hub refuses a rematch on a swept fight (FinishedLinger elapsed, or a
-                // rematch already replaced it) with a HubException — surface its message and
-                // reset the vote instead of showing "waiting for a rematch" forever.
-                _rematchRequested = false;
-                _rematchVotes = 0;
-                StateHasChanged();
-                Toasts.Show(PoBrawlNetSession.HubMessage(ex, "Couldn't reach the fight — try again."), ToastType.Warning);
-            }
-            return;
-        }
-        ++_presserGeneration; // a press line still in flight belongs to the fight that just ended
-        _presser = null;
-        _presserLoading = false;
-        _recap = null;
-        _lastRecap = null;
-        _champion = false;
-        _newRecord = false;
-        _winner = 0;
-        if (_mode == "1p") _p2Char = Roster[_ladder].Id;
-        _phase = "fighting";
-        _announcement = $"Rematch — {CharName(_p1Char)} versus {CharName(_p2Char)}.";
-        PrefetchIntro();
-        StateHasChanged();
-        await InitEngine();
-    }
-
     // ── Online ───────────────────────────────────────────────────────────
     private async Task StartOnlineAsync()
     {
@@ -900,10 +837,6 @@
         _net.Joined += snap => InvokeAsync(() => OnNetJoinedAsync(snap));
         _net.StateReceived += OnNetState;
         _net.Finished += r => InvokeAsync(() => OnNetFinishedAsync(r));
-        _net.RematchStarted += () => InvokeAsync(async () =>
-        {
-            try { if (_net is not null) await _net.JoinAsync(); } catch { /* the Joined handler never fires; the modal stays */ }
-        });
         _net.ConnectionChanged += _ => InvokeAsync(StateHasChanged);
         try
         {
@@ -942,8 +875,6 @@
         _p1Char = snap.Player1.FighterId;
         _p2Char = snap.Player2.FighterId;
         _netResult = null;
-        _rematchRequested = false;
-        _rematchVotes = 0;
         _recap = null;
         _lastRecap = null;
         _presser = null;
@@ -962,12 +893,11 @@
     private void OnNetState(PoMiniGames.Shared.Games.PoBrawlMatchState s)
     {
         _ = JSRuntime.InvokeVoidAsync("PoBrawl.net", s).AsTask().ContinueWith(_ => { }, TaskScheduler.Default);
-        // Re-render only when something the page shows changed: the network notice, the votes.
+        // Re-render only when something the page shows changed: the network notice.
         var notice = NetNotice;
-        if (notice != _netNoticeShown || s.RematchVotes != _rematchVotes)
+        if (notice != _netNoticeShown)
         {
             _netNoticeShown = notice;
-            _rematchVotes = Math.Max(s.RematchVotes, _rematchRequested ? 1 : 0);
             InvokeAsync(StateHasChanged);
         }
     }
@@ -1425,7 +1355,7 @@
         if (_winner == 0) return $"🤝 Too close to call — {CharName(_p2Char)} holds the rung.";
         return _winner == 1
             ? $"🏆 BOB knocked out {CharName(_p2Char)}!"
-            : $"💀 {CharName(_p2Char)} beat BOB — rematch!";
+            : $"💀 {CharName(_p2Char)} beat BOB.";
     }
 
     private static string CharName(string id) =>

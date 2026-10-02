@@ -10,10 +10,24 @@
 
 <PageTitle>Fun Quiz — Multiplayer · PoMiniGames</PageTitle>
 
-@* 2026-10-01: no intro card in front of the lobby and no "Your name" box (the player is
-   signed in under one). What is left before the lobby is the one real choice, the
-   category, and the lobby itself is the shared LobbyPanel. *@
-<GameShell Title=@TitleContent Player="@_playerName" BackTo="/funquiz">
+@* 2026-10-02 (user call: every game opens and ends the same way): the opening card is back
+   in front of the lobby, with the one real choice, the category, as its option; its button
+   joins. The match ends on the shared end-of-game modal, which used to be an inline block
+   whose only link went to the leaderboards. *@
+<GameShell Title=@TitleContent Player="@_playerName" BackTo="/"
+           GameOver="@(_finished is not null)"
+           Outcome="@Outcome"
+           GameSummary="@GameSummaryContent">
+    @if (!_introDone)
+    {
+        <GameIntro CueScope="quiz"
+                   Title="@TitleContent"
+                   Objective="Two players, the same ten questions. Correct answers score; a streak scores more."
+                   Controls="@HowToPlayContent"
+                   Options="@CategoryContent"
+                   StartLabel="Join the lobby"
+                   OnStart="OnIntroStartAsync" />
+    }
     @if (_reconnecting)
     {
         <div class="fq-reconnecting" role="status" aria-live="polite">
@@ -28,23 +42,9 @@
            opens the lobby if nobody is. *@
         <div class="fq-join">
             <h2 class="gps-phase-h">Online · Fun Quiz</h2>
-            <label class="fq-join__field">
-                <span class="fq-join__label">Category <span class="fq-join__hint">used if you're first in</span></span>
-                <select @bind="_category" disabled="@(_busy || !_isConnected)"
-                        aria-describedby="fq-category-hint">
-                    <option value="General" selected>General</option>
-                    <option value="Science">Science</option>
-                    <option value="History">History</option>
-                    <option value="Geography">Geography</option>
-                    <option value="Sports">Sports</option>
-                    <option value="Entertainment">Entertainment</option>
-                    <option value="Technology">Technology</option>
-                    <option value="ArtCulture">Art &amp; Culture</option>
-                </select>
-                @* Say this out loud rather than silently discarding the joiner's pick —
-                   the same honesty fix made for Couple Quiz's host-only round count. *@
-                <span id="fq-category-hint" class="fq-join__help">If someone is already waiting, you'll play their category.</span>
-            </label>
+            @* Only seen when the card's own join could not happen (still connecting, or
+               it failed): the same category choice and a button to try again. *@
+            @CategoryContent
             <div class="fq-actions">
                 @* Bug fix QA #6: aria-busy + disabled state while the SignalR handshake
                    is in flight, so the primary button cannot fire twice on touch. *@
@@ -111,19 +111,6 @@
                     }
                 </div>
             }
-            @if (_finished is not null)
-            {
-                <div class="fq-gameover">
-                    <h2>🏁 @(_finished.IsTie ? "It's a tie!" : _finished.Winner?.Name + " wins!")</h2>
-                    <ul>
-                        @foreach (var kv in _finished.FinalScores.OrderByDescending(x => x.Value))
-                        {
-                            <li>@kv.Key — @kv.Value</li>
-                        }
-                    </ul>
-                    <a class="app-btn app-btn--primary" href="/leaderboards">View leaderboard</a>
-                </div>
-            }
         </div>
     }
 </GameShell>
@@ -131,14 +118,48 @@
 @code {
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🧠</span> Fun Quiz</span>;
 
+    private RenderFragment CategoryContent => @<label class="fq-join__field">
+        <span class="fq-join__label">Category <span class="fq-join__hint">used if you're first in</span></span>
+        <select @bind="_category" disabled="@_busy" aria-describedby="fq-category-hint">
+            <option value="General" selected>General</option>
+            <option value="Science">Science</option>
+            <option value="History">History</option>
+            <option value="Geography">Geography</option>
+            <option value="Sports">Sports</option>
+            <option value="Entertainment">Entertainment</option>
+            <option value="Technology">Technology</option>
+            <option value="ArtCulture">Art &amp; Culture</option>
+        </select>
+        @* Say this out loud rather than silently discarding the joiner's pick —
+           the same honesty fix made for Couple Quiz's host-only round count. *@
+        <span id="fq-category-hint" class="fq-join__help">If someone is already waiting, you'll play their category.</span>
+    </label>;
+
+    private RenderFragment GameSummaryContent => @<div>
+        @if (_finished is { } f)
+        {
+            <div>🏁 @(f.IsTie ? "It's a tie!" : f.Winner?.Name + " wins!")</div>
+            @foreach (var kv in f.FinalScores.OrderByDescending(x => x.Value))
+            {
+                <div>@kv.Key — @kv.Value</div>
+            }
+        }
+    </div>;
+
+    // The closing cue: mine if my name is the winner's, a draw on a tie.
+    private PoMiniGamesClient.Models.GameResult Outcome => _finished is not { } f ? PoMiniGamesClient.Models.GameResult.InProgress
+        : f.IsTie ? PoMiniGamesClient.Models.GameResult.Draw
+        : f.Winner?.Name == _playerName ? PoMiniGamesClient.Models.GameResult.Win
+        : PoMiniGamesClient.Models.GameResult.Loss;
+
     private RenderFragment HowToPlayContent => @<div>
-        <p>Two players answer the same questions online. Correct answers score points; build a streak for a bonus.</p>
         <ul>
             <li>Tap or click the answer you think is right</li>
             <li>The host starts once both players are in</li>
         </ul>
     </div>;
 
+    private bool _introDone;
     private string _playerName = string.Empty;
     private string _category = "General";
     private string? _error;
@@ -227,6 +248,15 @@
             _finishedThisQuestion = 0;
         }
         InvokeAsync(StateHasChanged);
+    }
+
+    /// <summary>The opening card was dismissed: join with the category picked on it. Still
+    /// connecting (or it failed): the join form underneath takes over.</summary>
+    private async Task OnIntroStartAsync()
+    {
+        _introDone = true;
+        StateHasChanged();
+        if (_isConnected) await OnJoin();
     }
 
     private async Task OnJoin()

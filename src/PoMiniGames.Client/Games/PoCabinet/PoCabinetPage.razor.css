@@ -16,22 +16,6 @@
     color: var(--color-text);
 }
 
-.pocabinet-card {
-    background: var(--color-surface);
-    border: 1px solid var(--color-border, transparent);
-    border-radius: var(--radius-md, 8px);
-    padding: 1.5rem;
-    max-width: 720px;
-    margin: 1rem auto;
-    box-shadow: var(--shadow-card, none);
-}
-
-.pocabinet-card__lede {
-    margin: 0 0 1.25rem 0;
-    color: var(--color-text-muted);
-    line-height: 1.45;
-}
-
 .pocabinet-customize {
     margin-top: 1rem;
 }
@@ -688,51 +672,6 @@
 
 /* ─── Results: podium, confetti, PB, laps ────────────────────────────────── */
 
-/* Results sit over the still-running scene (the replay needs the canvas alive). */
-.pocabinet-results {
-    position: absolute;
-    inset: 0;
-    z-index: 20;
-    overflow-y: auto;
-    padding: 1rem;
-    background: rgba(4, 8, 18, 0.45);
-    -webkit-backdrop-filter: blur(3px) saturate(1.1);
-    backdrop-filter: blur(3px) saturate(1.1);
-    border-radius: var(--radius-md, 8px);
-    animation: pocabinet-results-dim 0.6s ease-out both;
-}
-
-/* Frosted glass over the still-running scene: the race stays visible, blurred, behind it. */
-.pocabinet-results__card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    max-width: 1040px;
-    max-height: 100%;
-    margin: 0 auto;
-    padding: 1rem 1.25rem 0;
-    background: color-mix(in srgb, var(--color-surface) 93%, transparent);
-    -webkit-backdrop-filter: blur(16px) saturate(1.35);
-    backdrop-filter: blur(16px) saturate(1.35);
-    border: 1px solid color-mix(in srgb, var(--color-text) 14%, transparent);
-    color: var(--color-text);
-    border-radius: var(--radius-md, 10px);
-    box-shadow: var(--shadow-card, none);
-    animation: pocabinet-results-in 0.7s cubic-bezier(0.16, 1, 0.3, 1) 0.15s both;
-}
-
-@keyframes pocabinet-results-dim {
-    from { background: rgba(4, 8, 18, 0); -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0); }
-}
-
-@keyframes pocabinet-results-in {
-    from { opacity: 0; transform: translateY(28px) scale(0.96); }
-    to { opacity: 1; transform: none; }
-}
-
-.pocabinet-results__card h2 {
-    margin: 0 0 0.5rem 0;
-}
 
 /* ─── Telemetry chart ─────────────────────────────────────────────────────── */
 
@@ -808,7 +747,11 @@
     font-size: 0.8rem;
 }
 
+/* No markers: each row writes its own place ("P4 · …"), and the list has gaps in it. */
 .pocabinet-standings {
+    margin: 0.5rem 0;
+    padding-left: 0;
+    list-style: none;
     color: var(--color-text-muted);
 }
 
@@ -1112,34 +1055,17 @@
     white-space: nowrap;
 }
 
-/* ─── Start card: two columns on desktop, mode switcher ───────────────────── */
+/* ─── Start: the shared opening card (GameIntro) ─────────────────────────── */
 
-/* One column, read top to bottom like every other game's start card: title and mode
-   switch centred, the tracks, the two fold-away panels side by side, then the button.
-   Until 2026-10-01 this was two columns on a laptop, and the right one held only the
-   two folded panels: 90px of content beside a 430px column, with the Start button at
-   the bottom left. */
-.pocabinet-card--start {
-    max-width: 760px;
+/* The track cards and the two fold-away panels sit in the card's Options slot. The wrapper
+   is display:contents, there only so this scoped sheet can widen the shared card: four
+   track cards in two columns do not fit its 440px. */
+.pocabinet-intro { display: contents; }
+.pocabinet-intro ::deep .gps-intro-card:has(.pocabinet-setup) { width: min(96vw, 760px); }
+.pocabinet-setup {
     display: grid;
     gap: 1rem;
-}
-
-.pocabinet-start__head {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.6rem;
-}
-
-.pocabinet-start__head h2 {
-    margin: 0;
-    font-size: var(--text-2xl);
-}
-
-.pocabinet-card__lede {
-    margin: 0.75rem 0 0;
-    text-align: center;
+    text-align: left;
 }
 
 .pocabinet-start__side {
@@ -1159,18 +1085,9 @@
     margin-top: 0;
 }
 
-.pocabinet-card--start .pocabinet-actions {
+.pocabinet-setup .pocabinet-actions {
     justify-content: center;
     margin-top: 0;
-    /* Pinned to the bottom of the window while the card is taller than it (a phone:
-       four track cards and the two panels come first), so the button that starts the
-       race is never the thing you have to scroll to find. */
-    position: sticky;
-    bottom: 0;
-    z-index: 1;
-    padding: 0.5rem 0 calc(0.5rem + env(safe-area-inset-bottom));
-    background: var(--color-surface);
-    box-shadow: 0 -0.75rem 0.75rem -0.4rem var(--color-surface);
 }
 
 @media (max-width: 640px) {
@@ -1334,32 +1251,20 @@
     top: calc(var(--pocabinet-canvas-h) - 84px - 1.5rem - var(--size));
 }
 
-/* ─── Results: native dialog, scrolling body, pinned actions ─────────────── */
+/* ─── Results: the summary of the shared end-of-game modal ───────────────── */
 
-.pocabinet-results {
-    margin: 0;
-    border: 0;
-    width: auto;
-    height: auto;
-    max-width: none;
-    max-height: none;
-    color: inherit;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-}
-
-.pocabinet-results__card {
-    width: 100%;
-    min-height: 0;
-}
-
+/* The modal centres and bolds its summary for a one-line result; this one is a page. */
 .pocabinet-results__body {
-    flex: 1 1 auto;
-    min-height: 0;
-    overflow-y: auto;
-    padding-bottom: 0.75rem;
+    width: 100%;
+    text-align: left;
+    font-weight: 400;
+    color: var(--color-text);
 }
+
+.pocabinet-results__more {
+    justify-content: center;
+}
+
 
 .pocabinet-results__head {
     display: flex;
@@ -1399,16 +1304,7 @@
     margin: 0.75rem 0;
 }
 
-.pocabinet-results__actions {
-    flex: 0 0 auto;
-    margin: 0 -1.25rem;
-    padding: 0.75rem 1.25rem;
-    border-top: 1px solid color-mix(in srgb, var(--color-text) 12%, transparent);
-    background: color-mix(in srgb, var(--color-surface) 96%, transparent);
-    border-radius: 0 0 var(--radius-md, 10px) var(--radius-md, 10px);
-}
-
-.pocabinet-results__actions .pocabinet-secondary,
+.pocabinet-results__more .pocabinet-secondary,
 .pocabinet-share .pocabinet-secondary {
     margin-top: 0;
 }
@@ -1525,7 +1421,6 @@
 /* Phones: the start card fits one screen (tighter cards and margins), and the replay bar —
    taller than the HUD strip it replaces — takes its room from the canvas, not the page. */
 @media (max-width: 640px) {
-    .pocabinet-card { margin: 0.5rem auto; padding: 1rem; }
     ::deep .pocabinet-track-selector { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; margin: 0.75rem 0; }
     ::deep .pocabinet-track { padding: 0.55rem 0.7rem; }
     ::deep .pocabinet-track__swatch { height: 48px; }

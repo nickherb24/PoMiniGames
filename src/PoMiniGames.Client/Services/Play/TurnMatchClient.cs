@@ -80,7 +80,6 @@ public sealed class TurnMatchClient : IAsyncDisposable
     /// </summary>
     public Task PlaceAsync(int row, int col) => Require().InvokeAsync("Place", row, col);
 
-    public Task RequestRematchAsync() => Require().InvokeAsync("RequestRematch");
 
     public async Task LeaveAsync()
     {

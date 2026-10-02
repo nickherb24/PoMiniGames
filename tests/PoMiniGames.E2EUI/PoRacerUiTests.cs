@@ -9,7 +9,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     [InlineData("circuit")]
     [InlineData("neonskyline")]
     [InlineData("desertdustway")]
-    public async Task SoloRace_CompletesSavesAndCanPlayAgain(string track)
+    public async Task SoloRace_CompletesSavesAndShowsTheLapOnTheNextVisit(string track)
     {
         using var playwright = await Playwright.CreateAsync();
         var launch = BrowserLaunch.Options();
@@ -42,8 +42,11 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         await page.GetByText("Best lap saved to the leaderboard.", new() { Exact = true }).WaitForAsync();
         (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().NotContain("DNF");
         await page.ScreenshotAsync(new() { Path = $"artifacts/poracer-{track}-results.png" });
-        await page.GetByRole(AriaRole.Button, new() { Name = "Play again" }).ClickAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync();
+        // The results modal has one way out, to the hub; coming back opens the start card.
+        await page.GetByRole(AriaRole.Button, new() { Name = "Back to all games" }).ClickAsync();
+        await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
+        await page.GotoAsync($"{fixture.ServerAddress.TrimEnd('/')}/poracer/1player");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         // The lap just driven is on its track card as a personal best.
         (await page.Locator(".track-card.selected .track-best").InnerTextAsync()).Should().Contain("Your best");
         driver.Reset();
@@ -54,7 +57,7 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
     }
 
     [Fact]
-    public async Task SoloRace_UnfinishedPlayerGetsDnfResultsAndCanRestart()
+    public async Task SoloRace_UnfinishedPlayerGetsDnfResultsAndOneWayOut()
     {
         using var playwright = await Playwright.CreateAsync();
         var launch = BrowserLaunch.Options(); launch.SlowMo = 0;
@@ -68,8 +71,9 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         driver.Result!.Standings.Single(s => s.CarId == driver.LocalId).Finished.Should().BeFalse();
         await page.Locator(".race-results").WaitForAsync();
         (await page.Locator(".race-results .local-driver").InnerTextAsync()).Should().Contain("DNF");
-        await page.GetByRole(AriaRole.Button, new() { Name = "Play again" }).ClickAsync();
-        await page.GetByRole(AriaRole.Button, new() { Name = "Start race", Exact = true }).WaitForAsync();
+        (await page.Locator("dialog.gps-modal footer button").CountAsync()).Should().Be(1, "every game ends on one button");
+        await page.GetByRole(AriaRole.Button, new() { Name = "Back to all games" }).ClickAsync();
+        await page.WaitForURLAsync(url => new Uri(url).AbsolutePath == "/");
         errors.Should().BeEmpty();
     }
 
@@ -83,9 +87,12 @@ public sealed class PoRacerUiTests(KestrelServerFixture fixture)
         var host = await first.NewPageAsync();
         var guest = await second.NewPageAsync();
         var url = $"{fixture.ServerAddress.TrimEnd('/')}/poracer/multi?autoGuest=1";
+        // Each browser opens on the game's card; its button is what takes the lobby seat.
         await host.GotoAsync(url);
+        await host.GetByRole(AriaRole.Button, new() { Name = "Join lobby", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await host.GetByRole(AriaRole.Button, new() { Name = "Start Race", Exact = true }).WaitForAsync(new() { Timeout = 60000 });
         await guest.GotoAsync(url);
+        await guest.GetByRole(AriaRole.Button, new() { Name = "Join lobby", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await guest.GetByRole(AriaRole.Button, new() { Name = "Ready!", Exact = true }).ClickAsync(new() { Timeout = 60000 });
         await host.GetByRole(AriaRole.Button, new() { Name = "Start Race", Exact = true }).ClickAsync();
         foreach (var page in new[] { host, guest })

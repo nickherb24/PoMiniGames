@@ -11,12 +11,22 @@
 
 <PageTitle>Sports — Lobby · PoMiniGames</PageTitle>
 
-@* 2026-09-30: the lobby used to sit behind an intro card whose only job was to be
-   dismissed — one extra click before the connection even started, and a second,
-   hand-typed copy of the controls. The page now connects on arrival and the
-   how-to is the lobby card's fold-out, rendered from the same PoSportsHowTo the
-   race page uses. *@
+@* 2026-10-02 (user call: every way into a game opens on the same card): the opening card
+   is back in front of the lobby, and the seat is taken when it is dismissed. It went on
+   2026-09-30 as "one extra click"; it carries the one copy of the controls
+   (PoSportsHowTo, the same component the race page and the lobby's fold-out render). *@
 <GameShell Title="@TitleContent" BackTo="/">
+    @if (!_introDone)
+    {
+        <GameIntro CueScope="posports"
+                   Title="@TitleContent"
+                   Objective="A two-leg meet against the room: 100m sprint, then 110m hurdles. Lowest combined time wins."
+                   Controls="@ControlsContent"
+                   StartLabel="Join lobby"
+                   OnStart="OnIntroStartAsync" />
+    }
+    else
+    {
     <div class="ps-lobby">
         @if (CanWatch)
         {
@@ -63,9 +73,11 @@
             </HowTo>
         </LobbyPanel>
     </div>
+    }
 </GameShell>
 
 @code {
+    private bool _introDone;
     private bool _connected;
     /// <summary>Set by Leave — dispose must not leave twice.</summary>
     private bool _leaving;
@@ -77,6 +89,8 @@
     /// <summary>Online races run on layout 1 — the same labels the race page teaches.</summary>
     private static readonly IReadOnlyList<PoSportsHowTo.Keys> HowToKeys =
         [new("Type", PoSportsLayouts.For(1).Sequence, PoSportsLayouts.For(1).Jump)];
+
+    private RenderFragment ControlsContent => @<PoSportsHowTo Players="@HowToKeys" />;
 
     private bool IHavePicked => !string.IsNullOrEmpty(Hub.Lobby.Me?.Character);
 
@@ -96,8 +110,11 @@
         return holder is null || holder.ConnectionId == Hub.LobbyConnectionId ? null : holder.DisplayName;
     }
 
-    protected override async Task OnInitializedAsync()
+    /// <summary>The opening card was dismissed: take a seat.</summary>
+    private async Task OnIntroStartAsync()
     {
+        _introDone = true;
+        StateHasChanged();
         if (!await Api.IsAvailableAsync())
         {
             ToastService.Show("Server unavailable. Try Single Player mode.", ToastType.Error);
@@ -109,6 +126,7 @@
         Hub.Lobby.GameStarted += OnGameStarted;
         await Hub.ConnectLobbyAsync(AuthState.User?.DisplayName ?? "Player", !AuthState.IsAuthenticated);
         _connected = true;
+        StateHasChanged();
     }
 
     private void OnLobbyChanged(LobbyState<PoSportsLobbyMember> _) => InvokeAsync(StateHasChanged);

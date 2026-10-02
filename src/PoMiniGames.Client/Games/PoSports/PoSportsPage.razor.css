@@ -178,23 +178,13 @@
     font-weight: 700;
 }
 
-/* ── Results card ──────────────────────────────────────────────────────
-   Docked beside the podium rather than over it: the ceremony is the reward. */
+/* ── Results: the summary of the shared end-of-game modal ───────────────
+   The modal centres and bolds its summary for a one-line result; this is a table. */
 
 .ps-results {
-    position: absolute;
-    top: 0.6rem;
-    right: 0.6rem;
-    width: min(23rem, 48%);
-    max-height: calc(100% - 1.2rem);
-    overflow-y: auto;
-    padding: 0.7rem 0.85rem 0.75rem;
-    border-radius: 14px;
-    border: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
-    background: color-mix(in srgb, var(--color-surface) 88%, transparent);
-    -webkit-backdrop-filter: blur(16px) saturate(1.3);
-    backdrop-filter: blur(16px) saturate(1.3);
-    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.4);
+    width: 100%;
+    text-align: left;
+    font-weight: 400;
     color: var(--color-text-primary);
     font-size: 0.85rem;
 }
@@ -241,17 +231,6 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.15rem 0.8rem;
-}
-
-.ps-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.4rem;
-    margin-top: 0.6rem;
-}
-
-.ps-actions a {
-    text-decoration: none;
 }
 
 .ps-foot {
@@ -344,10 +323,4 @@
         gap: 0.4rem;
     }
 
-    /* No room beside the podium on a phone: the card sits under the canvas instead. */
-    .ps-results {
-        position: static;
-        width: 100%;
-        max-height: none;
-    }
 }

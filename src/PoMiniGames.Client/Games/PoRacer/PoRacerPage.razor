@@ -20,19 +20,32 @@
 <PageTitle>Racer · PoMiniGames</PageTitle>
 <GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
            GameOver="@_showResults" GameKey="@BoardKey"
-           GameSummary="@SummaryContent" PlayAgain="RestartRaceAsync">
+           GameSummary="@SummaryContent">
     <div class="racer-root">
         <canvas id="racerCanvas" class="racer-canvas" role="img" tabindex="0" aria-label="Race track. Your car is marked YOU. Arrow keys or W A S D drive; Space drifts."></canvas>
-        @if (_phase == RacePhase.Start)
+        @if (_phase == RacePhase.Start && !_introDone)
+        {
+            @* The shared opening card, like every other game (2026-10-02): the name, what the
+               race is, the controls, and for a solo race the track, the field and the paint.
+               It replaced a start card of Racer's own that named neither the game nor a key.
+               .racer-intro is display:contents; it is only there so this page's scoped CSS can
+               reach the shared card and give the three track cards room. *@
+            <div class="racer-intro">
+                <GameIntro CueScope="poracer"
+                           Title="@TitleContent"
+                           Objective="@IntroObjective"
+                           Controls="@ControlsContent"
+                           Options="@(_mode == RaceMode.Solo ? SoloSetup : StartError)"
+                           Mode="@(_isDemo ? GameIntro.IntroMode.Demo : GameIntro.IntroMode.OnePlayer)"
+                           StartLabel="@IntroStartLabel"
+                           ForceShow="_reopenIntro"
+                           OnStart="OnIntroStartAsync" />
+            </div>
+        }
+        else if (_phase == RacePhase.Start)
         {
             <section class="racer-start" aria-label="Start a race">
                 <div class="racer-card">
-                    @* One card, three modes. The lobby used to be a page of its own at this same
-                       /poracer/multi address; it is the Online tab now, so switching mode never
-                       reloads the engine: this page follows the address in place, hence
-                       Reload="false" on the shared switch. *@
-                    <ModeSwitch Reload="false" />
-
                     @if (_mode == RaceMode.Online && string.IsNullOrWhiteSpace(MatchCode))
                     {
                         <LobbyPanel TPlayer="PoRacerLobbyPlayer"
@@ -54,50 +67,11 @@
                             </Picker>
                         </LobbyPanel>
                     }
-                    else if (_mode == RaceMode.Solo)
+                    else
                     {
-                        <PoRacerTrackSelector SelectedTrackId="@_selectedTrackId" SelectedTrackIdChanged="SelectTrack" Bests="_bests" />
-                        <div class="racer-options">
-                            <div class="racer-chips" role="radiogroup" aria-label="Race">
-                                <span class="racer-chips-label">Race</span>
-                                <label><input type="radio" name="poracer-mode" checked="@(!_trial)" @onchange="() => SetTrial(false)" />7 rivals</label>
-                                <label><input type="radio" name="poracer-mode" checked="@_trial" @onchange="() => SetTrial(true)" />Time trial</label>
-                            </div>
-                            @if (!_trial)
-                            {
-                                <div class="racer-chips" role="radiogroup" aria-label="Rival pace">
-                                    <span class="racer-chips-label">Pace</span>
-                                    @foreach (var tier in PoRacerCatalog.Difficulties)
-                                    {
-                                        <label><input type="radio" name="poracer-pace" checked="@(_difficulty == tier)" @onchange="() => SetDifficulty(tier)" />@(char.ToUpperInvariant(tier[0]) + tier[1..])</label>
-                                    }
-                                </div>
-                            }
-                        </div>
-                        <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
-                    }
-                    else if (_mode == RaceMode.Demo)
-                    {
-                        <p class="racer-note">Eight bots, three laps, nothing to drive.</p>
-                    }
-
-                    @if (_mode != RaceMode.Online)
-                    {
-                        <div class="racer-actions">
-                            <button class="racer-primary" disabled="@(!_engineReady || _isStarting)" @onclick="StartRaceAsync">
-                                @(_isStarting ? "Joining race…" : !_engineReady ? "Loading track…" : _isDemo ? "Watch race" : "Start race")
-                            </button>
-                            <span class="racer-note">@(_isDemo ? "" : _trial ? $"Empty track · {PoRacerCatalog.TotalLaps} laps · best lap goes on the board" : $"{PoRacerCatalog.CarCount} cars · {PoRacerCatalog.TotalLaps} laps · best lap goes on the board")</span>
-                            <a href="/leaderboards">Leaderboard</a>
-                        </div>
-                    }
-                    else if (!string.IsNullOrWhiteSpace(MatchCode))
-                    {
-                        <p class="racer-note" role="status">@(_error is null ? "Joining the race…" : "")</p>
-                    }
-                    @if (_error is not null)
-                    {
-                        <p class="racer-error" role="alert">@_error</p>
+                        @* The card is gone and the race is not up yet: the track is still
+                           loading, or the race connection is being made. *@
+                        <p class="racer-note" role="status">@(_error ?? (_engineReady ? "Joining the race…" : "Loading track…"))</p>
                     }
                 </div>
             </section>
@@ -156,4 +130,41 @@
     // Each track has its own board (UnifiedLeaderboardEndpoints): the oval keeps the original
     // "poracer" key, the other two are "poracer-{trackId}". The results' Top 3 is the raced track's.
     private string BoardKey => _raceTrackId == PoRacerCatalog.DefaultTrackId ? "poracer" : "poracer-" + _raceTrackId;
+
+    private RenderFragment ControlsContent => @<PoRacerControls />;
+
+    // The solo race's choices, in the card's Options slot. .racer-card keeps them on the
+    // Racer palette (the track cards and paint chips are drawn for a dark panel).
+    private RenderFragment SoloSetup => @<div class="racer-card racer-setup">
+        <PoRacerTrackSelector SelectedTrackId="@_selectedTrackId" SelectedTrackIdChanged="SelectTrack" Bests="_bests" />
+        <div class="racer-options">
+            <div class="racer-chips" role="radiogroup" aria-label="Race">
+                <span class="racer-chips-label">Race</span>
+                <label><input type="radio" name="poracer-mode" checked="@(!_trial)" @onchange="() => SetTrial(false)" />7 rivals</label>
+                <label><input type="radio" name="poracer-mode" checked="@_trial" @onchange="() => SetTrial(true)" />Time trial</label>
+            </div>
+            @if (!_trial)
+            {
+                <div class="racer-chips" role="radiogroup" aria-label="Rival pace">
+                    <span class="racer-chips-label">Pace</span>
+                    @foreach (var tier in PoRacerCatalog.Difficulties)
+                    {
+                        <label><input type="radio" name="poracer-pace" checked="@(_difficulty == tier)" @onchange="() => SetDifficulty(tier)" />@(char.ToUpperInvariant(tier[0]) + tier[1..])</label>
+                    }
+                </div>
+            }
+        </div>
+        <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
+        <div class="racer-actions">
+            <span class="racer-note">@(_trial ? $"Empty track · {PoRacerCatalog.TotalLaps} laps" : $"{PoRacerCatalog.CarCount} cars · {PoRacerCatalog.TotalLaps} laps")</span>
+            <a href="/leaderboards">Leaderboard</a>
+        </div>
+        @if (_error is not null)
+        {
+            <p class="racer-error" role="alert">@_error</p>
+        }
+    </div>;
+
+    // Online and demo have nothing to choose on the card; it only carries a failed start.
+    private RenderFragment? StartError => _error is null ? null : @<p class="racer-error" role="alert">@_error</p>;
 }

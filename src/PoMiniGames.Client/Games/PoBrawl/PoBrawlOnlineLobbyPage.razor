@@ -12,10 +12,19 @@
 
 <PageTitle>Brawl · Lobby · PoMiniGames</PageTitle>
 
-@* 2026-10-01: no intro card in front of the lobby. The page connects on arrival, like
-   Racer and Sports, and the how-to is folded under the lobby's buttons. *@
+@* 2026-10-02 (user call: every way into a game opens on the same card): the opening card is
+   back in front of the lobby, and the seat is taken when it is dismissed. *@
 <GameShell Title="@TitleContent" BackTo="/">
-@if (_failed is { } why)
+@if (!_introDone)
+{
+    <GameIntro CueScope="pobrawl"
+               Title="@TitleContent"
+               Objective="A real-time 1v1 in the arena: one round, 60 seconds, and the server keeps the HP."
+               Controls="@HowToPlayContent"
+               StartLabel="Join lobby"
+               OnStart="OnIntroStartAsync" />
+}
+else if (_failed is { } why)
 {
     <div class="pbl-failed" role="alert">
         <p>@why</p>
@@ -70,16 +79,19 @@ else
 
     protected override void OnInitialized() => _lobby = new LobbyClient<PoBrawlLobbyPlayer>(Endpoints, "pobrawl/lobby-hub");
 
-    // After the first render, not in OnInitializedAsync: the lobby card is already on
-    // screen saying "connecting…" while the availability probe and the hub handshake run.
-    protected override async Task OnAfterRenderAsync(bool firstRender)
+    private bool _introDone;
+
+    // The opening card was dismissed. The lobby card goes up first, saying "connecting…",
+    // while the availability probe and the hub handshake run.
+    private async Task OnIntroStartAsync()
     {
-        if (firstRender) await ConnectAsync();
+        _introDone = true;
+        StateHasChanged();
+        await ConnectAsync();
     }
 
     private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl</span>;
     private RenderFragment HowToPlayContent => @<div>
-        <p>A real-time 1v1 in the arena, one 60-second round. The server keeps the HP.</p>
         <ul>
             <li>Pick a fighter — your opponent does too — then both mark Ready</li>
             <li><b>Hold</b> <kbd>A</kbd>/<kbd>D</kbd> to walk and <kbd>R</kbd> to block · <kbd>F</kbd> punch, <kbd>G</kbd> kick, <kbd>H</kbd> special (full energy)</li>

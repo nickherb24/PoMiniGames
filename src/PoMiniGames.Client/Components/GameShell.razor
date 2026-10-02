@@ -115,9 +115,9 @@
 
     @* End-of-game modal: the one centered, blocking dialog every game ends on.
        It surfaces the final result (GameSummary), the stats grid (Stats), this
-       game's top 3 (fetched from GameKey), and a single OK that returns to the
+       game's top 3 (fetched from GameKey), and a single button that returns to the
        home menu. There is intentionally no backdrop-dismiss and no Play Again —
-       OK is the only exit, so the flow is identical in every game.
+       that button is the only exit, so the flow is identical in every game.
 
        2026-08-11: GameOverDelayMs lets a game wait a few seconds after the
        result is decided before the modal appears, so the winning move can
@@ -132,8 +132,7 @@
                        GameKey="@GameKey"
                        Player="@Player"
                        Outcome="@Outcome"
-                       BackTo="@BackTo"
-                       PlayAgain="@PlayAgain" />
+                       BackTo="@BackTo" />
     }
 </div>
 </SwipeBack>
@@ -173,13 +172,6 @@
     // neutral round-over instead of guessing.
     [Parameter] public Models.GameResult Outcome { get; set; } = Models.GameResult.InProgress;
     [Parameter] public RenderFragment? GameSummary { get; set; }
-
-    /// <summary>
-    /// 2026-08-10: optional "Play again" callback forwarded to GameOverModal.
-    /// Local 2P FunQuiz opts in so the end-of-round modal offers a single-tap
-    /// replay — every other game leaves this null and gets the OK-only flow.
-    /// </summary>
-    [Parameter] public EventCallback PlayAgain { get; set; }
 
     /// <summary>
     /// Sentence read aloud by the shared polite live region whenever it changes —
@@ -233,7 +225,7 @@
     // 2026-08-11: GameOverDelayMs support. _showGameOver is the gated view of
     // GameOver; the modal only mounts once it's true AND the delay has elapsed.
     // A CancellationToken cancels any in-flight delay when the page tears down
-    // (mode change, navigation, PlayAgain) so we don't show a stale modal.
+    // (mode change, navigation) so we don't show a stale modal.
     private bool _showGameOver;
     private CancellationTokenSource? _gameOverCts;
 

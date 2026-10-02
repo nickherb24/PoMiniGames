@@ -24,13 +24,18 @@
 .racer-card { width: min(860px, 100%); padding: clamp(14px, 2.2vw, 22px); background: var(--racer-panel); border: 1px solid var(--racer-line); border-radius: 18px; box-shadow: 0 20px 60px #0006; display: grid; gap: 14px; }
 .racer-card a { color: var(--racer-accent-line); text-underline-offset: 4px; }
 .racer-note { margin: 0; color: var(--racer-muted); font-size: 14px; }
-.racer-card .racer-error { margin: 0; color: var(--accent-danger-ink); }
 
-/* Mode switcher: each tab is an address (/poracer/1player, /multi, /demo), reached in-app. */
-/* The shared mode switch (.app-seg), in this card's palette. */
-.racer-card { --seg-well: var(--racer-well); --seg-ink: var(--racer-muted); --seg-on: var(--racer-accent); --seg-on-ink: var(--racer-on-accent); }
-/* Centred, like the switch and the Start button on every other game's start card. */
-.racer-card ::deep .app-seg { width: fit-content; margin-inline: auto; }
+/* The opening card is the shared GameIntro (2026-10-02). .racer-intro is display:contents and
+   exists so the card can be widened from here: three track cards do not fit in 440px. The solo
+   choices sit in the card as one Racer-palette panel (.racer-setup), because the track cards
+   and paint chips are drawn for a dark surface and the shared card is light in the light theme. */
+.racer-intro { display: contents; }
+.racer-intro ::deep .gps-intro-card:has(.racer-setup) { width: min(96vw, 900px); }
+.racer-setup { width: 100%; box-shadow: none; text-align: left; color: var(--racer-text); }
+/* The controls help is one paragraph of spans; on the card each is a line of its own. */
+.racer-intro ::deep .racer-controls { margin: 0; }
+.racer-intro ::deep .racer-controls span { display: block; }
+.racer-error { margin: 0; color: var(--accent-danger-ink); }
 
 /* Chip groups (race type, pace, livery): radios that look like segmented buttons. ::deep because
    the paint shop is a child component and uses the same class. */

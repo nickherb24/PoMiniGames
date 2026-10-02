@@ -6,7 +6,7 @@ namespace PoMiniGamesClient.Games.PoBrawl;
 
 /// <summary>
 /// The client half of one online PoBrawl fight on the match hub: join (or re-join) the fight on a
-/// code, stream the local corner's inputs, and surface the snapshots, the result and the rematch.
+/// code, stream the local corner's inputs, and surface the snapshots and the result.
 /// <see cref="PoBrawlPage"/> hosts it in online mode and hands each snapshot to the arena engine,
 /// which plays the fight as a puppet of them (wwwroot/js/pobrawl/netplay.js).
 /// </summary>
@@ -34,8 +34,6 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
     public event Action<PoBrawlMatchSnapshot?>? Joined;
     public event Action<PoBrawlMatchState>? StateReceived;
     public event Action<PoBrawlMatchResult>? Finished;
-    /// <summary>Both corners asked for a rematch and the server started it; re-join to get the new fight.</summary>
-    public event Action? RematchStarted;
     public event Action<HubConnectionState>? ConnectionChanged;
 
     public async Task<PoBrawlMatchSnapshot?> ConnectAsync(string code)
@@ -53,7 +51,6 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
         {
             if (Snapshot is null || r.MatchId == Snapshot.MatchId) Finished?.Invoke(r);
         }));
-        _subs.Add(_hub.On<string>("rematch", _ => RematchStarted?.Invoke()));
         _hub.Reconnecting += _ => { ConnectionChanged?.Invoke(HubConnectionState.Reconnecting); return Task.CompletedTask; };
         _hub.Reconnected += async _ =>
         {
@@ -118,11 +115,6 @@ public sealed class PoBrawlNetSession : IAsyncDisposable
         {
             // Dropped mid-fight: the reconnect re-joins, and the server let go of the held keys.
         }
-    }
-
-    public async Task RequestRematchAsync()
-    {
-        if (_hub is { State: HubConnectionState.Connected }) await _hub.InvokeAsync("RequestRematch");
     }
 
     /// <summary>

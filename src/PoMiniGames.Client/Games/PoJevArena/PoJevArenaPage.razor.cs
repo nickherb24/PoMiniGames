@@ -68,6 +68,8 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
     private string? _resultNote;
     private ArenaBlackBoxView? _blackBox;
     private bool _showDebrief;
+    /// <summary>Past the end-of-game modal, on the debrief and the Black Box.</summary>
+    private bool _reviewing;
     private bool _autoCamera = true;
     private string _mobileTeam = "blue";
     private bool _statsOpen;
@@ -517,27 +519,6 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         return true;
     }
 
-    private async Task RematchAsync()
-    {
-        await StopEngineAsync();
-        await DeployAsync();
-    }
-
-    private async Task BackToDraftAsync()
-    {
-        await StopEngineAsync();
-        _phase = Phase.Draft;
-        _result = null;
-        _hud = null;
-        if (IsTwoPlayer)
-        {
-            // A new hot-seat round: both teams unlock and Player 1 drafts first again.
-            _blueLocked = _redLocked = false;
-            _twoPlayerStep = TwoPlayerStep.Blue;
-        }
-        await Task.WhenAll(LoadStatusAsync(), LoadLibraryAsync());
-    }
-
     private async Task StopEngineAsync() => await SafeJsAsync("PoJevArena.stop");
 
     private Task ShareClipAsync() => SafeJsAsync("PoJevArena.shareClip");
@@ -595,6 +576,7 @@ public partial class PoJevArenaPage : ComponentBase, IAsyncDisposable
         _phase = Phase.Replay;
         // The debrief is the first thing a player sees after the whistle (the demo goes straight to its highlight replay).
         _showDebrief = !IsDemo;
+        _reviewing = false;
         _resultNote = "recording…";
         await InvokeAsync(StateHasChanged);
 

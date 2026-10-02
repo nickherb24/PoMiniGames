@@ -40,8 +40,7 @@
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Elo="@(PlayMode == "ai" ? _rating.Elo : (int?)null)"
     Announcement="@Announcement"
-    GameSummary="@GameSummaryContent"
-    PlayAgain="RestartMatch">
+    GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
         <GameIntro CueScope="tictactoe"
@@ -268,9 +267,7 @@
     // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns the timer.
 
     private string _backTo => "/";
-    // Online: once Play Again has voted for a rematch the modal steps aside so the
-    // "waiting for <opponent>" line above the board is readable.
-    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo" && !(IsOnline && RematchRequested);
+    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
 
     // Intro/welcome gate — overlay blocks the board until dismissed (OK); demo
     // flashes it for 2s. Nothing auto-moves in human modes, so the overlay is
@@ -316,7 +313,7 @@
             <p>Play another person over the internet.</p>
             <ul>
                 <li>You're paired with the next player who picks Online — no lobby, no codes</li>
-                <li>❌ goes first; who gets ❌ is drawn at random and swaps on every rematch</li>
+                <li>❌ goes first; who gets ❌ is drawn at random</li>
                 <li>The board lives on the server: tap a cell on your turn, then wait for theirs</li>
             </ul>
         </div>,
@@ -397,6 +394,7 @@
     // the player's adaptive ELO, exactly like ConnectFive.
     private RenderFragment? GameSummaryContent => !_isGameOver ? null
         : IsOnline ? OnlineSummary
+        : PlayMode == "2p" ? TwoPlayerSummary
         : @<div>
             @if (_gameResult == GameResult.Win)
             {
@@ -441,10 +439,16 @@
         {
             <div class="ttt-online-note">@OpponentName lost their connection.</div>
         }
-        <div class="ttt-online-note">
-            @(OpponentGone ? "Play again finds you a new opponent." : $"Play again asks {OpponentName} for a rematch — marks swap.")
-        </div>
     </div>;
+
+    // Two people at one screen: name the winner. This used to fall through to the 1P copy,
+    // so X winning read "You win!" and O winning read "AI wins".
+    private RenderFragment TwoPlayerSummary => _gameResult switch
+    {
+        GameResult.Win => @<div class="cf-result cf-result--win">❌ @P1Name won! Nice game.</div>,
+        GameResult.Loss => @<div class="cf-result cf-result--win">⭕ @_player2Name won! Nice game.</div>,
+        _ => @<div class="cf-result cf-result--draw">🤝 Draw</div>,
+    };
     
     protected override void OnInitialized()
     {
@@ -699,21 +703,7 @@
         _ => "Empty cell"
     };
 
-    private void RestartMatch()
-    {
-        if (IsOnline)
-        {
-            // Play Again in an online game is a rematch vote (or a fresh search when
-            // the opponent has gone); the board resets when the server says so.
-            _ = _online?.PlayAgainAsync();
-            return;
-        }
-        ResetBoardState();
-        _cpuElo = _rating.Elo;
-        StateHasChanged();
-    }
-
-    /// <summary>Clear the board and every per-game flag; shared by Play Again and the online (re)start.</summary>
+    /// <summary>Clear the board and every per-game flag; shared by the first game and the online (re)start.</summary>
     private void ResetBoardState()
     {
         _board = new TicTacToeBoard();
@@ -738,8 +728,6 @@
     private bool OnlineWaiting => IsOnline && _online?.Phase is not (QuickMatchPhase.Playing or QuickMatchPhase.Over);
     private TurnMatchSide _mySide => _online?.MySide ?? TurnMatchSide.First;
     private string OpponentName => _online?.OpponentName ?? "Opponent";
-    private bool OpponentGone => _online?.OpponentGone ?? false;
-    private bool RematchRequested => _online?.RematchRequested ?? false;
     private TurnMatchEndReason OnlineEndReason => _online?.EndReason ?? TurnMatchEndReason.None;
     private string OnlineStatusText => _online is null ? "Connecting…"
         : _online.IsMyTurn ? $"Your turn — you're {(_mySide == TurnMatchSide.First ? "❌" : "⭕")}"

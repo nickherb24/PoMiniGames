@@ -22,14 +22,18 @@
 
 <PageTitle>Sports · PoMiniGames</PageTitle>
 
-@* 2026-09-30: the page no longer ends on the shared GameOverModal. The meet's own
-   results card (below) carries the splits, the personal-best deltas and the three
-   things a player does next — again, change runner, leaderboard — without covering
-   the podium. GameOver therefore stays false and the shell's Stats/Summary slots,
-   which only the modal rendered, are not passed. *@
+@* The meet ends on the shared end-of-game modal again (2026-10-02, user call: every game
+   ends the same way). It left it on 2026-09-30 for a card docked beside the podium with
+   Again / Change runner / Leaderboard; that card's content is the modal's summary now, and
+   the delay gives the podium ceremony its moment before the modal covers it. The board is
+   the two-leg meet's, so a field event (a local best, no board row) passes no key. *@
 <GameShell Title=@TitleContent
            Player="@_playerName"
            BackTo="/"
+           GameOver="@ShowResults"
+           GameOverDelayMs="3000"
+           GameKey="@(_mode == "1p" && _eventResult is null ? "posports" : null)"
+           GameSummary="@ResultsContent"
            Announcement="@_announcement">
     @if (!_introDone)
     {
@@ -47,7 +51,6 @@
                    StartEnabled="@(_demo || _mode != "2p" || (_p1Locked && _p2Locked))"
                    StartHint="@(_mode == "2p" ? "Both players lock in to race" : null)"
                    CaptureKeys="@(_mode == "2p" || _rebind >= 0)"
-                   ForceShow="@_forceIntro"
                    OnKey="OnIntroKey"
                    OnStart="OnIntroStartAsync" />
     }
@@ -89,110 +92,6 @@
                     <span class="ps-hud-gap">👀 Watching</span>
                 }
             </div>
-        }
-
-        @if (_phase == "podium" && !_demo && (_results.Count > 0 || _eventResult is not null))
-        {
-            <section class="ps-results" aria-label="Results">
-                @if (_eventResult is { } ev)
-                {
-                    <h2>@Medal(ev.Placing) @ev.Title — @FormatValue(ev.Value, ev.Unit)</h2>
-                    @if (ev.Record)
-                    {
-                        <p class="ps-good">🏆 New personal best@(ev.Prev > 0 ? $" (was {FormatValue(ev.Prev, ev.Unit)})" : "")</p>
-                    }
-                    else if (ev.Prev > 0)
-                    {
-                        <p class="ps-dim">Your best: @FormatValue(ev.Prev, ev.Unit)</p>
-                    }
-                    @if (ev.Attempts.Count > 0)
-                    {
-                        <p class="ps-dim">Attempts: @string.Join(" · ", ev.Attempts.Select(a => a < 0 ? "foul" : a.ToString("0.00")))</p>
-                    }
-                    <table class="ps-table">
-                        <tbody>
-                            @for (var i = 0; i < ev.Board.Count; i++)
-                            {
-                                var row = ev.Board[i];
-                                <tr class="@(row.Human ? "ps-me" : "")">
-                                    <td>@Medal(i + 1)</td>
-                                    <td>@row.Name</td>
-                                    <td class="ps-num">@FormatValue(row.Value, ev.Unit)</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                }
-                else
-                {
-                    <h2>@ResultHeadline</h2>
-                    <table class="ps-table">
-                        <thead>
-                            <tr><th></th><th></th><th class="ps-num">Sprint</th><th class="ps-num">Hurdles</th><th class="ps-num">Total</th></tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var r in _results.OrderBy(x => x.Placing))
-                            {
-                                <tr class="@(IsMine(r) ? "ps-me" : "")">
-                                    <td>@Medal(r.Placing)</td>
-                                    <td>@r.Name</td>
-                                    <td class="ps-num">@r.SprintSeconds.ToString("0.00")</td>
-                                    <td class="ps-num">@r.HurdlesSeconds.ToString("0.00")</td>
-                                    <td class="ps-num"><strong>@r.TotalSeconds.ToString("0.00")</strong></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                    @if (_mode == "1p" && Mine is { } me)
-                    {
-                        @if (_pb is { } pb)
-                        {
-                            <p class="ps-facts">
-                                <span class="@DeltaClass(pb.NewTotal)">Meet @Delta(me.TotalSeconds, pb.PrevTotal)</span>
-                                <span class="@DeltaClass(pb.NewSprint)">Sprint @Delta(me.SprintSeconds, pb.PrevSprint)</span>
-                                <span class="@DeltaClass(pb.NewHurdles)">Hurdles @Delta(me.HurdlesSeconds, pb.PrevHurdles)</span>
-                            </p>
-                        }
-                        <p class="ps-facts ps-dim">
-                            @if (me.ReactionMs >= 0)
-                            {
-                                <span>Reaction @me.ReactionMs.ToString("0") ms</span>
-                            }
-                            <span>Top speed @me.TopSpeed.ToString("0.0") m/s</span>
-                            <span>Hurdles clipped @me.Clipped</span>
-                        </p>
-                        @if (_dailyStreak > 0)
-                        {
-                            <p class="ps-facts">
-                                <span>📅 Daily streak: @_dailyStreak day@(_dailyStreak == 1 ? "" : "s")</span>
-                                @if (_dailyTop.Count > 0)
-                                {
-                                    <span class="ps-dim">Today: @string.Join(" · ", _dailyTop.Select(s => $"{s.PlayerName} {s.TotalTimeSeconds:0.00}"))</span>
-                                }
-                            </p>
-                        }
-                    }
-                }
-
-                <div class="ps-actions">
-                    @if (_mode == "online")
-                    {
-                        <button type="button" class="app-btn app-btn--primary" @onclick="BackToLobby">Back to the lobby</button>
-                    }
-                    else
-                    {
-                        <button type="button" class="app-btn app-btn--primary" @onclick="AgainAsync">Again</button>
-                        <button type="button" class="app-btn app-btn--secondary" @onclick="ChangeRunnerAsync">Change runner</button>
-                    }
-                    <a class="app-btn app-btn--secondary" href="/leaderboards">Leaderboard</a>
-                </div>
-                @if (_mode == "1p" && _eventResult is null)
-                {
-                    <p class="ps-foot">
-                        Meets @_stats.TotalGames · Wins @_stats.TotalWins · Best @(_pbTotal > 0 ? _pbTotal.ToString("0.00") + "s" : "—")
-                    </p>
-                }
-            </section>
         }
     </div>
 </GameShell>
@@ -243,7 +142,6 @@
     private bool _watch;
     private string _mode = "1p";
     private bool _introDone;
-    private bool _forceIntro;
     private string _phase = "loading";   // loading | countdown | racing | interstitial | podium
     private string _leg = "sprint";
     private double _clock;
@@ -293,6 +191,99 @@
     private PbInfo? _pb;
     private EventResult? _eventResult;
     private bool _submittedThisMeet;
+
+    private bool ShowResults => _phase == "podium" && !_demo && (_results.Count > 0 || _eventResult is not null);
+
+    // The end-of-game modal's summary. A <section>, not a <div>: the modal's own rule for
+    // "a div's second and later divs are small print" is written for one-line summaries.
+    private RenderFragment ResultsContent => @<section class="ps-results" aria-label="Results">
+        @if (_eventResult is { } ev)
+        {
+            <h2>@Medal(ev.Placing) @ev.Title — @FormatValue(ev.Value, ev.Unit)</h2>
+            @if (ev.Record)
+            {
+                <p class="ps-good">🏆 New personal best@(ev.Prev > 0 ? $" (was {FormatValue(ev.Prev, ev.Unit)})" : "")</p>
+            }
+            else if (ev.Prev > 0)
+            {
+                <p class="ps-dim">Your best: @FormatValue(ev.Prev, ev.Unit)</p>
+            }
+            @if (ev.Attempts.Count > 0)
+            {
+                <p class="ps-dim">Attempts: @string.Join(" · ", ev.Attempts.Select(a => a < 0 ? "foul" : a.ToString("0.00")))</p>
+            }
+            <table class="ps-table">
+                <tbody>
+                    @for (var i = 0; i < ev.Board.Count; i++)
+                    {
+                        var row = ev.Board[i];
+                        <tr class="@(row.Human ? "ps-me" : "")">
+                            <td>@Medal(i + 1)</td>
+                            <td>@row.Name</td>
+                            <td class="ps-num">@FormatValue(row.Value, ev.Unit)</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <h2>@ResultHeadline</h2>
+            <table class="ps-table">
+                <thead>
+                    <tr><th></th><th></th><th class="ps-num">Sprint</th><th class="ps-num">Hurdles</th><th class="ps-num">Total</th></tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in _results.OrderBy(x => x.Placing))
+                    {
+                        <tr class="@(IsMine(r) ? "ps-me" : "")">
+                            <td>@Medal(r.Placing)</td>
+                            <td>@r.Name</td>
+                            <td class="ps-num">@r.SprintSeconds.ToString("0.00")</td>
+                            <td class="ps-num">@r.HurdlesSeconds.ToString("0.00")</td>
+                            <td class="ps-num"><strong>@r.TotalSeconds.ToString("0.00")</strong></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+            @if (_mode == "1p" && Mine is { } me)
+            {
+                @if (_pb is { } pb)
+                {
+                    <p class="ps-facts">
+                        <span class="@DeltaClass(pb.NewTotal)">Meet @Delta(me.TotalSeconds, pb.PrevTotal)</span>
+                        <span class="@DeltaClass(pb.NewSprint)">Sprint @Delta(me.SprintSeconds, pb.PrevSprint)</span>
+                        <span class="@DeltaClass(pb.NewHurdles)">Hurdles @Delta(me.HurdlesSeconds, pb.PrevHurdles)</span>
+                    </p>
+                }
+                <p class="ps-facts ps-dim">
+                    @if (me.ReactionMs >= 0)
+                    {
+                        <span>Reaction @me.ReactionMs.ToString("0") ms</span>
+                    }
+                    <span>Top speed @me.TopSpeed.ToString("0.0") m/s</span>
+                    <span>Hurdles clipped @me.Clipped</span>
+                </p>
+                @if (_dailyStreak > 0)
+                {
+                    <p class="ps-facts">
+                        <span>📅 Daily streak: @_dailyStreak day@(_dailyStreak == 1 ? "" : "s")</span>
+                        @if (_dailyTop.Count > 0)
+                        {
+                            <span class="ps-dim">Today: @string.Join(" · ", _dailyTop.Select(s => $"{s.PlayerName} {s.TotalTimeSeconds:0.00}"))</span>
+                        }
+                    </p>
+                }
+            }
+        }
+
+        @if (_mode == "1p" && _eventResult is null)
+        {
+            <p class="ps-foot">
+                Meets @_stats.TotalGames · Wins @_stats.TotalWins · Best @(_pbTotal > 0 ? _pbTotal.ToString("0.00") + "s" : "—")
+            </p>
+        }
+    </section>;
 
     private bool IsFieldEvent => _mode == "1p" && _event is "longjump" or "javelin" or "relay";
     private bool ShowHud => !IsFieldEvent && _phase is "racing" or "interstitial" or "countdown";
@@ -659,12 +650,6 @@
         else await Hub.SendSequenceKeyAsync(Code, step);
     }
 
-    /// <summary>
-    /// The seats persist in the lobby after a meet (the server reopens it with the same
-    /// roster), so "same again" online is one hop back there.
-    /// </summary>
-    private void BackToLobby() => Nav.NavigateTo("/posports/multi");
-
     // ── Intro card ────────────────────────────────────────────────────────
 
     private async Task OnIntroKey(Microsoft.AspNetCore.Components.Web.KeyboardEventArgs e)
@@ -749,7 +734,6 @@
             _p2Sel = (_p2Sel + 1) % Roster.Count;
         }
         _introDone = true;
-        _forceIntro = false;
         _rebind = -1;
         StateHasChanged();
         await InitEngine();
@@ -947,31 +931,6 @@
         InvokeAsync(StateHasChanged);
     }
 
-    // ── Results card actions ──────────────────────────────────────────────
-
-    private async Task AgainAsync()
-    {
-        _results = [];
-        _eventResult = null;
-        _pb = null;
-        _submittedThisMeet = false;
-        _phase = "countdown";
-        try { await JSRuntime.InvokeVoidAsync("PoSports.restart"); } catch { }
-    }
-
-    private async Task ChangeRunnerAsync()
-    {
-        try { await JSRuntime.InvokeVoidAsync("PoSports.destroy"); } catch { }
-        _results = [];
-        _eventResult = null;
-        _pb = null;
-        _phase = "loading";
-        _p1Locked = _p2Locked = false;
-        // Reopening on purpose: "don't show this again" must not dismiss it on sight.
-        _forceIntro = true;
-        _introDone = false;
-    }
-
     public async ValueTask DisposeAsync()
     {
         if (_mode == "online")
@@ -981,6 +940,10 @@
             // Unsubscribing alone leaves the socket open and still in the server's race
             // group for the app's lifetime, decoding snapshots nobody listens to.
             try { await Hub.StopRaceAsync(); } catch { }
+            // The results modal's one button leaves for the hub, not the lobby, and the hub
+            // service outlives this page: give the lobby seat back, or it stays taken (with
+            // its runner locked) for whoever is still in the room.
+            try { await Hub.LeaveLobbyAsync(); } catch { }
         }
         try { await JSRuntime.InvokeVoidAsync("PoSports.destroy"); } catch { }
         _ref?.Dispose();

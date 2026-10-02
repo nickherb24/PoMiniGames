@@ -4,7 +4,15 @@
 
 <PageTitle>Jev Arena · PoMiniGames</PageTitle>
 
-<GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true" GameKey="pojevarena">
+@* The match ends on the shared end-of-game modal (2026-10-02): the result, the MVP, and one
+   button back to the hub. "Review the match" steps past it to the debrief and the Black Box,
+   which are things to do with a result rather than ways out; their bar has a way back here.
+   A demo has nobody to press the button, so it keeps its own loop. No GameKey: there is no
+   Jev Arena board for the modal to read (the key that used to sit here 404ed once the modal
+   could actually open). *@
+<GameShell Title="@TitleContent" Player="@_playerName" BackTo="/" Fullscreen="true"
+           GameOver="@(_phase == Phase.Replay && _result is not null && !IsDemo && !_reviewing)"
+           GameSummary="@GameSummaryContent">
     @if (_phase == Phase.Intro)
     {
         <GameIntro CueScope="pojevarena"
@@ -65,8 +73,7 @@
                         }
                         @if (!IsDemo)
                         {
-                            <button type="button" class="jev-btn" @onclick="RematchAsync">Rematch</button>
-                            <button type="button" class="jev-btn jev-btn--ghost" @onclick="BackToDraftAsync">Change teams</button>
+                            <button type="button" class="jev-btn" @onclick="() => _reviewing = false">Back to the result</button>
                         }
                     </div>
                 </div>
@@ -169,6 +176,18 @@
 
 @code {
     private RenderFragment TitleContent => @<span><span aria-hidden="true">⚔️</span> Jev Arena</span>;
+
+    // A <section>, not a <div>: the modal's small-print rule is written for div summaries.
+    // The button is the shared one, because the modal sits outside .jev-root's palette.
+    private RenderFragment GameSummaryContent => @<section class="jev-summary">
+        <strong>@ResultHeadline</strong>
+        <span>@ResultDetail</span>
+        @if (MvpLine is not null)
+        {
+            <span><span aria-hidden="true">★</span> @MvpLine</span>
+        }
+        <button type="button" class="app-btn app-btn--secondary app-btn--sm" @onclick="() => _reviewing = true">Review the match</button>
+    </section>;
 
     private string IntroObjective => IsDemo
         ? "Preset squads and community creatures fight while TypeSafe's Jev makes every call."

@@ -154,6 +154,20 @@
 
 .jev-hud__cam[aria-pressed="true"] { background: color-mix(in srgb, #fff 18%, transparent); }
 
+/* The end-of-game modal's summary: the headline, the facts, the MVP, then the way through
+   to the debrief. The modal is outside .jev-root, so this reads the app's tokens. */
+.jev-summary {
+    display: grid;
+    gap: 0.4rem;
+    justify-items: center;
+}
+
+.jev-summary > span {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+}
+
 /* The result, said once. */
 .jev-resultbar {
     display: flex;

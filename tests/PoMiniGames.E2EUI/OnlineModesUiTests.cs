@@ -87,7 +87,7 @@ public class OnlineModesUiTests
         foreach (var page in new[] { host, guest })
         {
             await page.WaitForURLAsync(url => url.Contains(matchPath, StringComparison.Ordinal), new() { Timeout = 30_000 });
-            // The race/run pages open on their own intro card; Brawl's match page does not.
+            // A match page that opens on a card of its own gets it dismissed; most do not.
             await DismissIntroIfShownAsync(page, 15_000);
             // The live match: Brawl's arena canvas, Racer's in-race HUD, Voxel Strike's engine canvas.
             await WaitForMarkerAsync(page, marker, 90_000);
@@ -154,9 +154,8 @@ public class OnlineModesUiTests
             WaitUntil = WaitUntilState.NetworkIdle,
             Timeout = 60_000,
         });
-        // Most online modes open on the intro card, whose Start is also what connects to the hub.
-        // The Racer lobby has none (dropped 2026-09-17) and joins on arrival, so its shared lobby
-        // card counts as arrived too.
+        // Every online mode opens on the intro card, whose Start is also what connects to the hub
+        // (Voxel Strike's is its own start card, with the lobby on it, so a lobby counts as arrived).
         var start = page.Locator(".gps-intro-actions .app-btn--primary").First;
         try
         {

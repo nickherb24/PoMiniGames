@@ -33,7 +33,6 @@
            Outcome="@(_phase != Phase.Dead ? GameResult.InProgress : _won ? GameResult.Win : GameResult.Loss)"
            GameKey="povoxelstrike"
            RequiresWebGl="true"
-           PlayAgain="RestartAsync"
            GameSummary="@GameSummaryContent">
     @if (_phase == Phase.Intro && _demo)
     {
@@ -97,6 +96,14 @@
                 }
                 else if (!_runStarted)
                 {
+                    @* The same two things every opening card says, above the lobby: what the
+                       game is and how it is played. They used to wait for the deploy card. *@
+                    <p class="gps-intro-objective">Blast through the walls to the golden chalice with your squad — while the guns shoot back.</p>
+                    <div class="gps-intro-controls">
+                        <div class="gps-intro-section-label">Controls</div>
+                        @ControlsContent
+                    </div>
+
                     <LobbyPanel TPlayer="PoVoxelStrikeLobbyPlayer"
                                 State="@Hub.Lobby.State"
                                 LocalConnectionId="@Hub.LobbyConnectionId"
@@ -208,7 +215,7 @@
     // One lifecycle machine (PRD §4.2). Intro is the start card, with the arena built and
     // frozen behind it; the JS engine reports the Intro→Playing edge via OnResumed when it
     // actually has control (pointer lock, or free control on a pad / touch screen).
-    // Intro → Playing ⇄ Paused → Dead; Play again re-enters Intro.
+    // Intro → Playing ⇄ Paused → Dead; the pause menu's Restart re-enters Intro.
     private enum Phase { Intro, Playing, Paused, Dead }
     private enum Tab { Solo, Online }
     private enum SoloRun { Siege, Survival, Daily }
@@ -222,7 +229,7 @@
     private bool _routeDirty;
     private bool _engineLoaded;
     private bool _ready;             // the arena is built and waiting behind the card
-    private bool _autoEnter;         // Play again: go straight in when the arena is ready
+    private bool _autoEnter;         // Restart: go straight in when the arena is ready
     private string _weather = "";
     private string? _fatalError;
     private DotNetObjectReference<PoVoxelStrikePage>? _ref;
@@ -759,7 +766,7 @@
     }
 
     /// <summary>
-    /// Play again / Restart. Solo: a fresh arena, entered straight away when the browser
+    /// Restart (pause menu). Solo: a fresh arena, entered straight away when the browser
     /// still honours the click (the card is the fallback when it does not). Online: back to
     /// the lobby, which the host's end-of-run call has reopened with the same roster.
     /// </summary>

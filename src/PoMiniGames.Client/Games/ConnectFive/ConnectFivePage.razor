@@ -37,8 +37,7 @@
     Outcome="@OutcomeForCue"
     Stats="@(PlayMode == "ai" ? _statItems : null)"
     Announcement="@Announcement"
-    GameSummary="@GameSummaryContent"
-    PlayAgain="RestartMatch">
+    GameSummary="@GameSummaryContent">
 
     @if (!_introDone)
     {
@@ -51,7 +50,7 @@
     }
 
     <div class="cf-layout">
-        @* Online quick-match status (searching, dropped opponent, rematch vote) — the shared
+        @* Online quick-match status (searching, dropped opponent) — the shared
            card, sized to the board. During normal play it renders nothing and the status
            bar below carries the turn. *@
         @if (IsOnline)
@@ -332,9 +331,7 @@
     }
 
     private string _backTo => "/";
-    // Online: once Play Again has voted for a rematch the modal steps aside so the
-    // "waiting for <opponent>" panel above the board is readable.
-    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo" && !(IsOnline && RematchRequested);
+    private bool _isGameOver => _gameResult != GameResult.InProgress && PlayMode != "demo";
 
     // Intro/welcome gate: the board is blocked behind the intro card until the
     // player dismisses it (OK), or the demo flashes it for 2s. Nothing on this
@@ -381,7 +378,7 @@
             <p>Play another person over the internet.</p>
             <ul>
                 <li>You're paired with the next player who picks Online — no lobby, no codes</li>
-                <li>Who goes first is drawn at random and swaps on every rematch</li>
+                <li>Who goes first is drawn at random</li>
                 <li>The board lives on the server: drop a disc on your turn, then wait for theirs</li>
             </ul>
         </div>,
@@ -427,9 +424,6 @@
         {
             <div class="cf-online-note">@OpponentName lost their connection.</div>
         }
-        <div class="cf-online-note">
-            @(OpponentGone ? "Play again finds you a new opponent." : $"Play again asks {OpponentName} for a rematch — colours swap.")
-        </div>
     </div>;
 
     private RenderFragment TwoPlayerSummary => _gameResult switch
@@ -880,21 +874,7 @@
         _ => "Empty cell"
     };
 
-    private void RestartMatch()
-    {
-        if (IsOnline)
-        {
-            // Play Again in an online game is a rematch vote (or a fresh search when
-            // the opponent has gone); the board resets when the server says so.
-            _ = _online?.PlayAgainAsync();
-            return;
-        }
-        ResetBoardState();
-        _cpuElo = _rating.Elo;
-        StateHasChanged();
-    }
-
-    /// <summary>Clear the board and every per-game flag; shared by Play Again and the online (re)start.</summary>
+    /// <summary>Clear the board and every per-game flag; shared by the first game and the online (re)start.</summary>
     private void ResetBoardState()
     {
         _board = new ConnectFiveBoard();
@@ -923,8 +903,6 @@
     private TurnMatchSide _mySide => _online?.MySide ?? TurnMatchSide.First;
     private TurnMatchSide OnlineTurn => _online?.Turn ?? TurnMatchSide.First;
     private string OpponentName => _online?.OpponentName ?? "Opponent";
-    private bool OpponentGone => _online?.OpponentGone ?? false;
-    private bool RematchRequested => _online?.RematchRequested ?? false;
     private TurnMatchEndReason OnlineEndReason => _online?.EndReason ?? TurnMatchEndReason.None;
     private string OnlineStatusText => _online?.StatusText ?? "Connecting…";
     // Your own seat is "You" on the strip: the session's "<name> (you)" is 27 characters

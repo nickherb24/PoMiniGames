@@ -2,8 +2,8 @@
 @using PoMiniGamesClient.Services.Play
 @inject UiFeedbackService Feedback
 
-@* The quick-match status card: connecting, searching, a dropped opponent, a pending
-   rematch, a lost connection. Renders nothing while there is nothing to say, so a page
+@* The quick-match status card: connecting, searching, a dropped opponent, a lost
+   connection. Renders nothing while there is nothing to say, so a page
    can leave it mounted above its board. Connect Five, Tic-Tac-Toe and Marble Race each
    had their own copy of these branches until 2026-09-14. *@
 @if (Visible)
@@ -33,24 +33,13 @@
         {
             <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>@(Reconnecting ? "Reconnecting…" : $"{OpponentName} lost their connection — holding the game for {GraceSeconds} seconds…")</span></div>
         }
-        else if (OpponentGone)
+        else
         {
             <p>@OpponentName has left.</p>
             <div class="qm__actions">
                 <button type="button" class="app-btn app-btn--primary" @onclick="OnFindAnother">Find another opponent</button>
                 <button type="button" class="app-btn app-btn--secondary" @onclick="OnCancel">Back</button>
             </div>
-        }
-        else if (RematchRequested)
-        {
-            <div class="app-loading"><span class="app-loading__spinner" aria-hidden="true"></span><span>Waiting for @OpponentName to accept the rematch…</span></div>
-            <div class="qm__actions">
-                <button type="button" class="app-btn app-btn--secondary" @onclick="OnFindAnother">Find another opponent</button>
-            </div>
-        }
-        else
-        {
-            <p>@OpponentName wants a rematch — press Play again to accept.</p>
         }
     </div>
 }
@@ -61,8 +50,6 @@
     [Parameter] public bool Reconnecting { get; set; }
     [Parameter] public bool OpponentConnected { get; set; } = true;
     [Parameter] public bool OpponentGone { get; set; }
-    [Parameter] public bool RematchRequested { get; set; }
-    [Parameter] public bool OpponentWantsRematch { get; set; }
     /// <summary>How long the server holds a dropped seat; mirrors TurnMatchService.DisconnectGrace.</summary>
     [Parameter] public int GraceSeconds { get; set; } = 30;
     [Parameter] public string SearchingHint { get; set; } = "You'll be paired with the next player who picks Online.";
@@ -85,8 +72,6 @@
         Reconnecting = Session.Reconnecting;
         OpponentConnected = Session.OpponentConnected;
         OpponentGone = Session.OpponentGone;
-        RematchRequested = Session.RematchRequested;
-        OpponentWantsRematch = Session.OpponentWantsRematch;
         NoteMoments(Session);
     }
 
@@ -125,7 +110,7 @@
     {
         QuickMatchPhase.Connecting or QuickMatchPhase.Searching or QuickMatchPhase.Error => true,
         QuickMatchPhase.Playing => Reconnecting || !OpponentConnected,
-        QuickMatchPhase.Over => OpponentGone || RematchRequested != OpponentWantsRematch,
+        QuickMatchPhase.Over => OpponentGone,
         _ => false,
     };
 }

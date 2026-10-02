@@ -29,6 +29,11 @@ public partial class PoRacerPage
     private DotNetObjectReference<PoRacerPage>? _reference;
     private ElementReference _resumeButton;
     private bool _disposed, _engineReady, _isStarting, _isDemo, _trial, _pauseOpen, _focusResume, _showResults;
+    // The opening card (GameIntro) gates everything: no lobby seat is taken and no race is
+    // joined until it is dismissed. _reopenIntro is the card coming back on purpose (Back to
+    // start, a failed start, leaving the lobby), where a "don't show this again" must not
+    // dismiss it the moment it opens; _routed tells the first route apart from a later one.
+    private bool _introDone, _reopenIntro, _routed;
     private string _playerName = "", _selectedTrackId = PoRacerCatalog.DefaultTrackId, _difficulty = "medium";
     private string? _error, _connectionStatus, _submitStatus;
     private string _announcement = "", _gameCode = "";
@@ -92,6 +97,10 @@ public partial class PoRacerPage
             : RaceMode.Solo;
         var changed = mode != _mode;
         _mode = mode;
+        // Another mode of this page, reached in place (leaving the lobby lands on the solo
+        // card): that mode's own card opens.
+        if (changed && _routed) ReopenIntro();
+        _routed = true;
         _isDemo = mode == RaceMode.Demo;
         if (_engineReady && changed && _phase != RacePhase.Start) await ResetAsync();
         await SyncModeAsync();
@@ -124,15 +133,17 @@ public partial class PoRacerPage
 
     /// <summary>
     /// Bring the connections in line with the tab being shown: the Online tab holds a lobby seat
-    /// (until its race starts), and a demo or a joined online race starts with no click.
+    /// (until its race starts); a solo race, a demo and a joined online race start.
     /// </summary>
     private async Task SyncModeAsync()
     {
-        var wantsLobby = _mode == RaceMode.Online && string.IsNullOrWhiteSpace(MatchCode) && _phase == RacePhase.Start;
+        var wantsLobby = _introDone && _mode == RaceMode.Online && string.IsNullOrWhiteSpace(MatchCode) && _phase == RacePhase.Start;
         if (wantsLobby) await OpenLobbyAsync(); else await CloseLobbyAsync();
-        if (!_engineReady || _phase != RacePhase.Start || _isStarting) return;
+        if (!_introDone || !_engineReady || _phase != RacePhase.Start || _isStarting) return;
         if (_isDemo) Kiosk.SetCurrent("poracer-demo");
-        if (_isDemo || !string.IsNullOrWhiteSpace(MatchCode)) await StartRaceAsync();
+        // Everything but the lobby races as soon as the card is gone and the track is loaded,
+        // whichever comes second.
+        if (!wantsLobby) await StartRaceAsync();
     }
 
     // ── Online lobby ──────────────────────────────────────────────────────
@@ -174,6 +185,34 @@ public partial class PoRacerPage
     }
 
     // ── Start card ────────────────────────────────────────────────────────
+
+    private string IntroObjective => _mode switch
+    {
+        RaceMode.Demo => $"Eight bots, {PoRacerCatalog.TotalLaps} laps, nothing to drive.",
+        RaceMode.Online => "Race the room: up to 8 drivers, bots in the empty seats. Your best lap goes on the board.",
+        _ => $"{PoRacerCatalog.TotalLaps} laps round the circuit. Finish first, and set a lap worth keeping: your best one goes on the board.",
+    };
+
+    private string? IntroStartLabel => _mode switch
+    {
+        RaceMode.Demo => null,
+        RaceMode.Online => string.IsNullOrWhiteSpace(MatchCode) ? "Join lobby" : "Join race",
+        _ => "Start race",
+    };
+
+    private async Task OnIntroStartAsync()
+    {
+        _introDone = true;
+        _reopenIntro = false;
+        StateHasChanged();
+        await SyncModeAsync();
+    }
+
+    private void ReopenIntro()
+    {
+        _introDone = false;
+        _reopenIntro = true;
+    }
 
     private void SelectTrack(string trackId)
     {
@@ -234,6 +273,8 @@ public partial class PoRacerPage
             _connecting?.Dispose();
             _connecting = null;
             _isStarting = false;
+            // The start failed: the card comes back, with the reason on it.
+            if (_error is not null && _phase == RacePhase.Start) ReopenIntro();
             if (!_disposed) StateHasChanged();
         }
     }
@@ -441,9 +482,10 @@ public partial class PoRacerPage
         if (_isStarting) { _connecting?.Cancel(); return; }
         await ResetAsync();
         // An online race is left through the lobby it came from: dropping the code from the
-        // address re-renders this page on the Online tab, which takes a seat again. Solo and
-        // demo just show the start card (a demo does not start itself a second time).
+        // address re-renders this page on its lobby, which takes a seat again. Solo and
+        // demo reopen the opening card (a demo then starts itself again).
         if (!string.IsNullOrWhiteSpace(MatchCode)) Nav.NavigateTo("/poracer/multi");
+        else ReopenIntro();
         StateHasChanged();
     }
 

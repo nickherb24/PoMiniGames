@@ -86,6 +86,18 @@ dialog.gps-modal {
   color: var(--color-text-secondary);
 }
 
+/* A summary that is a page of results rather than a line (Cabinet's standings and
+   telemetry, Sports' splits table): its root element carries .gps-summary--wide, takes
+   the card's width, and the card widens to hold it. Make that root a <section>, not a
+   <div>, or the small-print rule above restyles its children. */
+dialog.gps-modal:has(.gps-summary--wide) {
+  width: min(96vw, 960px);
+}
+
+.gps-summary--wide {
+  width: 100%;
+}
+
 /* ── Stats grid ── responsive telemetry tiles */
 .gps-modal-stats {
   width: 100%;

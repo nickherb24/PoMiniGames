@@ -96,14 +96,21 @@ public class PoJevArenaUiTests
 
         await page.WaitForFunctionAsync("() => window.PoJevArena?.state()?.over === true", null,
             new() { Timeout = 240_000, PollingInterval = 500 });
-        // The whistle plays the kill cam and the victory ceremony (~7 s) before the result bar.
+        // The whistle plays the kill cam and the victory ceremony (~7 s) before the result.
         await page.WaitForTimeoutAsync(2_500);
         await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "killcam.png") });
+        // The match ends on the shared end-of-game modal: the result, the MVP, one way out.
+        var modal = page.Locator("dialog.gps-modal[open]");
+        await modal.WaitForAsync(new() { Timeout = 20_000 });
+        (await modal.InnerTextAsync()).Should().MatchRegex("(Blue wins|Red wins|Draw)").And.Contain("MVP");
+        (await modal.Locator("footer button").CountAsync()).Should().Be(1, "every game ends on one button");
+        await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "result.png") });
+
+        // "Review the match" steps past the modal to the debrief and the Black Box.
+        await modal.GetByRole(AriaRole.Button, new() { Name = "Review the match" }).ClickAsync();
         var result = page.Locator(".jev-resultbar");
         await result.WaitForAsync(new() { Timeout = 20_000 });
         (await result.InnerTextAsync()).Should().MatchRegex("(Blue wins|Red wins|Draw)").And.Contain("MVP");
-
-        await page.ScreenshotAsync(new() { Path = Path.Combine(shots, "result.png") });
 
         // Jev debrief: shown first after the whistle, one plain-language card per team, with
         // "Jump" links that open the Black Box on that moment.

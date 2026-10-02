@@ -684,17 +684,6 @@
     outline-offset: 2px;
 }
 
-/* In the result modal (theme surface — tokens). */
-.pb-rematch {
-    margin: 8px auto 0;
-    max-width: 26rem;
-    padding: 6px 10px;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--accent);
-    background: var(--accent-soft);
-    color: var(--color-text-primary);
-}
-
 /* ── The ladder's ending card (full clear) — result modal, tokens. ── */
 .pb-ending {
     margin: 12px auto 0;

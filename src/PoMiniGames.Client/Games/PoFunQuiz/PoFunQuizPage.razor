@@ -18,8 +18,7 @@
            GameOver="@IsGameOver"
            GameKey="@(_playMode == "solo" ? "pofunquiz" : null)"
            Stats="@_statItems"
-           GameSummary="@GameSummaryContent"
-           PlayAgain="@OnPlayAgain">
+           GameSummary="@GameSummaryContent">
     @if (!_introDone)
     {
         <GameIntro CueScope="quiz"
@@ -819,18 +818,5 @@
             : (winner == _playerName ? MatchOutcome.Win : MatchOutcome.Loss);
         try { await MatchHistory.RecordAsync("pofunquiz", MatchMode.Local2P, _player2Name, outcome); }
         catch { /* best-effort */ }
-    }
-
-    // 2026-08-10: "Play again" handler. Local 2P modes (split-screen and
-    // shared-screen) replay through this — solo does NOT, because the prior
-    // run already submitted to the leaderboard and a replay would either
-    // double-submit or feel jarring. The handler reruns the load + state
-    // reset the initial mount does (StartGame handles the rest) and hides
-    // the modal because IsGameOver goes false as soon as _currentIndex is 0.
-    private async Task OnPlayAgain()
-    {
-        if (_playMode != "2ps" && _playMode != "2p") return;
-        await StartGame();
-        StateHasChanged();
     }
 }
