@@ -76,41 +76,8 @@
   .gps-game-title { max-width: 14ch; }
 }
 
-/* Explicit "← Home" affordance next to the game title in the
-   top-bar slot. A 14×14 brand mark is easy to miss on a phone — a labelled
-   link is unambiguous and keyboard-reachable. */
-.gps-back-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  margin-left: 0.5rem;
-  padding: 0.25rem 0.55rem;
-  border-radius: 9999px;
-  background: var(--surface-2);
-  color: var(--color-text-secondary);
-  font-size: 0.78rem;
-  font-weight: 600;
-  text-decoration: none;
-  border: 1px solid var(--color-border);
-  transition: background 0.15s var(--ease-standard), color 0.15s var(--ease-standard);
-}
-
-.gps-back-link:hover,
-.gps-back-link:focus-visible {
-  background: var(--color-accent-solid);
-  color: var(--color-accent-contrast);
-  outline: none;
-}
-
 /* On phones the bar is tight — demote the back link to the brand area
    instead of crowding the title. */
-@media (max-width: 640px) {
-  .gps-back-link {
-    margin-left: 0.35rem;
-    padding: 0.2rem 0.45rem;
-    font-size: var(--text-xs);
-  }
-}
 
 /* Live ELO badge shown in the top bar beside the signed-in identity during
    single-player rated games. Projected by GameShell into MainLayout's
@@ -136,13 +103,6 @@
    drop the ELO chip too so the top bar keeps Sign out on one line. */
 @media (max-width: 480px) {
   .gps-elo-badge { display: none; }}
-
-/* Instant press feedback. :active dips the button; the keyboard focus ring
-   is supplied globally by `.gps-shell :focus-visible` further down this file. */
-.gps-controls button:active { transform: scale(0.94); }
-
-@media (prefers-reduced-motion: reduce) {
-  .gps-controls button:active { transform: none; }}
 
 /* ── "This game needs 3D graphics" ──
    Shown in place of the game when a required WebGL context could not be
@@ -651,21 +611,6 @@
   color: var(--color-text-secondary);
 }
 
-/* New page-title pattern: pair `.gps-phase-h` (eyebrow) with `.gps-game-h`
-   (display). Every landing / pre-game card uses the same pair so the user
-   instantly recognises the layout no matter which game. */
-.gps-game-h {
-  margin: 0;
-  font-family: var(--font-display);
-  font-size: 1.4rem;
-  font-weight: 700;
-  letter-spacing: -0.01em;
-  color: var(--color-text-primary);
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
 /* Universal card wrapper — every game landing / lobby / recap uses this so
    pre-game surfaces share the same shadow + radius + padding. */
 .gps-game-card {
@@ -689,7 +634,6 @@
   box-shadow: 0 0 0 3px var(--accent-ring);
   border-color: var(--accent);
 }
-.gps-row   { display: flex; align-wrap: wrap; gap: 0.5rem; align-items: center; }
 .gps-error { color: #fca5a5; font-weight: 600; }
 
 /* ── PoCoupleQuiz (`.cq-*` aliases) ──
@@ -739,15 +683,6 @@
   color: var(--color-text-secondary);
   opacity: 0.85;
   line-height: 1.4;
-}
-
-/* There are no game codes to copy and share while you sit in the lobby, so the
-   wait needs its own visible status line — otherwise a player alone in the lobby
-   sees only their own name and assumes it is broken. */
-.fq-waiting {
-  margin: 0.25rem 0 0;
-  font-size: 0.85rem;
-  color: var(--color-text-secondary);
 }
 
 /* In-round screens (game / results). Card chrome matches the rest of the shell

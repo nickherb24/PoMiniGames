@@ -39,9 +39,7 @@ internal static class GameServicesExtensions
         // ─── Centralized Azure AI Foundry hub (PoShared RG) ─────────────────
         // One shared AzureOpenAIClient + per-deployment ChatClient cache. Every
         // game that needs an AI model resolves through AIFoundryChatClientCache
-        // with its game key (couplequiz, funquiz, face, joker, survive).
-        // Replaces the legacy per-game PoFunQuiz:AzureOpenAI, PoCoupleQuiz:AzureOpenAI,
-        // PoFace:AzureOpenAI, PoJoker:AzureOpenAI, Inference:* sections.
+        // with its game key (couplequiz, funquiz, joker, ecosystem, pobrawl, pocabinet).
         services.AddOptions<AIFoundryOptions>()
             // Bind the configuration section the Key Vault secrets land in. This was missing:
             // the options object was built ONLY from the environment-variable overrides below,
@@ -146,11 +144,7 @@ internal static class GameServicesExtensions
                 tags: ["ai", "ready"]);
         // PoRaceRagdoll feature removed.
 
-        // Elo calculation with configurable options
-        services.Configure<EloOptions>(options =>
-        {
-            // Default values from EloOptions class will be used unless overridden in config
-        });
+        // Elo calculation, on the defaults in EloOptions.
         services.AddSingleton(sp =>
         {
             var config = sp.GetRequiredService<IOptions<EloOptions>>();

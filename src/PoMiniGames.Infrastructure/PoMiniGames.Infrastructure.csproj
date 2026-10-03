@@ -5,11 +5,6 @@
     <PackageReference Include="Azure.Data.Tables" />
     <PackageReference Include="Microsoft.Extensions.Configuration.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Diagnostics.HealthChecks" />
-    <!-- Resilience pipelines (retry + circuit breaker + timeout) used by AI Foundry calls. -->
-    <PackageReference Include="Microsoft.Extensions.Http.Resilience" />
-    <PackageReference Include="Microsoft.Extensions.AI" />
-    <PackageReference Include="Microsoft.Extensions.AI.OpenAI" />
-    <PackageReference Include="Azure.AI.OpenAI" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />

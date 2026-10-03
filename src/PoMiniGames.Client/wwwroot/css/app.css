@@ -745,7 +745,6 @@ h3[tabindex="0"]:focus-visible {
 
 /* Login gate styles migrated to scoped Components/LoginScreen.razor.css. */
 
-
 /* All .home-* selectors migrated to scoped Pages/Index.razor.css. */
 
 /* ── Single Player Page ── */
@@ -765,14 +764,6 @@ h3[tabindex="0"]:focus-visible {
   border-radius: 1rem;
   padding: 2rem;
   backdrop-filter: blur(12px);
-}
-
-.sp-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-  flex-wrap: wrap;
 }
 
 .sp-back {
@@ -1065,30 +1056,6 @@ h3[tabindex="0"]:focus-visible {
    `--color-accent-solid` and `--accent-cyan` inside its theme root; the
    primitives below pick the new hues up automatically. */
 
-/* Card: the universal "panel" — translucent surface, 1px border, soft shadow.
-   Use for any grouped content (a leaderboard row cluster, a profile stat
-   block, a settings section). */
-.app-card {
-  background: var(--surface-2);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-5);
-  box-shadow: var(--elevation-1);
-  backdrop-filter: var(--glass-2);
-  -webkit-backdrop-filter: var(--glass-2);
-}
-
-.app-card--flat {
-  box-shadow: none;
-  backdrop-filter: none;
-  -webkit-backdrop-filter: none;
-}
-
-.app-card--compact {
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-md);
-}
-
 /* Button: four variants. The 44px floor is set in the @media (pointer: coarse)
    block below; this rule only governs the visual treatment. */
 .app-btn {
@@ -1160,14 +1127,6 @@ h3[tabindex="0"]:focus-visible {
   color: var(--color-text-primary);
 }
 
-.app-btn--danger {
-  background: var(--accent-danger);
-  color: #ffffff;
-  border-color: color-mix(in srgb, var(--accent-danger) 60%, #000);
-}
-
-.app-btn--danger:hover { filter: brightness(1.1); }
-
 /* Size modifiers — applied via the same `app-btn` class. */
 .app-btn--sm { padding: 0.35rem 0.75rem; font-size: var(--text-xs); }
 .app-btn--lg { padding: 0.75rem 1.4rem; font-size: var(--text-base); }
@@ -1208,12 +1167,6 @@ h3[tabindex="0"]:focus-visible {
   background: var(--accent-warning-soft);
   border-color: color-mix(in srgb, var(--accent-warning) 30%, transparent);
   color: var(--accent-warning-ink);
-}
-
-.app-chip--danger {
-  background: var(--accent-danger-soft);
-  border-color: color-mix(in srgb, var(--accent-danger) 30%, transparent);
-  color: var(--accent-danger-ink);
 }
 
 /* Segmented control: one choice of a few, all visible at once (the game mode
@@ -1280,25 +1233,6 @@ h3[tabindex="0"]:focus-visible {
 @media (pointer: coarse) {
   .app-seg__btn { min-height: 44px; }
 }
-
-/* Link: underlined accent link with the same focus ring as everything else.
-   Use for inline body links; for nav links inside the top bar, keep the
-   `.gl-brand` selector (it carries its own padding/touch target). */
-.app-link {
-  color: var(--color-accent);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 0.2em;
-  font-weight: 600;
-}
-
-.app-link:hover { filter: brightness(1.15); }
-
-/* ── Containment helper ─────────────────────────────────────────────────────
-   Opt-in `contain: layout paint` for any block whose internal reflow should
-   never repaint its parents. Use on virtualized rows, leaderboard rows,
-   card grids. Pure additive; promotes a node to its own paint layer. */
-.app-contain { contain: layout paint; }
 
 /* ── Typography defaults ───────────────────────────────────────────────────
    `text-wrap: balance` for headings and `text-wrap: pretty` for body copy

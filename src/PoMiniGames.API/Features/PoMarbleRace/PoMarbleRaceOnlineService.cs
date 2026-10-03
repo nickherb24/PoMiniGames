@@ -32,7 +32,7 @@ public sealed class PoMarbleRaceOnlineService
             if (_byConnection.ContainsKey(connectionId)) return null;
             if (_queue.Any(w => w.ConnectionId == connectionId)) return null;
 
-            var arrival = new Waiting(connectionId, principalId, SanitizeName(displayName), isGuest, mapId);
+            var arrival = new Waiting(connectionId, principalId, Features.Shared.PlayerNames.Sanitize(displayName), isGuest, mapId);
             if (_queue.Count == 0)
             {
                 _queue.Add(arrival);
@@ -87,13 +87,6 @@ public sealed class PoMarbleRaceOnlineService
             _byConnection.Remove(peer);
             return peer;
         }
-    }
-
-    private static string SanitizeName(string raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return "Player";
-        var trimmed = raw.Trim();
-        return trimmed.Length > 24 ? trimmed[..24] : trimmed;
     }
 
     public sealed record Pairing(string RaceId, string HostConnectionId, MarbleRaceStart HostStart, string GuestConnectionId, MarbleRaceStart GuestStart);

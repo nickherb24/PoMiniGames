@@ -122,7 +122,7 @@ public sealed class AIFoundryOptions
 
     /// <summary>
     /// Game → deployment allowlist. Recognised game keys: <c>couplequiz</c>, <c>funquiz</c>,
-    /// <c>face</c>, <c>joker</c>, <c>ecosystem</c>, <c>pobrawl</c> (plus <c>game.task</c> keys, see <see cref="Tasks"/>). Populated either from a nested configuration
+    /// <c>joker</c>, <c>ecosystem</c>, <c>pobrawl</c> (plus <c>game.task</c> keys, see <see cref="Tasks"/>). Populated either from a nested configuration
     /// section (<c>PoMiniGames:AI:Deployments:joker</c>) or from the flat Key Vault secret
     /// <c>PoMiniGames--AI--Deployments</c> in the form <c>game=deployment,game=deployment</c>
     /// (parsed in <c>GameServicesExtensions</c>).
@@ -164,6 +164,14 @@ public sealed class AIFoundryOptions
     /// </para>
     /// </remarks>
     public string EmbeddingDeployment { get; set; } = string.Empty;
+
+    /// <summary>
+    /// A second deployment to try once when a call's own deployment has failed for good
+    /// (rate limited, removed, circuit open). Empty, the default, means no fallback. Pick a
+    /// model of the same capability class as the ones it stands in for; see
+    /// <see cref="FallbackChatClient"/>.
+    /// </summary>
+    public string FallbackDeployment { get; set; } = string.Empty;
 
     /// <summary>
     /// Deployment name → capability profile, overriding the name heuristic in

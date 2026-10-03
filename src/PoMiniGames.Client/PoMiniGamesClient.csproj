@@ -41,13 +41,10 @@
                    PublishedContent="wwwroot\service-worker.published.js" />
   </ItemGroup>
 
-  <ItemGroup>
-    <!-- Sprite payload. wwwroot/images/ is runtime-only: 32 atlas.json +
-         32 spritesheet.webp pairs, ~8 MB, all of it fetched by js/posports/sprites.js.
-         Every file under wwwroot/images/ is published and precached deliberately —
-         do not reintroduce a Content Remove rule here; delete the unused asset
-         instead. -->
-  </ItemGroup>
+  <!-- Sprite payload. wwwroot/images/ is runtime-only: 32 atlas.json + 32
+       spritesheet.webp pairs, ~8 MB, all of it fetched by js/posports/sprites.js and
+       cached by the service worker on first use. Do not add a Content Remove rule
+       here; delete the unused asset instead. -->
 
   <ItemGroup>
     <!-- Preserve reflectively-instantiated layout constructors from the trimmer
@@ -70,9 +67,7 @@
     <ProjectReference Include="..\PoMiniGames.Shared\PoMiniGames.Shared.csproj" />
     <!-- Domain models only: the board rows the leaderboard endpoints return are
          deserialized straight into PoMiniGames.Domain.Models types rather than mirrored
-         here. This was a reference to PoMiniGames.Application, which pulled Domain in
-         transitively along with the server-side storage interfaces the browser has no
-         use for; PoSurvive's simulation engine was the reason it was there. -->
+         here. -->
     <ProjectReference Include="..\PoMiniGames.Domain\PoMiniGames.Domain.csproj" />
   </ItemGroup>
 

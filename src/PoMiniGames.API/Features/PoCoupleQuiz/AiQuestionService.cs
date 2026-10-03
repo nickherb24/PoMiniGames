@@ -4,6 +4,7 @@ using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using static PoMiniGames.AI.AiText;
 
 namespace PoMiniGames.Features.PoCoupleQuiz;
 
@@ -379,31 +380,6 @@ public sealed class AiQuestionService : IQuestionService
         return Math.Clamp(value, 0f, 1f);
     }
 
-    /// <summary>
-    /// Parses the first JSON object in the reply, or null. Tolerant of prose around it: unnecessary
-    /// for a schema-constrained provider, but the JSON-object-mode fallback can still produce it.
-    /// </summary>
-    private static JsonDocument? TryExtractJson(string? raw)
-    {
-        var start = raw?.IndexOf('{') ?? -1;
-        var end = raw?.LastIndexOf('}') ?? -1;
-        if (raw is null || start < 0 || end <= start)
-            return null;
-
-        try
-        {
-            return JsonDocument.Parse(raw[start..(end + 1)]);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static string Truncate(string? text, int max)
-        => string.IsNullOrEmpty(text) ? "(empty)"
-         : text.Length <= max ? text
-         : text[..max] + "…";
 
     private bool IsNonProduction() => Features.Shared.AiMockFallback.IsNonProduction(_environment);
 }

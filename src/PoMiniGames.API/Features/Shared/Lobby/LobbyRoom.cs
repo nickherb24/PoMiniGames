@@ -222,15 +222,6 @@ public abstract class LobbyRoom<TPlayer> where TPlayer : class, ILobbyPlayer
 
     private static long NowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
-    /// <summary>
-    /// The one display-name rule for every lobby: trimmed, 24 characters, "Player" when
-    /// blank. Race services compare client-supplied names against seats through it too, so
-    /// a long name matches its own truncated seat.
-    /// </summary>
-    public static string SanitizeName(string raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return "Player";
-        var trimmed = raw.Trim();
-        return trimmed.Length > 24 ? trimmed[..24] : trimmed;
-    }
+    /// <summary>The shared display-name rule; see <see cref="PlayerNames.Sanitize"/>.</summary>
+    public static string SanitizeName(string raw) => PlayerNames.Sanitize(raw);
 }

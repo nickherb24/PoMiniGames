@@ -120,7 +120,7 @@ Write-Step 'Verdict'
 if ($overBudget) {
     Write-Warn "WASM client bundle is over the $BudgetMb MB cap. Audit new dependencies and CSS duplication before merging."
     # Non-blocking per the WARN contract; exit 0 so a developer can still
-    # commit while iterating. CI's deploy-preflight is the hard gate.
+    # commit while iterating. CI's bundle-budget step is the hard gate.
     exit 0
 }
 Write-Ok "Bundle is within budget."

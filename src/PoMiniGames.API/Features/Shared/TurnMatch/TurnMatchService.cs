@@ -73,7 +73,7 @@ public sealed class TurnMatchService<THub> where THub : Hub
             if (_byConnection.ContainsKey(connectionId)) return null;
             if (_queue.Any(w => w.ConnectionId == connectionId)) return null;
 
-            var arrival = new Waiting(connectionId, SanitizePrincipal(principalId), SanitizeName(displayName), isGuest);
+            var arrival = new Waiting(connectionId, SanitizePrincipal(principalId), Features.Shared.PlayerNames.Sanitize(displayName), isGuest);
             if (_queue.Count == 0)
             {
                 _queue.Add(arrival);
@@ -302,13 +302,6 @@ public sealed class TurnMatchService<THub> where THub : Hub
 
     private static TurnMatchStatus WinnerAgainst(TurnMatchSide loser) =>
         loser == TurnMatchSide.First ? TurnMatchStatus.SecondWon : TurnMatchStatus.FirstWon;
-
-    private static string SanitizeName(string raw)
-    {
-        if (string.IsNullOrWhiteSpace(raw)) return "Player";
-        var trimmed = raw.Trim();
-        return trimmed.Length > 24 ? trimmed[..24] : trimmed;
-    }
 
     private static string SanitizePrincipal(string raw) =>
         string.IsNullOrWhiteSpace(raw) ? "anon" : raw.Trim().ToLowerInvariant();

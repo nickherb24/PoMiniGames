@@ -22,16 +22,16 @@ the rendered Blazor WASM UI.
    output after a first `dotnet build`:
 
    ```pwsh
-   pwsh tests/E2EUI/bin/Debug/net10.0/playwright.ps1 install chromium
+   pwsh tests/PoMiniGames.E2EUI/bin/Debug/net10.0/playwright.ps1 install chromium
    ```
 
 ## Running
 
 ```pwsh
 # from repo root
-dotnet test tests/E2EUI/E2EUI.csproj
+dotnet test tests/PoMiniGames.E2EUI/PoMiniGames.E2EUI.csproj
 ```
 
 > **Not run in CI** by default (needs browser binaries). Per repo UPDATES,
-> the `.github/workflows/deploy.yml` is build-only; tests are run locally
+> the `.github/workflows/deploy.yml` runs only the Unit tier; this tier is run locally
 > via `scripts/test-all.ps1` or in an environment that supplies Azurite + browsers.

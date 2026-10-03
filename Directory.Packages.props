@@ -4,10 +4,8 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <!-- Tooling: all four are
-         trim-safe: Mapperly is a compile-time source generator (no runtime assembly),
-         Blazored.LocalStorage is used through its string API only, and NSubstitute /
-         bUnit never ship in the WASM bundle. -->
+    <!-- Tooling: Blazored.LocalStorage is used through its string API only, so it is
+         trim-safe; NSubstitute is test-only and never ships in the WASM bundle. -->
     <PackageVersion Include="Blazored.LocalStorage" Version="4.5.0" />
     <PackageVersion Include="NSubstitute" Version="6.2.0" />
     <!-- Azure -->
@@ -59,7 +57,7 @@
     <!-- AuthenticationStateProvider + AuthorizeRouteView. Not transitively
          included by the WASM metapackage in .NET 10. -->
     <PackageVersion Include="Microsoft.AspNetCore.Components.Authorization" Version="10.0.10" />
-    <!-- AI (PoSurvive inference: server-side Azure OpenAI relay) -->
+    <!-- AI (server-side calls to Azure AI Foundry through Microsoft.Extensions.AI) -->
     <PackageVersion Include="Microsoft.Extensions.AI" Version="10.5.2" />
     <PackageVersion Include="Microsoft.Extensions.AI.OpenAI" Version="10.5.2" />
     <!-- Must stay compatible with the OpenAI version Microsoft.Extensions.AI.OpenAI pulls in
@@ -69,7 +67,6 @@
          ChatCompletionOptions.SerializedAdditionalRawData. That surfaced as "[The Jester
          stumbled and cannot predict.]" rather than a startup failure. Bump both together. -->
     <PackageVersion Include="Azure.AI.OpenAI" Version="2.9.0-beta.1" />
-    <!-- Health Checks -->
     <!-- PoVoxelStrike asset pipeline: GLB parsing for the startup voxelizer. API-side
          only — must never be referenced from the Client, whose publish is trim-audited. -->
     <PackageVersion Include="SharpGLTF.Core" Version="1.0.6" />

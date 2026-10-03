@@ -3,6 +3,7 @@ using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using static PoMiniGames.AI.AiText;
 
 namespace PoMiniGames.Features.PoFunQuiz;
 
@@ -543,11 +544,6 @@ public sealed class AiQuizGeneratorService : IOpenAIService
             Difficulty = difficulty,
         };
     }
-
-    private static string Truncate(string? text, int max)
-        => string.IsNullOrEmpty(text) ? "(empty)"
-         : text.Length <= max ? text
-         : text[..max] + "…";
 
     private bool IsNonProduction() => Features.Shared.AiMockFallback.IsNonProduction(_environment);
 }

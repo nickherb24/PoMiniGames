@@ -1,8 +1,8 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-  Singular, CI-equivalent test orchestrator for PoMiniGames. Runs the full tiered
-  suite (Unit -> Integration -> E2E-API -> E2E-UI) the same way locally and in CI.
+  The one test orchestrator for PoMiniGames. Runs the full tiered suite
+  (Unit -> Integration -> E2E-API -> E2E-UI) locally. CI runs only the Unit tier.
 .DESCRIPTION
   Preflight (idempotent):
     1. Free the host lock — a running `dotnet run` host (port 5080) locks the build

@@ -39,6 +39,13 @@ public sealed class JokeRewriteService
     private readonly AiDecisionOptionsCache _optionsCache;
     private readonly int _timeoutSeconds;
 
+    // JokeAPI serves a small pool, so the same flagged joke comes round again and again.
+    // Successful rewrites are remembered by joke id; a failure is not, so it is retried.
+    // ponytail: in-process and cleared when full. Move to HybridCache if rewrites should
+    // survive a restart.
+    private const int MaxRemembered = 500;
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<int, JokeDto> _rewrites = new();
+
     // Asks for a replacement joke rather than a cleaned copy of the original: the
     // point is to lose the premise, keeping only the comedic form.
     //
@@ -91,6 +98,23 @@ public sealed class JokeRewriteService
     /// caller is expected to fall back rather than treat null as an error.
     /// </summary>
     public async Task<JokeDto?> TryRewriteAsync(JokeDto joke, CancellationToken cancellationToken = default)
+    {
+        if (_rewrites.TryGetValue(joke.Id, out var remembered))
+        {
+            return remembered;
+        }
+
+        var rewritten = await RewriteAsync(joke, cancellationToken);
+        if (rewritten is not null)
+        {
+            if (_rewrites.Count >= MaxRemembered) _rewrites.Clear();
+            _rewrites[joke.Id] = rewritten;
+        }
+
+        return rewritten;
+    }
+
+    private async Task<JokeDto?> RewriteAsync(JokeDto joke, CancellationToken cancellationToken)
     {
         // Own task key so the rewrite can be pointed at a different deployment from the Jester's
         // punchline prediction — this call blocks the fetch, so it is the one that most wants a

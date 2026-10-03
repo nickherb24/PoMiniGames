@@ -127,9 +127,25 @@ public sealed class GameChatClientFactory
 
         var budgeted = new BudgetedChatClient(instrumented, _budget, gameKey, logger);
 
-        var composed = new ResilientChatClient(
+        IChatClient composed = new ResilientChatClient(
             budgeted,
             ResolvePipeline(healthKey));
+
+        // Outermost, so the fallback is tried only after the primary's own retries are spent.
+        // Resolved per call: the option can change, and the fallback deployment's own client
+        // (which must not wrap itself) is composed lazily through this same method.
+        composed = new FallbackChatClient(
+            composed,
+            () =>
+            {
+                var fallback = _options.CurrentValue.FallbackDeployment;
+                return string.IsNullOrWhiteSpace(fallback)
+                       || string.Equals(fallback, deployment, StringComparison.OrdinalIgnoreCase)
+                    ? null
+                    : ForDeployment(gameKey, fallback);
+            },
+            gameKey,
+            logger);
 
         return _composed.GetOrAdd(key, composed);
     }

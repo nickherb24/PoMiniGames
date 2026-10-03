@@ -63,51 +63,6 @@
     --fx-glass-highlight: rgba(255, 255, 255, 0.22);
 }
 
-/* ===== Glassmorphism ====================================================
- * COST WARNING: `backdrop-filter` forces the element onto its own compositor
- * layer and makes the browser re-sample everything painted beneath it. Two or
- * three of these on screen is fine; twenty will halve your frame rate on
- * integrated graphics. Use it on chrome surfaces (bars, modals, rails) — never
- * on list items or anything that repeats.
- *
- * The `--gfx-blur` indirection lets adaptive degradation drop the radius to 0 on weak hardware,
- * at which point the surface degrades to a flat translucent fill that still
- * looks deliberate.
- */
-.fx-glass {
-    background-color: var(--fx-glass-bg);
-    border: 1px solid var(--fx-glass-stroke);
-    border-radius: 12px;
-    /* Fallback for engines without backdrop-filter — a slightly more opaque
-       fill so text contrast survives without the blur behind it. */
-    background-color: color-mix(in srgb, var(--fx-glass-bg) 100%, rgba(10, 20, 30, 0.55));
-}
-
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-    .fx-glass {
-        background-color: var(--fx-glass-bg);
-        -webkit-backdrop-filter: blur(var(--gfx-blur)) saturate(150%);
-        backdrop-filter: blur(var(--gfx-blur)) saturate(150%);
-    }}
-
-/* Specular top edge — sells "pane of glass" far more than the blur alone. */
-.fx-glass--lit {
-    position: relative;
-    overflow: hidden;
-}
-.fx-glass--lit::before {
-    content: '';
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 1px;
-    background: linear-gradient(90deg,
-        transparent,
-        var(--fx-glass-highlight) 22%,
-        var(--fx-glass-highlight) 78%,
-        transparent);
-    pointer-events: none;
-}
-
 @keyframes fx-rotate-angle {
     to { --fx-angle: 360deg; }}
 
@@ -159,11 +114,6 @@
 :root[data-gfx='low'] .fx-holo-card::after { display: none; }
 @media (prefers-reduced-motion: reduce) { .fx-holo-card::after { display: none; } }
 
-/* Tension-synced biometric border pulse */
-.fx-tension-pulse {
-    box-shadow: 0 0 calc(var(--fx-tension, 0) * 20px) color-mix(in srgb, var(--fx-accent, #ef4444) calc(var(--fx-tension, 0) * 80%), transparent);
-    animation: fx-heartbeat calc(1s / var(--fx-pulse-rate, 1)) ease-in-out infinite alternate;
-}
 @keyframes fx-heartbeat {
     from { opacity: 0.85; transform: scale(1); }
     to   { opacity: 1.0; transform: scale(calc(1 + var(--fx-tension, 0) * 0.02)); }
@@ -182,7 +132,6 @@
     0%   { transform: scale(0.86); }
     60%  { transform: scale(1.04); }
     100% { transform: scale(1); }}
-
 
 /* ===== Impact / game feel ===============================================
  * impactBus.js publishes --po-punch and --po-shake on <html> and drives the
@@ -240,20 +189,6 @@
        gives us for photosensitivity. The hit still reports through audio and
        haptics, so no feedback is actually lost. */
     .po-impact-flash { opacity: 0 !important; }}
-
-/* ===== Adaptive degradation ============================================
- * visualRuntime.js sets data-gfx on <html>. Rules here are what "degrade"
- * actually means, so the policy lives in CSS rather than being scattered
- * through component code.
- */
-:root[data-gfx='low'] .fx-glass {
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
-    background-color: rgba(10, 20, 30, 0.72);
-}
-:root[data-gfx='low'] .fx-glass--lit::before {
-    display: none;
-}
 
 /* ===== Reduced motion ======================================================
  * Mirrors the existing blocks in app.css / game-shell.css / games.css. Motion

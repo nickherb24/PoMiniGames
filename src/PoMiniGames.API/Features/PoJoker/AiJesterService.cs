@@ -4,6 +4,7 @@ using Microsoft.Extensions.Caching.Hybrid;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Options;
 using PoMiniGames.Shared.Games.PoJoker;
+using static PoMiniGames.AI.AiText;
 
 namespace PoMiniGames.Features.PoJoker;
 
@@ -487,27 +488,6 @@ public sealed class AiJesterService : IAnalysisService
         return Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes))[..32];
     }
 
-    private static JsonDocument? TryExtractJson(string? raw)
-    {
-        var start = raw?.IndexOf('{') ?? -1;
-        var end = raw?.LastIndexOf('}') ?? -1;
-        if (raw is null || start < 0 || end <= start)
-            return null;
-
-        try
-        {
-            return JsonDocument.Parse(raw[start..(end + 1)]);
-        }
-        catch (JsonException)
-        {
-            return null;
-        }
-    }
-
-    private static string Truncate(string? text, int max)
-        => string.IsNullOrEmpty(text) ? "(empty)"
-         : text.Length <= max ? text
-         : text[..max] + "…";
 
     // ── Similarity scoring (Levenshtein + Jaccard blend) ─────────────────────
     private static double CalculateSimilarity(string actual, string predicted)
