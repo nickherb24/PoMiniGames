@@ -77,7 +77,7 @@ public sealed record PoRacerCarInfo(int Id, string Name, string Color, string Co
 /// <summary>What a driver asks for when joining: solo mode and pace, and the paint the others will see.</summary>
 public sealed class PoRacerJoinOptions
 {
-    /// <summary>"race" (seven bots) or "trial" (an empty track). Solo races only.</summary>
+    /// <summary>"race" (99 rivals) or "trial" (an empty track). Solo races only.</summary>
     public string Mode { get; set; } = "race";
     /// <summary>"easy" / "medium" / "hard" bot pace. Solo races only.</summary>
     public string Difficulty { get; set; } = "medium";

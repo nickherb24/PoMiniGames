@@ -42,7 +42,7 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
     {
         if (code.StartsWith("multi-", StringComparison.Ordinal))
             return GetByCode(code) ?? throw new HubException("The race has ended. Return to the lobby.");
-        if (!asPlayer) return GetOrCreate("DEMO", [], trackId);
+        if (!asPlayer) return GetOrCreate("DEMO", [], trackId, carCount: PoRacerCatalog.SoloCarCount);
         if (!code.StartsWith("solo-", StringComparison.Ordinal) || code.Length > 48)
             throw new HubException("Invalid race code.");
         // Solo only: a time trial is the same race with no bots, and the tier sets how fast the
@@ -57,18 +57,21 @@ public sealed class PoRacerRaceRegistry : IAsyncDisposable
             "hard" => (1.07, 0.20),
             _ => (1.03, 0.42),
         };
-        return GetOrCreate(code, [player], trackId, bots: options?.Mode != "trial", pace, caution);
+        return GetOrCreate(code, [player], trackId, bots: options?.Mode != "trial", pace, caution,
+            carCount: PoRacerCatalog.SoloCarCount);
     }
 
     private PoRacerRaceService GetOrCreate(string code, IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId,
-        bool bots = true, double botPace = 1.0, double botCaution = PoRacerSim.DefaultBotCaution)
+        bool bots = true, double botPace = 1.0, double botCaution = PoRacerSim.DefaultBotCaution,
+        int carCount = PoRacerCatalog.CarCount)
     {
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_shutdown.IsCancellationRequested, this);
             if (_races.TryGetValue(code, out var existing)) return existing;
             if (_races.Count >= 64) throw new HubException("The race grid is busy. Try again shortly.");
-            var race = new PoRacerRaceService(code, players, _logs.CreateLogger<PoRacerRaceService>(), trackId, bots, botPace, botCaution);
+            var race = new PoRacerRaceService(code, players, _logs.CreateLogger<PoRacerRaceService>(), trackId,
+                bots, botPace, botCaution, carCount);
             race.SnapshotReady += snapshot => BroadcastAsync(code, "raceSnapshot", snapshot);
             race.Finished += result =>
             {

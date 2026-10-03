@@ -28,9 +28,9 @@ public static class PoRacerScoreEndpoints
             {
                 errors[nameof(dto.BestLapSeconds)] = ["Best lap must be between 0 and 3600 seconds."];
             }
-            if (dto.FinalPosition is < 1 or > 8)
+            if (dto.FinalPosition is < 1 or > PoRacerCatalog.SoloCarCount)
             {
-                errors[nameof(dto.FinalPosition)] = ["Final position must be between 1 and 8."];
+                errors[nameof(dto.FinalPosition)] = [$"Final position must be between 1 and {PoRacerCatalog.SoloCarCount}."];
             }
             if (!PoRacerCatalog.Tracks.Any(t => t.Id == dto.TrackId))
                 errors[nameof(dto.TrackId)] = ["Choose a supported track."];

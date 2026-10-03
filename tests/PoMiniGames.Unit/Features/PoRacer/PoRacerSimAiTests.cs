@@ -1,6 +1,7 @@
 using FluentAssertions;
 using PoMiniGames.Features.PoRacer;
 using PoMiniGames.Shared.Games;
+using System.Diagnostics;
 using Xunit;
 using Xunit.Abstractions;
 
@@ -14,6 +15,108 @@ public class PoRacerSimAiTests
 {
     private readonly ITestOutputHelper _out;
     public PoRacerSimAiTests(ITestOutputHelper output) => _out = output;
+
+    [Fact]
+    public void SoloAndDemoFields_HaveOneHundredCars_WhileOnlineFieldStaysAtEight()
+    {
+        var player = new PoRacerLobbyPlayer("connection", "Player", true, true, "owner");
+        var online = new PoRacerSim([player]);
+        var solo = new PoRacerSim([player], carCount: PoRacerCatalog.SoloCarCount);
+        var demo = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), carCount: PoRacerCatalog.SoloCarCount);
+
+        online.Snapshot("online").Cars.Should().HaveCount(PoRacerCatalog.CarCount);
+        solo.Snapshot("solo").Cars.Should().HaveCount(PoRacerCatalog.SoloCarCount);
+        solo.Static.Roster.Should().ContainSingle(c => c.IsPlayer);
+        demo.Snapshot("demo").Cars.Should().HaveCount(PoRacerCatalog.SoloCarCount);
+        demo.Static.Roster.Should().OnlyContain(c => !c.IsPlayer);
+        solo.Static.Roster.Select(c => c.Name).Should().OnlyHaveUniqueItems();
+        demo.Static.Roster.Select(c => c.Name).Should().OnlyHaveUniqueItems();
+    }
+
+    [Fact]
+    public void HundredCarSimulation_UsesNearbyCollisionCandidates()
+    {
+        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), carCount: PoRacerCatalog.SoloCarCount);
+        typeof(PoRacerSim).GetField("_startElapsedMs", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!
+            .SetValue(sim, -1L);
+
+        var timer = Stopwatch.StartNew();
+        var noInput = new Dictionary<string, PoRacerInput>();
+        for (int i = 0; i < 250; i++) sim.Tick(0.02, noInput);
+        timer.Stop();
+
+        sim.LastCollisionCandidateCount.Should().BeLessThan(PoRacerCatalog.SoloCarCount * (PoRacerCatalog.SoloCarCount - 1) / 2);
+        _out.WriteLine($"100-car simulation: 250 ticks in {timer.Elapsed.TotalMilliseconds:0.0} ms; final collision candidates={sim.LastCollisionCandidateCount}");
+    }
+
+    [Fact]
+    public void CollisionBroadphase_IncludesEveryOverlappingPairAcrossCellBoundaries()
+    {
+        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), carCount: PoRacerCatalog.SoloCarCount);
+        const System.Reflection.BindingFlags flags = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic;
+        var cars = ((System.Collections.IEnumerable)typeof(PoRacerSim).GetField("_cars", flags)!.GetValue(sim)!).Cast<object>().ToArray();
+        foreach (var (car, index) in cars.Select((car, index) => (car, index)))
+        {
+            int pair = index / 2;
+            var position = index % 2 == 0
+                ? new Vec2(-1000 + pair * 500, -180)
+                : new Vec2(-975 + pair * 500, -155);
+            car.GetType().GetField("Pos")!.SetValue(car, position);
+        }
+
+        typeof(PoRacerSim).GetMethod("BuildCollisionCandidates", flags)!.Invoke(sim, null);
+        var pairs = ((System.Collections.IEnumerable)typeof(PoRacerSim).GetField("_collisionCandidates", flags)!.GetValue(sim)!)
+            .Cast<object>()
+            .Select(pair => ((int)pair.GetType().GetField("Item1")!.GetValue(pair)!, (int)pair.GetType().GetField("Item2")!.GetValue(pair)!))
+            .ToHashSet();
+
+        for (int i = 0; i < cars.Length; i++)
+        {
+            var a = (Vec2)cars[i].GetType().GetField("Pos")!.GetValue(cars[i])!;
+            for (int j = i + 1; j < cars.Length; j++)
+            {
+                var b = (Vec2)cars[j].GetType().GetField("Pos")!.GetValue(cars[j])!;
+                if ((a.X - b.X) * (a.X - b.X) + (a.Y - b.Y) * (a.Y - b.Y) < 36 * 36)
+                {
+                    pairs.Should().Contain((i, j), "the broadphase must not omit any physically overlapping pair");
+                }
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("circuit")]
+    [InlineData("neonskyline")]
+    [InlineData("desertdustway")]
+    public void PrecomputedUpcomingBend_MatchesCenterlineCalculation(string trackId)
+    {
+        var sim = new PoRacerSim(Array.Empty<PoRacerLobbyPlayer>(), trackId);
+        var method = typeof(PoRacerSim).GetMethod("UpcomingBend", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)!;
+        var points = sim.Static.CenterXY;
+        int count = points.Count / 2;
+
+        foreach (int start in new[] { 0, count / 3, count - 3 })
+        {
+            foreach (int span in new[] { 9, 24 })
+            {
+                double expected = 0;
+                for (int offset = 0; offset < span; offset++)
+                {
+                    int i = (start + offset) % count;
+                    int next = (i + 1) % count;
+                    int after = (i + 2) % count;
+                    double first = Math.Atan2(points[next * 2 + 1] - points[i * 2 + 1], points[next * 2] - points[i * 2]);
+                    double second = Math.Atan2(points[after * 2 + 1] - points[next * 2 + 1], points[after * 2] - points[next * 2]);
+                    double difference = (second - first) % (2 * Math.PI);
+                    if (difference > Math.PI) difference -= 2 * Math.PI;
+                    if (difference < -Math.PI) difference += 2 * Math.PI;
+                    expected += Math.Abs(difference);
+                }
+
+                ((double)method.Invoke(sim, [start, span])!).Should().BeApproximately(expected, 1e-10);
+            }
+        }
+    }
 
     [Theory]
     [InlineData("circuit")]

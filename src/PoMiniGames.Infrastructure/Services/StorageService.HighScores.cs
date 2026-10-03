@@ -11,6 +11,7 @@ using PoMiniGames.Domain.Abstractions;
 using PoMiniGames.Domain.Primitives;
 using PoMiniGames.Domain.Services;
 using PoMiniGames.Infrastructure.Storage;
+using PoMiniGames.Shared.Games;
 
 namespace PoMiniGames.Infrastructure.Services;
 
@@ -243,7 +244,7 @@ public partial class StorageService
             UserId = string.IsNullOrWhiteSpace(e.UserId) ? "" : e.UserId,
             TrackId = string.IsNullOrWhiteSpace(e.TrackId) ? "circuit" : e.TrackId.Trim().ToLowerInvariant(),
             TotalTimeSeconds = Math.Clamp(e.TotalTimeSeconds, 0.001, 3600),
-            FinalPosition = Math.Clamp(e.FinalPosition, 1, 8),
+            FinalPosition = Math.Clamp(e.FinalPosition, 1, PoRacerCatalog.SoloCarCount),
             IsGuest = e.IsGuest,
             Date = DefaultDate(e.Date),
             GameCode = SanitizeName(e.GameCode),

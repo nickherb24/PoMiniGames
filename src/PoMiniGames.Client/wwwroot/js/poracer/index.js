@@ -37,9 +37,12 @@ let buf = [];
 // easing in push() is what filters the jitter out.
 let clockOffset = null;
 let roster = [], localIdx = -1, totalLaps = 3;
-let raf = 0, mainId = null, miniBound = false, finishing = false;
+let raf = 0, mainId = null, finishing = false;
 let hudEls = null, chipEls = null;
-const MINI_ID = 'racerMinimap';
+let interpolatedCars = [], playerCars = [], lastAudioAt = 0, lastProfileAt = 0;
+const profiling = new URLSearchParams(location.search).get('perf') === '1';
+const profile = { rafFrames: 0, renderedFrames: 0, interpolationMs: 0, renderMs: 0, audioMs: 0, startedAt: performance.now() };
+let lastProfile = null;
 
 // <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
 const reducedMotion = () => document.documentElement.dataset.motion === 'reduce'
@@ -84,11 +87,12 @@ function hud(me, newest, ts) {
 
 function frame() {
     raf = requestAnimationFrame(frame);
+    const now = performance.now();
+    if (profiling) profile.rafFrames++;
     if (!buf.length || document.hidden) return;
     pollPad();
 
     const newest = buf[buf.length - 1];
-    const now = performance.now();
     // Connection stalled: hold the last frame. The finish pull-back is the exception; the
     // server has stopped sending by then and the camera still has somewhere to go.
     if (!finishing && now - newest.t > STALE_MS) return;
@@ -98,20 +102,52 @@ function frame() {
     // which walks the sample point backwards during warm-up and reintroduces the
     // very stutter this is here to remove.
     const ts = now + clockOffset;
-    let cars = sampleAt(buf, ts - RENDER_DELAY_MS);
+    const interpolationStart = profiling ? performance.now() : 0;
+    let cars = sampleAt(buf, ts - RENDER_DELAY_MS, interpolatedCars);
     if (!cars) return;
     if (localIdx >= 0) {
-        const mine = sampleAt(buf, ts - PLAYER_DELAY_MS);
-        if (mine?.[localIdx]) { cars = cars.slice(); cars[localIdx] = mine[localIdx]; }
+        const mine = sampleAt(buf, ts - PLAYER_DELAY_MS, playerCars);
+        if (mine?.[localIdx]) cars[localIdx] = mine[localIdx];
     }
+    if (profiling) profile.interpolationMs += performance.now() - interpolationStart;
 
-    if (!miniBound && document.getElementById(MINI_ID)) { Render.mount(mainId, MINI_ID); miniBound = true; }
     const { w, h } = getSize();
+    const renderStart = profiling ? performance.now() : 0;
     Render.draw(cars, w, h);
+    if (profiling) profile.renderMs += performance.now() - renderStart;
 
     const me = localIdx >= 0 ? cars[localIdx] : cars.reduce((a, c) => c.position < a.position ? c : a, cars[0]);
-    Audio.frame(cars, me, localIdx < 0);
+    if (now - lastAudioAt >= 100) {
+        const audioStart = profiling ? performance.now() : 0;
+        Audio.frame(cars, me, localIdx < 0);
+        if (profiling) profile.audioMs += performance.now() - audioStart;
+        lastAudioAt = now;
+    }
     hud(localIdx >= 0 ? me : null, newest, ts);
+    if (profiling) {
+        profile.renderedFrames++;
+        if (now - lastProfileAt >= 2000) {
+            const duration = now - profile.startedAt;
+            const renderer = Render.takeDrawProfile();
+            lastProfile = {
+                rafFps: Math.round(profile.rafFrames * 1000 / duration),
+                renderedFps: Math.round(profile.renderedFrames * 1000 / duration),
+                cars: cars.length,
+                canvasDpr: mainId ? (document.getElementById(mainId)?.width || 0) / Math.max(1, w) : 0,
+                interpolationMs: profile.interpolationMs / profile.renderedFrames,
+                rendererMs: profile.renderMs / profile.renderedFrames,
+                backgroundMs: renderer?.backgroundMs,
+                trackMs: renderer?.trackMs,
+                effectsMs: renderer?.effectsMs,
+                carsMs: renderer?.carsMs,
+                audioMs: profile.audioMs / profile.renderedFrames,
+            };
+            console.info('[PoRacer perf]', lastProfile);
+            profile.rafFrames = profile.renderedFrames = profile.interpolationMs = profile.renderMs = profile.audioMs = 0;
+            profile.startedAt = now;
+            lastProfileAt = now;
+        }
+    }
 }
 
 function stop() {
@@ -122,7 +158,11 @@ function stop() {
     Render.dispose();
     window.PoWeather?.stop();
     buf = []; clockOffset = null; roster = []; localIdx = -1;
-    miniBound = false; finishing = false; hudEls = chipEls = null; mainId = null;
+    finishing = false; hudEls = chipEls = null; mainId = null;
+    interpolatedCars = []; playerCars = []; lastAudioAt = lastProfileAt = 0;
+    profile.rafFrames = profile.renderedFrames = profile.interpolationMs = profile.renderMs = profile.audioMs = 0;
+    profile.startedAt = performance.now();
+    lastProfile = null;
 }
 
 window.PoRacer = {
@@ -130,7 +170,7 @@ window.PoRacer = {
         stop();
         mainId = canvasId;
         startInput(canvasId, reference);
-        Render.mount(canvasId, null);
+        Render.mount(canvasId);
         // Outdoors: almost no early reflections and a short, dark tail. See
         // acoustics.js — the default "generic room" made the track sound indoors.
         try { window.PoAcoustics?.setSpace('outdoor'); } catch { /* optional */ }
@@ -138,6 +178,7 @@ window.PoRacer = {
     stop,
     setInputEnabled,
     getSize,
+    getPerformanceProfile: () => profiling ? lastProfile : null,
 
     /** Track geometry, once per race. */
     setStatic(center, width, walls, boostPads, surfaceZones, theme, laps) {

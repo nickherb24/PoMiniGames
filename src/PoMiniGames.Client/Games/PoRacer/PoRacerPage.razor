@@ -139,7 +139,7 @@
         <div class="racer-options">
             <div class="racer-chips" role="radiogroup" aria-label="Race">
                 <span class="racer-chips-label">Race</span>
-                <label><input type="radio" name="poracer-mode" checked="@(!_trial)" @onchange="() => SetTrial(false)" />7 rivals</label>
+                <label><input type="radio" name="poracer-mode" checked="@(!_trial)" @onchange="() => SetTrial(false)" />99 rivals</label>
                 <label><input type="radio" name="poracer-mode" checked="@_trial" @onchange="() => SetTrial(true)" />Time trial</label>
             </div>
             @if (!_trial)
@@ -155,7 +155,7 @@
         </div>
         <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
         <div class="racer-actions">
-            <span class="racer-note">@(_trial ? $"Empty track · {PoRacerCatalog.TotalLaps} laps" : $"{PoRacerCatalog.CarCount} cars · {PoRacerCatalog.TotalLaps} laps")</span>
+            <span class="racer-note">@(_trial ? $"Empty track · {PoRacerCatalog.TotalLaps} laps" : $"{PoRacerCatalog.SoloCarCount} cars · {PoRacerCatalog.TotalLaps} laps")</span>
         </div>
         @if (_error is not null)
         {

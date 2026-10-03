@@ -147,7 +147,7 @@ export function stopInput() {
 export function getSize() {
     if (!canvas) return { w: 0, h: 0 };
     const w = canvas.clientWidth, h = canvas.clientHeight;
-    const dpr = window.PoCanvasDpr.resolve(w, h);
+    const dpr = window.PoCanvasDpr.resolve(w, h, { maxPixels: 900_000 });
     const width = Math.max(1, Math.floor(w * dpr)), height = Math.max(1, Math.floor(h * dpr));
     if (canvas.width !== width || canvas.height !== height) {
         canvas.width = width; canvas.height = height;

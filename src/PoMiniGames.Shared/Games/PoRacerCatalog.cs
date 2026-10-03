@@ -23,7 +23,10 @@ public sealed record PoRacerTrackInfo(
 public static class PoRacerCatalog
 {
     public const int TotalLaps = 3;
+    /// <summary>Online race seats (players and AI together).</summary>
     public const int CarCount = 8;
+    /// <summary>Cars in a solo or spectator-demo race.</summary>
+    public const int SoloCarCount = 100;
     public const string DefaultTrackId = "circuit";
     public static readonly IReadOnlyList<string> Liveries = ["stripe", "dual", "carbon", "neon"];
     public static readonly IReadOnlyList<string> Difficulties = ["easy", "medium", "hard"];

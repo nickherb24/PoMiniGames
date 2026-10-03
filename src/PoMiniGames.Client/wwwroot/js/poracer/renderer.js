@@ -25,9 +25,8 @@ let trackTexCssW = 0, trackTexCssH = 0, trackDpr = 0, trackReqDpr = 0;
 // World bounding box of the track, for the finish zoom-out.
 let boxMinX = 0, boxMinY = 0, boxMaxX = 0, boxMaxY = 0;
 
-let mainCanvas = null, mainCtx = null, miniCanvas = null, miniCtx = null;
+let mainCanvas = null, mainCtx = null;
 let vignetteTex = null, vignetteW = 0, vignetteH = 0, vignetteDpr = 0;
-let minimapTex = null, minimapBbox = null;
 let parallaxFar = null, parallaxMid = null, parallaxW = 0, parallaxH = 0, parallaxDpr = 0;
 
 // Spectator follow-cam smoothing (demo/no-local-player). Tracks the race
@@ -44,16 +43,21 @@ let finishAt = 0, finishFrom = null;
 // drawn where the thing happened, not at the middle of the screen.
 const SKID_MAX = 900;
 const skids = new Float32Array(SKID_MAX * 5);   // x1, y1, x2, y2, alpha
+const activeSkidIndices = new Uint16Array(SKID_MAX);
+let activeSkidCount = 0;
 let skidHead = 0;
 const wheelWas = [];                            // per car index: { lx, ly, rx, ry, t }
 const sparks = [], dust = [];
 let fxAt = 0;
+const carSprites = new Map();
+const profiled = new URLSearchParams(location.search).get('perf') === '1';
+const drawProfile = { count: 0, backgroundMs: 0, trackMs: 0, effectsMs: 0, carsMs: 0, totalMs: 0 };
 // <html data-motion> is the OS preference OR the player's own switch in the settings sheet.
 const calm = () => document.documentElement.dataset.motion === 'reduce'
     || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
 
 function clearFx() {
-    skids.fill(0); skidHead = 0; wheelWas.length = 0; sparks.length = 0; dust.length = 0; fxAt = 0;
+    skids.fill(0); activeSkidCount = 0; skidHead = 0; wheelWas.length = 0; sparks.length = 0; dust.length = 0; fxAt = 0;
 }
 
 /** Sparks at a car that just hit something: thrown back along its travel, a third of a second. */
@@ -71,7 +75,14 @@ function stepFx(cars, now) {
     fxAt = now;
     // Marks fade over about twenty seconds, so a lap later the line you slid is still there.
     const fade = 1 - 0.06 * dt;
-    for (let i = 0; i < SKID_MAX; i++) { const o = i * 5 + 4; if (skids[o] > 0) { skids[o] *= fade; if (skids[o] < 0.03) skids[o] = 0; } }
+    let active = 0;
+    for (let i = 0; i < activeSkidCount; i++) {
+        const index = activeSkidIndices[i], alpha = index * 5 + 4;
+        skids[alpha] *= fade;
+        if (skids[alpha] < 0.03) skids[alpha] = 0;
+        else activeSkidIndices[active++] = index;
+    }
+    activeSkidCount = active;
     const quiet = calm();
     for (let i = 0; i < cars.length; i++) {
         const c = cars[i], cos = Math.cos(c.h), sin = Math.sin(c.h);
@@ -84,6 +95,7 @@ function stepFx(cars, now) {
             const a = Math.min(0.5, 0.2 + (c.skid - 0.5) * 0.6);
             for (const seg of [[was.lx, was.ly, lx, ly], [was.rx, was.ry, rx, ry]]) {
                 const o = (skidHead++ % SKID_MAX) * 5;
+                if (skids[o + 4] <= 0) activeSkidIndices[activeSkidCount++] = o / 5;
                 skids[o] = seg[0]; skids[o + 1] = seg[1]; skids[o + 2] = seg[2]; skids[o + 3] = seg[3]; skids[o + 4] = a;
             }
         }
@@ -112,25 +124,31 @@ function drawFx(g, camX, camY, scale, w, h) {
         const lo = band * 0.17, hi = band === 2 ? 1 : lo + 0.17;
         let any = false;
         g.beginPath();
-        for (let i = 0; i < SKID_MAX; i++) {
-            const o = i * 5, a = skids[o + 4];
+        for (let i = 0; i < activeSkidCount; i++) {
+            const o = activeSkidIndices[i] * 5, a = skids[o + 4];
             if (a <= lo || a > hi) continue;
             const x1 = hw + (skids[o] - camX) * scale, y1 = hh + (skids[o + 1] - camY) * scale;
             if (x1 < -40 || x1 > w + 40 || y1 < -40 || y1 > h + 40) continue;
-            g.moveTo(x1, y1); g.lineTo(hw + (skids[o + 2] - camX) * scale, hh + (skids[o + 3] - camY) * scale);
+            const x2 = hw + (skids[o + 2] - camX) * scale, y2 = hh + (skids[o + 3] - camY) * scale;
+            if (x2 < -40 || x2 > w + 40 || y2 < -40 || y2 > h + 40) continue;
+            g.moveTo(x1, y1); g.lineTo(x2, y2);
             any = true;
         }
         if (any) { g.strokeStyle = 'rgba(10,10,12,' + (lo + 0.12).toFixed(2) + ')'; g.stroke(); }
     }
     for (const p of dust) {
+        const x = hw + (p.x - camX) * scale, y = hh + (p.y - camY) * scale, r = p.r * scale;
+        if (x + r < 0 || x - r > w || y + r < 0 || y - r > h) continue;
         g.fillStyle = 'rgba(214,178,120,' + (0.38 * p.life / p.max).toFixed(3) + ')';
-        g.beginPath(); g.arc(hw + (p.x - camX) * scale, hh + (p.y - camY) * scale, p.r * scale, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
     }
     // Sparks are flat flecks, not lights: no glow, no additive blend.
     for (const p of sparks) {
+        const x = hw + (p.x - camX) * scale, y = hh + (p.y - camY) * scale;
+        if (x < -3 || x > w + 3 || y < -3 || y > h + 3) continue;
         g.fillStyle = p.life > 0.2 ? '#ffe28a' : '#ff9a3c';
         const s = Math.max(1.5, 2.6 * scale);
-        g.fillRect(hw + (p.x - camX) * scale - s / 2, hh + (p.y - camY) * scale - s / 2, s, s);
+        g.fillRect(x - s / 2, y - s / 2, s, s);
     }
 }
 
@@ -589,33 +607,6 @@ function buildTrackBitmap(scale, dpr) {
     trackTex = off;
 }
 
-function buildMinimapBitmap() {
-    if (!centerXY) return;
-    const w = 180, h = 180, off = createOffscreen(w, h), g = off.getContext('2d');
-    g.clearRect(0, 0, w, h);
-    if (currentTheme === 'neonskyline') {
-        g.fillStyle = 'rgba(10,12,24,0.92)';
-    } else if (currentTheme === 'desertdustway') {
-        g.fillStyle = 'rgba(42,28,16,0.92)';
-    } else {
-        g.fillStyle = 'rgba(20,30,48,0.9)';
-    }
-    g.fillRect(0, 0, w, h);
-    let minX = 1e9, minY = 1e9, maxX = -1e9, maxY = -1e9;
-    for (let i = 0; i < centerN; i++) { const x = centerXY[i * 2], y = centerXY[i * 2 + 1]; if (x < minX) minX = x; if (x > maxX) maxX = x; if (y < minY) minY = y; if (y > maxY) maxY = y; }
-    const pad = trackWidth * 0.7; minX -= pad; minY -= pad; maxX += pad; maxY += pad;
-    const sx = (w - 12) / (maxX - minX), sy = (h - 12) / (maxY - minY), s = Math.min(sx, sy);
-    const ox = (w - (maxX - minX) * s) / 2, oy = (h - (maxY - minY) * s) / 2;
-    const toX = (x) => ox + (x - minX) * s, toY = (y) => oy + (y - minY) * s;
-    g.strokeStyle = currentTheme === 'neonskyline' ? '#1c0828' : currentTheme === 'desertdustway' ? '#22150a' : '#0a1424';
-    g.lineWidth = trackWidth * s + 4; g.lineJoin = 'round';
-    g.beginPath(); for (let i = 0; i <= centerN; i++) { const [x, y] = [toX(centerXY[(i % centerN) * 2]), toY(centerXY[(i % centerN) * 2 + 1])]; if (i === 0) g.moveTo(x, y); else g.lineTo(x, y); } g.closePath(); g.stroke();
-    g.strokeStyle = currentTheme === 'neonskyline' ? '#00f0ff' : currentTheme === 'desertdustway' ? '#e0a860' : '#9bb1cc';
-    g.lineWidth = 1.2;
-    g.beginPath(); for (let i = 0; i < centerN; i++) { const x = toX(centerXY[i * 2]), y = toY(centerXY[i * 2 + 1]); if (i === 0) g.moveTo(x, y); else g.lineTo(x, y); } g.closePath(); g.stroke();
-    minimapTex = off; minimapBbox = { minX, minY, s, ox, oy };
-}
-
 // ── Cars ───────────────────────────────────────────────────────────────────
 
 // Scuff positions, as fractions of the body. Fixed, and offset per car id, so a car's damage
@@ -705,11 +696,46 @@ function paintCar(g, car) {
     }
 }
 
-function drawCar(g, car, camX, camY, scale, w, h) {
+function spriteFor(car) {
+    const damage = Math.round((car.damage || 0) * 10) / 10;
+    const key = `${currentTheme}|${car.color}|${car.colorDark}|${car.livery}|${damage}|${!!car.braking}`;
+    let sprite = carSprites.get(key);
+    if (sprite) return sprite;
+    const canvas = createOffscreen(96, 80), ctx = canvas.getContext('2d');
+    ctx.scale(2, 2); ctx.translate(24, 20);
+    paintCar(ctx, { ...car, damage, braking: !!car.braking });
+    sprite = canvas;
+    carSprites.set(key, sprite);
+    if (carSprites.size > 256) carSprites.delete(carSprites.keys().next().value);
+    return sprite;
+}
+
+function drawSimpleCar(g, car, x, y, scale) {
     g.save();
-    g.translate(w * 0.5 + (car.x - camX) * scale, h * 0.5 + (car.y - camY) * scale);
-    g.rotate(car.h); g.scale(scale, scale);
-    paintCar(g, car);
+    g.translate(x, y);
+    g.rotate(car.h);
+    g.scale(scale, scale);
+    g.fillStyle = car.color;
+    g.fillRect(-15, -8, 30, 16);
+    g.fillStyle = car.colorDark || '#222';
+    g.fillRect(1, -7, 12, 14);
+    g.fillStyle = car.braking ? '#ff2a2a' : '#7a1414';
+    g.fillRect(-15, -7, 2, 3);
+    g.fillRect(-15, 4, 2, 3);
+    g.restore();
+}
+
+function drawCar(g, car, camX, camY, scale, w, h, detailed) {
+    const x = w * 0.5 + (car.x - camX) * scale, y = h * 0.5 + (car.y - camY) * scale;
+    if (!detailed) {
+        drawSimpleCar(g, car, x, y, scale);
+        return;
+    }
+    g.save();
+    g.translate(x, y);
+    g.rotate(car.h);
+    g.scale(scale, scale);
+    g.drawImage(spriteFor(car), -24, -20, 48, 40);
     g.restore();
 }
 
@@ -725,34 +751,12 @@ function drawPlayerMarker(g, c, camX, camY, scale, w, h) {
     g.restore();
 }
 
-function drawMinimap(cars) {
-    if (!miniCtx || !miniCanvas) return;
-    if (!minimapTex) buildMinimapBitmap();
-    const g = miniCtx, b = minimapBbox;
-    g.clearRect(0, 0, miniCanvas.width, miniCanvas.height);
-    if (!minimapTex || !b) return;
-    g.drawImage(minimapTex, 0, 0, miniCanvas.width, miniCanvas.height);
-    const k = miniCanvas.width / 180;
-    // Rivals first so the local car's dot is never buried under one.
-    for (const pass of [false, true]) {
-        for (const c of cars) {
-            if (!!c.isPlayer !== pass) continue;
-            const x = (b.ox + (c.x - b.minX) * b.s) * k, y = (b.oy + (c.y - b.minY) * b.s) * k;
-            g.beginPath(); g.arc(x, y, (pass ? 5 : 3.2) * k, 0, Math.PI * 2);
-            g.fillStyle = c.color; g.fill();
-            if (pass) { g.lineWidth = 1.8 * k; g.strokeStyle = '#fff'; g.stroke(); }
-        }
-    }
-}
-
 // ── Public API (index.js is the only caller) ───────────────────────────────
 
-/** Bind the race canvas and the minimap canvas (either may be missing). */
-export function mount(mainId, miniId) {
+/** Bind the race canvas. */
+export function mount(mainId) {
     mainCanvas = document.getElementById(mainId);
     mainCtx = mainCanvas ? mainCanvas.getContext('2d') : null;
-    miniCanvas = miniId ? document.getElementById(miniId) : null;
-    miniCtx = miniCanvas ? miniCanvas.getContext('2d') : null;
 }
 
 export function dispose() {
@@ -760,8 +764,9 @@ export function dispose() {
     // reads as one still running.
     if (mainCtx && mainCanvas) { mainCtx.save(); mainCtx.setTransform(1, 0, 0, 1, 0, 0); mainCtx.clearRect(0, 0, mainCanvas.width, mainCanvas.height); mainCtx.restore(); }
     centerXY = wallsXY = null;
-    mainCanvas = mainCtx = miniCanvas = miniCtx = null;
-    trackTex = minimapTex = grassTex = parallaxFar = parallaxMid = vignetteTex = null;
+    mainCanvas = mainCtx = null;
+    trackTex = grassTex = parallaxFar = parallaxMid = vignetteTex = null;
+    carSprites.clear();
     specCamX = specCamY = null;
     finishAt = 0; finishFrom = null;
     clearFx();
@@ -774,7 +779,8 @@ export function setStatic(center, width, walls, boostPads, surfaceZones, theme) 
     boostPadsData = Array.isArray(boostPads) ? boostPads : [];
     surfaceZonesData = Array.isArray(surfaceZones) ? surfaceZones : [];
     currentTheme = (typeof theme === 'string' && theme) ? theme.toLowerCase() : 'circuit';
-    trackTex = null; minimapTex = null;
+    trackTex = null;
+    carSprites.clear();
     grassTex = null; parallaxFar = null; parallaxMid = null;
     grassTheme = null; parallaxTheme = null;
     specCamX = null; specCamY = null;
@@ -788,10 +794,26 @@ export function theme() { return currentTheme; }
 // Also clears the per-layer dpr keys. input.js calls this when the backing
 // store changes, which is exactly when those keys are stale.
 export function invalidateBitmaps() {
-    grassTex = null; trackTex = null; trackReqDpr = 0; trackDpr = 0; minimapTex = null;
+    grassTex = null; trackTex = null; trackReqDpr = 0; trackDpr = 0;
     parallaxFar = null; parallaxMid = null; vignetteTex = null;
     grassDpr = 0; parallaxDpr = 0; vignetteDpr = 0; grassTheme = null; parallaxTheme = null;
     if (mainCanvas) mainCtx = mainCanvas.getContext('2d');
+}
+
+export function takeDrawProfile() {
+    if (!drawProfile.count) return null;
+    const count = drawProfile.count;
+    const result = {
+        backgroundMs: drawProfile.backgroundMs / count,
+        trackMs: drawProfile.trackMs / count,
+        effectsMs: drawProfile.effectsMs / count,
+        carsMs: drawProfile.carsMs / count,
+        totalMs: drawProfile.totalMs / count,
+        frames: count,
+    };
+    drawProfile.count = 0;
+    drawProfile.backgroundMs = drawProfile.trackMs = drawProfile.effectsMs = drawProfile.carsMs = drawProfile.totalMs = 0;
+    return result;
 }
 
 /** Start (or cancel) the finish pull-back: the camera eases out until the whole circuit is in frame. */
@@ -826,6 +848,7 @@ const FINISH_MS = 2200;
 export function draw(cars, w, h) {
     const g = mainCtx;
     if (!g || !cars || cars.length === 0 || !w || !h) return;
+    const totalStart = profiled ? performance.now() : 0;
 
     const player = cars.find(c => c.isPlayer);
     const base = Math.min(w, h) / 900;
@@ -868,6 +891,7 @@ export function draw(cars, w, h) {
     const layerDpr = dprOf(g, w);
 
     // Parallax backgrounds
+    const backgroundStart = profiled ? performance.now() : 0;
     ensureParallaxLayers(w, h, layerDpr); ensureGrass(w, h, layerDpr);
     g.drawImage(grassTex, 0, 0, w, h);
     const farOffX = ((camX * 0.3) % w + w) % w, farOffY = ((camY * 0.3) % h + h) % h;
@@ -879,26 +903,41 @@ export function draw(cars, w, h) {
     g.drawImage(parallaxMid, -midOffX, -midOffY, w, h); g.drawImage(parallaxMid, w - midOffX, -midOffY, w, h);
     g.drawImage(parallaxMid, -midOffX, h - midOffY, w, h); g.drawImage(parallaxMid, w - midOffX, h - midOffY, w, h);
     g.globalAlpha = 1.0;
+    const backgroundMs = profiled ? performance.now() - backgroundStart : 0;
 
     if (!centerXY) return;
 
     // Track — cached in world space, rebuilt only when zoom (scale) changes (not when the
     // camera pans). The finish pull-back changes the zoom every frame, so it scales the
     // bitmap it already has instead of rasterising the circuit sixty times a second.
+    const trackStart = profiled ? performance.now() : 0;
     if (!trackTex || trackReqDpr !== layerDpr || (!zooming && Math.abs(trackScale - scale) > 0.001))
         buildTrackBitmap(scale, layerDpr);
     const k = scale / trackScale;
     const [tox, toy] = project(trackOriginX, trackOriginY, camX, camY, scale, w, h);
     // Explicit destination size: the bitmap is backed by texDpr device pixels per CSS pixel.
     g.drawImage(trackTex, tox - TRACK_MARGIN * k, toy - TRACK_MARGIN * k, trackTexCssW * k, trackTexCssH * k);
+    const trackMs = profiled ? performance.now() - trackStart : 0;
 
     // On the road, under the cars: pads, skid marks, dust, sparks.
+    const effectsStart = profiled ? performance.now() : 0;
     const now = performance.now();
     stepFx(cars, now);
     drawPads(g, cars, camX, camY, scale, w, h, now);
     drawFx(g, camX, camY, scale, w, h);
+    const effectsMs = profiled ? performance.now() - effectsStart : 0;
 
-    for (const c of cars) drawCar(g, c, camX, camY, scale, w, h);
+    const hw = w * 0.5, hh = h * 0.5;
+    const carMargin = (currentTheme === 'neonskyline' ? 100 : 40) * scale;
+    const carStart = profiled ? performance.now() : 0;
+    const detailedBelow = 18;
+    for (const c of cars) {
+        const x = (c.x - camX) * scale, y = (c.y - camY) * scale;
+        if (x < -hw - carMargin || x > hw + carMargin || y < -hh - carMargin || y > hh + carMargin) continue;
+        const detailed = c.isPlayer || 32 * scale * layerDpr >= detailedBelow;
+        drawCar(g, c, camX, camY, scale, w, h, detailed);
+    }
+    const carsMs = profiled ? performance.now() - carStart : 0;
 
     // A constant 10% dusk tint, then the vignette. Both were the "ambient" and "post" steps
     // of the old pipeline at their fixed midday settings; this is what they always drew.
@@ -906,5 +945,12 @@ export function draw(cars, w, h) {
     drawVignette(g, w, h, layerDpr);
 
     if (player && !zooming) drawPlayerMarker(g, player, camX, camY, scale, w, h);
-    drawMinimap(cars);
+    if (profiled) {
+        drawProfile.count++;
+        drawProfile.backgroundMs += backgroundMs;
+        drawProfile.trackMs += trackMs;
+        drawProfile.effectsMs += effectsMs;
+        drawProfile.carsMs += carsMs;
+        drawProfile.totalMs += performance.now() - totalStart;
+    }
 }

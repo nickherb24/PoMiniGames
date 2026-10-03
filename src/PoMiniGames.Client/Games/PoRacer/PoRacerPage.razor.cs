@@ -188,7 +188,7 @@ public partial class PoRacerPage
 
     private string IntroObjective => _mode switch
     {
-        RaceMode.Demo => $"Eight bots, {PoRacerCatalog.TotalLaps} laps, nothing to drive.",
+        RaceMode.Demo => $"{PoRacerCatalog.SoloCarCount} bots, {PoRacerCatalog.TotalLaps} laps, nothing to drive.",
         RaceMode.Online => "Race the room: up to 8 drivers, bots in the empty seats. Your best lap goes on the board.",
         _ => $"{PoRacerCatalog.TotalLaps} laps round the circuit. Finish first, and set a lap worth keeping: your best one goes on the board.",
     };

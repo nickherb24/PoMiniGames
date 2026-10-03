@@ -234,7 +234,7 @@ hbars("c4", [["Easy", 27], ["Medium", 21], ["Hard", 16]], 30, v => v + " s");
 hbars("c5", [["PoBrawl boxer", 60, "browser"], ["PoSports runner", 60, "browser"], ["PoRacer bot", 50, "server"],
   ["PoCabinet racer", 30, "browser"], ["PoEcosystem creature", 20, "goals re-scored 4 times a second"], ["Jev (PoJevArena)", 1, "hosted model"]], 60, v => v + " / s");
 hbars("c6", [["PoEcosystem creatures", 400], ["PoMarbleRace marbles", 100, "no brain"], ["PoCabinet rivals", 99], ["PoVoxelStrike monsters", 40, "plus 22 wall guns"],
-  ["PoJevArena units", 20], ["PoRacer bots", 8, "all-bot demo; 7 with a player"], ["PoSports runners", 4, "demo; 3 with a player"], ["PoBrawl boxers", 2, "demo; 1 with a player"]], 400, v => String(v));
+  ["PoJevArena units", 20], ["PoRacer cars", 100, "100 AI demo; 99 AI + player solo; 8-car online cap"], ["PoSports runners", 4, "demo; 3 with a player"], ["PoBrawl boxers", 2, "demo; 1 with a player"]], 400, v => String(v));
 
 document.getElementById("t1").innerHTML = "<thead><tr><th>PoBrawl rung</th><th>Reaction (ms)</th><th>Block</th><th>Punish</th><th>Combo</th></tr></thead><tbody>"
   + rungs.map((r, i) => `<tr><td class="n">${r}</td><td class="n">${react[i]}</td><td class="n">${pct(block[i])}</td><td class="n">${pct(punish[i])}</td><td class="n">${pct(combo[i])}</td></tr>`).join("")

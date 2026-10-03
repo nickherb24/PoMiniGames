@@ -85,11 +85,18 @@ export function frame(cars, me, quiet) {
     engine.filter.frequency.setTargetAtTime(380 + f * (4 + power * 7), t, 0.06);
     engine.gain.gain.setTargetAtTime((quiet ? 0.03 : 0.06) * (0.55 + power * 0.45), t, 0.08);
 
-    const near = cars
-        .filter(c => c !== me)
-        .map(c => ({ c, d: Math.hypot(c.x - me.x, c.y - me.y) }))
-        .filter(n => n.d < HEAR)
-        .sort((a, b) => a.d - b.d);
+    const near = [];
+    for (const car of cars) {
+        if (car === me) continue;
+        const dx = car.x - me.x, dy = car.y - me.y, distanceSquared = dx * dx + dy * dy;
+        if (distanceSquared >= HEAR * HEAR) continue;
+        const entry = { c: car, d: Math.sqrt(distanceSquared) };
+        let i = near.length;
+        while (i > 0 && near[i - 1].d > entry.d) i--;
+        if (i >= RIVALS) continue;
+        near.splice(i, 0, entry);
+        if (near.length > RIVALS) near.pop();
+    }
     for (let i = 0; i < rivals.length; i++) {
         const r = rivals[i], n = near[i];
         if (!n) { r.gain.gain.setTargetAtTime(0, t, 0.1); continue; }

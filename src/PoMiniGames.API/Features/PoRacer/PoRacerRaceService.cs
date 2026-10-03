@@ -18,15 +18,19 @@ public sealed class PoRacerRaceService : IAsyncDisposable
     private DateTimeOffset _lastOccupied = DateTimeOffset.UtcNow;
     private DateTimeOffset? _finishedAt;
     private PoRacerFinalResult? _result;
+    private double _tickTimeTotalMs;
+    private double _tickTimeMaxMs;
+    private int _profiledTicks;
 
     /// <param name="bots">False for a time trial (humans only on the grid).</param>
     /// <param name="botPace">Bot speed scale, the solo difficulty tier.</param>
     /// <param name="botCaution">How much the bots slow for bends (see <see cref="PoRacerSim.DefaultBotCaution"/>).</param>
     public PoRacerRaceService(string code, IReadOnlyList<PoRacerLobbyPlayer> players, ILogger<PoRacerRaceService> log,
-        string? trackId = null, bool bots = true, double botPace = 1.0, double botCaution = PoRacerSim.DefaultBotCaution)
+        string? trackId = null, bool bots = true, double botPace = 1.0, double botCaution = PoRacerSim.DefaultBotCaution,
+        int carCount = PoRacerCatalog.CarCount)
     {
         GameCode = code;
-        _sim = new PoRacerSim(players, trackId, countdownSeconds: 3, bots, botPace, botCaution);
+        _sim = new PoRacerSim(players, trackId, countdownSeconds: 3, bots, botPace, botCaution, carCount);
         _log = log;
         // A shared race: a seat nobody is connected to is driven by the stand-in bot, from the
         // lights (a lobby player who never arrived) or from the moment its driver drops. Solo
@@ -151,7 +155,20 @@ public sealed class PoRacerRaceService : IAsyncDisposable
                     while (owed >= TickSeconds && result is null)
                     {
                         owed -= TickSeconds;
+                        var tickStarted = Stopwatch.GetTimestamp();
                         _sim.Tick(TickSeconds, _inputs);
+                        var tickMilliseconds = Stopwatch.GetElapsedTime(tickStarted).TotalMilliseconds;
+                        _tickTimeTotalMs += tickMilliseconds;
+                        _tickTimeMaxMs = Math.Max(_tickTimeMaxMs, tickMilliseconds);
+                        _profiledTicks++;
+                        if (_profiledTicks >= 250)
+                        {
+                            _log.LogInformation(
+                                "PoRacer performance {GameCode}: {Cars} cars, sim tick avg {AverageMs:F2} ms / max {MaxMs:F2} ms, collision candidates {CollisionCandidates}",
+                                GameCode, _sim.Static.Roster.Count, _tickTimeTotalMs / _profiledTicks, _tickTimeMaxMs, _sim.LastCollisionCandidateCount);
+                            _tickTimeTotalMs = _tickTimeMaxMs = 0;
+                            _profiledTicks = 0;
+                        }
                         snapshotElapsed += 20;
                         if (_sim.AllFinishedOrStopped()) result = _sim.BuildFinalResult(GameCode);
                     }

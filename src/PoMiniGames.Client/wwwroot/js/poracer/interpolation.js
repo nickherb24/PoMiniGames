@@ -12,22 +12,30 @@ function lerpAngle(a, b, t) {
  * Identity is by array index, checked against the car id: the server sends a stable
  * ordering, and searching for each car on every frame would allocate.
  */
-function interpolate(a, b, t) {
-    const out = new Array(b.cars.length);
+function interpolate(a, b, t, out = new Array(b.cars.length)) {
+    out.length = b.cars.length;
     for (let i = 0; i < b.cars.length; i++) {
         const cb = b.cars[i];
         const ca = a && a.cars[i] && a.cars[i].id === cb.id ? a.cars[i] : cb;
-        out[i] = {
-            ...cb,
-            x: ca.x + (cb.x - ca.x) * t,
-            y: ca.y + (cb.y - ca.y) * t,
-            h: lerpAngle(ca.h, cb.h, t),
-            v: ca.v + (cb.v - ca.v) * t,
-            boost: (ca.boost || 0) + ((cb.boost || 0) - (ca.boost || 0)) * t,
-            skid: (ca.skid || 0) + ((cb.skid || 0) - (ca.skid || 0)) * t,
-            // Shedding more than ~30 units/s² between two snapshots: the brake lights are on.
-            braking: cb.v < ca.v - 1.5 && cb.v > 8,
-        };
+        const car = out[i] || (out[i] = {});
+        Object.assign(car, cb);
+        car.x = ca.x + (cb.x - ca.x) * t;
+        car.y = ca.y + (cb.y - ca.y) * t;
+        car.h = lerpAngle(ca.h, cb.h, t);
+        car.v = ca.v + (cb.v - ca.v) * t;
+        car.boost = (ca.boost || 0) + ((cb.boost || 0) - (ca.boost || 0)) * t;
+        car.skid = (ca.skid || 0) + ((cb.skid || 0) - (ca.skid || 0)) * t;
+        // Shedding more than ~30 units/s² between two snapshots: the brake lights are on.
+        car.braking = cb.v < ca.v - 1.5 && cb.v > 8;
+    }
+    return out;
+}
+
+function copyCars(cars, out) {
+    out.length = cars.length;
+    for (let i = 0; i < cars.length; i++) {
+        const target = out[i] || (out[i] = {});
+        Object.assign(target, cars[i]);
     }
     return out;
 }
@@ -41,12 +49,12 @@ function interpolate(a, b, t) {
  * that property — its "behind the buffer" branch returned the NEWEST sample, so
  * falling off the back of the buffer teleported every car forward.
  */
-export function sampleAt(buf, ts) {
+export function sampleAt(buf, ts, reuse = null) {
     const n = buf.length;
     if (n === 0) return null;
-    if (n === 1) return buf[0].cars;
+    if (n === 1) return reuse ? copyCars(buf[0].cars, reuse) : buf[0].cars;
 
-    if (ts <= buf[0].st) return buf[0].cars;
+    if (ts <= buf[0].st) return reuse ? copyCars(buf[0].cars, reuse) : buf[0].cars;
 
     const last = buf[n - 1];
     if (ts >= last.st) {
@@ -56,13 +64,13 @@ export function sampleAt(buf, ts) {
         // that visibly drives through a wall and snaps back is worse than one that pauses.
         const before = buf[n - 2];
         const span = last.st - before.st;
-        if (span <= 0) return last.cars;
-        return interpolate(before, last, 1 + Math.min(ts - last.st, 60) / span);
+        if (span <= 0) return reuse ? copyCars(last.cars, reuse) : last.cars;
+        return interpolate(before, last, 1 + Math.min(ts - last.st, 60) / span, reuse || undefined);
     }
 
     for (let i = n - 1; i > 0; i--) {
         const a = buf[i - 1], b = buf[i];
-        if (ts >= a.st) return interpolate(a, b, (ts - a.st) / (b.st - a.st));
+        if (ts >= a.st) return interpolate(a, b, (ts - a.st) / (b.st - a.st), reuse || undefined);
     }
-    return buf[0].cars;
+    return reuse ? copyCars(buf[0].cars, reuse) : buf[0].cars;
 }

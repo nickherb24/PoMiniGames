@@ -50,6 +50,13 @@ internal sealed class PoRacerSim
     // Cars + input map
     private readonly List<SimCar> _cars = new();
     private readonly Dictionary<string, SimCar> _byOwnerId = new(StringComparer.Ordinal);
+    private readonly Dictionary<(int X, int Y), List<int>> _spatialGrid = new();
+    private readonly List<List<int>> _spatialBuckets = new();
+    private readonly List<(int A, int B)> _collisionCandidates = new();
+    private int _usedSpatialBuckets;
+    private double[] _segmentHeadings = [];
+    private double[] _bendPrefix = [];
+    internal int LastCollisionCandidateCount => _collisionCandidates.Count;
 
     private readonly Stopwatch _wallClock = Stopwatch.StartNew();
     private long _startElapsedMs;
@@ -67,8 +74,11 @@ internal sealed class PoRacerSim
     /// <param name="botPace">Scales every bot's top speed and acceleration (the solo difficulty tier).</param>
     /// <param name="botCaution">How much speed a bot gives up for a bend, 0-1. See <see cref="DefaultBotCaution"/>.</param>
     public PoRacerSim(IReadOnlyList<PoRacerLobbyPlayer> players, string? trackId = null, int countdownSeconds = 0,
-        bool bots = true, double botPace = 1.0, double botCaution = DefaultBotCaution)
+        bool bots = true, double botPace = 1.0, double botCaution = DefaultBotCaution,
+        int carCount = PoRacerCatalog.CarCount)
     {
+        ArgumentOutOfRangeException.ThrowIfLessThan(carCount, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(carCount, PoRacerCatalog.SoloCarCount);
         _botCaution = botCaution;
         var track = PoRacerTrackRegistry.GetTrack(trackId);
         _track = track;
@@ -77,6 +87,7 @@ internal sealed class PoRacerSim
         _walls.Clear();
         _centerline.AddRange(track.Centerline);
         _walls.AddRange(track.Walls);
+        BuildBendPrefix();
 
         // Build flat typed-array payloads for the wire format.
         var centerArr = new double[_centerline.Count * 2];
@@ -139,39 +150,29 @@ internal sealed class PoRacerSim
         var tx = dx / dlen; var ty = dy / dlen;
         // perp = (-ty, tx) — but we also want forward = (tx, ty)
         var nrm = new Vec2(-ty, tx);
-        // Player goes first (slot 0). Then 7 AI bots fill the rest.
+        // Players go first; AI fills the remaining seats for this mode.
         var palette = new[] { "#4ec3ff", "#ff5d6c", "#ffd24e", "#7eff8a", "#c47bff", "#ff944d", "#5ee7ff", "#ff77c8" };
-        var profiles = new (double skill, double maxSpeed, double accel, double handling)[]
-        {
-            (0.7, 320, 220, 1.0),
-            (0.55, 335, 235, 0.95),
-            (0.9, 305, 200, 1.05),
-            (0.6, 320, 215, 1.0),
-            (0.95, 295, 195, 1.1),
-            (0.5, 340, 245, 0.92),
-            (0.65, 315, 215, 1.0),
-            (0.85, 310, 210, 1.05),
-        };
-        // Pad players to 8 with AI bots.
-        var slots = new List<(string connectionId, string name, bool isPlayer)>();
+        var playerProfile = (skill: 0.7, maxSpeed: 320.0, accel: 220.0, handling: 1.0);
+        var slots = new List<(string connectionId, string name, bool isPlayer)>(carCount);
         foreach (var p in players)
         {
             slots.Add((string.IsNullOrEmpty(p.UserId) ? p.ConnectionId : p.UserId, p.DisplayName, true));
         }
         int humanCount = slots.Count;
-        for (int i = humanCount; i < 8 && (bots || humanCount == 0); i++)
+        for (int i = humanCount; i < carCount && (bots || humanCount == 0); i++)
         {
             var p = PoRacerAiDriver.GetPersonality(i);
-            slots.Add(($"bot-{i}", p.Name, false));
+            var name = i < PoRacerCatalog.CarCount ? p.Name : $"{p.Name} {i + 1}";
+            slots.Add(($"bot-{i}", name, false));
         }
 
-        for (int i = 0; i < slots.Count && i < 8; i++)
+        for (int i = 0; i < slots.Count && i < carCount; i++)
         {
             var s = slots[i];
             // Every human gets the same car. The profile used to be picked by grid slot, so the
             // second driver in an online race had 15 more top speed and acceleration than the
             // first, on a board that ranks best laps.
-            var prof = profiles[s.isPlayer ? 0 : i];
+            var prof = playerProfile;
             var personality = s.isPlayer ? null : PoRacerAiDriver.GetPersonality(i);
             int row = i / 2;
             int col = i % 2;
@@ -268,6 +269,9 @@ internal sealed class PoRacerSim
     {
         // Inputs may be held through the countdown, but no car moves before GO.
         if (Paused || NowMs < _startElapsedMs) return;
+        // These spatial buckets are also used to find the few nearby cars that can
+        // contribute a tow; rebuilding after movement supplies collision candidates.
+        BuildSpatialGrid(160);
         // Update surface friction and boost pads for every car
         foreach (var c in _cars)
         {
@@ -309,6 +313,7 @@ internal sealed class PoRacerSim
                              c.Pos.Y + Math.Sin(c.Heading) * c.Speed * dt);
         }
         // Car-car collisions.
+        BuildCollisionCandidates();
         ResolveCarCollisions();
         // Hard safety bound: collision impulses on a jam of stopped cars could
         // otherwise integrate into absurd runaway speeds (the finish-line pile-up).
@@ -388,9 +393,30 @@ internal sealed class PoRacerSim
 
         // 3. Slipstream: tucked in behind another car. Every human gets it; among the bots only
         // the two drafting personalities do, as before, so the solo tiers keep their pace.
-        c.Drafting = (c.IsPlayer || c.Personality?.PrefersDrafting == true)
-            && _cars.Any(o => o.Id != c.Id && o.Lap <= TotalLaps && PoRacerAiDriver.IsDrafting(c.Pos, c.Heading, o.Pos));
+        c.Drafting = (c.IsPlayer || c.Personality?.PrefersDrafting == true) && HasDraftingTarget(c);
         if (c.Drafting) c.AccelerationModifier = Math.Max(c.AccelerationModifier, 1.15);
+    }
+
+    private bool HasDraftingTarget(SimCar car)
+    {
+        var cell = SpatialCell(car.Pos, 160);
+        for (int x = cell.X - 1; x <= cell.X + 1; x++)
+        {
+            for (int y = cell.Y - 1; y <= cell.Y + 1; y++)
+            {
+                if (!_spatialGrid.TryGetValue((x, y), out var bucket)) continue;
+                foreach (var index in bucket)
+                {
+                    var other = _cars[index];
+                    if (other.Id != car.Id && other.Lap <= TotalLaps
+                        && PoRacerAiDriver.IsDrafting(car.Pos, car.Heading, other.Pos))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private static double Axis(double? value, double min) =>
@@ -579,52 +605,103 @@ internal sealed class PoRacerSim
     /// centerline segments — a cheap proxy for how sharp the upcoming track is.</summary>
     private double UpcomingBend(int startIdx, int span)
     {
+        int n = _segmentHeadings.Length;
+        if (n == 0 || span <= 0) return 0;
+        int start = (startIdx % n + n) % n;
+        return _bendPrefix[start + span] - _bendPrefix[start];
+    }
+
+    private void BuildBendPrefix()
+    {
         int n = _centerline.Count;
-        double total = 0;
-        for (int k = 0; k < span; k++)
+        _segmentHeadings = new double[n];
+        for (int i = 0; i < n; i++)
         {
-            var p0 = _centerline[(startIdx + k) % n];
-            var p1 = _centerline[(startIdx + k + 1) % n];
-            var p2 = _centerline[(startIdx + k + 2) % n];
-            double h1 = Math.Atan2(p1.Y - p0.Y, p1.X - p0.X);
-            double h2 = Math.Atan2(p2.Y - p1.Y, p2.X - p1.X);
-            total += Math.Abs(ShortAngleDiff(h2, h1));
+            var a = _centerline[i];
+            var b = _centerline[(i + 1) % n];
+            _segmentHeadings[i] = Math.Atan2(b.Y - a.Y, b.X - a.X);
         }
-        return total;
+
+        _bendPrefix = new double[n * 2 + 1];
+        for (int i = 0; i < n * 2; i++)
+        {
+            double bend = Math.Abs(ShortAngleDiff(_segmentHeadings[(i + 1) % n], _segmentHeadings[i % n]));
+            _bendPrefix[i + 1] = _bendPrefix[i] + bend;
+        }
+    }
+
+    private static (int X, int Y) SpatialCell(Vec2 position, double size) =>
+        ((int)Math.Floor(position.X / size), (int)Math.Floor(position.Y / size));
+
+    private void BuildSpatialGrid(double cellSize)
+    {
+        foreach (var bucket in _spatialGrid.Values) bucket.Clear();
+        _spatialGrid.Clear();
+        _usedSpatialBuckets = 0;
+
+        for (int i = 0; i < _cars.Count; i++)
+        {
+            var key = SpatialCell(_cars[i].Pos, cellSize);
+            if (!_spatialGrid.TryGetValue(key, out var bucket))
+            {
+                if (_usedSpatialBuckets == _spatialBuckets.Count) _spatialBuckets.Add([]);
+                bucket = _spatialBuckets[_usedSpatialBuckets++];
+                _spatialGrid.Add(key, bucket);
+            }
+            bucket.Add(i);
+        }
+    }
+
+    private void BuildCollisionCandidates()
+    {
+        BuildSpatialGrid(CarRadius * 2);
+        _collisionCandidates.Clear();
+        for (int i = 0; i < _cars.Count; i++)
+        {
+            var cell = SpatialCell(_cars[i].Pos, CarRadius * 2);
+            for (int x = cell.X - 1; x <= cell.X + 1; x++)
+            {
+                for (int y = cell.Y - 1; y <= cell.Y + 1; y++)
+                {
+                    if (!_spatialGrid.TryGetValue((x, y), out var bucket)) continue;
+                    foreach (int j in bucket)
+                    {
+                        if (j > i) _collisionCandidates.Add((i, j));
+                    }
+                }
+            }
+        }
     }
 
     private void ResolveCarCollisions()
     {
-        for (int i = 0; i < _cars.Count; i++)
+        foreach (var (i, j) in _collisionCandidates)
         {
-            for (int j = i + 1; j < _cars.Count; j++)
+            var a = _cars[i]; var b = _cars[j];
+            var dx = b.Pos.X - a.Pos.X; var dy = b.Pos.Y - a.Pos.Y;
+            var d = Math.Sqrt(dx * dx + dy * dy);
+            var minD = CarRadius * 2;
+            if (d < minD && d > 1e-3)
             {
-                var a = _cars[i]; var b = _cars[j];
-                var dx = b.Pos.X - a.Pos.X; var dy = b.Pos.Y - a.Pos.Y;
-                var d = Math.Sqrt(dx * dx + dy * dy);
-                var minD = CarRadius * 2;
-                if (d < minD && d > 1e-3)
+                var overlap = (minD - d) * 0.5;
+                var nx = dx / d; var ny = dy / d;
+                a.Pos = new Vec2(a.Pos.X - nx * overlap, a.Pos.Y - ny * overlap);
+                b.Pos = new Vec2(b.Pos.X + nx * overlap, b.Pos.Y + ny * overlap);
+                var aVel = ProjectVelocity(a, nx, ny);
+                var bVel = ProjectVelocity(b, nx, ny);
+                var rel = aVel - bVel;
+                var impulse = -rel * 0.6;
+                a.Speed += impulse * 0.4;
+                b.Speed -= impulse * 0.4;
+                // Damage is by how hard, not by how long. It was +0.03 for every tick two
+                // cars overlapped, so a grid that bumped off the line was fully dented by
+                // the first corner; now that it costs speed, only a real closing speed counts.
+                var closing = Math.Abs(rel);
+                if (closing > 30)
                 {
-                    var overlap = (minD - d) * 0.5;
-                    var nx = dx / d; var ny = dy / d;
-                    a.Pos = new Vec2(a.Pos.X - nx * overlap, a.Pos.Y - ny * overlap);
-                    b.Pos = new Vec2(b.Pos.X + nx * overlap, b.Pos.Y + ny * overlap);
-                    var aVel = ProjectVelocity(a, nx, ny);
-                    var bVel = ProjectVelocity(b, nx, ny);
-                    var rel = aVel - bVel;
-                    var impulse = -rel * 0.6;
-                    a.Speed += impulse * 0.4;
-                    b.Speed -= impulse * 0.4;
-                    // Damage is by how hard, not by how long. It was +0.03 for every tick two
-                    // cars overlapped, so a grid that bumped off the line was fully dented by
-                    // the first corner; now that it costs speed, only a real closing speed counts.
-                    var closing = Math.Abs(rel);
-                    if (closing > 30)
-                    {
-                        var dent = Math.Min(0.06, closing / 2500);
-                        a.Damage = Math.Min(1, a.Damage + dent);
-                        b.Damage = Math.Min(1, b.Damage + dent);
-                    }
+                    var dent = Math.Min(0.06, closing / 2500);
+                    a.Damage = Math.Min(1, a.Damage + dent);
+                    b.Damage = Math.Min(1, b.Damage + dent);
                 }
             }
         }
