@@ -140,9 +140,12 @@ internal static class AuthExtensions
                 {
                     OnMessageReceived = context =>
                     {
+                        // Browsers cannot set headers on a WebSocket upgrade, so SignalR sends
+                        // the token in the query string. Accept it for hub endpoints only.
                         var accessToken = context.Request.Query["access_token"];
-                        var path = context.HttpContext.Request.Path;
-                        if (!string.IsNullOrWhiteSpace(accessToken) && path.StartsWithSegments("/api/hubs"))
+                        var isHub = context.HttpContext.GetEndpoint()?.Metadata
+                            .GetMetadata<Microsoft.AspNetCore.SignalR.HubMetadata>() is not null;
+                        if (!string.IsNullOrWhiteSpace(accessToken) && isHub)
                         {
                             context.Token = accessToken;
                         }

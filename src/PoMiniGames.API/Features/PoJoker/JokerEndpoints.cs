@@ -16,7 +16,8 @@ public static class JokerEndpoints
 
     public static IEndpointRouteBuilder MapPoJokerEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/joker").WithTags("PoJoker");
+        // Both routes can reach a model (fetch rewrites flagged jokes, analyze judges them).
+        var group = app.MapGroup("/joker").WithTags("PoJoker").RequireRateLimiting("ai-generation");
 
         group.MapGet("/fetch", FetchJoke)
             .WithName("PoJokerFetchJoke")

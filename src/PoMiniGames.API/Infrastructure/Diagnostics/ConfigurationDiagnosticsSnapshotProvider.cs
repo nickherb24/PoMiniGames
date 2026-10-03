@@ -56,7 +56,6 @@ public sealed class ConfigurationDiagnosticsSnapshotProvider
             },
             ["featureFlags"] = new
             {
-                enableSwagger = _configuration.GetValue("FeatureFlags:EnableSwagger", false),
                 enableDiagnostics = _configuration.GetValue("FeatureFlags:EnableDiagnostics", _environment.IsDevelopment()),
             },
             ["integrations"] = new

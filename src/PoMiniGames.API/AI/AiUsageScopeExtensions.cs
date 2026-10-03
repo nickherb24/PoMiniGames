@@ -83,10 +83,9 @@ public sealed class AiUsageScopeHubFilter : IHubFilter
         if (!string.IsNullOrEmpty(identity.UserId))
             return $"id:{identity.UserId}";
 
-        // No signed-in user id. The connection id is per-connection rather than per-caller, so it
-        // is a weaker key than an IP — but a hub connection is authenticated (every hub here
-        // requires it), so this is the unusual path, and a key that over-partitions is safer than
-        // one that pools unrelated callers into a shared ledger.
-        return $"conn:{context.ConnectionId}";
+        // No signed-in user id. Key on the remote address, the same as the HTTP path: a
+        // per-connection key hands every reconnect a fresh allowance, which is no ceiling at all.
+        var ip = context.GetHttpContext()?.Connection.RemoteIpAddress?.ToString();
+        return ip is null ? $"conn:{context.ConnectionId}" : $"ip:{ip}";
     }
 }

@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace PoMiniGames.Features.PoCoupleQuiz;
@@ -18,7 +17,6 @@ namespace PoMiniGames.Features.PoCoupleQuiz;
 /// <para>There is exactly one lobby per process, so every broadcast targets
 /// <c>Clients.All</c> and no SignalR group is needed.</para>
 /// </remarks>
-[AllowAnonymous]
 public class CoupleQuizHub : Hub<IGameClient>
 {
     private readonly GameSessionManager _sessions;

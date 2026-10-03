@@ -96,6 +96,7 @@ public static class PlayerStatsEndpoints
                 return Results.NoContent();
             })
             .RequireAuthorization()
+            .RequireRateLimiting("highscores")
             .WithName("SavePlayerStats")
             .WithSummary("Save or update player statistics for a game")
             .Produces(StatusCodes.Status204NoContent)

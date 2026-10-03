@@ -40,6 +40,7 @@ public sealed class ResilientChatClient : DelegatingChatClient
             (Inner: InnerClient, Messages: messages, Options: options),
             cancellationToken).AsTask();
 
-    // Streaming is deliberately not wrapped: no game in this solution streams, and a retry
-    // mid-stream would replay tokens the caller already consumed.
+    // Streaming is deliberately not wrapped: a retry mid-stream would replay tokens the caller
+    // already consumed. PoJoker's streamed verdict falls back to the buffered call above, and
+    // BudgetedChatClient still meters the stream.
 }

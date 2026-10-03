@@ -392,14 +392,14 @@ public class AuthStateService
         if (_config.MicrosoftEnabled)
         {
             // If the App Registration client IDs are not yet wired (e.g. dev just flipped
-            // the Enabled flag but hasn't run `dotnet user-secrets set`), surface a clear,
+            // the Enabled flag but hasn't set the ids in appsettings), surface a clear,
             // actionable error instead of letting MSAL throw a confusing browser-side one.
             if (!_config.MicrosoftConfigured)
             {
                 _logger.MicrosoftSignInNotConfigured();
                 Error = "Microsoft sign-in is not fully configured. " +
-                        "Set PoMiniGames:MicrosoftAuth:ClientId and ApiClientId via " +
-                        "`dotnet user-secrets set` (see appsettings.Development.json for the path). " +
+                        "Set PoMiniGames:MicrosoftAuth:ClientId and ApiClientId in " +
+                        "appsettings.Development.json or Key Vault. " +
                         "Or continue as a Guest for now.";
                 NotifyStateChanged();
                 return;

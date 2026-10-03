@@ -67,7 +67,10 @@ public sealed class PlayerDataUnavailableException(string table, Exception inner
 /// corrupt a shared board.
 /// </para>
 /// </remarks>
-public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILogger<PlayerDataService> logger)
+public sealed class PlayerDataService(
+    TableServiceClient tableServiceClient,
+    PoEcosystem.EcosystemWorldStore ecosystemWorlds,
+    ILogger<PlayerDataService> logger)
 {
     /// <param name="Table">Table name as created by StorageService.</param>
     /// <param name="Partitions">Partitions to scan. Null means "every partition" (PlayerStats
@@ -75,14 +78,16 @@ public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILo
     /// <param name="NameFields">Fields holding the player's display name, in priority order.</param>
     /// <param name="RowKeyIsName">True when the RowKey itself is the (sanitised) display name.</param>
     /// <param name="UserIdField">Field holding the claim id the row belongs to.</param>
-    /// <param name="LowerCasedId">True when the table stores the claim id lower-cased.</param>
+    /// <param name="MapId">How the table stores the claim id (lower-cased, hashed). Null means verbatim.</param>
+    /// <param name="PartitionIsId">True when the PartitionKey itself is the (mapped) claim id.</param>
     private sealed record PlayerTable(
         string Table,
         string[]? Partitions,
         string[] NameFields,
         bool RowKeyIsName = false,
         string UserIdField = "UserId",
-        bool LowerCasedId = false);
+        Func<string, string>? MapId = null,
+        bool PartitionIsId = false);
 
     private static readonly PlayerTable[] Sources =
     [
@@ -104,8 +109,22 @@ public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILo
 
         // Live 1v1 Elo (POST /api/pobrawl/matches): one row per principal, stored trimmed and
         // lower-cased (PoBrawlLobbyService.SanitizePrincipal) in PrincipalId.
-        new("PoBrawlPlayerRatings", ["pobrawlplayerelo"], [], UserIdField: "PrincipalId", LowerCasedId: true),
+        new("PoBrawlPlayerRatings", ["pobrawlplayerelo"], [], UserIdField: "PrincipalId",
+            MapId: id => id.Trim().ToLowerInvariant()),
+
+        new("PoCabinetHighScores", ["pocabinet"], ["PlayerName"]),
+        // One partition per category; rows carry a display name only.
+        new("PoFunQuizPlayers", null, ["PlayerName"]),
+        // Creatures the player designed: one shared partition, owner stored as a hash of the claim id.
+        new("PoJevArenaCreatures", null, [], UserIdField: "OwnerKey",
+            MapId: PoJevArena.CreatureLibraryStore.OwnerKeyFor),
+        // Saved islands: the slots live in a partition named by the same hash, and each shared
+        // one has a mirror row in the public partition carrying it as OwnerKey.
+        new("PoEcosystemWorlds", null, [], UserIdField: "OwnerKey",
+            MapId: PoEcosystem.EcosystemWorldStore.OwnerKey, PartitionIsId: true),
     ];
+
+    private static readonly string[] EcosystemSlots = ["1", "2", "3"];
 
     /// <summary>Assembles the full export document.</summary>
     public async Task<PlayerDataExport> ExportAsync(PlayerDataSubject subject, bool isGuest, CancellationToken ct = default)
@@ -148,6 +167,16 @@ public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILo
     {
         var counts = new Dictionary<string, int>(StringComparer.Ordinal);
         var total = 0;
+
+        // Saved islands first, through their own store: each slot is a table row AND a blob,
+        // and the row sweep below would leave the blob behind.
+        if (subject.HasClaimIdentity)
+        {
+            foreach (var slot in EcosystemSlots)
+            {
+                await ecosystemWorlds.DeleteAsync(subject.UserId, slot, ct);
+            }
+        }
 
         foreach (var source in Sources)
         {
@@ -263,10 +292,19 @@ public sealed class PlayerDataService(TableServiceClient tableServiceClient, ILo
     /// </summary>
     private static bool Matches(TableEntity entity, PlayerDataSubject subject, PlayerTable source)
     {
-        var rowUserId = entity.GetString(source.UserIdField);
+        var userId = subject.HasClaimIdentity && source.MapId is not null
+            ? source.MapId(subject.UserId)
+            : subject.UserId;
+
+        if (source.PartitionIsId && subject.HasClaimIdentity
+            && string.Equals(entity.PartitionKey, userId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        var rowUserId = entity.TryGetValue(source.UserIdField, out var raw) ? raw as string : null;
         if (!string.IsNullOrEmpty(rowUserId))
         {
-            var userId = source.LowerCasedId ? subject.UserId.Trim().ToLowerInvariant() : subject.UserId;
             return subject.HasClaimIdentity
                 && string.Equals(rowUserId, userId, StringComparison.Ordinal);
         }

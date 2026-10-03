@@ -37,7 +37,9 @@ public static class UnifiedLeaderboardEndpoints
     public static IEndpointRouteBuilder MapUnifiedLeaderboardEndpoints(this IEndpointRouteBuilder app)
     {
         // /api/leaderboards/{game} reuses the parent prefix.
-        var boards = app.MapGroup("/api/leaderboards").WithTags("Statistics");
+        // Anonymous, and every board is a partition scan, so reads are rate limited.
+        var boards = app.MapGroup("/api/leaderboards").WithTags("Statistics")
+            .RequireRateLimiting("leaderboard-read");
 
         boards.MapGet("",
             async (IStorageService storage, LeaderboardRepository funQuiz,

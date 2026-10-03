@@ -83,6 +83,50 @@ public sealed class BudgetedChatClient : DelegatingChatClient
         _budget.Record(identity, response.Usage?.TotalTokenCount ?? 0);
         return response;
     }
+
+    /// <summary>
+    /// Same gate for streamed calls. PoJoker streams its verdict and stops reading early, so the
+    /// provider's usage update often never arrives; the charge then falls back to an estimate
+    /// from the text that did, which under-counts the prompt but never charges nothing.
+    /// </summary>
+    public override async IAsyncEnumerable<ChatResponseUpdate> GetStreamingResponseAsync(
+        IEnumerable<ChatMessage> messages,
+        ChatOptions? options = null,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        var identity = AiUsageScope.CurrentIdentity;
+        if (string.IsNullOrEmpty(identity))
+        {
+            _logger.AiCallUnattributed(_game);
+        }
+        else if (await _budget.CheckAsync(identity, cancellationToken) is { Allowed: false } verdict)
+        {
+            _logger.TokenBudgetExhausted(identity, verdict.Spent, verdict.Limit, verdict.ResetUtc);
+            throw new AiTokenBudgetExceededException(verdict.Spent, verdict.Limit, verdict.ResetUtc);
+        }
+
+        long reported = 0;
+        long chars = 0;
+        try
+        {
+            await foreach (var update in base.GetStreamingResponseAsync(messages, options, cancellationToken))
+            {
+                chars += update.Text?.Length ?? 0;
+                foreach (var usage in update.Contents.OfType<UsageContent>())
+                    reported += usage.Details.TotalTokenCount ?? 0;
+                yield return update;
+            }
+        }
+        finally
+        {
+            if (!string.IsNullOrEmpty(identity))
+            {
+                // ponytail: ~4 chars per token when the provider reported nothing. Count the
+                // prompt too if the under-charge ever matters.
+                _budget.Record(identity, reported > 0 ? reported : (chars + 3) / 4);
+            }
+        }
+    }
 }
 
 /// <summary>

@@ -107,9 +107,6 @@ internal static class EndpointRouteExtensions
         gameApi.MapFunQuizEndpoints();
         gameApi.MapPoJokerEndpoints();
         gameApi.MapPoRacerScoreEndpoints();
-        // PoCabinet (T4): career cross-device resume endpoint. T5 adds the score
-        // endpoint; T6 adds the lobby + race SignalR hubs.
-        gameApi.MapPoCabinetCareerEndpoints();
         gameApi.MapPoCabinetScoreEndpoints();
         gameApi.MapPoCabinetAiEndpoints();
         gameApi.MapPoSportsHighScoresEndpoints();

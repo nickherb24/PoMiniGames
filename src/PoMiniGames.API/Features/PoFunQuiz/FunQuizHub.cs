@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.SignalR;
 
 namespace PoMiniGames.Features.PoFunQuiz;
@@ -13,7 +12,6 @@ namespace PoMiniGames.Features.PoFunQuiz;
 /// <c>gameId</c> argument: the caller's game is resolved from their connection, so a client
 /// cannot name a game it isn't in.
 /// </remarks>
-[AllowAnonymous]
 public class FunQuizHub : Hub<IFunQuizClient>
 {
     private readonly MultiplayerLobbyService _lobby;
@@ -120,39 +118,44 @@ public class FunQuizHub : Hub<IFunQuizClient>
         await Clients.Group(game.GameId).PlayerFinishedQuestion(new FunQuizPlayerFinishedQuestion(
             game.GameId, me.Name, game.Players.Count(p => p.HasFinished), game.Players.Count));
 
-        if (game.Players.Count == 2 && game.Players.All(p => p.HasFinished))
+        await AdvanceIfAllFinishedAsync(game);
+    }
+
+    /// <summary>
+    /// Moves the game on once everyone still in it has answered. "Everyone still in it",
+    /// not "both players": when the opponent leaves, the survivor plays the quiz out
+    /// instead of waiting forever on an answer that will never come.
+    /// </summary>
+    private async Task<bool> AdvanceIfAllFinishedAsync(MultiplayerGame game)
+    {
+        if (game.State != GameState.InProgress || game.Players.Count == 0
+            || !game.Players.All(p => p.HasFinished))
         {
-            if (game.CurrentQuestionIndex >= game.Questions.Count - 1)
-            {
-                // All questions consumed → declare the final winner.
-                _lobby.FinishGame(game.GameId);
-                var scores = game.Players.ToDictionary(p => p.Name, p => p.Score);
-                var winner = game.Winner;
-                var payload = new FunQuizGameFinished(
-                    game.GameId, scores,
-                    winner is null ? null : new FunQuizPlayerState(winner.Name, winner.Score, winner.MaxStreak),
-                    game.IsTie);
-                await Clients.Group(game.GameId).GameFinished(payload);
-            }
-            else
-            {
-                // Advance to the next question. HasFinished is reset inside
-                // MultiplayerLobbyService.AdvanceQuestion.
-                // The host-only guard in MultiplayerLobbyService.AdvanceQuestion would
-                // block the advance when the NON-host player is the second to finish —
-                // `_lobby.AdvanceQuestion(...)` returns false because Context.ConnectionId
-                // isn't the host. So bypass that helper when auto-advancing from
-                // PlayerFinished so either player can drive the transition;
-                // keep the host-only guard for the explicit AdvanceQuestion
-                // hub method (manual host control).
-                _lobby.ForceAdvanceQuestion(game.GameId);
-                var fresh = _lobby.GetByConnection(Context.ConnectionId);
-                if (fresh is not null)
-                {
-                    await Clients.Group(fresh.GameId).GameUpdated(BuildState(fresh));
-                }
-            }
+            return false;
         }
+
+        if (game.CurrentQuestionIndex >= game.Questions.Count - 1)
+        {
+            // All questions consumed → declare the final winner.
+            _lobby.FinishGame(game.GameId);
+            var scores = game.Players.ToDictionary(p => p.Name, p => p.Score);
+            var winner = game.Winner;
+            var payload = new FunQuizGameFinished(
+                game.GameId, scores,
+                winner is null ? null : new FunQuizPlayerState(winner.Name, winner.Score, winner.MaxStreak),
+                game.IsTie);
+            await Clients.Group(game.GameId).GameFinished(payload);
+        }
+        else
+        {
+            // Server-driven advance, bypassing the host-only guard on AdvanceQuestion so
+            // whichever player answered last can drive the transition. HasFinished is reset
+            // inside ForceAdvanceQuestion.
+            _lobby.ForceAdvanceQuestion(game.GameId);
+            await Clients.Group(game.GameId).GameUpdated(BuildState(game));
+        }
+
+        return true;
     }
 
     public async Task AdvanceQuestion()
@@ -168,6 +171,8 @@ public class FunQuizHub : Hub<IFunQuizClient>
         var game = _lobby.GetByConnection(Context.ConnectionId);
         _lobby.RemovePlayer(Context.ConnectionId, out var empty);
         if (game is null || empty) return;
+        // The survivor may already be waiting on the player who just left.
+        if (await AdvanceIfAllFinishedAsync(game)) return;
         await Clients.Group(game.GameId).GameUpdated(BuildState(game));
     }
 

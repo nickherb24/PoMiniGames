@@ -236,6 +236,21 @@ else
     app.UseDeveloperExceptionPage();
 }
 
+// ─── Security headers ────────────────────────────────────────────────
+// HTTPS redirection is not here on purpose: App Service enforces it (httpsOnly in
+// infra/resources.bicep) and terminates TLS before the request reaches Kestrel.
+// ponytail: the CSP covers framing, <base> and plugins only. A script-src policy needs
+// hashes for the inline import map and boot scripts in index.html; add it with those.
+app.Use(async (ctx, next) =>
+{
+    var headers = ctx.Response.Headers;
+    headers.XContentTypeOptions = "nosniff";
+    headers.XFrameOptions = "DENY";
+    headers["Referrer-Policy"] = "strict-origin-when-cross-origin";
+    headers.ContentSecurityPolicy = "frame-ancestors 'none'; base-uri 'self'; object-src 'none'";
+    await next();
+});
+
 app.MapOpenApi();
 app.MapScalarApiReference(options =>
 {

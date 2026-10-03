@@ -160,19 +160,29 @@ public sealed class MultiplayerLobbyServiceTests
     }
 
     [Fact]
-    public async Task ListOpen_OnlyShowsWaitingGamesWithOnePlayer()
+    public async Task Survivor_Rejoin_And_ClientBonuses_AreAllBounded()
     {
         var lobby = NewLobby();
-        // Alice + Bob pair up and start playing…
         var (first, _) = await JoinAsync(lobby, "conn1", "Alice");
         await JoinAsync(lobby, "conn2", "Bob");
         lobby.StartGame(first.GameId, "conn1");
-        // …so Carla, arriving next, opens the one lobby that is now waiting.
-        await JoinAsync(lobby, "conn3", "Carla", QuestionCategory.Science);
 
-        var open = lobby.ListOpen();
-        open.Should().HaveCount(1, because: "a started match is no longer an open lobby");
-        open[0].HostName.Should().Be("Carla");
+        // A tampered client cannot buy points with the two values it supplies.
+        lobby.UpdateScore(first.GameId, "conn1", isCorrect: true, speedMultiplier: 1e9, secondsRemaining: int.MaxValue);
+        var alice = first.Players[0];
+        alice.ScoreState.SpeedBonus.Should().BeLessThanOrEqualTo(first.Questions[0].BasePoints);
+        alice.ScoreState.TimeBonus.Should().BeLessThanOrEqualTo(300);
+
+        // Bob leaves mid-match: the survivor is the winner, not an index-out-of-range.
+        lobby.RemovePlayer("conn2", out _);
+        first.Winner.Should().BeSameAs(alice);
+        first.IsTie.Should().BeFalse();
+
+        // Alice queues again on the same connection: she leaves the old game rather than orphaning it.
+        var (second, created) = await JoinAsync(lobby, "conn1", "Alice");
+        created.Should().BeTrue();
+        second.GameId.Should().NotBe(first.GameId);
+        first.Players.Should().BeEmpty();
     }
 
     [Theory]

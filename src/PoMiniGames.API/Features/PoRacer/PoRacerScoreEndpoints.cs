@@ -91,6 +91,6 @@ public static class PoRacerScoreEndpoints
                 AchievedAtUtc = DateTimeOffset.TryParse(saved.Date, out var d) ? d : DateTimeOffset.UtcNow,
                 IsGuest = saved.IsGuest,
             });
-        });
+        }).RequireRateLimiting("highscores");
     }
 }

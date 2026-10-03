@@ -27,6 +27,7 @@ public static class AiUsageEndpoints
         group.MapGet("", GetUsage)
              .WithName("AiUsage")
              .WithSummary("Per-game AI call counts, failures, token totals and latency for this process.")
+             .RequireRateLimiting("leaderboard-read")
              .Produces<AiUsageReportDto>(StatusCodes.Status200OK);
 
         return routes;
@@ -36,6 +37,7 @@ public static class AiUsageEndpoints
         AiUsageAccumulator usage,
         AiTokenBudget budget,
         IOptionsMonitor<AIFoundryOptions> options,
+        IWebHostEnvironment environment,
         HttpContext http)
     {
         var opts = options.CurrentValue;
@@ -66,7 +68,8 @@ public static class AiUsageEndpoints
 
         return Results.Ok(new AiUsageReportDto(
             Configured: opts.IsConfigured,
-            Endpoint: opts.IsConfigured ? opts.Endpoint : null,
+            // Anonymous route: the account's address is shown in Development only.
+            Endpoint: opts.IsConfigured && environment.IsDevelopment() ? opts.Endpoint : null,
             DefaultDeployment: opts.DefaultDeployment,
             EmbeddingDeployment: string.IsNullOrWhiteSpace(opts.EmbeddingDeployment) ? null : opts.EmbeddingDeployment,
             Games: games,

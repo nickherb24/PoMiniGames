@@ -40,6 +40,10 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
     public async Task<(MultiplayerGame Game, bool Created)> JoinOrCreateAsync(
         string connectionId, string playerName, QuestionCategory category, int questionCount, CancellationToken ct)
     {
+        // A connection that joins again leaves its previous game first, or that game is
+        // orphaned in the registry with nobody left to empty it.
+        RemovePlayer(connectionId, out _);
+
         lock (_gate)
         {
             var open = TryTakeOpenSeat(connectionId, playerName);
@@ -106,16 +110,6 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
     public MultiplayerGame? GetByConnection(string connectionId) =>
         _connectionToGame.TryGetValue(connectionId, out var id) && _games.TryGetValue(id, out var g) ? g : null;
 
-    public IReadOnlyList<FunQuizLobbySummary> ListOpen()
-    {
-        return _games.Values
-            .Where(g => g.State == GameState.Waiting && g.Players.Count == 1)
-            .Select(g => new FunQuizLobbySummary(
-                g.GameId, g.Players[0].Name, g.Players.Select(p => p.Name).ToList(),
-                g.Players.Count, g.State, g.Category.ToString()))
-            .ToList();
-    }
-
     public void RemovePlayer(string connectionId, out bool sessionEmpty)
     {
         lock (_gate)
@@ -154,6 +148,10 @@ public class MultiplayerLobbyService(IOpenAIService ai, ILogger<MultiplayerLobby
         var player = game.Players.FirstOrDefault(p => p.ConnectionId == connectionId);
         if (player is null) return false;
         if (game.Questions.Count == 0) return false;
+        // One scoring call per question, and both bonuses bounded: these arrive from the client.
+        if (player.HasFinished) return false;
+        speedMultiplier = double.IsFinite(speedMultiplier) ? Math.Clamp(speedMultiplier, 1.0, 2.0) : 1.0;
+        secondsRemaining = Math.Clamp(secondsRemaining, 0, 30);
         var basePoints = game.Questions[Math.Min(game.CurrentQuestionIndex, game.Questions.Count - 1)].BasePoints;
         if (isCorrect)
         {
@@ -230,8 +228,7 @@ public class MultiplayerGame
     public DateTime? EndTime { get; set; }
     public bool IsComplete => State == GameState.Finished || CurrentQuestionIndex >= Questions.Count;
     public MultiplayerPlayer? Winner =>
-        Players.Count == 0 ? null :
-        Players[0].Score == Players[1].Score ? null :
+        Players.Count == 0 || IsTie ? null :
         Players.OrderByDescending(p => p.Score).First();
     public bool IsTie => Players.Count == 2 && Players[0].Score == Players[1].Score;
 }

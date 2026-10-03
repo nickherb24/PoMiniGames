@@ -138,7 +138,11 @@ public static class DiagEndpoints
                 Name: env.EnvironmentName,
                 ApplicationName: env.ApplicationName,
                 ApplicationInsights: ai.Length > 0 ? "configured" : string.Empty,
-                KeyVaultUri: config.GetValue<string>("KeyVault:Uri") ?? string.Empty,
+                // This route is anonymous, so outside Development it says only whether a
+                // vault is configured, never which one.
+                KeyVaultUri: config.GetValue<string>("KeyVault:Uri") is { Length: > 0 } vault
+                    ? (env.IsDevelopment() ? vault : "configured")
+                    : string.Empty,
                 TelemetryFlags: telemetryFlags);
 
             // Project the integrations section into a flat name/status/description list.

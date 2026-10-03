@@ -11,7 +11,6 @@
          a real CVE must break the build, not slip through green. -->
     <NuGetAudit>true</NuGetAudit>
     <NuGetAuditMode>all</NuGetAuditMode>
-    <NoWarn>$(NoWarn);NU1903;NU1902</NoWarn>
   </PropertyGroup>
   <!-- MinVer. The MinVer .targets are pulled in via PackageReference in the host
        project (or any MSBuild-aware project). The properties below document the

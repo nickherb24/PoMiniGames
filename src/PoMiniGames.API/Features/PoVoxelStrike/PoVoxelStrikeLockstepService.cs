@@ -57,7 +57,10 @@ public sealed class PoVoxelStrikeLockstepService
     /// <summary>Bind a connection to its session after the lockstep hub handshake.</summary>
     public void BindConnection(string connectionId, string gameCode)
     {
+        // Joining a second run leaves the first, or that session never empties.
+        RemoveConnection(connectionId);
         _connectionToSession[connectionId] = gameCode;
+        if (_sessions.TryGetValue(gameCode, out var session)) session.AddMember(connectionId);
     }
 
     /// <summary>Drop a connection from any session it was in. Idempotent.</summary>
@@ -112,9 +115,15 @@ public sealed class PoVoxelStrikeLockstepSession
         _startedAtMs = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     }
 
-    public ICollection<string> ConnectionIds => _pendingInputs.Keys;
+    // Who is in the run. Not _pendingInputs: that is cleared on every drained frame, so
+    // "no pending input" is true most of the time and one disconnect ended the run for all.
+    private readonly ConcurrentDictionary<string, byte> _members = new();
 
-    public bool IsEmpty => _pendingInputs.IsEmpty;
+    public ICollection<string> ConnectionIds => _members.Keys;
+
+    public bool IsEmpty => _members.IsEmpty;
+
+    public void AddMember(string connectionId) => _members[connectionId] = 0;
 
     /// <summary>Stash the latest input batch for this connection. The next <see cref="DrainFrame"/> picks it up.</summary>
     public void SubmitInput(PoVoxelStrikeInputBatch batch)
@@ -136,6 +145,7 @@ public sealed class PoVoxelStrikeLockstepSession
     /// <summary>Mark a connection as dropped (after a websocket disconnect). Its tick batches become empty.</summary>
     public void MarkDropped(string connectionId)
     {
+        _members.TryRemove(connectionId, out _);
         _pendingInputs.TryRemove(connectionId, out _);
         _fingerprints.TryRemove(connectionId, out _);
         _lastAckTick.TryRemove(connectionId, out _);

@@ -197,7 +197,19 @@ public sealed class CoupleQuizRoundDirector : IDisposable
             foreach (var p in guessers)
             {
                 if (!question.PlayerAnswers.TryGetValue(p.Name, out var guess)) continue;
-                var similarity = await _questions.CheckAnswerSimilarityAsync(secret, guess, cancellationToken);
+                // The round is already marked evaluated and its timer disarmed, so a throw
+                // here would leave it with no result and nothing to retry it. A guess that
+                // cannot be scored scores zero and the round still completes.
+                double similarity;
+                try
+                {
+                    similarity = await _questions.CheckAnswerSimilarityAsync(secret, guess, cancellationToken);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    _logger.RoundAdvanceFailed(ex);
+                    similarity = 0;
+                }
                 points[p.Name] = similarity >= MatchThreshold ? MatchPoints : 0;
             }
         }

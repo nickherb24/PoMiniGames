@@ -1,6 +1,7 @@
-using System.Security.Claims;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Hybrid;
+using PoMiniGames.Domain.Services;
+using PoMiniGames.Features.Auth;
 using PoMiniGames.Features.PoFunQuiz.Storage;
 
 namespace PoMiniGames.Features.PoFunQuiz;
@@ -82,24 +83,20 @@ public static class FunQuizEndpoints
             LeaderboardRepository repo,
             CancellationToken cancellationToken) =>
         {
-            // Anti-spoof: override any client-supplied PlayerName with the email claim
-            // (or a "anon-<guid>" marker for guest users). The client only sets Category
-            // and Score. (See the source PoFunQuiz.SubmitScore pattern.)
-            var email = ctx.User?.FindFirst(ClaimTypes.Email)?.Value
-                ?? ctx.User?.FindFirst("preferred_username")?.Value;
-            if (!string.IsNullOrWhiteSpace(email))
-            {
-                body.PlayerName = email;
-            }
-            else
-            {
-                body.PlayerName = $"anon-{Guid.NewGuid():N}".Substring(0, 16);
-            }
+            // Anti-spoof: the stored name comes from the caller's claims, never the body.
+            // The board is readable without signing in, so it must be a display name and
+            // never an email: an address-shaped claim keeps only the part before the '@'.
+            var claimed = RequestIdentity.Resolve(ctx.User).DisplayName;
+            var at = claimed.IndexOf('@');
+            body.PlayerName = DisplayNameSanitizer.Sanitize(at > 0 ? claimed[..at] : claimed, fallback: "Player").Value;
             body.Score = Math.Clamp(body.Score, 0, 10_000);
+            // The row key is derived from the date, so a client-chosen one mints unlimited rows.
+            body.DatePlayed = DateTime.UtcNow;
             await repo.SubmitAsync(body, cancellationToken);
             return Results.Created("/api/funquiz/leaderboard", body);
         })
         .RequireAuthorization()
+        .RequireRateLimiting("highscores")
         .WithName("FunQuiz_SubmitLeaderboard");
 
         return app;

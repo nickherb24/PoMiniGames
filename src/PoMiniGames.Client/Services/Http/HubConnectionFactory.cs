@@ -38,12 +38,21 @@ public static class HubConnectionFactory
     /// SignalR's default transport negotiation.</param>
     /// <param name="reconnectDelays">Optional custom reconnect backoff; null uses
     /// SignalR's default 0/2/10/30s schedule.</param>
+    /// <summary>
+    /// The Microsoft access token for the signed-in user, or null for a cookie session.
+    /// Set alongside <see cref="ApiService.SetBearer"/>. Outside Dev/Test the server
+    /// accepts bearer tokens only, so without this every authorized hub answers 401.
+    /// </summary>
+    public static string? BearerToken { get; set; }
+
     public static HubConnection Create(string hubUrl, HttpTransportType? transports = null, TimeSpan[]? reconnectDelays = null)
     {
         var builder = new HubConnectionBuilder()
             .WithUrl(hubUrl, options =>
             {
                 options.HttpMessageHandlerFactory = SignalRCredentialsHttpClientFactory.CreateHandler;
+                // Read per (re)connect, so a sign-in after the connection was built still applies.
+                options.AccessTokenProvider = () => Task.FromResult(BearerToken);
                 if (transports is { } restricted) options.Transports = restricted;
             })
             // PoBrawlOnline: the server-side hub protocol serialises

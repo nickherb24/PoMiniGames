@@ -29,6 +29,7 @@ public class ApiService
     /// </summary>
     public void SetBearer(string? token)
     {
+        HubConnectionFactory.BearerToken = string.IsNullOrEmpty(token) ? null : token;
         _http.DefaultRequestHeaders.Authorization = string.IsNullOrEmpty(token)
             ? null
             : new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
