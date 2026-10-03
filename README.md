@@ -5,6 +5,40 @@ Blazor WebAssembly client from a single origin (port 5080), with SignalR for rea
 multiplayer, Azure Table Storage for persistence, and Azure AI Foundry behind the
 AI-powered games.
 
+## Overview
+
+Fourteen small games on one website. The browser runs each game in full, including its
+computer opponents; the server signs players in, referees online play, checks and stores
+scores, and talks to AI models on the player's behalf.
+
+- **One origin.** The API host serves the Blazor client it is then called by, so there is no
+  cross-site setup in production.
+- **Each game is a Razor page plus a JavaScript engine** (`wwwroot/js/<game>/`), loaded on
+  demand and wired together with JS interop callbacks.
+- **Online play runs over 15 SignalR hubs.** Match, lobby and race state is held in server
+  memory and is lost on restart.
+- **No database.** Scores, ratings, saves and AI spend ledgers live in Azure Table Storage;
+  PoEcosystem world files live in Blob Storage. A player is whoever the sign-in token says
+  they are; there is no Player table.
+- **Computer opponents are hand-written rules, not trained models.** Difficulty is a table of
+  numbers in source. The exceptions are hosted models: Azure AI Foundry chat models write
+  jokes, quizzes, banter and chronicles, and TypeSafe's Jev makes PoJevArena's battle calls.
+  Each has a daily cap per player and a scripted fallback.
+- **Works offline.** A score that cannot reach the server is parked in the browser and sent
+  automatically later.
+
+### Documentation
+
+| Document | What it covers |
+|---|---|
+| [Architecture & game loop](DOCS/20261003/architecture_overview.md) | How agents look, decide and act; scoring rules; tuning settings |
+| [Agent & rig inventory](DOCS/20261003/model_summary.md) | Every computer-controlled character, its source file and physics setup |
+| [Creature dashboard](DOCS/20261003/creatures_dashboard.html) | Abilities grid with an Executive / Technical toggle |
+| [Level & arena setup](DOCS/20261003/scene_layout.html) | To-scale arena drawings, spawn points, hazards, collision layers |
+| [Performance comparison](DOCS/20261003/creature_benchmarks.html) | Skill by difficulty, smoothness, update rates and running cost |
+| [Training charts guide](DOCS/20261003/training_metrics_guide.md) | The four training charts in plain English, and what stands in for them here |
+| [Architecture map](https://claude.ai/artifact/HGHLwMdGyveqtknNC1o5ar) | Component diagrams, request flows and the data model (private link; share it from the page to give others access) |
+
 ## Games (`src/PoMiniGames.Client/Games/`)
 
 | Game | One-liner |
@@ -56,8 +90,10 @@ scripts/                        Working scripts only — see scripts/README.md
 
 ## Notes
 
-- Auth: Microsoft Entra (BFF cookie pattern) plus guest login; leaderboard reads are
-  anonymous, all game-data writes require auth + antiforgery.
+- Auth: Microsoft Entra sign-in in the browser (MSAL), sent to the API as a bearer token.
+  Guest login exists only in Development/Test and only from loopback. The whole app sits
+  behind the sign-in gate; leaderboard reads are anonymous at the API, and all game-data
+  writes require auth + antiforgery.
 - UI is native Blazor + plain CSS by design — no heavy component libraries.
 - Offline-friendly PWA: finished scores park locally and sync on reconnect/sign-in.
 - Deploy: `azd up` (App Service F1, resource group `PoMiniGames`).

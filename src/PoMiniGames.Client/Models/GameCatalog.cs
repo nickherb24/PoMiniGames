@@ -248,7 +248,9 @@ public static class GameCatalog
     /// <summary>
     /// The kiosk reel, in rotation order. Deliberately NOT alphabetical and NOT derived
     /// from <see cref="For"/>: the reel opens on the two quickest-to-read board games so a
-    /// passer-by sees a full round early, and the longer 3D matches sit late.
+    /// passer-by sees a full round early, and the longer 3D matches sit late. The two
+    /// simulations close the lap: they never finish, so they just run out their dwell.
+    /// PoJevArena has a demo mode but stays out, because an unattended loop spends Jev calls.
     /// </summary>
     public static readonly IReadOnlyList<CatalogEntry> Demo =
     [
@@ -256,7 +258,7 @@ public static class GameCatalog
         {
             GameKeys.TicTacToe, GameKeys.ConnectFive, GameKeys.PoRacer, GameKeys.PoMarbleRace,
             GameKeys.PoVoxelStrike, GameKeys.PoJoker, GameKeys.PoBrawl, GameKeys.PoSports,
-            GameKeys.PoCabinet,
+            GameKeys.PoCabinet, GameKeys.PoEcosystem, GameKeys.SandPlayground,
         }
         .Select(key => All.First(g => g.Key == key))
         .Select(g =>

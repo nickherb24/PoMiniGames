@@ -1,0 +1,335 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoMiniGames Level &amp; Arena Setup</title>
+<style>
+  /* Layout: one section per arena; a to-scale top-down drawing on the left, facts on the right. */
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --ink: #14181f; --ink-2: #4b5563; --muted: #7a828e; --line: #dfe3e8;
+    --floor: #eef1f5; --wall: #5b6472; --agent: #eb6834; --player: #2a78d6; --goal: #1baf7a;
+    --hazard: #e34948; --zone: #eda100; --cover: #4a3aa7; --chip: #eef1f5; --accent-soft: #e3eefb;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --surface: #181c22; --ink: #f2f4f7; --ink-2: #c0c6cf; --muted: #8b939e; --line: #2a3038;
+      --floor: #20262e; --wall: #9aa3b0; --agent: #d95926; --player: #3987e5; --goal: #199e70;
+      --hazard: #e66767; --zone: #c98500; --cover: #9085e9; --chip: #222830; --accent-soft: #1b2a3d;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { font-size: 21px; margin: 40px 0 4px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 15px; margin: 16px 0 6px; }
+  p { margin: 0 0 12px; max-width: 72ch; color: var(--ink-2); }
+  .tier { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin: 28px 0 4px; }
+  .note { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 14px 0; max-width: 90ch; }
+  .split { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 820px) { .split { grid-template-columns: 1fr; } }
+  figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px; min-width: 0; }
+  figcaption { font-size: 13px; color: var(--ink-2); margin-top: 8px; }
+  svg { display: block; width: 100%; height: auto; }
+  svg text { fill: var(--ink); font-family: system-ui, sans-serif; font-weight: 600; }
+  svg .dim { fill: var(--muted); font-weight: 400; }
+  .trio { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  .key { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--ink-2); margin: 8px 0 0; }
+  .key span::before { content: ""; display: inline-block; width: 11px; height: 11px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; background: var(--k); }
+  code { font: 12.5px ui-monospace, Consolas, monospace; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+  ul { margin: 0 0 12px; padding-left: 20px; color: var(--ink-2); max-width: 72ch; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Level &amp; Arena Setup</h1>
+  <p>Where things are in each game: bounds, spawn points, hazards and trigger zones. Snapshot 2026-10-03.
+    Drawings are top-down and to scale, generated from the constants in the source files named under each one.</p>
+
+  <div class="tier">Tier 1 · Quick look</div>
+  <div class="note">
+    <strong>Seven games have a physical arena</strong>; the two board games have a grid, and the quiz and joke games have none.
+    No arena uses a navigation mesh: every agent steers by simple probes or follows a line. Arenas are built in code
+    (or loaded from <code>.glb</code> models), not laid out in a scene editor, so "moving a spawn point" means changing a number.
+  </div>
+  <div class="scroll"><table>
+    <thead><tr><th>Game</th><th>Arena size</th><th>Who spawns where</th><th>Hazards</th><th>How it ends</th></tr></thead>
+    <tbody>
+      <tr><td><strong>PoBrawl</strong></td><td>12 x 12 m ring, playable 10.4 x 10.4 m</td><td>Two fighters 3.2 m apart at the centre</td><td>Ropes, corner turnbuckles, breakable posts, crates</td><td>Knockout or 60 s</td></tr>
+      <tr><td><strong>PoVoxelStrike</strong></td><td>180 x 180 m</td><td>Player at the south edge; monsters on a ring 82 m out</td><td>22 wall guns, falling rubble</td><td>Touch the chalice, or die</td></tr>
+      <tr><td><strong>PoJevArena</strong></td><td>20 x 15 m</td><td>Ten per side, 3.25 m in from each end</td><td>Pillars, brush, tar, random walls</td><td>Team wipe or 180 s</td></tr>
+      <tr><td><strong>PoSports</strong></td><td>100 m and 110 m lanes</td><td>All four runners at 0 m</td><td>Eight hurdles</td><td>Both legs run</td></tr>
+      <tr><td><strong>PoCabinet</strong></td><td>4 tracks, road 74 to 120 units wide</td><td>100-car grid; the player starts in slot 50</td><td>Grass run-off, barrier, traffic</td><td>3 laps (1 run on Playground)</td></tr>
+      <tr><td><strong>PoRacer</strong></td><td>3 tracks, road 210 to 255 units wide</td><td>8 cars in 2 columns</td><td>Walls, sand, boost pads</td><td>3 laps or 180 s</td></tr>
+      <tr><td><strong>PoMarbleRace</strong></td><td>5 downhill courses</td><td>101 marbles on a grid; the player in the middle</td><td>Plinko pegs, turnstiles, kickers, drops</td><td>All home or 180 s</td></tr>
+      <tr><td><strong>PoEcosystem</strong></td><td>200 x 200 m island</td><td>Scattered by the world seed</td><td>Lightning, rockslide, eruption, drought, fire</td><td>When the animals are gone</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="tier">Tier 2 · Core mechanics</div>
+
+  <h2>PoBrawl ring</h2>
+  <div class="split">
+    <figure><svg id="brawl" role="img" aria-label="Top-down drawing of the PoBrawl ring with spawn points, corner posts and crate stacks"></svg>
+      <figcaption>The dashed square is the edge fighters are clamped to. Knockback into it bounces off the ropes; a hard hit into a corner costs up to 4 health.</figcaption>
+      <div class="key"><span style="--k:var(--player)">Left spawn</span><span style="--k:var(--agent)">Right spawn</span><span style="--k:var(--wall)">Post (30 hp)</span><span style="--k:var(--zone)">Crate stack (10)</span><span style="--k:var(--hazard)">Turnbuckle zone</span></div>
+    </figure>
+    <div>
+      <h3>Numbers</h3>
+      <div class="scroll"><table><tbody>
+        <tr><td>Ring mesh</td><td>12 x 12 m</td></tr>
+        <tr><td>Playable half-width</td><td><code>RING_HALF = 5.2</code></td></tr>
+        <tr><td>Spawns</td><td>x = -1.6 and +1.6, z = 0</td></tr>
+        <tr><td>Closest two fighters can stand</td><td>0.95 m</td></tr>
+        <tr><td>Corner posts</td><td>at ±5.8, 30 hp, breakable</td></tr>
+        <tr><td>Crates</td><td>10 per corner, 100 hp each, at most 96 bodies</td></tr>
+        <tr><td>Round</td><td>3.7 s countdown, 60 s fight</td></tr>
+      </tbody></table></div>
+      <p style="margin-top:10px">Source: <code>js/pobrawl/arena.js</code>, <code>game.js</code>, <code>props.js</code>, <code>physics.js</code>. No pickups, no trigger zones.</p>
+    </div>
+  </div>
+
+  <h2>PoVoxelStrike fortress</h2>
+  <div class="split">
+    <figure><svg id="voxel" role="img" aria-label="Top-down drawing of the PoVoxelStrike arena: two wall rings around a keep, the player spawn to the south and the monster spawn ring"></svg>
+      <figcaption>The player starts outside the outer gate and must break in to the chalice at the centre. The two gates face opposite ways, so the route winds round the inner wall.</figcaption>
+      <div class="key"><span style="--k:var(--player)">Player spawn</span><span style="--k:var(--goal)">Chalice (win zone r 3.2)</span><span style="--k:var(--wall)">Walls and keep</span><span style="--k:var(--agent)">Monster spawn ring</span><span style="--k:var(--hazard)">Wall gun</span></div>
+    </figure>
+    <div>
+      <h3>Numbers</h3>
+      <div class="scroll"><table><tbody>
+        <tr><td>Arena</td><td>±90 m; player clamped to ±89, monsters to ±88</td></tr>
+        <tr><td>Outer wall</td><td>half-width 58 m, height 15, gate facing the spawn</td></tr>
+        <tr><td>Inner wall</td><td>half-width 30 m, height 12, gate on the far side</td></tr>
+        <tr><td>Keep</td><td>half-width 13 m, height 34</td></tr>
+        <tr><td>Gate width</td><td>18 m</td></tr>
+        <tr><td>Player spawn</td><td>(0, 78)</td></tr>
+        <tr><td>Monster spawn</td><td>ring of radius 82 m, preferring behind the camera</td></tr>
+        <tr><td>Wall guns</td><td>22: outer ring 12, inner ring 9, keep 1; range 120 m</td></tr>
+        <tr><td>Monsters alive</td><td>6 at the start, rising to 40</td></tr>
+      </tbody></table></div>
+      <p style="margin-top:10px">Gun positions on the drawing are schematic (two per outer wall, one per inner wall, one per bastion); exact
+        placement is in <code>js/povoxelstrike/world.js</code>. Other sources: <code>fortress.js</code>, <code>terrain.js</code>, <code>enemies.js</code>.</p>
+    </div>
+  </div>
+
+  <h2>PoJevArena</h2>
+  <p>The match seed picks one of three hazard layouts, then adds up to three wall pieces per quarter, mirrored four ways. Walls are not drawn because they change every match.</p>
+  <div class="trio" id="jev"></div>
+  <div class="key"><span style="--k:var(--player)">Blue spawn</span><span style="--k:var(--agent)">Red spawn</span><span style="--k:var(--wall)">Pillar (cover)</span><span style="--k:var(--goal)">Brush (ranged damage x 0.7)</span><span style="--k:var(--hazard)">Tar (slow, 2 damage a second)</span></div>
+  <p style="margin-top:10px">Arena 20 x 15 m. Each team spawns on two rings (seven units at radius 1.55 m, three at 0.55 m) centred 3.25 m from its end.
+    A panicking unit runs for the nearest edge. Source: <code>js/pojevarena/sim.js</code>.</p>
+
+  <h2>PoSports track</h2>
+  <figure><svg id="sports" role="img" aria-label="Side drawing of the two PoSports legs: a 100 metre sprint and a 110 metre hurdles leg with eight hurdles"></svg>
+    <figcaption>Two legs, run one after the other with an 8 s break. Hitting a hurdle while on the ground multiplies speed by 0.3 and adds 1.5 s.</figcaption></figure>
+  <p style="margin-top:10px">Source: <code>js/posports/physics.js</code>, <code>track.js</code>. Lanes never interact; there is no collision between runners.</p>
+
+  <h2>PoMarbleRace: Neon Chute zones</h2>
+  <figure><svg id="marble" role="img" aria-label="Strip showing the obstacle zones along the Neon Chute course from start to finish"></svg>
+    <figcaption>Position along the course from start (left) to finish (right). The course is 1800 units long, drops 760, and is rebuilt from a new seed each race.</figcaption></figure>
+  <div class="scroll" style="margin-top:12px"><table>
+    <thead><tr><th>Map</th><th>Type</th><th>Notes</th></tr></thead>
+    <tbody>
+      <tr><td>1 Neon Chute</td><td>Generated</td><td>Channel 64 wide; zones as drawn</td></tr>
+      <tr><td>2 Spiral Works (default)</td><td>Model <code>marble_track.glb</code></td><td>Three brake strips</td></tr>
+      <tr><td>3 Grand Spiral</td><td>Model <code>marble_track_2.glb</code></td><td>Loop and helix</td></tr>
+      <tr><td>4 Canyon Run</td><td>Generated</td><td>2200 long, drops 930, channel 50 wide, 9 plinko rows</td></tr>
+      <tr><td>5 Playground Run</td><td>Model <code>playground.glb</code> + separate colliders</td><td>Gentle push along the course</td></tr>
+    </tbody></table></div>
+  <p style="margin-top:10px">A marble is out when it is off the course (24 below or 20 to the side on model maps) and has touched nothing for 1 s. Source: <code>js/pomarblerace/maps.js</code>, <code>track-procedural.js</code>, <code>track-glb.js</code>.</p>
+
+  <h2>Racing tracks</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>Game</th><th>Track</th><th>Road width</th><th>Laps</th><th>Interactive objects</th></tr></thead>
+    <tbody>
+      <tr><td>PoCabinet</td><td>Capitol Speedway</td><td>110</td><td>3</td><td>None. Grass run-off (26 wide), then a barrier.</td></tr>
+      <tr><td>PoCabinet</td><td>Mar-a-Lago Grand Prix</td><td>120</td><td>3</td><td>None</td></tr>
+      <tr><td>PoCabinet</td><td>Press Briefing 500</td><td>105</td><td>3</td><td>None</td></tr>
+      <tr><td>PoCabinet</td><td>Playground Marble Run</td><td>74</td><td>1 (point to point)</td><td>None</td></tr>
+      <tr><td>PoRacer</td><td>Grand Prix Circuit</td><td>230</td><td>3</td><td>Boost pads at 10% and 60% of the lap</td></tr>
+      <tr><td>PoRacer</td><td>Neon Skyline (figure-8)</td><td>210</td><td>3</td><td>Boost pads at 16% and 69%</td></tr>
+      <tr><td>PoRacer</td><td>Desert Dustway</td><td>255</td><td>3</td><td>Boost pads at 7% and 46%; two sand zones (radius 260 and 240, grip x 0.65)</td></tr>
+    </tbody></table></div>
+  <ul style="margin-top:12px">
+    <li><strong>PoCabinet grid:</strong> columns 22 apart, rows 50 apart, first row 18 behind the line. Laps are counted by distance travelled, not by gates.</li>
+    <li><strong>PoRacer grid:</strong> 2 columns; each row 38 further back. A boost pad has radius 46 and lasts 1.8 s.</li>
+  </ul>
+
+  <h2>PoEcosystem island</h2>
+  <p>The island is generated from a seed, so there is no fixed map. What is fixed:</p>
+  <div class="scroll"><table><tbody>
+    <tr><td>World</td><td>200 x 200 tiles, 1 tile = 1 m</td></tr>
+    <tr><td>Ground types</td><td>Ocean, beach, grass, forest, hill, mountain, lake, volcano. Creatures walk on beach, grass, forest and hill.</td></tr>
+    <tr><td>Starting animals</td><td>40 rabbits and 20 deer on random grass; 6 wolves as one pack near a den</td></tr>
+    <tr><td>Starting people</td><td>18 humans near the first of 3 huts; huts sit on grass within 4 tiles of water</td></tr>
+    <tr><td>Tribes</td><td>3, territory radius 28, at least 35 apart</td></tr>
+    <tr><td>Hazards</td><td>Lightning (kills within 6), rockslide (3 to 8 rocks), eruption (blast 12, up to 150 lava tiles), drought (25 s), fire (up to 400 tiles)</td></tr>
+    <tr><td>Safe zones</td><td>Wolves avoid a campfire within 10 m</td></tr>
+  </tbody></table></div>
+  <p style="margin-top:10px">Source: <code>js/poecosystem/sim/core/config.js</code>, <code>sim/terrain/island.js</code>, <code>sim/world.js</code>.</p>
+
+  <div class="tier">Tier 3 · Setup guide</div>
+  <h2>Engine setup tips</h2>
+  <h3>Collision layers</h3>
+  <p>Three games use the cannon-es physics library and set collision groups in code. This is the same idea as Unity's Layer Collision Matrix.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Game</th><th>Layer</th><th>Collides with</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="4">PoBrawl</td><td><code>G_ROOT</code> (live fighter)</td><td>fighter, ragdoll, prop</td></tr>
+      <tr><td><code>G_RAGDOLL</code></td><td>ragdoll, arena, fighter, prop</td></tr>
+      <tr><td><code>G_ARENA</code> (posts, rope walls)</td><td>ragdoll, prop</td></tr>
+      <tr><td><code>G_PROP</code> (crates)</td><td>fighter, prop, ragdoll, arena</td></tr>
+      <tr><td rowspan="2">PoVoxelStrike</td><td><code>PLAYER_GROUP</code></td><td>world, player</td></tr>
+      <tr><td><code>WORLD_GROUP</code></td><td>everything</td></tr>
+      <tr><td>PoEcosystem</td><td><code>G_TERRAIN</code>, <code>G_RAGDOLL</code>, <code>G_PROP</code></td><td>Cosmetic bodies only. Living creatures have no body and are never in the matrix.</td></tr>
+    </tbody></table></div>
+  <ul style="margin-top:12px">
+    <li>Live PoBrawl fighters do not collide with the arena layer. They are kept inside the ring by a position clamp, and kept apart from each other by a manual 0.95 m rule.</li>
+    <li>PoVoxelStrike monsters have no physics body at all. They test wall voxels directly, which is why they cannot be pushed.</li>
+  </ul>
+  <h3>Tags</h3>
+  <p>There is no tag system. An object's role comes from which list it is stored in (enemies, guns, debris, props). If you port a scene to Unity, the natural tags are Player, Enemy, Projectile, Hazard, Goal and Cover.</p>
+  <h3>Navigation</h3>
+  <ul>
+    <li><strong>No navigation mesh anywhere.</strong> There are no nav bounds to bake.</li>
+    <li>PoVoxelStrike monsters try seven headings and take the first one clear of walls.</li>
+    <li>Racers follow a centre line (PoRacer) or a look-ahead point on the road (PoCabinet).</li>
+    <li>Island creatures step over a height map and try ±45°, ±90° and ±135° when blocked.</li>
+    <li>Arena units bend their path round pillars and walls with a 1.2 m look-ahead.</li>
+  </ul>
+  <h3>Changing a layout</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>To change</th><th>Edit</th></tr></thead>
+    <tbody>
+      <tr><td>PoBrawl spawn distance or ring size</td><td><code>SPAWN_X_BY_SIDE</code> in <code>js/pobrawl/game.js</code>; <code>RING_HALF</code> in <code>arena.js</code></td></tr>
+      <tr><td>PoVoxelStrike wall sizes or spawn</td><td>constants at the top of <code>js/povoxelstrike/fortress.js</code></td></tr>
+      <tr><td>PoJevArena hazard layouts</td><td><code>ARENAS</code> in <code>js/pojevarena/sim.js</code>. Keep everything between x = 6 and x = 14 so spawns stay clear.</td></tr>
+      <tr><td>PoSports hurdle positions</td><td><code>HURDLE_POSITIONS</code> in <code>js/posports/physics.js</code> and the mirror in <code>PoSportsConstants.cs</code></td></tr>
+      <tr><td>Race tracks</td><td><code>Shared/Games/PoCabinetTrackGeometry.cs</code>, <code>API/Features/PoRacer/PoRacerTrackRegistry.cs</code></td></tr>
+      <tr><td>Marble maps</td><td><code>js/pomarblerace/maps.js</code>; new models go in <code>wwwroot/models</code></td></tr>
+    </tbody></table></div>
+</div>
+
+<script>
+const NS = "http://www.w3.org/2000/svg";
+function S(svg, tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  svg.appendChild(e); return e;
+}
+const V = n => `var(--${n})`;
+
+// PoBrawl ring, metres. y axis is z.
+(function () {
+  const s = document.getElementById("brawl"); s.setAttribute("viewBox", "-7.4 -7.4 14.8 14.8");
+  S(s, "rect", { x: -6, y: -6, width: 12, height: 12, fill: V("floor"), stroke: V("wall"), "stroke-width": .08 });
+  S(s, "rect", { x: -5.2, y: -5.2, width: 10.4, height: 10.4, fill: "none", stroke: V("muted"), "stroke-width": .05, "stroke-dasharray": ".25 .2" });
+  [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => {
+    S(s, "rect", { x: a > 0 ? 4.7 : -5.2, y: b > 0 ? 4.7 : -5.2, width: .5, height: .5, fill: V("hazard"), opacity: .55 });
+    S(s, "rect", { x: a * 4.25 - .45, y: b * 4.25 - .45, width: .9, height: .9, fill: V("zone"), rx: .1 });
+    S(s, "circle", { cx: a * 5.8, cy: b * 5.8, r: .22, fill: V("wall") });
+  });
+  S(s, "circle", { cx: -1.6, cy: 0, r: .55, fill: V("player") });
+  S(s, "circle", { cx: 1.6, cy: 0, r: .55, fill: V("agent") });
+  S(s, "line", { x1: -1.6, y1: 1.2, x2: 1.6, y2: 1.2, stroke: V("muted"), "stroke-width": .04 });
+  S(s, "text", { x: 0, y: 1.85, "text-anchor": "middle", "font-size": .5, class: "dim" }, "3.2 m");
+  S(s, "text", { x: 0, y: -6.4, "text-anchor": "middle", "font-size": .55 }, "12 m ring");
+  S(s, "text", { x: 0, y: -4.5, "text-anchor": "middle", "font-size": .45, class: "dim" }, "playable 10.4 m");
+})();
+
+// PoVoxelStrike, metres. +z (south, toward spawn) is down.
+(function () {
+  const s = document.getElementById("voxel"); s.setAttribute("viewBox", "-98 -98 196 196");
+  S(s, "rect", { x: -90, y: -90, width: 180, height: 180, fill: V("floor"), stroke: V("wall"), "stroke-width": 1 });
+  S(s, "circle", { cx: 0, cy: 0, r: 82, fill: "none", stroke: V("agent"), "stroke-width": 1, "stroke-dasharray": "4 3" });
+  const ring = (h, gateSouth, w) => {
+    const g = 9; // half gate width
+    const seg = (x1, y1, x2, y2) => S(s, "line", { x1, y1, x2, y2, stroke: V("wall"), "stroke-width": w, "stroke-linecap": "square" });
+    seg(-h, -h, -h, h); seg(h, -h, h, h);
+    if (gateSouth) { seg(-h, -h, h, -h); seg(-h, h, -g, h); seg(g, h, h, h); }
+    else { seg(-h, h, h, h); seg(-h, -h, -g, -h); seg(g, -h, h, -h); }
+    [[-1, -1], [1, -1], [-1, 1], [1, 1]].forEach(([a, b]) => S(s, "circle", { cx: a * h, cy: b * h, r: 2, fill: V("hazard") }));
+  };
+  ring(58, true, 3); ring(30, false, 2.4);
+  // schematic wall guns: 2 per solid outer wall, 1 per outer gate wing; 1 per solid inner wall, 1 per inner gate wing
+  [[-58, -25], [-58, 25], [58, -25], [58, 25], [-25, -58], [25, -58], [-33, 58], [33, 58],
+   [-30, 0], [30, 0], [0, 30], [-19, -30], [19, -30], [0, -13]].forEach(([x, y]) => S(s, "circle", { cx: x, cy: y, r: 2, fill: V("hazard") }));
+  S(s, "rect", { x: -13, y: -13, width: 26, height: 26, fill: V("wall"), opacity: .35, stroke: V("wall"), "stroke-width": 1 });
+  S(s, "circle", { cx: 0, cy: 0, r: 3.2, fill: V("goal") });
+  S(s, "circle", { cx: 0, cy: 78, r: 3.5, fill: V("player") });
+  const t = (x, y, txt, cls) => S(s, "text", { x, y, "text-anchor": "middle", "font-size": 5.2, class: cls || "" }, txt);
+  t(0, 71, "player spawn"); t(0, 52, "outer gate", "dim"); t(0, -34, "inner gate", "dim");
+  t(0, -17, "keep"); t(0, 9.5, "chalice", "dim"); t(0, -84, "monsters spawn on this ring (82 m)", "dim");
+  t(-74, 95.5, "180 m arena", "dim");
+})();
+
+// PoJevArena, metres.
+(function () {
+  const A = [
+    { name: "Four Pillars", pillars: [[7, 4.2, .6], [13, 4.2, .6], [7, 10.8, .6], [13, 10.8, .6]], brush: [[10, 2.2, 1.5], [10, 12.8, 1.5]], tar: [[10, 7.5, 1.2]] },
+    { name: "The Diamond", pillars: [[10, 4, .7], [10, 11, .7], [7.6, 7.5, .55], [12.4, 7.5, .55]], brush: [[7, 2.6, 1.3], [13, 12.4, 1.3], [7, 12.4, 1.3], [13, 2.6, 1.3]], tar: [] },
+    { name: "Tar Mire", pillars: [[8.4, 5, .6], [11.6, 10, .6]], brush: [[6.8, 11.5, 1.4], [13.2, 3.5, 1.4]], tar: [[10, 7.5, 1.9]] }
+  ];
+  const host = document.getElementById("jev");
+  A.forEach(a => {
+    const f = document.createElement("figure");
+    const s = document.createElementNS(NS, "svg"); s.setAttribute("viewBox", "-0.5 -1.6 21 17.6");
+    s.setAttribute("role", "img"); s.setAttribute("aria-label", a.name + " arena layout");
+    S(s, "text", { x: 0, y: -.5, "font-size": .95 }, a.name);
+    S(s, "rect", { x: 0, y: 0, width: 20, height: 15, fill: V("floor"), stroke: V("wall"), "stroke-width": .1 });
+    a.brush.forEach(([x, y, r]) => S(s, "circle", { cx: x, cy: y, r, fill: V("goal"), opacity: .45 }));
+    a.tar.forEach(([x, y, r]) => S(s, "circle", { cx: x, cy: y, r, fill: V("hazard"), opacity: .5 }));
+    a.pillars.forEach(([x, y, r]) => S(s, "circle", { cx: x, cy: y, r, fill: V("wall") }));
+    S(s, "circle", { cx: 3.25, cy: 7.5, r: 1.55, fill: V("player"), opacity: .25, stroke: V("player"), "stroke-width": .08 });
+    S(s, "circle", { cx: 16.75, cy: 7.5, r: 1.55, fill: V("agent"), opacity: .25, stroke: V("agent"), "stroke-width": .08 });
+    f.appendChild(s); host.appendChild(f);
+  });
+})();
+
+// PoSports, metres along the lane.
+(function () {
+  const s = document.getElementById("sports"); s.setAttribute("viewBox", "-14 0 132 38");
+  const lane = (y, len, label, hurdles) => {
+    S(s, "text", { x: -13, y: y + 1.3, "font-size": 3 }, label);
+    S(s, "rect", { x: 0, y: y - 3, width: len, height: 6, fill: V("floor"), stroke: V("wall"), "stroke-width": .25 });
+    S(s, "line", { x1: 0, y1: y - 3, x2: 0, y2: y + 3, stroke: V("player"), "stroke-width": .8 });
+    S(s, "line", { x1: len, y1: y - 3, x2: len, y2: y + 3, stroke: V("goal"), "stroke-width": .8 });
+    (hurdles || []).forEach(h => {
+      S(s, "rect", { x: h - .4, y: y - 3, width: .8, height: 6, fill: V("hazard") });
+      S(s, "text", { x: h, y: y + 6.6, "text-anchor": "middle", "font-size": 2.4, class: "dim" }, h);
+    });
+    S(s, "text", { x: len, y: y - 4.2, "text-anchor": "end", "font-size": 2.6, class: "dim" }, len + " m");
+  };
+  lane(9, 100, "Sprint"); lane(25, 110, "Hurdles", [20, 30, 40, 50, 60, 70, 80, 90]);
+  S(s, "text", { x: 0, y: 36.5, "font-size": 2.6, class: "dim" }, "start (all four runners)   ·   hurdle positions in metres");
+})();
+
+// Neon Chute zones as fractions of the course.
+(function () {
+  const s = document.getElementById("marble"); s.setAttribute("viewBox", "-2 0 104 30");
+  S(s, "rect", { x: 0, y: 8, width: 100, height: 8, fill: V("floor"), stroke: V("wall"), "stroke-width": .2 });
+  const Z = [
+    ["Ridges", .10, .24, "cover"], ["Boost", .26, .295, "goal"], ["Plinko", .31, .43, "zone"], ["Kickers", .435, .455, "hazard"],
+    ["Rumble", .46, .50, "wall"], ["Bobs", .52, .60, "cover"], ["Boost", .615, .655, "goal"], ["Rumble", .68, .72, "wall"],
+    ["Turnstiles", .74, .82, "zone"], ["Boost", .835, .870, "goal"], ["Gauntlet", .885, .925, "hazard"], ["Finish", .93, 1, "player"]
+  ];
+  Z.forEach(([n, a, b, c], i) => {
+    S(s, "rect", { x: a * 100, y: 8, width: (b - a) * 100, height: 8, fill: V(c), opacity: .8 });
+    const up = i % 2 === 0, mid = (a + b) * 50;
+    S(s, "line", { x1: mid, y1: up ? 8 : 16, x2: mid, y2: up ? 5.6 : 18.4, stroke: V("muted"), "stroke-width": .15 });
+    S(s, "text", { x: mid, y: up ? 4.6 : 21.2, "text-anchor": "middle", "font-size": 2.3 }, n);
+  });
+  [0, 25, 50, 75, 100].forEach(p => S(s, "text", { x: p, y: 27.5, "text-anchor": "middle", "font-size": 2.1, class: "dim" }, p + "%"));
+})();
+</script>
+</body>
+</html>

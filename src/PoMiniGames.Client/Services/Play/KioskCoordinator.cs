@@ -58,33 +58,15 @@ public sealed class KioskCoordinator : IDisposable
     public bool IsActive => _timer is not null;
     public bool IsPaused => _isPaused;
     public string? CurrentGameName { get; private set; }
-    public int SecondsUntilAdvance { get; private set; } = 20;
-    public const int AdvanceSeconds = 20;
+    public int SecondsUntilAdvance { get; private set; } = AdvanceSeconds;
+    /// <summary>How long every demo stays on screen. A demo whose match ends on a frozen
+    /// result screen moves on sooner by calling <see cref="MarkFinished"/>.</summary>
+    public const int AdvanceSeconds = 60;
 
     /// <summary>0-based index of the demo currently on screen. -1 before the first page reports itself.</summary>
     public int CurrentIndex => _currentIndex;
     /// <summary>Total demos in the reel.</summary>
     public int TotalCount => _entries.Count;
-
-    // Per-game dwell: fast games (a rhythm tap, a quick round) get a shorter slice so the
-    // reel doesn't sit on a restart; slower ones (a full race, a comedy bit) get longer.
-    // Keyed by the catalog GameKey (DemoEntry.Key). Anything unmapped uses AdvanceSeconds.
-    //
-    // PoJoker's 10-joke set with crowd reactions runs ~30s, so a shorter dwell would
-    // jump mid-bit. PoRacer stays at 18s — it ends after one race, not loops.
-    private static readonly Dictionary<string, int> DwellByKey = new(StringComparer.OrdinalIgnoreCase)
-    {
-        ["tictactoe"] = 12,
-        ["connectfive"] = 14,
-        ["poracer"] = 18,
-        ["pomarblerace"] = 22,
-        ["pojoker"] = 32,
-        ["pobrawl"] = 22,
-    };
-
-    private int DwellFor(int index) =>
-        index >= 0 && index < _entries.Count && DwellByKey.TryGetValue(_entries[index].Key, out var s)
-            ? s : AdvanceSeconds;
 
     public IReadOnlyList<DemoEntry> Entries => _entries;
 
@@ -116,11 +98,7 @@ public sealed class KioskCoordinator : IDisposable
             _currentIndex = _entries.FindIndex(e => string.Equals(e.Key, normalizedKey, StringComparison.OrdinalIgnoreCase));
             CurrentGameName = _currentIndex >= 0 ? _entries[_currentIndex].DisplayName : null;
         }
-        // Use the per-game dwell so the on-screen countdown matches the actual
-        // dwell the coordinator is going to honour. Without this the bar would
-        // say "20s" for PoJoker (dwell 24s) and the bar's countdown would always
-        // overshoot the real rotation by a few seconds.
-        SecondsUntilAdvance = DwellFor(_currentIndex);
+        SecondsUntilAdvance = AdvanceSeconds;
         Changed?.Invoke();
     }
 
@@ -261,7 +239,7 @@ public sealed class KioskCoordinator : IDisposable
                 _currentKey = _entries[kioskIndex].Key;
                 CurrentGameName = _entries[kioskIndex].DisplayName;
             }
-            SecondsUntilAdvance = DwellFor(kioskIndex);
+            SecondsUntilAdvance = AdvanceSeconds;
             if (_timer is null && !_disposed)
             {
                 _timer = new System.Threading.Timer(_ => OnTick(), null, 1000, 1000);

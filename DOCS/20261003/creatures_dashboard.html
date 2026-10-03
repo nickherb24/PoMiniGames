@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoMiniGames Creature &amp; Behavior Dashboard</title>
+<style>
+  /* Layout: one column of agent cards under a sticky view toggle; the abilities grid leads. */
+  :root {
+    --bg: #f6f7f9; --surface: #ffffff; --ink: #14181f; --ink-2: #4b5563; --muted: #7a828e;
+    --line: #dfe3e8; --accent: #2a78d6; --accent-soft: #e3eefb;
+    --r0: #e6e9ee; --r1: #9ec5f4; --r2: #3987e5; --r3: #184f95;
+    --good: #0ca30c; --warn: #b87900; --chip: #eef1f5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --surface: #181c22; --ink: #f2f4f7; --ink-2: #c0c6cf; --muted: #8b939e;
+      --line: #2a3038; --accent: #5598e7; --accent-soft: #1b2a3d;
+      --r0: #262c34; --r1: #1c5cab; --r2: #3987e5; --r3: #9ec5f4;
+      --good: #35c435; --warn: #fab219; --chip: #222830;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; text-wrap: balance; }
+  h2 { font-size: 20px; margin: 36px 0 10px; }
+  h3 { font-size: 16px; margin: 0; }
+  p { margin: 0 0 12px; max-width: 72ch; color: var(--ink-2); }
+  .note { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 8px;
+    padding: 12px 14px; margin: 14px 0; color: var(--ink); max-width: 90ch; }
+  .bar { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 10px 0;
+    border-bottom: 1px solid var(--line); display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  .toggle { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .toggle button { font: inherit; padding: 8px 16px; border: 0; background: var(--surface);
+    color: var(--ink-2); cursor: pointer; }
+  .toggle button[aria-pressed="true"] { background: var(--accent); color: #fff; font-weight: 600; }
+  .toggle button:focus-visible { outline: 2px solid var(--ink); outline-offset: -2px; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted);
+    background: var(--surface); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.c { text-align: center; white-space: nowrap; }
+  #grid td:first-child { min-width: 170px; } #grid td:last-child { min-width: 200px; }
+  .pips { display: inline-flex; gap: 3px; vertical-align: middle; }
+  .pips i { width: 14px; height: 10px; border-radius: 2px; background: var(--r0); display: block; }
+  .pips.l1 i:nth-child(-n+1) { background: var(--r1); }
+  .pips.l2 i:nth-child(-n+2) { background: var(--r2); }
+  .pips.l3 i:nth-child(-n+3) { background: var(--r3); }
+  .lvl { display: block; font-size: 11px; color: var(--muted); }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); margin: 10px 0; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 14px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px;
+    display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .card .sub { font-size: 13px; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { background: var(--chip); border-radius: 999px; padding: 3px 10px; font-size: 12px; color: var(--ink-2); }
+  .chip.ok::before { content: "\2713\00a0"; color: var(--good); font-weight: 700; }
+  .meter { display: grid; grid-template-columns: 120px 1fr 62px; gap: 8px; align-items: center; font-size: 13px; }
+  .meter .track { height: 10px; background: var(--r0); border-radius: 5px; overflow: hidden; }
+  .meter .fill { height: 100%; background: var(--r2); border-radius: 5px; }
+  .meter .val { text-align: right; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+  .kv { display: grid; grid-template-columns: 130px 1fr; gap: 4px 10px; font-size: 13px; }
+  .kv dt { color: var(--muted); } .kv dd { margin: 0; overflow-wrap: anywhere; }
+  code { font: 12.5px ui-monospace, Consolas, monospace; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+  .unm { color: var(--warn); font-weight: 600; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Creature &amp; Behavior Dashboard</h1>
+  <p>Every computer-controlled character in PoMiniGames, as of 2026-10-03. Switch views with the toggle.</p>
+  <div class="note"><strong>Nothing here was trained.</strong> These agents are hand-written rules or hosted models, so there are
+    no training success rates to show. Ability levels are a <strong>design rating read from the code and tuning tables</strong>,
+    not a measurement. Where a real measurement exists it is quoted and labelled.</div>
+
+  <div class="bar">
+    <div class="toggle" role="group" aria-label="View">
+      <button type="button" id="btn-exec" aria-pressed="true">Executive</button>
+      <button type="button" id="btn-tech" aria-pressed="false">Technical</button>
+    </div>
+    <span id="view-hint" class="sub" style="color:var(--muted);font-size:13px"></span>
+  </div>
+
+  <section id="exec">
+    <h2>Abilities grid</h2>
+    <p>Each row is an agent. Each column is a behavior. More filled blocks means the behavior is more developed.</p>
+    <div class="legend">
+      <span><span class="pips l3"><i></i><i></i><i></i></span> Strong</span>
+      <span><span class="pips l2"><i></i><i></i><i></i></span> Capable</span>
+      <span><span class="pips l1"><i></i><i></i><i></i></span> Basic</span>
+      <span><span class="pips"><i></i><i></i><i></i></span> None</span>
+      <span>n/a = the game has no such behavior</span>
+    </div>
+    <div class="scroll"><table id="grid"></table></div>
+
+    <h2>Scorecards</h2>
+    <p>The bar is the share of this agent's applicable behaviors that are developed (average level out of Strong).
+      Badges are abilities that exist in the code today.</p>
+    <div class="cards" id="exec-cards"></div>
+
+    <h2>Hosted-model agents</h2>
+    <p>These write text or pick tactics. They have no body and no arena, so they sit outside the grid.</p>
+    <div class="scroll"><table id="llm"></table></div>
+  </section>
+
+  <section id="tech" hidden>
+    <h2>Inspector-level settings</h2>
+    <p>Think rate, senses, controls, body, joint limits and source paths for each agent. Paths are relative to
+      <code>src/PoMiniGames.Client</code> (prefix <code>C/</code>) or <code>src/PoMiniGames.API</code> (prefix <code>A/</code>).</p>
+    <div class="cards" id="tech-cards"></div>
+  </section>
+</div>
+
+<script>
+const COLS = [
+  ["move", "Move & steer"], ["avoid", "Avoid obstacles"], ["attack", "Attack / score"],
+  ["defend", "Defend / evade"], ["plan", "Plan ahead"], ["adapt", "Adapt to the player"], ["team", "Teamwork"]
+];
+const LV = ["None", "Basic", "Capable", "Strong"];
+// Levels: 0-3, or null where the game has no such behavior. Design ratings from code, not measurements.
+const AGENTS = [
+  { name: "Four-in-a-row CPU", game: "TicTacToe", kind: "Look-ahead search",
+    a: { move: null, avoid: null, attack: 3, defend: 3, plan: 2, adapt: 3, team: null },
+    diff: "7 rungs, set by the player's rating",
+    badges: ["Takes a winning move", "Blocks a losing move", "Looks 4 moves ahead", "Follows your rating"],
+    measured: "Not measured. No strength tests exist.",
+    tech: { rate: "On its turn, after a 200 ms pause", senses: "The whole 6 x 6 board", controls: "One cell (row, column)",
+      body: "None", dof: "None", settings: "MaxDepth 4; blunder chance 0.55 down to 0.05 by rating; rating step K = 32",
+      path: "C/Games/TicTacToe/TicTacToeAI.cs" } },
+  { name: "Five-in-a-row CPU", game: "ConnectFive", kind: "Look-ahead search",
+    a: { move: null, avoid: null, attack: 3, defend: 3, plan: 2, adapt: 3, team: null },
+    diff: "7 rungs, set by the player's rating",
+    badges: ["Takes a winning move", "Blocks a losing move", "Looks up to 4 moves ahead", "Never blunders at the top rung"],
+    measured: "Not measured. No strength tests exist.",
+    tech: { rate: "On its turn, after a 300 ms pause", senses: "The whole 9 x 9 board", controls: "One column (pieces drop)",
+      body: "None", dof: "None", settings: "Depth 1 to 4 by rating; blunder chance 0.60 down to 0.00; memory table 2048 positions; declared 8 s budget is not enforced",
+      path: "C/Games/ConnectFive/ConnectFiveAI.cs, NegamaxSearch.cs" } },
+  { name: "President boxers (15)", game: "PoBrawl", kind: "Rules + dice",
+    a: { move: 2, avoid: null, attack: 3, defend: 3, plan: 1, adapt: 3, team: null },
+    diff: "15 rungs (the ladder)",
+    badges: ["Blocks on reaction", "Punishes a missed swing", "Baits and feints", "Chains combos", "Signature super move", "Spots spamming and turtling"],
+    measured: "Not measured in the repo. A live rating board exists in cloud storage; all fighters start at 1000.",
+    tech: { rate: "60 times a second; weighted choices gated by reaction time", senses: "Distance, kick range, opponent swing phase, own and opponent energy, super meter. No raycasts.",
+      controls: "move, side-step, punch, kick, block, super (no jump)",
+      body: "Kinematic sphere r 0.55; 15-joint visual skeleton; 12 hurt capsules",
+      dof: "KO ragdoll: 11 boxes, 10 cone-twist joints. Cone / twist (rad): waist 0.50/0.40, neck 0.80/0.80, shoulders 1.20/0.50, elbows 0.90/0.30, hips 1.00/0.40, knees 0.90/0.25",
+      settings: "reactionMs 560 to 95; blockP 0.16 to 0.97; punishP 0.14 to 1.00; comboP 0 to 0.90; aggro 0.72 to 1.50",
+      path: "C/wwwroot/js/pobrawl/ai.js, personalities.js, fighters.js, ragdollPhysics.js" } },
+  { name: "Swarmer", game: "PoVoxelStrike", kind: "Rules",
+    a: { move: 1, avoid: 1, attack: 1, defend: 1, plan: 0, adapt: 0, team: 0 },
+    diff: "None. Pressure rises with time.",
+    badges: ["Chases the player", "Steers round walls", "Runs from falling rubble"],
+    measured: "Not measured.",
+    tech: { rate: "Every rendered frame (no fixed tick)", senses: "Player position, falling debris within 10 m, wall voxels just ahead",
+      controls: "Walk direction, melee", body: "1.1 m cube, no physics body", dof: "None",
+      settings: "hp 40, speed 7.5, melee 4 damage every 0.7 s at 1.4 m", path: "C/wwwroot/js/povoxelstrike/enemies.js" } },
+  { name: "Brute", game: "PoVoxelStrike", kind: "Rules",
+    a: { move: 1, avoid: 2, attack: 2, defend: 1, plan: 0, adapt: 0, team: 0 },
+    diff: "None. Appears after 45 s.",
+    badges: ["Chases the player", "Smashes through walls", "Runs from falling rubble"],
+    measured: "Not measured.",
+    tech: { rate: "Every rendered frame", senses: "Same as the swarmer", controls: "Walk direction, melee, carve a wall",
+      body: "2.2 x 2.6 x 2.2 m box, no physics body", dof: "None",
+      settings: "hp 220, speed 3.2, melee 15 damage every 1.5 s; carves a 2.6 m sphere every 2.2 s when boxed in",
+      path: "C/wwwroot/js/povoxelstrike/enemies.js" } },
+  { name: "Spitter", game: "PoVoxelStrike", kind: "Rules",
+    a: { move: 2, avoid: 1, attack: 2, defend: 2, plan: 0, adapt: 0, team: 0 },
+    diff: "None. Appears after 20 s.",
+    badges: ["Keeps its distance", "Checks line of sight", "Strafes to find a shot", "Runs from falling rubble"],
+    measured: "Not measured.",
+    tech: { rate: "Every rendered frame", senses: "Player position, line of sight through structures (terrain not tested)",
+      controls: "Walk direction, spit", body: "1.7 m cone, no physics body", dof: "None",
+      settings: "hp 60, speed 4.5, holds 22 to 34 m, spits 8 damage every 3 s at speed 26",
+      path: "C/wwwroot/js/povoxelstrike/enemies.js" } },
+  { name: "Fortress wall guns (22)", game: "PoVoxelStrike", kind: "Rules",
+    a: { move: null, avoid: null, attack: 3, defend: 0, plan: 1, adapt: 0, team: 0 },
+    diff: "None",
+    badges: ["Leads a moving target", "Checks line of fire", "Dies when its wall falls"],
+    measured: "Not measured.",
+    tech: { rate: "Every rendered frame; reload 2.2 s", senses: "Player position and velocity; line of fire through terrain and structures",
+      controls: "Aim, fire", body: "Static mount and barrel", dof: "Rotation only (look-at)",
+      settings: "Range 120, bullet speed 46, damage 6, spread 0.035 rad, support check every 0.6 s",
+      path: "C/wwwroot/js/povoxelstrike/fortress.js" } },
+  { name: "Kiosk demo bot", game: "PoVoxelStrike", kind: "Rules",
+    a: { move: 1, avoid: 2, attack: 1, defend: null, plan: 0, adapt: 0, team: null },
+    diff: "None",
+    badges: ["Walks to the objective", "Blasts walls in its way", "Recovers when stuck"],
+    measured: "A code comment records one run parked for 85 s before the stuck fix.",
+    tech: { rate: "Every rendered frame", senses: "3 structure raycasts out to 14 m; distance to the chalice",
+      controls: "Walk, strafe, primary fire, blast", body: "cannon-es sphere r 0.45, mass 80, rotation locked", dof: "4 visual limb pivots",
+      settings: "Blast range 11, blast cooldown 4 s, stuck if under 1.2 m per second", path: "C/wwwroot/js/povoxelstrike/game.js" } },
+  { name: "CPU runners", game: "PoSports", kind: "Rules + dice",
+    a: { move: 3, avoid: 2, attack: null, defend: null, plan: 1, adapt: 0, team: 1 },
+    diff: "3 tiers (easy, medium, hard)",
+    badges: ["Types the stride sequence", "Jumps hurdles", "Passes the relay baton"],
+    measured: "Design target: every CPU leg takes 9.5 to 14 s. Not measured.",
+    tech: { rate: "60 times a second", senses: "Own position, airborne, sequence progress, next hurdle. No awareness of rivals.",
+      controls: "4-key stride sequence, jump", body: "No physics; position and speed on a lane; 24 fps sprite", dof: "None",
+      settings: "keysPerSecond 9.7 / 10.0 / 10.3; errorRate 0.01 / 0.008 / 0.01; jumpLookahead 1.6 / 1.8 / 2.0 m",
+      path: "C/wwwroot/js/posports/ai.js; A/Features/PoSports/PoSportsSim.cs" } },
+  { name: "Cabinet officials (4) + field (95)", game: "PoCabinet", kind: "Rules",
+    a: { move: 3, avoid: 3, attack: 2, defend: 1, plan: 2, adapt: 0, team: 0 },
+    diff: "None. No rubber-banding.",
+    badges: ["Follows the racing line", "Brakes for corners", "Picks a clear lane", "Will not turn in on a car alongside", "Drafts", "Occasionally runs wide"],
+    measured: "Test bound: each official laps in 12 to 60 s. Five recorded 100-car runs are stored (best laps 26.7 to 29.7 s on the circuits).",
+    tech: { rate: "30 times a second", senses: "Own speed and position; every car within 170 units; bend sharpness ahead",
+      controls: "steer, throttle, brake", body: "Custom 2D arcade car, capsule hull 39 x 17", dof: "None",
+      settings: "Per driver: maxSpeed 0.91 to 0.96 of the player's, corneringSkill 0.55 to 0.70, lookahead 25 to 130, wildness 0.01 to 0.12",
+      path: "C/wwwroot/js/pocabinet/physics.js; A/Features/PoCabinet/PoCabinetAiDriver.cs" } },
+  { name: "Racing bots (8)", game: "PoRacer", kind: "Rules + dice",
+    a: { move: 2, avoid: 1, attack: 1, defend: 0, plan: 2, adapt: 0, team: 0 },
+    diff: "3 tiers (easy, medium, hard)",
+    badges: ["Follows the centre line", "Slows for bends", "Reverses when stuck", "Two bots draft"],
+    measured: "Code comments: oval laps of about 27 / 21 / 16 s for easy / medium / hard; a clean human lap is 14 to 15 s.",
+    tech: { rate: "50 times a second on the server", senses: "Centre-line nodes ahead; bend sharpness over 9 to 24 segments. No awareness of other cars when steering.",
+      controls: "steer left or right, accelerate, coast, brake, reverse", body: "Custom C# car, circle r 18", dof: "None",
+      settings: "Tier pace 1.0 / 1.03 / 1.07; caution 0.58 / 0.42 / 0.20; per bot CorneringSkill 0.65 to 0.98",
+      path: "A/Features/PoRacer/PoRacerAiDriver.cs, PoRacerSim.cs" } },
+  { name: "Marble pack (100)", game: "PoMarbleRace", kind: "No brain",
+    a: { move: 0, avoid: 0, attack: null, defend: null, plan: 0, adapt: 0, team: null },
+    diff: "None",
+    badges: ["Rolls downhill", "Gets a nudge when stalled"],
+    measured: "Test bound: every map must finish at least 96 of 101 marbles and lose none.",
+    tech: { rate: "Physics at 60 steps a second", senses: "None", controls: "None. Only the player's marble is steered.",
+      body: "cannon-es sphere r 1.0, mass 0.75 to 1.25", dof: "None",
+      settings: "Gravity 72, speed cap 85, stall nudge after 5 s", path: "C/wwwroot/js/pomarblerace/marbles.js, game.js" } },
+  { name: "Rabbit / Deer / Wolf", game: "PoEcosystem", kind: "Utility scoring",
+    a: { move: 2, avoid: 2, attack: 2, defend: 3, plan: 1, adapt: 1, team: 2 },
+    diff: "None. Watch-only.",
+    badges: ["Finds food and water", "Flees predators", "Herd alarm", "Wolves hunt as a pack", "Shares a kill", "Passes personality to offspring"],
+    measured: "A code comment records wolves dying out in 11 of 32 twenty-year runs. No stored data.",
+    tech: { rate: "20 ticks a second; goals re-scored 4 times a second", senses: "Threats, prey, mates, food and water tiles within perception (12 to 35 m); fear; night",
+      controls: "One of 11 goals, then a walk or run velocity", body: "No rigid body while alive; moved over the height map",
+      dof: "Death ragdoll: 6 boxes, 5 cone-twist joints (cosmetic)",
+      settings: "5 personality traits, mutation 0.08; food memory 120 s, water 240 s; cap 400 creatures",
+      path: "C/wwwroot/js/poecosystem/sim/behavior/utility.js, sim/creatures/species.js, sim/core/config.js" } },
+  { name: "Humans and tribes", game: "PoEcosystem", kind: "Utility scoring",
+    a: { move: 2, avoid: 2, attack: 2, defend: 2, plan: 2, adapt: 1, team: 2 },
+    diff: "None. Watch-only.",
+    badges: ["Chops wood", "Builds huts", "Returns home at night", "Climbs a tech ladder", "Makes war and peace"],
+    measured: "Not measured.",
+    tech: { rate: "20 ticks a second; tribe layer once a second", senses: "As animals, plus hut, logs, trees; perception 22 m (x 1.4 with a watchtower)",
+      controls: "Goals including CHOP, BUILD, RETURN_HOME", body: "No rigid body while alive",
+      dof: "Death ragdoll: 7 boxes, 6 cone-twist joints (cosmetic)",
+      settings: "3 tribes of 6; tension above 0.45 is rivalry, above 0.75 is war",
+      path: "C/wwwroot/js/poecosystem/sim/behavior/humans.js, sim/tribe/" } },
+  { name: "Arena units (20), directed by Jev", game: "PoJevArena", kind: "Hosted decision model",
+    a: { move: 2, avoid: 2, attack: 3, defend: 3, plan: 1, adapt: 1, team: 2 },
+    diff: "None",
+    badges: ["Chooses a tactic each second", "Picks a target", "Takes cover", "Heals and protects allies", "Breaks and flees when panicked"],
+    measured: "Decision quality is not measured anywhere. Tests cover request and answer handling only.",
+    tech: { rate: "Sim 60 ticks a second; one model decision per unit per second", senses: "hp, cooldowns, stamina, under fire, allies within 4 m, up to 5 candidate targets, cover distance. No map, no history.",
+      controls: "tactical action (4 base + 1 per ability), target focus (5), panic probability", body: "Custom 2D circle sized by mass; force-based legs",
+      dof: "None", settings: "Timeout 1500 ms, no retries; batch of 8; 20000 calls per player per day; panic above 0.70 means flee",
+      path: "C/wwwroot/js/pojevarena/sim.js, scheduler.js; A/Features/PoJevArena/" } }
+];
+const LLM = [
+  ["Jev", "PoJevArena", "Picks a tactic, a target and a panic level for one unit", "typesafe/jev-1.13", "None: the unit keeps its last order"],
+  ["Digital Jester", "PoJoker", "Guesses the punchline and rates the joke", "joker key", "Neutral 5 / 5 / 5 scores"],
+  ["Quiz writer", "PoFunQuiz", "Writes multiple-choice trivia", "funquiz key", "Canned questions in dev and test"],
+  ["Couple-quiz writer and scorer", "PoCoupleQuiz", "Writes a question; scores how alike two answers are", "couplequiz keys", "Fixed questions in dev and test"],
+  ["Race radio and engineer", "PoCabinet", "One-line banter and a post-race debrief", "gpt-5-nano", "Scripted lines, always"],
+  ["Island chronicler", "PoEcosystem", "Saga, creature thoughts, treaties, lore", "ecosystem keys", "Canned text in dev and test"],
+  ["Press-conference announcer", "PoBrawl", "A post-fight line and a ring intro", "gpt-5-nano", "Scripted line, always"]
+];
+
+const el = (t, c, h) => { const e = document.createElement(t); if (c) e.className = c; if (h != null) e.innerHTML = h; return e; };
+const pips = v => v == null ? '<span class="lvl">n/a</span>'
+  : `<span class="pips l${v}" role="img" aria-label="${LV[v]}"><i></i><i></i><i></i></span><span class="lvl">${LV[v]}</span>`;
+
+// Abilities grid
+const grid = document.getElementById("grid");
+grid.innerHTML = "<thead><tr><th>Agent</th><th>Game</th>" + COLS.map(c => `<th>${c[1]}</th>`).join("") + "<th>Difficulty settings</th></tr></thead>";
+const gb = el("tbody");
+AGENTS.forEach(a => gb.appendChild(el("tr", "", `<td><strong>${a.name}</strong><span class="lvl">${a.kind}</span></td><td>${a.game}</td>`
+  + COLS.map(c => `<td class="c">${pips(a.a[c[0]])}</td>`).join("") + `<td>${a.diff}</td>`)));
+grid.appendChild(gb);
+
+// Executive cards
+const ec = document.getElementById("exec-cards");
+AGENTS.forEach(a => {
+  const vals = COLS.map(c => a.a[c[0]]).filter(v => v != null);
+  const pct = vals.length ? Math.round(100 * vals.reduce((s, v) => s + v, 0) / (3 * vals.length)) : 0;
+  const strong = COLS.filter(c => a.a[c[0]] === 3).map(c => c[1]);
+  const c = el("article", "card");
+  c.innerHTML = `<div><h3>${a.name}</h3><div class="sub">${a.game} · ${a.kind}</div></div>
+    <div class="meter" title="Average ability level across the behaviors that apply"><span>Behavior coverage</span>
+      <span class="track"><span class="fill" style="width:${pct}%"></span></span><span class="val">${pct}%</span></div>
+    <div class="kv"><dt>Task success rate</dt><dd><span class="unm">Not measured</span></dd>
+      <dt>Evidence on file</dt><dd>${a.measured}</dd>
+      <dt>Strongest at</dt><dd>${strong.length ? strong.join(", ") : "Nothing rated Strong"}</dd></div>
+    <div class="chips">${a.badges.map(b => `<span class="chip ok">${b}</span>`).join("")}</div>`;
+  ec.appendChild(c);
+});
+
+// Hosted models table
+document.getElementById("llm").innerHTML = "<thead><tr><th>Agent</th><th>Game</th><th>Job</th><th>Model setting</th><th>If the model is unavailable</th></tr></thead><tbody>"
+  + LLM.map(r => "<tr>" + r.map((x, i) => `<td>${i === 0 ? "<strong>" + x + "</strong>" : x}</td>`).join("") + "</tr>").join("") + "</tbody>";
+
+// Technical cards
+const tc = document.getElementById("tech-cards");
+AGENTS.forEach(a => {
+  const t = a.tech, c = el("article", "card");
+  c.innerHTML = `<div><h3>${a.name}</h3><div class="sub">${a.game} · ${a.kind}</div></div>
+    <dl class="kv"><dt>Update rate</dt><dd>${t.rate}</dd><dt>Senses</dt><dd>${t.senses}</dd>
+    <dt>Controls</dt><dd>${t.controls}</dd><dt>Body</dt><dd>${t.body}</dd>
+    <dt>Joints / DOF limits</dt><dd>${t.dof}</dd><dt>Key settings</dt><dd>${t.settings}</dd>
+    <dt>Source</dt><dd><code>${t.path}</code></dd></dl>`;
+  tc.appendChild(c);
+});
+
+// View toggle
+const be = document.getElementById("btn-exec"), bt = document.getElementById("btn-tech");
+const hint = document.getElementById("view-hint");
+function show(tech) {
+  document.getElementById("exec").hidden = tech; document.getElementById("tech").hidden = !tech;
+  be.setAttribute("aria-pressed", String(!tech)); bt.setAttribute("aria-pressed", String(tech));
+  hint.textContent = tech ? "Settings, joint limits, update rates and source paths." : "Abilities, badges and evidence, in plain language.";
+}
+be.onclick = () => show(false); bt.onclick = () => show(true); show(false);
+</script>
+</body>
+</html>

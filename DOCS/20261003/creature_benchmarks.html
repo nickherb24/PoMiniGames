@@ -1,0 +1,249 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PoMiniGames Agent Performance Comparison</title>
+<style>
+  /* Layout: three comparison sections (skill, smoothness, cost), each chart with its data table beneath. */
+  :root {
+    --bg: #f6f7f9; --surface: #fcfcfb; --ink: #0b0b0b; --ink-2: #52514e; --muted: #898781; --line: #e1e0d9;
+    --axis: #c3c2b7; --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --chip: #eef1f5; --accent-soft: #e3eefb;
+    --good: #0ca30c; --warn: #fab219; --crit: #d03b3b;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d0d0d; --surface: #1a1a19; --ink: #ffffff; --ink-2: #c3c2b7; --muted: #898781; --line: #2c2c2a;
+      --axis: #383835; --s1: #3987e5; --s2: #d95926; --s3: #199e70; --chip: #262624; --accent-soft: #16263a;
+      color-scheme: dark;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 28px; line-height: 1.2; margin: 0 0 6px; }
+  h2 { font-size: 21px; margin: 40px 0 4px; padding-top: 16px; border-top: 1px solid var(--line); }
+  h3 { font-size: 15px; margin: 0 0 2px; }
+  p { margin: 0 0 12px; max-width: 72ch; color: var(--ink-2); }
+  .tier { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 700; margin: 28px 0 4px; }
+  .note { background: var(--accent-soft); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; margin: 14px 0; max-width: 90ch; }
+  .charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 14px; }
+  @media (max-width: 480px) { .charts { grid-template-columns: 1fr; } }
+  figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px; min-width: 0; }
+  figure .sub { font-size: 13px; color: var(--ink-2); margin-bottom: 8px; }
+  svg { display: block; width: 100%; height: auto; overflow: visible; }
+  svg text { fill: var(--ink-2); font: 12px system-ui, sans-serif; }
+  svg .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  svg .lab { fill: var(--ink); font-weight: 600; }
+  .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 13px; color: var(--ink-2); margin-top: 6px; }
+  .legend span::before { content: ""; display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: 3px; background: var(--k); }
+  .hb { display: grid; grid-template-columns: minmax(110px, 190px) 1fr 70px; gap: 6px 10px; align-items: center; font-size: 13px; }
+  .hb .track { height: 14px; }
+  .hb .fill { height: 100%; background: var(--s1); border-radius: 0 4px 4px 0; min-width: 2px; }
+  .hb .val { font-variant-numeric: tabular-nums; color: var(--ink); }
+  .hb .where { color: var(--muted); font-size: 11px; display: block; }
+  .scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); margin-top: 12px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td.n { font-variant-numeric: tabular-nums; }
+  .st { white-space: nowrap; font-weight: 600; }
+  .st::before { content: ""; display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 6px; background: var(--k); }
+  details { margin-top: 10px; font-size: 13px; } summary { cursor: pointer; color: var(--ink-2); }
+  code { font: 12.5px ui-monospace, Consolas, monospace; background: var(--chip); padding: 1px 5px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Multi-Agent Performance Comparison</h1>
+  <p>How the computer-controlled characters in PoMiniGames compare on skill, smoothness and running cost. Snapshot 2026-10-03.</p>
+
+  <div class="tier">Tier 1 · Quick look</div>
+  <div class="note">
+    <strong>No agent here was trained, and none has been benchmarked.</strong> There are no learning curves and no profiler runs in the repo.
+    Every number on this page is either a tuning value read from the source code, or a measurement a developer wrote in a code comment.
+    Each chart says which. Hover a mark for its exact value.
+  </div>
+  <ul style="color:var(--ink-2);max-width:72ch">
+    <li><strong>Skill</strong> is set by tables. PoBrawl's top rung reacts about six times faster than its bottom rung.</li>
+    <li><strong>Smoothest movers:</strong> PoCabinet racers and PoBrawl boxers. <strong>Twitchiest:</strong> PoRacer bots and PoVoxelStrike monsters.</li>
+    <li><strong>Heaviest crowd:</strong> PoEcosystem, up to 400 creatures. <strong>Only agents that cost money per decision:</strong> the hosted models.</li>
+  </ul>
+
+  <div class="tier">Tier 2 · Core mechanics</div>
+
+  <h2>Success vs. time</h2>
+  <p>The template asks how quickly each agent learned its task. Nothing learned, so there is no time axis to plot.
+    The closest real thing is how skill changes across each agent's difficulty settings, shown here.</p>
+  <div class="charts">
+    <figure><h3>PoBrawl: reaction time by ladder rung</h3><div class="sub">Milliseconds before a boxer makes a choice. Lower is harder. Tuning values.</div>
+      <svg id="c1" role="img" aria-label="Line chart: PoBrawl reaction time falls from 560 ms at rung 1 to 95 ms at rung 15"></svg></figure>
+    <figure><h3>PoBrawl: chance to act by ladder rung</h3><div class="sub">Probability of blocking, punishing a miss, and chaining a combo. Tuning values.</div>
+      <svg id="c2" role="img" aria-label="Line chart: block, punish and combo chances all rise from rung 1 to rung 15"></svg>
+      <div class="legend"><span style="--k:var(--s1)">Block</span><span style="--k:var(--s2)">Punish</span><span style="--k:var(--s3)">Combo</span></div></figure>
+    <figure><h3>Board games: chance of a deliberate blunder</h3><div class="sub">By the player's rating band. The CPU plays a random move this often. Tuning values.</div>
+      <svg id="c3" role="img" aria-label="Step chart: blunder chance falls as rating rises, for TicTacToe and ConnectFive"></svg>
+      <div class="legend"><span style="--k:var(--s1)">TicTacToe</span><span style="--k:var(--s2)">ConnectFive</span></div></figure>
+    <figure><h3>PoRacer: oval lap time by difficulty</h3><div class="sub">Seconds, all-bot race. From a developer's code comment, not a stored result. Lower is faster.</div>
+      <div class="hb" id="c4"></div>
+      <p style="font-size:13px;margin:10px 0 0">For scale, the same comment puts a clean human lap at 14 to 15 s.</p></figure>
+  </div>
+  <details><summary>Data table</summary><div class="scroll"><table id="t1"></table></div></details>
+
+  <h2>Energy &amp; smoothness</h2>
+  <p>Which agents move naturally and which jitter. Nobody has measured this, so the rating comes from how each agent's controls are written.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Agent</th><th>How it steers</th><th>Smoothness</th><th>Where jitter comes from</th><th>Energy model</th></tr></thead>
+    <tbody>
+      <tr><td><strong>PoCabinet racers</strong></td><td>Graded steering toward a look-ahead point; graded throttle and brake</td><td><span class="st" style="--k:var(--good)">Smooth</span></td><td>A rare, repeatable "wild" moment that runs the car wide</td><td>None</td></tr>
+      <tr><td><strong>PoBrawl boxers</strong></td><td>Velocity eased toward the intent</td><td><span class="st" style="--k:var(--good)">Smooth</span></td><td>Footwork pauses are scripted, so they read as style</td><td>Yes: each attack costs 0.22; blocking recovers fastest. A gassed boxer backs off and guards.</td></tr>
+      <tr><td><strong>PoJevArena units</strong></td><td>Leg force limited by grip; one order held for a second at a time</td><td><span class="st" style="--k:var(--good)">Smooth</span></td><td>A late model answer leaves a unit on a stale order</td><td>Yes: a stamina reserve. Winded below 15%, with power cut to 40%.</td></tr>
+      <tr><td><strong>PoEcosystem creatures</strong></td><td>Walk or run velocity toward a goal</td><td><span class="st" style="--k:var(--good)">Smooth</span></td><td>Goal switching, damped by a small "stickiness" margin</td><td>Yes: hunger and thirst drive what they do</td></tr>
+      <tr><td><strong>PoMarbleRace marbles</strong></td><td>Not steered; rolling physics</td><td><span class="st" style="--k:var(--good)">Natural</span></td><td>Pile-ups at junctions, cleared by a stall nudge</td><td>None</td></tr>
+      <tr><td><strong>PoSports runners</strong></td><td>A speed kick per finished key sequence</td><td><span class="st" style="--k:var(--warn)">Pulsed</span></td><td>By design: it copies how a human mashes keys</td><td>None</td></tr>
+      <tr><td><strong>PoRacer bots</strong></td><td>Full left or full right; full throttle, coast or brake</td><td><span class="st" style="--k:var(--crit)">Twitchy</span></td><td>On-or-off steering inside a small dead zone, plus a random wobble</td><td>None</td></tr>
+      <tr><td><strong>PoVoxelStrike monsters</strong></td><td>Position moved directly along one of seven fixed headings</td><td><span class="st" style="--k:var(--crit)">Jerky</span></td><td>Heading snaps in big steps; speed depends on frame rate</td><td>None</td></tr>
+      <tr><td><strong>PoVoxelStrike wall guns</strong></td><td>Barrel snaps to aim</td><td><span class="st" style="--k:var(--warn)">Snappy</span></td><td>No turn speed limit</td><td>None</td></tr>
+    </tbody></table></div>
+  <p style="margin-top:10px">No agent "uses excessive force" in the training sense, because only PoJevArena units move by force at all, and theirs is capped by grip and stamina.</p>
+
+  <h2>Game performance</h2>
+  <p>CPU and GPU cost per agent has not been profiled. These are the numbers that do exist: how often each agent thinks, how many run at once, and the handful of timings developers recorded in comments.</p>
+  <div class="charts">
+    <figure><h3>How often each agent thinks</h3><div class="sub">Decisions per second, per agent. Fixed rates from the engine constants.</div>
+      <div class="hb" id="c5"></div>
+      <p style="font-size:13px;margin:10px 0 0">PoVoxelStrike monsters and guns think once per drawn frame, so their rate follows the frame rate and is not on this chart.</p></figure>
+    <figure><h3>Most agents alive at once</h3><div class="sub">Caps set in the engine constants.</div>
+      <div class="hb" id="c6"></div></figure>
+  </div>
+  <details><summary>Data table</summary><div class="scroll"><table id="t2"></table></div></details>
+
+  <h3 style="margin-top:22px">Timings recorded in code comments</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Game</th><th>What was measured</th><th>Result</th><th>Source</th></tr></thead>
+    <tbody>
+      <tr><td>PoMarbleRace</td><td>One physics step with 101 marbles at the start line</td><td class="n">about 16.5 ms</td><td><code>pomarblerace/physics.js</code></td></tr>
+      <tr><td>PoMarbleRace</td><td>Physics step vs. track collider chunk size (24 / 48 / 64 / 80 / 160)</td><td class="n">66 / 52 / 39 / 47 / 104 ms</td><td><code>pomarblerace/track-glb.js</code></td></tr>
+      <tr><td>PoVoxelStrike</td><td>Cost of one moving rubble body per physics step</td><td class="n">about 0.15 ms (180 bodies took 28 ms)</td><td><code>povoxelstrike/quality.js</code></td></tr>
+      <tr><td>PoVoxelStrike</td><td>Carving a 600 thousand cell structure / a 1.4 million cell one</td><td class="n">about 24 ms / 127 ms</td><td><code>povoxelstrike/world.js</code></td></tr>
+      <tr><td>PoCabinet</td><td>Drawing all 100 cars in full detail</td><td class="n">29 fps drops to 3</td><td><code>pocabinet/cars.js</code></td></tr>
+      <tr><td>PoRacer</td><td>A 20 ms server timer on Windows actually fires every</td><td class="n">about 31 ms</td><td><code>PoRacerRaceService.cs</code></td></tr>
+      <tr><td>PoEcosystem</td><td>Generating the island</td><td class="n">about 28 ms</td><td><code>poecosystem/sim/world.js</code></td></tr>
+    </tbody></table></div>
+
+  <h3 style="margin-top:22px">Target update rates and frame-rate protection</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Game</th><th>Simulation rate</th><th>Where the agents run</th><th>What it does when frames drop</th></tr></thead>
+    <tbody>
+      <tr><td>PoBrawl</td><td class="n">60 per second (physics 120)</td><td>Browser</td><td>Three quality tiers</td></tr>
+      <tr><td>PoVoxelStrike</td><td class="n">Physics 60; agents per frame</td><td>Browser</td><td>Four quality tiers; resolution scales down to 60%; rubble capped at 0 / 48 / 90 / 140 bodies</td></tr>
+      <tr><td>PoSports</td><td class="n">60 per second</td><td>Browser (server for online)</td><td>Nothing needed</td></tr>
+      <tr><td>PoCabinet</td><td class="n">30 per second</td><td>Browser (server for online)</td><td>Steps down a tier after about 3 s under 45 fps; only 10 cars drawn in full</td></tr>
+      <tr><td>PoRacer</td><td class="n">50 per second, 20 snapshots sent</td><td>Server</td><td>Client smooths between snapshots</td></tr>
+      <tr><td>PoMarbleRace</td><td class="n">60 per second</td><td>Browser</td><td>100 rivals drawn in one draw call</td></tr>
+      <tr><td>PoEcosystem</td><td class="n">20 per second</td><td>Browser, in a background worker</td><td>Cap drops to 250 creatures on low-end devices; resolution drops under 45 fps</td></tr>
+      <tr><td>PoJevArena</td><td class="n">60 per second</td><td>Browser; decisions from a hosted model</td><td>Nothing needed with 20 units</td></tr>
+    </tbody></table></div>
+
+  <h3 style="margin-top:22px">Hosted-model cost</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>Agent</th><th>Calls</th><th>Limit per player per day</th><th>Longest wait</th><th>Cost note</th></tr></thead>
+    <tbody>
+      <tr><td>Jev (PoJevArena)</td><td>One per unit per second; about 3,600 in a 3-minute 10 v 10</td><td class="n">20,000 calls</td><td class="n">1.5 s</td><td>A config comment estimates about $0.00002 per decision, so roughly $0.07 a match</td></tr>
+      <tr><td>Chat-model agents (jokes, quizzes, banter, chronicle)</td><td>One per request; most answers are cached for 6 to 24 hours</td><td class="n">250,000 tokens</td><td class="n">20 s</td><td>At most 2 calls run at once across the whole site</td></tr>
+    </tbody></table></div>
+
+  <div class="tier">Tier 3 · Setup guide</div>
+  <h2>How to get real benchmark numbers</h2>
+  <div class="scroll"><table>
+    <thead><tr><th>To measure</th><th>How</th></tr></thead>
+    <tbody>
+      <tr><td>Frame cost of an agent crowd</td><td>Open the game in demo mode with browser dev tools, Performance tab, record 10 s. Compare with the crowd cap halved.</td></tr>
+      <tr><td>Frames per second</td><td>The client has an <code>FpsCounter</code> component; several games also accept a <code>?debug</code> flag.</td></tr>
+      <tr><td>Server tick cost (PoRacer, PoCabinet online)</td><td>Time the sim step in the race service and log it; both run on timers in the API.</td></tr>
+      <tr><td>Win rates</td><td>See "Getting real numbers" in <code>training_metrics_guide.md</code>.</td></tr>
+      <tr><td>Hosted-model spend</td><td><code>GET /api/health/ai</code> reports usage; the daily ledgers are the <code>AiTokenLedger</code> and <code>PoJevArenaCallLedger</code> tables.</td></tr>
+    </tbody></table></div>
+  <p style="margin-top:12px">Run headless measurements on mains power with one browser at a time. Battery saving and parallel browsers both produce false slow readings.</p>
+</div>
+
+<script>
+const NS = "http://www.w3.org/2000/svg";
+function S(svg, tag, attrs, text) {
+  const e = document.createElementNS(NS, tag);
+  for (const k in attrs) e.setAttribute(k, attrs[k]);
+  if (text != null) e.textContent = text;
+  svg.appendChild(e); return e;
+}
+// Line chart. series: [{name, color, values, step}], x labels, y max, y ticks, unit.
+function lineChart(id, xs, series, yMax, yTicks, fmt, xTitle) {
+  const W = 520, H = 250, L = 46, R = 66, T = 12, B = 40;
+  const s = document.getElementById(id); s.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const n = xs.length, px = i => L + (W - L - R) * (n === 1 ? .5 : i / (n - 1)), py = v => T + (H - T - B) * (1 - v / yMax);
+  yTicks.forEach(t => {
+    S(s, "line", { x1: L, x2: W - R, y1: py(t), y2: py(t), stroke: "var(--line)", "stroke-width": 1 });
+    S(s, "text", { x: L - 8, y: py(t) + 4, "text-anchor": "end", class: "tick" }, fmt(t));
+  });
+  S(s, "line", { x1: L, x2: W - R, y1: py(0), y2: py(0), stroke: "var(--axis)", "stroke-width": 1 });
+  xs.forEach((x, i) => { if (n <= 8 || i % 2 === 0) S(s, "text", { x: px(i), y: H - B + 16, "text-anchor": "middle", class: "tick" }, x); });
+  S(s, "text", { x: (L + W - R) / 2, y: H - 4, "text-anchor": "middle", class: "tick" }, xTitle);
+  series.forEach(se => {
+    let d = "";
+    se.values.forEach((v, i) => {
+      if (se.step && i > 0) d += ` L${px(i)},${py(se.values[i - 1])}`;
+      d += `${i ? " L" : "M"}${px(i)},${py(v)}`;
+    });
+    S(s, "path", { d, fill: "none", stroke: se.color, "stroke-width": 2, "stroke-linejoin": "round" });
+    se.values.forEach((v, i) => {
+      const c = S(s, "circle", { cx: px(i), cy: py(v), r: 4, fill: se.color, stroke: "var(--surface)", "stroke-width": 2 });
+      S(c, "title", {}, `${se.name}, ${xTitle.toLowerCase()} ${xs[i]}: ${fmt(v)}`);
+    });
+    const last = se.values[n - 1];
+    S(s, "text", { x: px(n - 1) + 9, y: py(last) + 4 + (se.dy || 0), class: "lab" }, fmt(last));
+  });
+}
+function hbars(id, rows, max, fmt) {
+  const h = document.getElementById(id);
+  rows.forEach(r => {
+    const a = document.createElement("span"); a.innerHTML = r[0] + (r[2] ? `<span class="where">${r[2]}</span>` : "");
+    const t = document.createElement("span"); t.className = "track"; t.title = `${r[0]}: ${fmt(r[1])}`;
+    const f = document.createElement("span"); f.className = "fill"; f.style.display = "block"; f.style.width = (100 * r[1] / max) + "%"; t.appendChild(f);
+    const v = document.createElement("span"); v.className = "val"; v.textContent = fmt(r[1]);
+    h.append(a, t, v);
+  });
+}
+const rungs = Array.from({ length: 15 }, (_, i) => i + 1);
+const react = [560, 490, 428, 375, 328, 288, 252, 220, 192, 166, 143, 126, 113, 103, 95];
+const block = [.16, .26, .36, .46, .56, .65, .72, .78, .83, .87, .90, .92, .94, .96, .97];
+const punish = [.14, .24, .35, .46, .56, .65, .73, .79, .84, .88, .91, .94, .96, .98, 1.00];
+const combo = [0, .06, .13, .20, .28, .36, .44, .52, .58, .64, .70, .75, .80, .85, .90];
+const bands = ["<900", "<1050", "<1200", "<1350", "<1500", "<1700", "1700+"];
+const ttt = [.55, .35, .20, .14, .10, .07, .05], c5 = [.60, .38, .24, .12, .06, .03, 0];
+const pct = v => Math.round(v * 100) + "%";
+
+lineChart("c1", rungs, [{ name: "Reaction time", color: "var(--s1)", values: react }], 600, [0, 200, 400, 600], v => v + " ms", "Rung");
+lineChart("c2", rungs, [
+  { name: "Block", color: "var(--s1)", values: block, dy: 6 },
+  { name: "Punish", color: "var(--s2)", values: punish, dy: -9 },
+  { name: "Combo", color: "var(--s3)", values: combo, dy: 16 }], 1, [0, .25, .5, .75, 1], pct, "Rung");
+lineChart("c3", bands, [
+  { name: "TicTacToe", color: "var(--s1)", values: ttt, dy: -4 },
+  { name: "ConnectFive", color: "var(--s2)", values: c5, dy: 8 }], .6, [0, .2, .4, .6], pct, "Player rating");
+hbars("c4", [["Easy", 27], ["Medium", 21], ["Hard", 16]], 30, v => v + " s");
+hbars("c5", [["PoBrawl boxer", 60, "browser"], ["PoSports runner", 60, "browser"], ["PoRacer bot", 50, "server"],
+  ["PoCabinet racer", 30, "browser"], ["PoEcosystem creature", 20, "goals re-scored 4 times a second"], ["Jev (PoJevArena)", 1, "hosted model"]], 60, v => v + " / s");
+hbars("c6", [["PoEcosystem creatures", 400], ["PoMarbleRace marbles", 100, "no brain"], ["PoCabinet rivals", 99], ["PoVoxelStrike monsters", 40, "plus 22 wall guns"],
+  ["PoJevArena units", 20], ["PoRacer bots", 8, "all-bot demo; 7 with a player"], ["PoSports runners", 4, "demo; 3 with a player"], ["PoBrawl boxers", 2, "demo; 1 with a player"]], 400, v => String(v));
+
+document.getElementById("t1").innerHTML = "<thead><tr><th>PoBrawl rung</th><th>Reaction (ms)</th><th>Block</th><th>Punish</th><th>Combo</th></tr></thead><tbody>"
+  + rungs.map((r, i) => `<tr><td class="n">${r}</td><td class="n">${react[i]}</td><td class="n">${pct(block[i])}</td><td class="n">${pct(punish[i])}</td><td class="n">${pct(combo[i])}</td></tr>`).join("")
+  + "</tbody><thead><tr><th>Rating band</th><th>TicTacToe blunder</th><th>ConnectFive blunder</th><th>ConnectFive depth</th><th></th></tr></thead><tbody>"
+  + bands.map((b, i) => `<tr><td class="n">${b}</td><td class="n">${pct(ttt[i])}</td><td class="n">${pct(c5[i])}</td><td class="n">${[1, 1, 2, 2, 3, 4, 4][i]}</td><td></td></tr>`).join("") + "</tbody>";
+document.getElementById("t2").innerHTML = "<thead><tr><th>Agent</th><th>Decisions per second</th><th>Most alive at once</th></tr></thead><tbody>"
+  + [["PoBrawl boxer", 60, 2], ["PoSports runner", 60, 4], ["PoRacer bot", 50, 8], ["PoCabinet racer", 30, 99], ["PoEcosystem creature", 20, 400],
+     ["PoJevArena unit (Jev)", 1, 20], ["PoVoxelStrike monster", "per frame", 40], ["PoVoxelStrike wall gun", "per frame", 22], ["PoMarbleRace marble", "none", 100]]
+    .map(r => `<tr><td>${r[0]}</td><td class="n">${r[1]}</td><td class="n">${r[2]}</td></tr>`).join("") + "</tbody>";
+</script>
+</body>
+</html>
