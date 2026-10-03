@@ -1361,8 +1361,13 @@ body {
 /* ── Dialog entry ────────────────────────────────────────────────────────────
    Every native <dialog> lands on the spring instead of snapping in. Uses the
    individual scale/translate properties so it composes with a dialog that
-   positions itself with `transform`. */
+   positions itself with `transform`.
+
+   No opacity in the keyframe, on purpose. An animation sits on its first keyframe
+   until the browser has painted a frame with it, and on a slow frame (measured:
+   750 ms under software rendering) that left the whole dialog invisible behind its
+   own backdrop. Scale and position can wait for a frame; visibility cannot. */
 dialog[open] { animation: po-dialog-in var(--dur-spring) var(--ease-spring); }
 @keyframes po-dialog-in {
-  from { opacity: 0; scale: 0.96; translate: 0 0.6rem; }
+  from { scale: 0.96; translate: 0 0.6rem; }
 }

@@ -539,18 +539,7 @@
 
     // Rebuild the ELO/CPU/W/L/D/Rate tiles from the adaptive rating so the stats
     // drawer and end-of-game panel reflect the result that was just recorded.
-    private void UpdateStats()
-    {
-        _statItems = new()
-        {
-            new StatItem { Label = "ELO",  Value = _rating.Elo.ToString() },
-            new StatItem { Label = "CPU",  Value = _cpuElo.ToString() },
-            new StatItem { Label = "W",    Value = _rating.Wins.ToString() },
-            new StatItem { Label = "L",    Value = _rating.Losses.ToString() },
-            new StatItem { Label = "D",    Value = _rating.Draws.ToString() },
-            new StatItem { Label = "Rate", Value = $"{_rating.WinRate * 100:F0}%" },
-        };
-    }
+    private void UpdateStats() => _statItems = GameStatsPanel.Build(_rating, _cpuElo);
 
     // Apply the finished game's result to the adaptive rating, remember the ELO
     // delta for the game-over panel, and refresh the stat tiles.

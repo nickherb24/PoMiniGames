@@ -180,7 +180,7 @@
             @if (_phase == Phase.Paused)
             {
                 <div class="pvs-pause-backdrop">
-                    <dialog open class="pvs-pause" aria-label="Game paused">
+                    <dialog open class="pvs-pause" aria-modal="true" aria-label="Game paused">
                         <h2>Paused</h2>
                         <div class="pvs-pause-stats">
                             <div><span>@_score.ToString("N0")</span><small>score</small></div>

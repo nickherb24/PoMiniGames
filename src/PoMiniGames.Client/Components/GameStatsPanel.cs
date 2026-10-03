@@ -44,4 +44,18 @@ public static class GameStatsPanel
 
         return items;
     }
+
+    /// <summary>
+    /// The panel for the two adaptive-ELO board games (Tic-Tac-Toe, Connect Five): the
+    /// player's rating beside the CPU it is currently matched against, then the record.
+    /// </summary>
+    public static List<StatItem> Build(AdaptiveRating rating, int cpuElo) =>
+    [
+        new StatItem { Label = "ELO", Value = rating.Elo.ToString() },
+        new StatItem { Label = "CPU", Value = cpuElo.ToString() },
+        new StatItem { Label = "W", Value = rating.Wins.ToString() },
+        new StatItem { Label = "L", Value = rating.Losses.ToString() },
+        new StatItem { Label = "D", Value = rating.Draws.ToString() },
+        new StatItem { Label = "Rate", Value = $"{rating.WinRate * 100:F0}%" },
+    ];
 }
