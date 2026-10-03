@@ -191,16 +191,16 @@ class CinematicsMethods {
     const sep = Math.max(axis.length(), 0.5);
     if (axis.lengthSq() > 1e-6) axis.normalize(); else axis.set(1, 0, 0);
 
+    // Audience side (+Z) only. _snapCameraToFraming enforces the same rule and the
+    // spring boom has to match it: choosing perp from camera.position each frame flips
+    // sign as the camera crosses mid, sending the view through 180° on every step.
     const perp = new THREE.Vector3(axis.z, 0, -axis.x);
-    if (perp.dot(this.camera.position.clone().sub(mid)) < 0) perp.negate();
+    if (perp.z < 0) perp.negate();
 
     let distance = this._framingDistance(sep);
     let height = 1.55 + sep * 0.06;
     let lookAt = mid.clone();
     lookAt.y += 1 * this._framingHeightBias();
-
-    // Keep the camera on the audience (+Z) side even when a ragdoll drags mid past the edge.
-    if (perp.z < 0) perp.negate();
 
     if (this.cameraMode === 'ko') {
       this._camVel.set(0, 0, 0); // hand off cleanly from the spring boom
