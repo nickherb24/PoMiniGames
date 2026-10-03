@@ -657,6 +657,8 @@ class SceneHandle {
         this.post?.dispose();
         this.post = null;
         this.renderer.dispose();
+        // dispose() does not hand the context back; see pobrawl/game.js dispose().
+        try { this.renderer.forceContextLoss?.(); } catch { /* context already gone */ }
     }
 }
 

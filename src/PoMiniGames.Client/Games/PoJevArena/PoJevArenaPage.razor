@@ -175,7 +175,7 @@
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">⚔️</span> Jev Arena</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoJevArena);
 
     // A <section>, not a <div>: the modal's small-print rule is written for div summaries.
     // The button is the shared one, because the modal sits outside .jev-root's palette.

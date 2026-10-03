@@ -57,6 +57,8 @@
         document.documentElement.setAttribute('data-gfx', tier);
         document.documentElement.toggleAttribute('data-reduce-flashing', _reduceFlashing);
         for (const cb of _listeners) { try { cb(_tier); } catch { /* listener bug must not break the rest */ } }
+        // The adaptive frame-rate loop works under this tier, never over it.
+        try { window.PoVisualRuntime?.syncWithQuality?.(); } catch { /* not loaded yet: it syncs itself on load */ }
     }
 
     function resolve() {
@@ -102,7 +104,9 @@
             frames++;
             if (now - startedAt >= WATCHDOG_MS) {
                 const fps = frames / ((now - startedAt) / 1000);
-                if (fps < WATCHDOG_FPS) { _tier = 'medium'; apply(_tier); }
+                // Re-check the tier: it may have changed during the window (a choice in
+                // Settings, the battery cap), and "demote to medium" must never raise a low.
+                if (fps < WATCHDOG_FPS && _tier === 'high' && _source === 'computed') { _tier = 'medium'; apply(_tier); }
                 return; // watchdog done either way
             }
             _watchdog = requestAnimationFrame(loop);
@@ -122,7 +126,7 @@
                 if (t) localStorage.setItem(STORE_TIER, clampTier(t) || '');
                 else localStorage.removeItem(STORE_TIER);
             } catch { /* private mode: session-only */ }
-            if (clampTier(t)) apply(clampTier(t));
+            if (clampTier(t)) { _source = 'storage'; apply(clampTier(t)); }
             else resolve();
         },
         setReduceFlashing: function (on) {

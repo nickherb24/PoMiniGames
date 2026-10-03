@@ -72,7 +72,9 @@
 
         @if (Options != null)
         {
-            <div class="gps-intro-options">@Options</div>
+            @* Keydowns stop here for the same reason as the mode switch above: Space
+               on a checkbox in the options must tick it, not start the game. *@
+            <div class="gps-intro-options" @onkeydown:stopPropagation="true">@Options</div>
         }
 
         <div class="gps-intro-actions">
@@ -112,7 +114,7 @@
                            localStorage, and `?intro=1` on any game URL forces the card
                            back AND hides this box — the controls copy stays one query
                            parameter away. *@
-                        <label class="gps-intro-skip">
+                        <label class="gps-intro-skip" @onkeydown:stopPropagation="true">
                             <input type="checkbox" checked="@_rememberSkip" @onchange="RememberSkipChanged" />
                             Don't show this again
                         </label>

@@ -71,6 +71,22 @@ public sealed record CatalogEntry(
 /// </remarks>
 public static class GameCatalog
 {
+    /// <summary>
+    /// The icon-and-name heading a game page shows in its shell and on its intro card.
+    /// The icon is hidden from screen readers so the name is not read after "boxing glove".
+    /// </summary>
+    public static Microsoft.AspNetCore.Components.RenderFragment TitleFor(GameKey key) => builder =>
+    {
+        var game = All.First(g => g.Key == key);
+        builder.OpenElement(0, "span");
+        builder.OpenElement(1, "span");
+        builder.AddAttribute(2, "aria-hidden", "true");
+        builder.AddContent(3, game.Icon);
+        builder.CloseElement();
+        builder.AddContent(4, " " + game.Title);
+        builder.CloseElement();
+    };
+
     public static readonly IReadOnlyList<CatalogGame> All =
     [
         new(GameKeys.ConnectFive, "Connect Five", "🔴",

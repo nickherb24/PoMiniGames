@@ -222,6 +222,9 @@ function applyGain() {
     const t = _ctx.currentTime;
     _nodes.masterGain.gain.cancelScheduledValues(t);
     _nodes.masterGain.gain.setTargetAtTime(targetGain(), t, 0.02);
+    // For the two engines that keep their own AudioContext for world-space audio
+    // (pocabinet, poecosystem) and so cannot sit under this gain node.
+    try { window.dispatchEvent(new Event('po-audio-change')); } catch { /* no window */ }
 }
 
 /**

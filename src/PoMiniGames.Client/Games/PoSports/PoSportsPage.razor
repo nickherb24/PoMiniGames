@@ -307,7 +307,7 @@
         _ => Array.Find(Events, e => e.Id == _event)?.Hint ?? "",
     };
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏃</span> Sports</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoSports);
 
     /// <summary>The keys the solo/online player actually has bound, as their on-screen labels.</summary>
     private PoSportsHowTo.Keys MyKeys(string who) =>

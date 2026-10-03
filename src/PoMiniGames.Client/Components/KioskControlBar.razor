@@ -2,7 +2,7 @@
 @using PoMiniGamesClient.Services
 @inject KioskCoordinator Kiosk
 @inject UiFeedbackService Feedback
-@inject IJSRuntime JS
+@inject SettingsService Settings
 @implements IDisposable
 
 @* ─────────────────────────────────────────────────────────────────────────
@@ -56,13 +56,11 @@
                 @onclick="SkipAsync">⏭</button>
 
         @* Audio mute toggle. Persistent via localStorage so a 5-minute museum loop
-           at full volume doesn't become a problem on the second run. Surfaces a
-           single global "MuteAudio" / "UnmuteAudio" event the JS audioBus picks
-           up — that is the canonical channel for ALL audio mute in the app. *@
+           at full volume doesn't become a problem on the second run. *@
         <button type="button" class="kiosk-bar-btn kiosk-bar-btn--mute"
-                aria-label="@(_muted ? "Unmute audio" : "Mute audio")"
-                title="@(_muted ? "Unmute" : "Mute")"
-                @onclick="ToggleMuteAsync">@(_muted ? "🔇" : "🔊")</button>
+                aria-label="@(Settings.Muted ? "Unmute audio" : "Mute audio")"
+                title="@(Settings.Muted ? "Unmute" : "Mute")"
+                @onclick="ToggleMuteAsync">@(Settings.Muted ? "🔇" : "🔊")</button>
 
         <button type="button" class="kiosk-bar-btn kiosk-bar-btn--exit"
                 aria-label="Stop watching demos and return home" title="Exit"
@@ -80,6 +78,7 @@
         // calling StateHasChanged directly from the tick would throw.
         _onChanged = () => InvokeAsync(StateHasChanged);
         Kiosk.Changed += _onChanged;
+        Settings.Changed += _onChanged;
     }
 
     private async Task TogglePauseAsync()
@@ -106,49 +105,14 @@
         Kiosk.PreviousDemo();
     }
 
-    // ── Audio mute ────────────────────────────────────────────────────────
-    // The kiosk bar owns the mute button because audio is part of the watch
-    // experience, but the underlying preference is global. We use the same
-    // localStorage key the rest of the app reads ("pomini_muted") and surface
-    // a one-off CustomEvent the JS audioBus subscribes to so the master gain
-    // drops instantly. The setting persists across page navigations — closing
-    // a kiosk loop and reopening it does not unmute.
-    private const string MuteKey = "pomini_muted";
-    private bool _muted;
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if (!firstRender) return;
-        try
-        {
-            var stored = await JS.InvokeAsync<string?>("localStorage.getItem", MuteKey);
-            _muted = !string.IsNullOrEmpty(stored) && stored.Contains('1');
-            StateHasChanged();
-        }
-        catch { /* private mode / blocked — default is unmuted */ }
-    }
-
-    private async Task ToggleMuteAsync()
-    {
-        _muted = !_muted;
-        try
-        {
-            await JS.InvokeVoidAsync("localStorage.setItem", MuteKey, _muted ? "1" : "0");
-        }
-        catch { /* best-effort persistence */ }
-        try
-        {
-            // Fire a CustomEvent the JS audioBus listens to. Using a DOM event
-            // (instead of JS interop into the bus directly) keeps the C# side
-            // free of references to specific JS module paths.
-            await JS.InvokeVoidAsync("eval",
-                $"document.dispatchEvent(new CustomEvent('po-audio-mute', {{ detail: {{ muted: {(_muted ? "true" : "false")} }} }}))");
-        }
-        catch { /* fire-and-forget; the storage write above is the source of truth */ }
-    }
+    // The mute button is a second door onto the one global sound setting, so it goes
+    // through SettingsService like the settings sheet does and the two never disagree.
+    private Task ToggleMuteAsync() => Settings.SetMutedAsync(!Settings.Muted);
 
     public void Dispose()
     {
-        if (_onChanged is not null) Kiosk.Changed -= _onChanged;
+        if (_onChanged is null) return;
+        Kiosk.Changed -= _onChanged;
+        Settings.Changed -= _onChanged;
     }
 }

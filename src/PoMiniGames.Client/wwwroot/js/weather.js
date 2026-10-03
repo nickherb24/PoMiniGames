@@ -115,9 +115,9 @@
             const gain = ctx.createGain();
             gain.gain.value = 0;
             src.connect(filter).connect(gain);
-            // Land on the app's ambient bus so the master chain (mute/reverb)
-            // governs it like every other voice.
-            const dest = await bus.busSync('ambient');
+            // Land on the app's sfx bus so the master chain (mute/reverb)
+            // governs it like every other voice. There is no 'ambient' bus.
+            const dest = await bus.busSync('sfx');
             if (dest) gain.connect(dest); else gain.connect(ctx.destination);
             src.start();
             gain.gain.linearRampToValueAtTime(type === 'rain' ? 0.05 : 0.035, ctx.currentTime + 2.5);

@@ -102,13 +102,13 @@
                     @* "Ready ✓" is a ready that cannot be taken back (Couple Quiz starts the
                        moment everyone is in): the button is disabled, so it must not read
                        as the "Not Ready" action it cannot perform. *@
-                    <button type="button" class="app-btn app-btn--primary" disabled="@(!CanReady)" @onclick="ReadyAsync">
+                    <button type="button" class="app-btn app-btn--primary" disabled="@(!CanReady || _busy)" @onclick="ReadyAsync">
                         @(MyReady ? (CanReady ? "Not Ready" : "Ready ✓") : "Ready!")
                     </button>
                 }
                 @if (ShowStart && IsHost)
                 {
-                    <button type="button" class="app-btn app-btn--primary" disabled="@(!EffectiveCanStart)" @onclick="StartAsync">@StartLabel</button>
+                    <button type="button" class="app-btn app-btn--primary" disabled="@(!EffectiveCanStart || _busy)" @onclick="StartAsync">@StartLabel</button>
                 }
                 <button type="button" class="app-btn app-btn--secondary" @onclick="OnLeave">Leave</button>
                 <InviteLink />
@@ -235,16 +235,27 @@
         _arrived.Clear();
     }
 
-    private async Task ReadyAsync()
-    {
-        await Feedback.CueAsync("ui", "toggle");
-        await OnReady.InvokeAsync();
-    }
+    // One hub call at a time. Every lobby passes its hub call straight through, so
+    // without this a double tap on Ready toggles it back and Start can fire twice.
+    private bool _busy;
 
-    private async Task StartAsync()
+    private Task ReadyAsync() => RunOnceAsync("toggle", OnReady);
+
+    private Task StartAsync() => RunOnceAsync("confirm", OnStart);
+
+    private async Task RunOnceAsync(string cue, EventCallback action)
     {
-        await Feedback.CueAsync("ui", "confirm");
-        await OnStart.InvokeAsync();
+        if (_busy) return;
+        _busy = true;
+        try
+        {
+            await Feedback.CueAsync("ui", cue);
+            await action.InvokeAsync();
+        }
+        finally
+        {
+            _busy = false;
+        }
     }
 
     public async ValueTask DisposeAsync()

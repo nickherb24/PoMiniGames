@@ -85,7 +85,7 @@
 
     // Multiplayer-only route, so the title carries the mode like every other lobby
     // title rather than reading as the game's whole name.
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCoupleQuiz);
 
     private RenderFragment HowToPlayContent => @<div>
         <ul>

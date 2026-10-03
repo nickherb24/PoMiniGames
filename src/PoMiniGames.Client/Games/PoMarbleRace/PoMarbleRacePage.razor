@@ -268,7 +268,7 @@
         : _online && index == _guestIndex ? (IsOnlineGuest ? "You" : _opponentName)
         : $"Marble {index + 1}";
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔮</span> Marble Race</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoMarbleRace);
 
     private string IntroObjective => _demo
         ? "101 CPU marbles, one track. Top 10 scores — watch the pack work it out."

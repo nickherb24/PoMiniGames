@@ -90,7 +90,7 @@ else
         await ConnectAsync();
     }
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
     private RenderFragment HowToPlayContent => @<div>
         <ul>
             <li>Pick a fighter — your opponent does too — then both mark Ready</li>

@@ -307,10 +307,19 @@ export function init() {
     }
 }
 
+// This engine keeps its own AudioContext (world-space panners and a listener on the
+// car), so it is not under the app's master gain and follows the app-wide volume and
+// mute by asking the shared bus, on top of the game's own volume setting.
 function applyMasterGain() {
     if (!master) return;
-    const target = (muted || suspended) ? 0 : volume;
+    const app = window.PoAudioBus;
+    const appMuted = app?.isMuted?.() === true;
+    const appVolume = app?.getVolume?.() ?? 1;
+    const target = (muted || suspended || appMuted) ? 0 : volume * appVolume;
     master.gain.setTargetAtTime(target, ctx.currentTime, 0.05);
+}
+if (typeof window !== 'undefined') {
+    window.addEventListener('po-audio-change', () => { if (ctx) applyMasterGain(); });
 }
 
 /** Merge persisted audio prefs (called from settings apply). */

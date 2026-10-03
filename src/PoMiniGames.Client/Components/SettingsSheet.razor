@@ -50,6 +50,25 @@
                     }
                 </div>
             </div>
+
+            <div class="prefs-row">
+                <div class="prefs-label">
+                    <span class="prefs-name">Graphics</span>
+                    <span class="prefs-hint">Auto picks for your device. Lower is smoother on a slow one.</span>
+                </div>
+                <div class="app-seg" role="radiogroup" aria-label="Graphics quality">
+                    @foreach (var tier in SettingsService.GraphicsTiers)
+                    {
+                        <button type="button"
+                                role="radio"
+                                class="app-seg__btn"
+                                aria-checked="@Aria(Settings.Graphics == tier)"
+                                @onclick="() => SetGraphics(tier)">
+                            @GraphicsLabel(tier)
+                        </button>
+                    }
+                </div>
+            </div>
         </fieldset>
 
         <fieldset class="prefs-group">
@@ -240,6 +259,21 @@
     {
         if (Settings.Theme == mode) return;
         await Settings.SetThemeAsync(mode);
+        await Feedback.ClickAsync();
+    }
+
+    private static string GraphicsLabel(string tier) => tier switch
+    {
+        "low" => "Low",
+        "medium" => "Med",
+        "high" => "High",
+        _ => "Auto",
+    };
+
+    private async Task SetGraphics(string tier)
+    {
+        if (Settings.Graphics == tier) return;
+        await Settings.SetGraphicsAsync(tier);
         await Feedback.ClickAsync();
     }
 

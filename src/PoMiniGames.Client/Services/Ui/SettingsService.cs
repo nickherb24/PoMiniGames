@@ -52,6 +52,11 @@ public sealed class SettingsService : IAsyncDisposable
     private const string HapticsKey = "pomini_haptics";
     private const string ReducedMotionKey = "pomini_reducedmotion";
     private const string ColorSafeKey = "pomini_colorsafe";
+    // Owned by wwwroot/js/qualityTiers.js; read here only to show the current choice.
+    private const string GraphicsKey = "poFx.tier";
+
+    /// <summary>The graphics choices the sheet offers. "auto" lets the device decide.</summary>
+    public static readonly string[] GraphicsTiers = ["auto", "low", "medium", "high"];
 
     private readonly Lazy<Task<IJSObjectReference>> _prefs;
     private bool _disposed;
@@ -98,6 +103,9 @@ public sealed class SettingsService : IAsyncDisposable
     /// </summary>
     public bool ColorSafe { get; private set; }
 
+    /// <summary>Graphics quality for every game: one of <see cref="GraphicsTiers"/>.</summary>
+    public string Graphics { get; private set; } = "auto";
+
     /// <summary>Read persisted values. Call once JS interop is available.</summary>
     public void Load()
     {
@@ -109,6 +117,8 @@ public sealed class SettingsService : IAsyncDisposable
             Haptics = LocalStorageService.GetItem<string>(HapticsKey) != "0";
             ReducedMotion = LocalStorageService.GetItem<string>(ReducedMotionKey) == "1";
             ColorSafe = LocalStorageService.GetItem<string>(ColorSafeKey) == "1";
+            var tier = LocalStorageService.GetItem<string>(GraphicsKey);
+            Graphics = GraphicsTiers.Contains(tier) ? tier! : "auto";
         }
         catch { /* pre-render — defaults stand */ }
     }
@@ -181,6 +191,14 @@ public sealed class SettingsService : IAsyncDisposable
         LocalStorageService.SetItem(ColorSafeKey, on ? "1" : "0");
         Changed?.Invoke();
         await InvokeAsync("applyColorSafe", on);
+    }
+
+    public async Task SetGraphicsAsync(string tier)
+    {
+        if (!GraphicsTiers.Contains(tier)) return;
+        Graphics = tier;
+        Changed?.Invoke();
+        await InvokeAsync("applyGraphicsTier", tier);
     }
 
     /// <summary>

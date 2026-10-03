@@ -127,9 +127,7 @@ function attachDomObservers(canvas, onResize, onPointer, onVisible, onViewport, 
 
         if (speed > 4.5 && now - lastWhooshTime > 1200) {
             lastWhooshTime = now;
-            if (window.PoCues && window.PoCues.play) {
-                window.PoCues.play('ui.fluidRipple');
-            }
+            window.PoCue?.fire('ui', 'fluidRipple');
         }
     };
     canvas.addEventListener('pointermove', onPointerMove, { passive: true });

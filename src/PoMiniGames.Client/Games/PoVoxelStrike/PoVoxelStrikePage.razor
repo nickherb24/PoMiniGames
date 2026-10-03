@@ -283,7 +283,7 @@
     private long _popId;
     private int _lastScore;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧱</span> Voxel Strike</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoVoxelStrike);
 
     // The ONE controls block: the start card, the squad's deploy card and the pause dialog
     // all render this. It used to be written out four times (intro, veil, pause, a status

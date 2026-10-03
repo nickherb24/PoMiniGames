@@ -104,7 +104,7 @@
 @code {
     private enum Phase { Answering, Results, GameOver }
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">💕</span> Couple Quiz</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCoupleQuiz);
 
     // This match's final scores, highest first. The all-time top 3 is rendered
     // separately by GameShell from GameKey.

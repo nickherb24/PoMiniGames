@@ -175,7 +175,7 @@ public partial class PoCabinetPageBase : ComponentBase, IAsyncDisposable
         ? "One run, start to finish"
         : $"{laps} laps";
 
-    protected RenderFragment TitleContent => builder => builder.AddMarkupContent(0, "🏛️ Cabinet");
+    protected static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoCabinet);
 
     protected bool HasAnyCareerProgress =>
         Career.Current.CompletedStages.Count > 0

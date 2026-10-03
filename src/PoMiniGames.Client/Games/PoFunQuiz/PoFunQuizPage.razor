@@ -214,7 +214,7 @@
     // lock in, the correct answer reveals and the round advances.
     private bool _splitScreen;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧠</span> Fun Quiz</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoFunQuiz);
 
     // Intro/welcome gate — overlay blocks the quiz until dismissed (OK); demo
     // flashes it for 2s. Questions load behind the card, so no extra gating.
@@ -413,7 +413,7 @@
             // other ~25 pages in the app do not fetch a split-screen quiz hotkey
             // handler.
             await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
-            await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.register", DotNetObjectReference.Create(this));
+            await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.register", _selfRef ??= DotNetObjectReference.Create(this));
         }
         // Solo mode reuses the same hotkey bridge by registering with side="S"
         // (solo); the script already routes 1-4 to whatever side is registered and
@@ -422,11 +422,14 @@
         else if (_playMode == "solo")
         {
             await JS.InvokeAsync<IJSObjectReference>("import", "./js/poFunQuizSplitHotkeys.js");
-            await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.registerSolo", DotNetObjectReference.Create(this));
+            await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.registerSolo", _selfRef ??= DotNetObjectReference.Create(this));
         }
     }
 
     [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    // The one reference the hotkey bridge calls back through; released in DisposeAsync.
+    private DotNetObjectReference<PoFunQuizPage>? _selfRef;
 
     /// <summary>
     /// Invoked from JS (poFunQuizSplitHotkeys.js) when a split-screen hotkey
@@ -474,6 +477,8 @@
             _demoTimer = null;
         }
         try { await JS.InvokeVoidAsync("poFunQuizSplitHotkeys.unregister"); } catch { /* disposed */ }
+        _selfRef?.Dispose();
+        _selfRef = null;
     }
 
     private async Task StartGame()

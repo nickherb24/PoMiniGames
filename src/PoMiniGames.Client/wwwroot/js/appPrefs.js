@@ -146,6 +146,24 @@ export function applyMuted(muted) {
 }
 
 /**
+ * Graphics quality for every game. 'auto' hands the choice back to the device
+ * read in qualityTiers.js, which owns the tier and its storage key.
+ * @param {'auto'|'low'|'medium'|'high'} tier
+ */
+export function applyGraphicsTier(tier) {
+    const value = tier === 'auto' ? null : tier;
+    if (window.PoQuality) {
+        window.PoQuality.setOverride(value);
+        return;
+    }
+    // qualityTiers.js not loaded yet: leave the choice where it will find it.
+    try {
+        if (value) localStorage.setItem('poFx.tier', value);
+        else localStorage.removeItem('poFx.tier');
+    } catch { /* private mode: nothing to persist */ }
+}
+
+/**
  * Read the OS reduced-motion preference, so the settings UI can tell the user
  * their system is already asking for less motion regardless of this toggle.
  * @returns {boolean}

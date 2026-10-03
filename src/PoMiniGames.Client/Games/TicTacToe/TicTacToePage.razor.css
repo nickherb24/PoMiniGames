@@ -5,7 +5,7 @@
 .ttt-board {
     /* Geometry tokens are shared with the win-line calc (see WinLineStyle in the
        .razor) so the overlay stays pixel-aligned with the grid at any size. */
-    --ttt-cell: clamp(44px, calc((100vh - 220px) / 6), 78px);
+    --ttt-cell: clamp(44px, calc((100dvh - 220px) / 6), 78px);
     --ttt-gap: 4px;
     --ttt-pad: 12px;
     /* Distinct player colours: X = warm coral, O = cyan. */
@@ -251,7 +251,7 @@
   flex-direction: column;
   gap: 0.5rem;
   width: calc(6 * var(--ttt-cell) + 5 * var(--ttt-gap) + 2 * var(--ttt-pad));
-  --ttt-cell: clamp(44px, calc((100vh - 220px) / 6), 78px);
+  --ttt-cell: clamp(44px, calc((100dvh - 220px) / 6), 78px);
   --ttt-gap: 4px;
   --ttt-pad: 12px;
   --ttt-x: #ff6b6b;

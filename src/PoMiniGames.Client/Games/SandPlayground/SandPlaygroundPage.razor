@@ -45,7 +45,7 @@
 
     private bool IsDemo => GameModes.Parse(Mode) == GameMode.Demo;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏜️</span> Sand Playground</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.SandPlayground);
 
     private RenderFragment HowToPlayContent => @<div>
         @* Each tool button already carries its description as a tooltip and shows it as

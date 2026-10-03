@@ -192,6 +192,7 @@
     private List<BoardGroup> _groupedBoards = new();
 
     private string? _selectedGame;
+    private const string LastBoardKey = "pomini_lb_board";
 
     private GameLeaderboardDto? Selected => _boards.FirstOrDefault(b => b.GameKey == _selectedGame);
 
@@ -217,6 +218,7 @@
     {
         if (string.IsNullOrEmpty(gameKey)) return;
         _selectedGame = gameKey;
+        LocalStorageService.SetItem(LastBoardKey, gameKey);
         await LoadMyRowAsync(gameKey);
     }
 
@@ -516,6 +518,9 @@
         // they land stays null and the page shows no board.
         // The first board with a real score, so the page never opens on an empty one.
         var flat = _groupedBoards.SelectMany(g => g.Boards).ToList();
+        // The board the player last chose, if it still exists; a rank climb picked above wins.
+        var last = LocalStorageService.GetItem<string>(LastBoardKey);
+        _selectedGame ??= flat.FirstOrDefault(b => b.GameKey == last)?.GameKey;
         _selectedGame ??= (flat.FirstOrDefault(b => b.Entries.Any(e => e.Name != PlaceholderName)) ?? flat.FirstOrDefault())?.GameKey;
     }
 

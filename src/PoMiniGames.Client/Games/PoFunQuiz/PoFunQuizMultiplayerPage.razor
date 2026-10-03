@@ -115,11 +115,11 @@
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🧠</span> Fun Quiz</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoFunQuiz);
 
     private RenderFragment CategoryContent => @<label class="fq-join__field">
         <span class="fq-join__label">Category <span class="fq-join__hint">used if you're first in</span></span>
-        <select @bind="_category" disabled="@_busy" aria-describedby="fq-category-hint">
+        <select @bind="_category" @bind:after="RememberCategory" disabled="@_busy" aria-describedby="fq-category-hint">
             <option value="General" selected>General</option>
             <option value="Science">Science</option>
             <option value="History">History</option>
@@ -160,7 +160,11 @@
 
     private bool _introDone;
     private string _playerName = string.Empty;
-    private string _category = "General";
+    private const string CategoryKey = "pomini_funquiz_category";
+    // An unknown stored value is harmless: the server falls back to General.
+    private string _category = LocalStorageService.GetItem<string>(CategoryKey) is { Length: > 0 } saved ? saved : "General";
+
+    private void RememberCategory() => LocalStorageService.SetItem(CategoryKey, _category);
     private string? _error;
     private bool _isConnected;
     private bool _reconnecting;

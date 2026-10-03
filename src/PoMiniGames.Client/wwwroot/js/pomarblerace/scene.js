@@ -502,9 +502,8 @@ export function createScene(container) {
   // flex height). That race leaves the canvas sized for a stale first
   // measurement. ResizeObserver covers both sources; the guard is for ancient
   // browsers where the window listener alone still works.
-  if (typeof ResizeObserver !== 'undefined') {
-    new ResizeObserver(resize).observe(container);
-  }
+  const resizeObserver = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(resize) : null;
+  resizeObserver?.observe(container);
 
   // Smoothly move the camera to orbit-and-follow `pos`. With no drag this is the default
   // above-and-behind view; left-drag adds a yaw/pitch offset that rotates around the target.
@@ -625,6 +624,7 @@ export function createScene(container) {
     resize,
     dispose() {
       window.removeEventListener('resize', resize);
+      resizeObserver?.disconnect();
       canvas.removeEventListener('pointerdown', onPointerDown);
       canvas.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);

@@ -335,7 +335,7 @@
             Math.Max(a.P1BestCombo, b.P1BestCombo), Math.Max(a.P2BestCombo, b.P2BestCombo),
             Math.Max(a.P1BiggestHit, b.P1BiggestHit), Math.Max(a.P2BiggestHit, b.P2BiggestHit));
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🥊</span> Brawl</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoBrawl);
 
     private string IntroDialogLabel => _mode switch
     {

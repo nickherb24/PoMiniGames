@@ -39,8 +39,8 @@
 // The app-wide bus is a fine mixer but it is a different AudioContext with a listener
 // parked at the origin, and PoMaterialAudio's positioning is a stereo pan in screen space.
 // Neither can express "that tree fell 60 metres behind you and to the left" in world
-// coordinates. What the shared stack IS consulted for is mute: if the player has muted the
-// app, this context follows it (see syncGlobalMute).
+// coordinates. What the shared stack IS consulted for is mute and volume: this context
+// follows the player's app-wide setting for both (see syncGlobalMute).
 const MASTER_LEVEL = 0.55;
 const SPEED_OF_SOUND = 343;      // m/s — the delay that makes distance legible
 const MAX_AUDIBLE = 260;         // metres; past this a stinger is not scheduled at all
@@ -423,17 +423,20 @@ export function createAudio() {
   // has to ask. Polled at the 2 Hz stats cadence rather than subscribed: PoAudioBus exposes
   // no change event, and a boolean read twice a second costs nothing.
   let lastGlobalMute = false;
+  let lastGlobalVolume = 1;
   function syncGlobalMute() {
     const muted = window.PoAudioBus?.isMuted?.() === true;
-    if (muted === lastGlobalMute) return;
+    const volume = window.PoAudioBus?.getVolume?.() ?? 1;
+    if (muted === lastGlobalMute && volume === lastGlobalVolume) return;
     lastGlobalMute = muted;
+    lastGlobalVolume = volume;
     applyMasterGain();
   }
 
   function applyMasterGain() {
     if (!ctx || !master) return;
     const on = enabled && !lastGlobalMute;
-    master.gain.setTargetAtTime(on ? MASTER_LEVEL : 0, ctx.currentTime, 0.05);
+    master.gain.setTargetAtTime(on ? MASTER_LEVEL * lastGlobalVolume : 0, ctx.currentTime, 0.05);
   }
 
   /** Noise burst shaped by `filter`; the shared skeleton of every stinger. */

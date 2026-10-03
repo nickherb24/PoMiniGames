@@ -74,9 +74,7 @@ function apply() {
         active._lastHoloAngle = parseFloat(angleDeg);
         if (dAngle > 40 && now - _lastShimmerTime > 1500) {
             _lastShimmerTime = now;
-            if (window.PoCues && window.PoCues.play) {
-                window.PoCues.play('ui.holoShimmer');
-            }
+            window.PoCue?.fire('ui', 'holoShimmer');
         }
     }
 }

@@ -34,18 +34,7 @@
 </GameShell>
 
 @code {
-    private readonly RenderFragment TitleContent = builder =>
-    {
-        // Wrap the decorative emoji so screen readers don't announce "flower playing
-        // cards" before the game name. Same pattern the other nine games use.
-        builder.OpenElement(0, "span");
-        builder.OpenElement(1, "span");
-        builder.AddAttribute(2, "aria-hidden", "true");
-        builder.AddContent(3, "🃏");
-        builder.CloseElement();
-        builder.AddContent(4, " Joker");
-        builder.CloseElement();
-    };
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoJoker);
 
     /// <summary>Every show is a fixed 10 jokes (PerformanceOrchestrator's show length).</summary>
     private const int JokesPerShow = 10;

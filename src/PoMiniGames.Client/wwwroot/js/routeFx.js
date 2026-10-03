@@ -88,9 +88,7 @@
         const seg = (path || '').replace(/^\//, '').split('/')[0].toLowerCase();
         if (window.PoFx && window.PoFx.vortex && seg && seg !== 'leaderboards' && seg !== 'profile') {
             window.PoFx.vortex({ radius: Math.min(window.innerWidth, window.innerHeight) * 0.45 });
-            if (window.PoCues && window.PoCues.play) {
-                window.PoCues.play('ui.vortexImplosion');
-            }
+            window.PoCue?.fire('ui', 'vortexImplosion');
         }
 
         clearTimeout(_timer);

@@ -76,6 +76,12 @@ const CLASSIC_DEPS = {
     connectfive: ['https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js'],
 };
 
+// Integrity hashes for the cross-origin files above: bump with the version.
+const INTEGRITY = {
+    'https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js':
+        'sha384-ZRKYEXtLBVeqs9z1WxyeKutCqnkqolS/r1EUWuoUpG4ZKbnRAIXnHhHdnNuiB6CL',
+};
+
 const _pending = new Map();
 
 // The settle callback is named `ok` rather than `resolve` so it cannot shadow
@@ -91,6 +97,10 @@ function loadClassic(src) {
             return;
         }
         const el = document.createElement('script');
+        if (INTEGRITY[src]) {
+            el.integrity = INTEGRITY[src];
+            el.crossOrigin = 'anonymous';
+        }
         el.src = resolve(src);
         el.dataset.engineDep = src;
         el.addEventListener('load', () => { el.dataset.loaded = '1'; ok(); }, { once: true });

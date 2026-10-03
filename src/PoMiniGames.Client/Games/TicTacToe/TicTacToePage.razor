@@ -99,6 +99,7 @@
                      style="--ci:@(r * TicTacToeBoard.Size + c)"
                      @key="(_gameId, row, col)"
                      @onclick="() => HandleCellClick(row, col)"
+                     @onkeydown="e => HandleCellKey(e, row, col)"
                      role="gridcell"
                      aria-colindex="@(col + 1)"
                      aria-label="@GetCellAriaLabel(cellValue)"
@@ -238,7 +239,9 @@
     private string _playMode = "ai";
     private string PlayMode => IsDemo ? "demo" : _playMode;
     private CellValue _current2pToken = CellValue.X; // whose turn in 2-player mode
-    private string _player2Name = "Player 2";
+    // Shared by both board games: the second player on this device is usually the same person.
+    private const string Player2Key = "pomini_player2";
+    private string _player2Name = LocalStorageService.GetItem<string>(Player2Key) is { Length: > 0 } saved ? saved : "Player 2";
     private bool _matchRecorded;
     private string _playerName = "";
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
@@ -280,7 +283,7 @@
 
     // The title is the classic "Tic-Tac-Toe", without the grid dimension; the
     // in-game intro / how-to-play carry the 6×6 / 4-in-a-row details.
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">❌</span> Tic-Tac-Toe</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.TicTacToe);
 
     // Mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players taking turns, the demo is a CPU-vs-CPU exhibition.
@@ -447,6 +450,7 @@
     {
         var name = e.Value?.ToString();
         _player2Name = string.IsNullOrWhiteSpace(name) ? "Player 2" : name.Trim();
+        LocalStorageService.SetItem(Player2Key, _player2Name);
     }
 
     private void ResetGame()
@@ -561,6 +565,12 @@
         _ = GameResults.SubmitAdaptiveStatsAsync("tictactoe", _playerName, _rating);
     }
     
+    // Enter or Space on a focused cell plays it, so the board works without a mouse.
+    private void HandleCellKey(KeyboardEventArgs e, int row, int col)
+    {
+        if (e.Key is "Enter" or " ") HandleCellClick(row, col);
+    }
+
     private void HandleCellClick(int row, int col)
     {
         if (PlayMode == "demo") return;

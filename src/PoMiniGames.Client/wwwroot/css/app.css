@@ -211,6 +211,12 @@
   --accent: var(--color-accent);
   --accent-bg: rgba(129, 140, 248, 0.16);             /* hover-backdrop for primary actions */
   --accent-soft: rgba(129, 140, 248, 0.10);           /* empty-state badges, etc. */
+  /* Names stylesheets were already using that were never defined, so the text
+     silently inherited its colour. Aliases, so both themes follow for free. */
+  --color-accent-soft: var(--accent-soft);
+  --color-text-muted: var(--color-text-secondary);
+  --color-text-soft: var(--color-text-secondary);
+  --border-subtle: var(--color-border);
   --accent-ring: rgba(129, 140, 248, 0.45);           /* :focus-visible */
   --accent-success: #34d399;
   --accent-success-soft: rgba(52, 211, 153, 0.16);
@@ -387,6 +393,11 @@
   --dur-slow: 0.4s;
   --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
   --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  /* A lightly under-damped spring as a linear() curve: one overshoot of about 4%,
+     settled by 60%. For things that land (a released button, a dialog opening),
+     not for things that merely fade. */
+  --ease-spring: linear(0, 0.21 6%, 0.62 14%, 0.88 21%, 1.02 29%, 1.045 36%, 1.03 44%, 1.005 56%, 0.996 70%, 1);
+  --dur-spring: 0.45s;
 
   /* Toast colors */
   --toast-info-bg: #1e3a5f;
@@ -549,6 +560,7 @@
   --dur-fast: 0s;
   --dur-base: 0s;
   --dur-slow: 0s;
+  --dur-spring: 0s;
 }
 
 :root[data-motion="reduce"] *,
@@ -1098,14 +1110,15 @@ h3[tabindex="0"]:focus-visible {
   text-decoration: none;
   transition: background var(--dur-fast) var(--ease-standard),
               border-color var(--dur-fast) var(--ease-standard),
-              transform var(--dur-fast) var(--ease-standard),
+              transform var(--dur-spring) var(--ease-spring),
               filter var(--dur-fast) var(--ease-standard);
   /* Containment: this button never paints outside its own box, so the
      browser can promote it to a layer without re-rasterising its parents. */
   contain: layout paint;
 }
 
-.app-btn:active { transform: scale(0.97); }
+/* Down fast, back on the spring: the release is what reads as physical. */
+.app-btn:active { transform: scale(0.96); transition-duration: var(--dur-fast); transition-timing-function: var(--ease-out); }
 .app-btn:disabled,
 .app-btn[aria-disabled="true"] {
   opacity: 0.5;
@@ -1335,6 +1348,13 @@ p, li, dd, blockquote,
     min-height: 44px;
   }
 
+  /* Game-local buttons that were under the floor on both axes (26 to 36px). */
+  :where(.poeco-pill, .poeco-icon-btn, .kiosk-bar-btn, .prefs-sheet-close,
+         .sp-btn, .pocabinet-stepper button, .toast-action) {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
   /* ── The native controls the lists above never cover.
      Both rules above enumerate CLASSES, so anything rendered as a bare
      <select>, <input type="range"> or a game-local button class would
@@ -1391,4 +1411,24 @@ p, li, dd, blockquote,
 .cf-physics-clone.yellow-piece {
   background: radial-gradient(circle at 34% 28%,
     var(--disc-yellow-lit) 0%, var(--disc-yellow-mid) 46%, var(--disc-yellow-core) 100%);
+}
+
+/* ── Safe areas ──────────────────────────────────────────────────────────────
+   index.html asks for viewport-fit=cover, which is what makes every
+   env(safe-area-inset-*) in the app non-zero on a notched phone. It also lets
+   the page run under the notch, so the body keeps clear of it on the three
+   sides no component handles; the bottom inset is applied per component. */
+body {
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
+/* ── Dialog entry ────────────────────────────────────────────────────────────
+   Every native <dialog> lands on the spring instead of snapping in. Uses the
+   individual scale/translate properties so it composes with a dialog that
+   positions itself with `transform`. */
+dialog[open] { animation: po-dialog-in var(--dur-spring) var(--ease-spring); }
+@keyframes po-dialog-in {
+  from { opacity: 0; scale: 0.96; translate: 0 0.6rem; }
 }

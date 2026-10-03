@@ -55,10 +55,36 @@ const networkOnlyPaths = [
     /\/negotiate(\/|$|\?)/,      // SignalR negotiate on any hub
 ];
 
-function isNetworkOnly(url) {
-    // Cross-origin requests are never ours to cache.
-    if (url.origin !== self.location.origin) return true;
+// The one cross-origin host worth caching: the 3D engines (three.js, cannon-es,
+// matter.js) load from here at pinned versions, so a URL never changes content.
+const cdnOrigin = 'https://cdn.jsdelivr.net';
+// Kept across builds, unlike the precache: nothing in it depends on our version.
+const cdnCacheName = 'pominigames-cdn-v1';
+
+// Same-origin assets too heavy to precache for every visitor (track models are
+// megabytes, sprite sheets hundreds of KB). Cached the first time a game asks for
+// them, so a game played once online keeps working offline.
+const runtimeCachePattern = /\.(glb|webp)$/;
+
+function isNetworkOnly(url, request) {
+    // Cross-origin requests are never ours to cache, bar the pinned engine CDN.
+    if (url.origin !== self.location.origin) return url.origin !== cdnOrigin;
+    // /health is both the server's liveness endpoint and a page of the app. Opening
+    // the page is a navigation, and that must reach the cached shell like any other.
+    if (request.mode === 'navigate' && /^\/health\/?$/.test(url.pathname)) return false;
     return networkOnlyPaths.some(pattern => pattern.test(url.pathname));
+}
+
+// Cache-first, filled on first use. A failed or partial response is never stored.
+async function cacheOnFirstUse(cacheKey, request) {
+    const cache = await caches.open(cacheKey);
+    const cached = await cache.match(request);
+    if (cached) return cached;
+    const response = await fetch(request);
+    if (response.ok && response.status === 200) {
+        cache.put(request, response.clone()).catch(() => { /* quota: stay network-only */ });
+    }
+    return response;
 }
 
 // Precache batch size.
@@ -107,7 +133,8 @@ async function onFetch(event) {
     } catch {
         return fetch(request);
     }
-    if (isNetworkOnly(url)) return fetch(request);
+    if (isNetworkOnly(url, request)) return fetch(request);
+    if (url.origin === cdnOrigin) return cacheOnFirstUse(cdnCacheName, request);
 
     // SPA navigations resolve to the cached shell so deep links work offline. The
     // auth routes above are excluded before reaching here, so this never short-
@@ -117,7 +144,9 @@ async function onFetch(event) {
     const cached = await cache.match(shouldServeIndexHtml ? 'index.html' : request);
     if (cached) return cached;
 
-    // Not precached (a runtime asset, or a first-run miss). Go to network and fail
-    // the way the browser normally would when offline.
+    if (runtimeCachePattern.test(url.pathname)) return cacheOnFirstUse(cacheName, request);
+
+    // Not precached (a first-run miss). Go to network and fail the way the browser
+    // normally would when offline.
     return fetch(request);
 }

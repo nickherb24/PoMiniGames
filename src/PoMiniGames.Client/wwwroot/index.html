@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>PoMiniGames</title>
     <!-- Hold the first frame until the boot splash heading is parsed: it is the far end of the
          card-to-game view transition (see #po-boot-hero below). -->
@@ -41,6 +41,10 @@
         "three": "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js",
         "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.165.0/examples/jsm/",
         "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+      },
+      "integrity": {
+        "https://cdn.jsdelivr.net/npm/three@0.165.0/build/three.module.js": "sha384-Qvl1RLjZOCDFOOH2bKcGnaDHMM8MVv3zVtMvhy3juQdiIOs6RgQ/7zYdM1FbpHzI",
+        "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js": "sha384-LDCkTUkpgO4r4LtCJLXk5kwgo36GMMbF99L04+unS4RQdoKCAhj6jZ2B+2CkdSyo"
       }
     }
     </script>
@@ -143,6 +147,7 @@
     <link rel="icon" type="image/svg+xml" href="favicon.svg" />
     <link rel="alternate icon" type="image/png" href="favicon.png" />
     <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="apple-touch-icon" href="icon-192.png" />
     <meta name="theme-color" content="#0f172a" />
     <meta name="description" content="PoMiniGames — instant-play mini-games with AI opponents, real-time 2P multiplayer, and global leaderboards. Offline-resilient." />
     <meta property="og:title" content="PoMiniGames" />
@@ -180,9 +185,10 @@
     <script src="js/appErrorBoundary.js" defer></script>
     <!-- Microsoft sign-in (MSAL.js + interop wrapper). Loaded eagerly so the
          login gate can call poAuth.* during startup when OAuth is configured.
-         NOTE: consider pinning a Subresource Integrity hash for this CDN script
-         before production. -->
-    <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js" crossorigin="anonymous"></script>
+         The integrity hash pins the exact file: bump it together with the version. -->
+    <script src="https://cdn.jsdelivr.net/npm/@azure/msal-browser@2.38.4/lib/msal-browser.min.js"
+            integrity="sha384-FyFWjaUFP9q0tLEvcwV9UloGlRNkfP3l+vmNCjwLpji7ChADDrvdXXXNIufO0sEw"
+            crossorigin="anonymous"></script>
     <script src="js/poauth.js"></script>
 </head>
 

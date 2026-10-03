@@ -106,7 +106,10 @@
                     <div class="cf-cell @GetPieceClass(piece) @(winCellClass) @(_gameResult != GameResult.InProgress ? "disabled" : "")"
                          style="@(isWinCell ? $"--win-i: {winIndex};" : null)"
                          @onclick="() => HandleDrop(col)"
+                         @onkeydown="e => HandleDropKey(e, col)"
+                         @onfocus="() => SetHover(col)"
                          @onpointerenter="() => SetHover(col)"
+                         tabindex="@(row == 0 && _gameResult == GameResult.InProgress ? 0 : -1)"
                          role="gridcell"
                          aria-colindex="@(col + 1)"
                          aria-label="@GetPieceAriaLabel(piece)">
@@ -242,7 +245,9 @@
     // player can never appear here, so wrong-state bugs (e.g. styling a "ghost"
     // disc with no current player) fail at construction time, not at render.
     private Player _current2pPlayer = Player.Red; // whose turn in 2-player mode
-    private string _player2Name = "Player 2";
+    // Shared by both board games: the second player on this device is usually the same person.
+    private const string Player2Key = "pomini_player2";
+    private string _player2Name = LocalStorageService.GetItem<string>(Player2Key) is { Length: > 0 } saved ? saved : "Player 2";
     private bool _matchRecorded;
     private string _playerName = "";
     // Player 1's display name resolves asynchronously; fall back to "Player 1" until it does.
@@ -353,7 +358,7 @@
     // No mode suffix: "Connect Five · 1 Player" does not fit a phone's top
     // bar and is cut at "· 1"; the mode is the selected button on the intro card's
     // switch and the first segment after the game in the address.
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🔴</span> Connect Five</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.ConnectFive);
 
     // Mode-specific HowToPlay. 1P talks about the CPU and ELO, 2P
     // talks about two players and a hot seat, and the demo explains it is a
@@ -470,6 +475,7 @@
     {
         var name = e.Value?.ToString();
         _player2Name = string.IsNullOrWhiteSpace(name) ? "Player 2" : name.Trim();
+        LocalStorageService.SetItem(Player2Key, _player2Name);
     }
 
     // Rebuild the ELO/CPU/W/L/D/Rate tiles from the adaptive rating so the stats
@@ -670,6 +676,12 @@
             _engineReady = false;
         }
         // BUG FIX (#1): _kioskTimer removed; KioskCoordinator owns it.
+    }
+
+    // The top cell of each column is a tab stop; Enter or Space drops a disc there.
+    private void HandleDropKey(KeyboardEventArgs e, int col)
+    {
+        if (e.Key is "Enter" or " ") HandleDrop(col);
     }
 
     private void HandleDrop(int col)

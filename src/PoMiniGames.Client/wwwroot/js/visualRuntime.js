@@ -69,6 +69,31 @@ let _warmedAt = 0;   // set on the first measurement window; see WARMUP_MS
 // Reused so the loop allocates nothing per frame.
 const _root = typeof document !== 'undefined' ? document.documentElement : null;
 
+// qualityTiers.js (PoQuality) owns the ceiling: the device read, the battery cap and the
+// player's own choice in Settings. This loop only moves BELOW that ceiling, and stands
+// down entirely when the player picked a tier by hand.
+const ORDER = ['low', 'medium', 'high'];
+function ceiling() {
+    const q = typeof window !== 'undefined' ? window.PoQuality : null;
+    return (q && q.tier && q.tier()) || 'high';
+}
+function capped(name) {
+    return ORDER.indexOf(name) > ORDER.indexOf(ceiling()) ? ceiling() : name;
+}
+
+/** Called by qualityTiers.js whenever it (re)decides the tier. */
+export function syncWithQuality() {
+    const q = typeof window !== 'undefined' ? window.PoQuality : null;
+    if (!q) return;
+    const manual = q.source() !== 'computed';
+    const target = manual ? q.tier() : capped(_tier || 'medium');
+    _adaptive = !manual;
+    // PoQuality has just written data-gfx itself, so re-apply even when the name is unchanged.
+    _tier = null;
+    applyTier(target);
+    if (_adaptive) ensureRunning();
+}
+
 function applyTier(name) {
     if (!_root || name === _tier) return;
     _tier = name;
@@ -112,8 +137,8 @@ function step(now) {
                 _belowSince = 0;
                 if (!_aboveSince) _aboveSince = now;
                 else if (now - _aboveSince > RAISE_AFTER_MS) {
-                    if (_tier === 'low') applyTier('medium');
-                    else if (_tier === 'medium') applyTier('high');
+                    if (_tier === 'low') applyTier(capped('medium'));
+                    else if (_tier === 'medium') applyTier(capped('high'));
                     _aboveSince = now;
                 }
             } else {
@@ -199,12 +224,13 @@ if (typeof document !== 'undefined') {
     // on a borderline machine; starting at `medium` keeps the visual intact on
     // capable machines (the loop will raise it on the first 6 s above 56 fps)
     // and avoids the worst case on machines that can't.
-    applyTier('medium');
+    applyTier(capped('medium'));
     ensureRunning();
+    syncWithQuality();
 }
 
 if (typeof window !== 'undefined') {
     window.PoVisualRuntime = {
-        enableAudioReactive, enableAdaptiveQuality, setQualityTier, getTier, getFps,
+        enableAudioReactive, enableAdaptiveQuality, setQualityTier, getTier, getFps, syncWithQuality,
     };
 }

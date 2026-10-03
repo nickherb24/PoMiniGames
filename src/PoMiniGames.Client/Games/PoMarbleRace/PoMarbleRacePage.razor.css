@@ -15,7 +15,7 @@
     /* Fill the game area: the three.js camera adapts to whatever aspect this ends up. */
     position: relative;
     width: 100%;
-    height: min(calc(100vh - 96px), 92vh);
+    height: min(calc(100dvh - 96px), 92dvh);
     min-height: 340px;
     border-radius: 10px;
     overflow: hidden;

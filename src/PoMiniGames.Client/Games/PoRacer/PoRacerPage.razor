@@ -122,7 +122,7 @@
 </GameShell>
 
 @code {
-    private RenderFragment TitleContent => @<span>🏎️ Racer</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoRacer);
     private RenderFragment SummaryContent => @<PoRacerResults Result="_result" Roster="_roster" PlayerId="_localCarId"
         Track="@PoRacerCatalog.GetTrack(_raceTrackId)" PreviousBest="_previousBest" IsTrial="_raceTrial"
         SubmitStatus="@_submitStatus" Retry="SubmitScoreAsync" />;
@@ -156,7 +156,6 @@
         <PoRacerPaintShop @bind-Customization="_customization" EngineReady="_engineReady" />
         <div class="racer-actions">
             <span class="racer-note">@(_trial ? $"Empty track · {PoRacerCatalog.TotalLaps} laps" : $"{PoRacerCatalog.CarCount} cars · {PoRacerCatalog.TotalLaps} laps")</span>
-            <a href="/leaderboards">Leaderboard</a>
         </div>
         @if (_error is not null)
         {

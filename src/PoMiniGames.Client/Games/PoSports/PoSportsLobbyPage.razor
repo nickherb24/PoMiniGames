@@ -84,7 +84,7 @@
     /// <summary>Set when navigating to the race page — that navigation must KEEP our lobby seat.</summary>
     private bool _starting;
 
-    private RenderFragment TitleContent => @<span><span aria-hidden="true">🏃</span> Sports</span>;
+    private static RenderFragment TitleContent => GameCatalog.TitleFor(GameKeys.PoSports);
 
     /// <summary>Online races run on layout 1 — the same labels the race page teaches.</summary>
     private static readonly IReadOnlyList<PoSportsHowTo.Keys> HowToKeys =

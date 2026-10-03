@@ -10,7 +10,7 @@
 .pvs-canvas-host {
     position: relative;
     width: 100%;
-    height: min(74vh, 700px);
+    height: min(74dvh, 700px);
     border-radius: 12px;
     overflow: hidden;
     background: var(--color-bg);

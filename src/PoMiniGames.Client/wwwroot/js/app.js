@@ -12,6 +12,11 @@
   document.addEventListener('click', function (e) {
     var link = e.target.closest && e.target.closest('a[href^="/"]');
     if (!link) return;
+    // Only the hub's game cards take this path. It is a full document load (that is
+    // what the card-to-title morph needs), and for every other link in the app that
+    // meant rebooting the whole WASM runtime to change page. Those are left to the
+    // Blazor router, which swaps the page in place.
+    if (!link.closest('.home-card')) return;
     if (link.target && link.target !== '_self') return;
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     if (!document.startViewTransition) return;
@@ -62,7 +67,12 @@
       var mem = navigator.deviceMemory || 4;
       if (mem < 4) return false;
       var c = document.createElement('canvas');
-      return !!(c.getContext && c.getContext('webgl2'));
+      var gl = c.getContext && c.getContext('webgl2');
+      if (!gl) return false;
+      // Hand the probe's context straight back: the browser caps live contexts.
+      var lose = gl.getExtension('WEBGL_lose_context');
+      if (lose) lose.loseContext();
+      return true;
     } catch (_) {
       return false;
     }

@@ -1018,6 +1018,8 @@ export function createRenderer(container, {
       creatures.dispose(); props.dispose(); flora?.dispose(); island?.dispose(); lighting.dispose(); skyDome.dispose(); minimap?.dispose();
       particles.dispose(); post.dispose();
       renderer.dispose();
+      // dispose() does not hand the context back; see pobrawl/game.js dispose().
+      try { renderer.forceContextLoss?.(); } catch { /* context already gone */ }
       canvas.remove();
     },
   };

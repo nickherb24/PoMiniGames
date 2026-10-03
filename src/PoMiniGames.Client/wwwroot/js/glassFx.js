@@ -228,9 +228,7 @@
             const px = (e.clientX - r.left) / r.width * CAPTURE_W;
             const py = (e.clientY - r.top) / r.height * Math.max(24, Math.round(CAPTURE_W * r.height / r.width));
             _ripples.push({ panel, x: px, y: py, maxR: CAPTURE_W * 0.7, created: performance.now() });
-            if (window.PoCues && window.PoCues.play) {
-                window.PoCues.play('ui.fluidRipple');
-            }
+            window.PoCue?.fire('ui', 'fluidRipple');
         }, { passive: true });
     }
 

@@ -627,6 +627,8 @@ export class Engine {
       if (obj.material) (Array.isArray(obj.material) ? obj.material : [obj.material]).forEach(m => m.dispose());
     });
     this.renderer?.dispose();
+    // dispose() does not hand the context back; see pobrawl/game.js dispose().
+    try { this.renderer?.forceContextLoss?.(); } catch { /* context already gone */ }
     this.canvas?.remove();
     this.crosshair?.remove();
     this.hitArc?.remove();
