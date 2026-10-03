@@ -187,7 +187,9 @@ class PersonalityEffectsMethods {
     this._superDur = 1.3;
     this._superT = this._superDur;
     this._superFighter = f;
-    this.cameraMode = 'super';
+    // Super escalation from normal always lands; super→super on a re-fire
+    // (same priority) is also allowed, which re-seeds the orbit.
+    this._setCameraMode('super');
     this.cameraModeT = 0;
     // Re-seed the orbit from where the boom is now, not the previous super's arc.
     this._superAngle = undefined;
@@ -242,9 +244,13 @@ class PersonalityEffectsMethods {
     // Don't reclaim time/camera from the KO branch, which runs first on the same frame.
     if (this.phase !== 'ko' && this.phase !== 'result') {
       this.timeScale = 1;
-      if (this.cameraMode === 'super') { this.cameraMode = 'normal'; this.cameraModeT = 0; }
+      // Step DOWN to normal — debounced by CAMERA_MIN_DWELL so a fresh super
+      // that fires immediately after this one can't strobe the camera. The
+      // super branch in _updateCamera gates on `_superFighter` (cleared below)
+      // so the view still reads as "normal" even while the mode string is held.
+      if (this.cameraMode === 'super') { this._setCameraMode('normal'); this.cameraModeT = 0; }
     } else if (this.cameraMode === 'super') {
-      this.cameraMode = 'normal';
+      this._setCameraMode('normal');
     }
     for (const u of this._superFighter?.inkUniforms || []) {
       u.uInkColor.value.setHex(0x05070f);

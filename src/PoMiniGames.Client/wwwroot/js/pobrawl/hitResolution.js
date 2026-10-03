@@ -652,7 +652,8 @@ class HitResolutionMethods {
         this.phase = 'ko';
         this.phaseT = 0;
         this.timeScale = 0.35;
-        this.cameraMode = 'ko';
+        // KO is the highest camera priority — escalation always lands.
+        this._setCameraMode('ko');
         this.cameraModeT = 0;
         // Shot selection: ~40% of KOs get the overhead face close-up (the
         // dazed expression as the body drops); the rest keep the low side

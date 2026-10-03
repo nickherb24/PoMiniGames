@@ -17,8 +17,38 @@ const PORTRAIT_FOV_MAX = 78;
 // Below this aspect the camera holds the horizontal view it has AT this aspect; 1.25
 // keeps both fighters whole on their countdown marks and still fills a phone mid-fight.
 const HOLD_ASPECT = 1.25;
+// Camera-mode priority. Escalating to a higher priority (normal→super→ko) is
+// always allowed; stepping DOWN waits CAMERA_MIN_DWELL so a fast super→normal→super
+// loop can't strobe the camera every other frame. The super branch in
+// _updateCamera also gates on `_superFighter`, which is cleared when the beat
+// finishes, so a delayed step-down still shows the normal view (the camera just
+// keeps reporting mode='super' until the dwell elapses).
+const CAMERA_PRIORITY = { normal: 0, super: 1, ko: 2 };
+const CAMERA_MIN_DWELL = 1.2;
 
 class CinematicsMethods {
+  // Single chokepoint for cameraMode writes. Escalations (priority up) and
+  // equal-priority re-sets always land; de-escalations (priority down) are
+  // deferred by CAMERA_MIN_DWELL so a busy fight can't ping-pong the camera
+  // between normal and the cinematic modes. Pass { force: true } for paths
+  // that must reset unconditionally — round start, match result, init.
+  _setCameraMode(mode, opts = {}) {
+    const t = this._t;
+    if (opts.force || t === undefined) {
+      this.cameraMode = mode;
+      this.cameraModeT = 0;
+      this._camModeSwitchAt = t || 0;
+      return;
+    }
+    const cur = CAMERA_PRIORITY[this.cameraMode] ?? 0;
+    const next = CAMERA_PRIORITY[mode] ?? 0;
+    if (next >= cur || t - (this._camModeSwitchAt ?? 0) >= CAMERA_MIN_DWELL) {
+      this.cameraMode = mode;
+      this.cameraModeT = 0;
+      this._camModeSwitchAt = t;
+    }
+  }
+
   // Deferred KO ragdoll: the KO event only queues pendingKO; the body swap
   // happens here, outside world.step.
   _buildPendingKO() {
@@ -105,8 +135,7 @@ class CinematicsMethods {
       : `${this.fighters[this.winner - 1].rig.config.name.toUpperCase()} WINS!`;
     this._setBanner(name);
     // Result holds the normal framing so the player can read it without the view moving.
-    this.cameraMode = 'normal';
-    this.cameraModeT = 0;
+    this._setCameraMode('normal', { force: true });
     if (this.dotnet) {
       // Recap is ONE object, not more positional args: invokeMethodAsync fails silently
       // on an arity mismatch (see OnHud), while an object grows by adding properties.

@@ -258,7 +258,7 @@ export class BrawlGame {
     // hands in the next rung's). One-shot: _introHold speaks it and clears it.
     this._introLine = (options && options.introLine) || null;
     // Cinematic state: KO zoom.
-    this.cameraMode = 'normal'; // 'normal' | 'ko' | 'super'
+    this._setCameraMode('normal', { force: true }); // 'normal' | 'ko' | 'super'
     this.cameraModeT = 0;
     this.koShot = 'side'; // per-KO camera variant: 'side' | 'overhead'
     this.excited = 0; // crowd excitement
@@ -1134,7 +1134,7 @@ export class BrawlGame {
     this.pendingCelebration = null;
     this.celebrationT = 0;
     this.timeScale = 1;
-    this.cameraMode = 'normal';
+    this._setCameraMode('normal', { force: true });
     this.cameraModeT = 0;
     // A super fired on the last frame of the previous round would otherwise
     // still own timeScale and the camera into this countdown.
